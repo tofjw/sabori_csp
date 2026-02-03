@@ -63,6 +63,10 @@ pytest tests/fzn/run_tests.py -v -k alldifferent   # FlatZinc特定制約
 ### Python
 - Python 3.9以上、型ヒント必須、ruffでフォーマット
 
+### 制約の実装
+- **新しい制約を実装する前に、必ず [制約実装ガイド](docs/constraint-implementation-guide.md) を読むこと**
+- ガイドに従って実装・テスト・ドキュメント更新を行う
+
 
 # 開発ログ運用ルール
 - 作業が一段落 OR 1日が終わるタイミングで、自動的にログを残すことを提案してください
@@ -82,5 +86,6 @@ pytest tests/fzn/run_tests.py -v -k alldifferent   # FlatZinc特定制約
 ## 関連ドキュメント
 
 - [サポート制約一覧](docs/CONSTRAINTS.md)
+- [制約実装ガイド](docs/constraint-implementation-guide.md)
 - [テスト方法](docs/TESTING.md)
 - [FlatZinc仕様](https://docs.minizinc.dev/en/2.9.5/fzn-spec.html)
