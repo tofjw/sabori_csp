@@ -12,7 +12,13 @@ namespace sabori_csp {
 
 AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     : Constraint(vars)
-    , pool_n_(0) {
+    , pool_n_(0)
+    , unfixed_count_(0) {
+    // 変数ポインタ → 内部インデックスマップを構築
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        var_ptr_to_idx_[vars_[i].get()] = i;
+    }
+
     // 全変数の値の和集合をプールとして構築
     std::set<Domain::value_type> all_values;
     for (const auto& var : vars) {
@@ -27,7 +33,7 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
         pool_sparse_[pool_values_[i]] = i;
     }
 
-    // 既に確定している変数の値をプールから削除
+    // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
     for (const auto& var : vars) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
@@ -44,6 +50,8 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
                 pool_sparse_[val] = last_idx;
                 --pool_n_;
             }
+        } else {
+            ++unfixed_count_;
         }
     }
 
@@ -100,7 +108,7 @@ bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type
 
     // Trail に保存（同一レベルでも複数回保存する可能性あり）
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, pool_n_});
+        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
     }
 
     // Sparse Set から削除（スワップ）
@@ -117,7 +125,7 @@ bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type
     return true;
 }
 
-bool AllDifferentConstraint::on_instantiate(Model& /*model*/, int save_point,
+bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
                                              size_t /*var_idx*/, Domain::value_type value,
                                              Domain::value_type /*prev_min*/,
                                              Domain::value_type /*prev_max*/) {
@@ -130,20 +138,40 @@ bool AllDifferentConstraint::on_instantiate(Model& /*model*/, int save_point,
         return false;
     }
 
-    remove_from_pool(save_point, value);
+    // Trail に保存
+    if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
+        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+    }
+
+    // プールから削除
+    size_t idx = it->second;
+    size_t last_idx = pool_n_ - 1;
+    Domain::value_type last_val = pool_values_[last_idx];
+
+    pool_values_[idx] = last_val;
+    pool_values_[last_idx] = value;
+    pool_sparse_[last_val] = idx;
+    pool_sparse_[value] = last_idx;
+    --pool_n_;
+
+    // 未確定カウントをデクリメント（O(1)）
+    --unfixed_count_;
 
     // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
-    size_t unfixed_count = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (!vars_[i]->is_assigned()) {
-            ++unfixed_count;
-        }
-    }
-    if (unfixed_count > pool_n_) {
+    if (unfixed_count_ > pool_n_) {
         return false;
     }
 
-    // 残り1変数の処理は on_last_uninstantiated() に委譲
+    // 残り1変数になったら on_last_uninstantiated を呼び出す
+    if (unfixed_count_ == 1) {
+        size_t last_idx = find_last_uninstantiated();
+        if (last_idx != SIZE_MAX) {
+            return on_last_uninstantiated(model, save_point, last_idx);
+        }
+    } else if (unfixed_count_ == 0) {
+        return on_final_instantiate();
+    }
+
     return true;
 }
 
@@ -183,7 +211,6 @@ bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_poi
 void AllDifferentConstraint::check_initial_consistency() {
     // 既に確定している変数の値が重複していれば矛盾
     std::set<Domain::value_type> used_values;
-    size_t uninstantiated_count = 0;
     for (const auto& var : vars_) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
@@ -192,13 +219,11 @@ void AllDifferentConstraint::check_initial_consistency() {
                 return;
             }
             used_values.insert(val);
-        } else {
-            ++uninstantiated_count;
         }
     }
 
     // 鳩の巣原理: 未確定変数の数 > 利用可能な値の数 なら矛盾
-    if (uninstantiated_count > pool_n_) {
+    if (unfixed_count_ > pool_n_) {
         set_initially_inconsistent(true);
     }
 }
@@ -218,7 +243,9 @@ bool AllDifferentConstraint::on_final_instantiate() {
 
 void AllDifferentConstraint::rewind_to(int save_point) {
     while (!pool_trail_.empty() && pool_trail_.back().first > save_point) {
-        pool_n_ = pool_trail_.back().second;
+        const auto& entry = pool_trail_.back().second;
+        pool_n_ = entry.old_pool_n;
+        unfixed_count_ = entry.old_unfixed_count;
         pool_trail_.pop_back();
     }
 }
@@ -234,7 +261,8 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     , target_sum_(target_sum)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
-    , max_rem_potential_(0) {
+    , max_rem_potential_(0)
+    , unfixed_count_(0) {
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -255,6 +283,11 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
         }
     }
 
+    // 変数ポインタ → 内部インデックスマップを構築
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        var_ptr_to_idx_[vars_[i].get()] = i;
+    }
+
     // 初期ポテンシャルを計算（既に確定している変数は fixed_sum に加算）
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -264,6 +297,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
             // 未確定の変数
+            ++unfixed_count_;
             auto min_val = vars_[i]->domain().min().value();
             auto max_val = vars_[i]->domain().max().value();
 
@@ -339,38 +373,18 @@ bool IntLinEqConstraint::can_assign(size_t internal_idx, Domain::value_type valu
     return true;
 }
 
-bool IntLinEqConstraint::on_instantiate(Model& /*model*/, int save_point,
+bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
                                           size_t var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
-    // var_idx は Model 内のインデックス。内部インデックスを特定
-    size_t internal_idx = SIZE_MAX;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        // Variable ポインタで照合（または別の方法で特定）
-        if (vars_[i]->is_assigned() && vars_[i]->assigned_value().value() == value) {
-            // 確定直後の変数を特定
-            // 注: この方法は完全ではないが、暫定的な実装
-            if (vars_[i]->domain().min() == prev_min && vars_[i]->domain().max() == prev_max) {
-                internal_idx = i;
-                break;
-            }
-        }
-    }
-
-    // 見つからない場合は最初に見つかった singleton を使用
-    if (internal_idx == SIZE_MAX) {
-        for (size_t i = 0; i < vars_.size(); ++i) {
-            if (vars_[i]->is_assigned() && vars_[i]->assigned_value().value() == value) {
-                internal_idx = i;
-                break;
-            }
-        }
-    }
-
-    if (internal_idx == SIZE_MAX) {
+    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) {
         // この制約に関係ない変数
         return true;
     }
+    size_t internal_idx = it->second;
 
     // Look-ahead チェック
     if (!can_assign(internal_idx, value, prev_min, prev_max)) {
@@ -379,7 +393,7 @@ bool IntLinEqConstraint::on_instantiate(Model& /*model*/, int save_point,
 
     // Trail に保存
     if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_}});
+        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_}});
     }
 
     // 差分更新
@@ -393,7 +407,19 @@ bool IntLinEqConstraint::on_instantiate(Model& /*model*/, int save_point,
         max_rem_potential_ -= c * prev_min;
     }
 
-    // 残り1変数の処理は on_last_uninstantiated() に委譲
+    // 未確定カウントをデクリメント（O(1)）
+    --unfixed_count_;
+
+    // 残り1変数になったら on_last_uninstantiated を呼び出す
+    if (unfixed_count_ == 1) {
+        size_t last_idx = find_last_uninstantiated();
+        if (last_idx != SIZE_MAX) {
+            return on_last_uninstantiated(model, save_point, last_idx);
+        }
+    } else if (unfixed_count_ == 0) {
+        return on_final_instantiate();
+    }
+
     return true;
 }
 
@@ -458,6 +484,7 @@ void IntLinEqConstraint::rewind_to(int save_point) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
         max_rem_potential_ = entry.max_pot;
+        unfixed_count_ = entry.unfixed_count;
         trail_.pop_back();
     }
 }
@@ -474,6 +501,11 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
     , bound_(bound)
     , current_fixed_sum_(0)
     , min_rem_potential_(0) {
+    // 変数ポインタ → 内部インデックスマップを構築
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        var_ptr_to_idx_[vars_[i].get()] = i;
+    }
+
     // 初期ポテンシャルを計算（既に確定している変数は fixed_sum に加算）
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -521,22 +553,18 @@ bool IntLinLeConstraint::propagate() {
     return true;
 }
 
-bool IntLinLeConstraint::on_instantiate(Model& /*model*/, int save_point,
-                                          size_t /*var_idx*/, Domain::value_type value,
+bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
+                                          size_t var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
-    // 確定した変数を特定
-    size_t internal_idx = SIZE_MAX;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (vars_[i]->is_assigned() && vars_[i]->assigned_value().value() == value) {
-            internal_idx = i;
-            break;
-        }
-    }
-
-    if (internal_idx == SIZE_MAX) {
+    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) {
+        // この制約に関係ない変数
         return true;
     }
+    size_t internal_idx = it->second;
 
     int64_t c = coeffs_[internal_idx];
 
@@ -725,23 +753,17 @@ void CircuitConstraint::remove_from_pool(Domain::value_type value) {
 }
 
 bool CircuitConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t /*var_idx*/, Domain::value_type value,
+                                        size_t var_idx, Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
-    // 確定した変数を特定
-    size_t internal_idx = SIZE_MAX;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (vars_[i]->is_assigned() && vars_[i]->assigned_value().value() == value) {
-            // var_id_to_idx_ を使って確認
-            internal_idx = i;
-            break;
-        }
-    }
-
-    if (internal_idx == SIZE_MAX) {
+    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) {
         // この制約に関係ない変数
         return true;
     }
+    size_t internal_idx = it->second;
 
     size_t i = internal_idx;
     size_t j = static_cast<size_t>(value);

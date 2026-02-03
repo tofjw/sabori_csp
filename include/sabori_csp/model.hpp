@@ -223,6 +223,26 @@ private:
 
     // 伝播キュー（制約が追加した保留中の確定操作）
     std::vector<std::pair<size_t, Domain::value_type>> pending_instantiations_;
+
+    // 制約ウォッチリスト: 各変数に関連する制約のリスト
+    std::vector<std::vector<size_t>> var_to_constraint_indices_;
+
+public:
+    /**
+     * @brief 変数に関連する制約インデックスを取得
+     */
+    const std::vector<size_t>& constraints_for_var(size_t var_idx) const {
+        static const std::vector<size_t> empty;
+        if (var_idx < var_to_constraint_indices_.size()) {
+            return var_to_constraint_indices_[var_idx];
+        }
+        return empty;
+    }
+
+    /**
+     * @brief 制約ウォッチリストを構築（制約追加後に呼び出す）
+     */
+    void build_constraint_watch_list();
 };
 
 // テンプレート実装

@@ -65,11 +65,18 @@ private:
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス
     size_t pool_n_;  // 有効な値の数
 
-    // Trail: (save_point, old_pool_n)
-    std::vector<std::pair<int, size_t>> pool_trail_;
+    // 未確定変数カウント（差分更新用）
+    size_t unfixed_count_;
 
-    // 変数 ID から内部インデックスへのマップ
-    std::unordered_map<size_t, size_t> var_id_to_idx_;
+    // Trail: (save_point, (old_pool_n, old_unfixed_count))
+    struct TrailEntry {
+        size_t old_pool_n;
+        size_t old_unfixed_count;
+    };
+    std::vector<std::pair<int, TrailEntry>> pool_trail_;
+
+    // 変数ポインタ → 内部インデックスへのマップ
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
      * @brief プールから値を削除
@@ -142,16 +149,20 @@ private:
     int64_t min_rem_potential_;   // 未確定変数の最小ポテンシャル
     int64_t max_rem_potential_;   // 未確定変数の最大ポテンシャル
 
-    // Trail: (save_point, (fixed_sum, min_pot, max_pot))
+    // 未確定変数カウント（差分更新用）
+    size_t unfixed_count_;
+
+    // Trail: (save_point, (fixed_sum, min_pot, max_pot, unfixed_count))
     struct TrailEntry {
         int64_t fixed_sum;
         int64_t min_pot;
         int64_t max_pot;
+        size_t unfixed_count;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
-    // 変数 ID から内部インデックスへのマップ
-    std::unordered_map<size_t, size_t> var_id_to_idx_;
+    // 変数ポインタ → 内部インデックスへのマップ
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
      * @brief 値を割り当て可能か O(1) で判定 (Look-ahead)
@@ -198,7 +209,7 @@ private:
         int64_t min_pot;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<size_t, size_t> var_id_to_idx_;
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
 /**

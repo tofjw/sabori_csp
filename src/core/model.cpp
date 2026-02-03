@@ -310,4 +310,25 @@ void Model::clear_pending_instantiations() {
     pending_instantiations_.clear();
 }
 
+void Model::build_constraint_watch_list() {
+    // 変数インデックス → 関連する制約インデックスのリスト
+    var_to_constraint_indices_.clear();
+    var_to_constraint_indices_.resize(variables_.size());
+
+    for (size_t c_idx = 0; c_idx < constraints_.size(); ++c_idx) {
+        const auto& constraint = constraints_[c_idx];
+        const auto& vars = constraint->variables();
+
+        for (const auto& var : vars) {
+            // 変数のモデル内インデックスを探す
+            for (size_t v_idx = 0; v_idx < variables_.size(); ++v_idx) {
+                if (variables_[v_idx] == var) {
+                    var_to_constraint_indices_[v_idx].push_back(c_idx);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 } // namespace sabori_csp

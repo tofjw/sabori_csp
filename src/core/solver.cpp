@@ -10,6 +10,9 @@ Solver::Solver()
 std::optional<Solution> Solver::solve(Model& model) {
     std::optional<Solution> result;
 
+    // 制約ウォッチリストを構築
+    model.build_constraint_watch_list();
+
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
@@ -50,6 +53,9 @@ std::optional<Solution> Solver::solve(Model& model) {
 }
 
 size_t Solver::solve_all(Model& model, SolutionCallback callback) {
+    // 制約ウォッチリストを構築
+    model.build_constraint_watch_list();
+
     // 全解探索ではリスタートを無効化
     bool old_restart = restart_enabled_;
     restart_enabled_ = false;
@@ -325,22 +331,12 @@ bool Solver::propagate(Model& model, size_t var_idx,
     const auto& constraints = model.constraints();
     auto val = model.value(var_idx);
 
-    // 制約伝播
-    for (const auto& constraint : constraints) {
-        auto vars = constraint->variables();
-        bool involves = false;
-        for (const auto& v : vars) {
-            // 変数が含まれているかチェック（簡易版）
-            if (v == model.variable(var_idx)) {
-                involves = true;
-                break;
-            }
-        }
-        if (involves) {
-            if (!constraint->on_instantiate(model, current_decision_,
-                                             var_idx, val, prev_min, prev_max)) {
-                return false;
-            }
+    // ウォッチリストを使った高速制約伝播
+    const auto& constraint_indices = model.constraints_for_var(var_idx);
+    for (size_t c_idx : constraint_indices) {
+        if (!constraints[c_idx]->on_instantiate(model, current_decision_,
+                                                 var_idx, val, prev_min, prev_max)) {
+            return false;
         }
     }
 

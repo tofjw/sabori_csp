@@ -262,6 +262,8 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
     auto y = make_var("y", 1, 5);
     IntLinEqConstraint c({1, 1}, {x, y}, 6);
     Model model;
+    model.add_variable(x);
+    model.add_variable(y);
 
     // Initial state
     int64_t initial_sum = c.target_sum();
@@ -810,6 +812,9 @@ TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
     auto x2 = make_var("x2", 0, 2);
     CircuitConstraint c({x0, x1, x2});
     Model model;
+    model.add_variable(x0);
+    model.add_variable(x1);
+    model.add_variable(x2);
 
     REQUIRE(c.pool_size() == 3);
 
@@ -839,6 +844,9 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
         auto x2 = make_var("x2", 0, 2);
         CircuitConstraint c({x0, x1, x2});
         Model model;
+        model.add_variable(x0);
+        model.add_variable(x1);
+        model.add_variable(x2);
 
         // x[0] = 1: 0 -> 1
         x0->domain().assign(1);
@@ -855,6 +863,9 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
         auto x2 = make_var("x2", 0, 2);
         CircuitConstraint c({x0, x1, x2});
         Model model;
+        model.add_variable(x0);
+        model.add_variable(x1);
+        model.add_variable(x2);
 
         // x[0] = 0: self-loop, forms subcircuit of size 1
         x0->domain().assign(0);
