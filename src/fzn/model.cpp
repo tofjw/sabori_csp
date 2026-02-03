@@ -81,6 +81,56 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         model->add_variable(var);
     }
 
+    // Build a map of constant arrays (arrays of par int)
+    std::map<std::string, std::vector<Domain::value_type>> constant_arrays;
+    for (const auto& [name, arr_decl] : array_decls_) {
+        // Check if this is a constant array (all elements are fixed)
+        bool is_constant = true;
+        std::vector<Domain::value_type> values;
+        for (const auto& elem : arr_decl.elements) {
+            auto it = var_decls_.find(elem);
+            if (it != var_decls_.end() && it->second.fixed_value) {
+                values.push_back(*it->second.fixed_value);
+            } else {
+                is_constant = false;
+                break;
+            }
+        }
+        if (is_constant && !values.empty()) {
+            constant_arrays[name] = values;
+        }
+    }
+
+    // Helper to resolve an argument that could be an array reference or inline array
+    auto resolve_int_array = [&](const ConstraintArg& arg) -> std::vector<Domain::value_type> {
+        if (std::holds_alternative<std::vector<Domain::value_type>>(arg)) {
+            return std::get<std::vector<Domain::value_type>>(arg);
+        } else if (std::holds_alternative<std::string>(arg)) {
+            const auto& name = std::get<std::string>(arg);
+            auto it = constant_arrays.find(name);
+            if (it != constant_arrays.end()) {
+                return it->second;
+            }
+            throw std::runtime_error("Unknown constant array: " + name);
+        }
+        throw std::runtime_error("Expected array of integers");
+    };
+
+    // Helper to resolve an argument that could be an array reference or inline variable list
+    auto resolve_var_array = [&](const ConstraintArg& arg) -> std::vector<std::string> {
+        if (std::holds_alternative<std::vector<std::string>>(arg)) {
+            return std::get<std::vector<std::string>>(arg);
+        } else if (std::holds_alternative<std::string>(arg)) {
+            const auto& name = std::get<std::string>(arg);
+            auto it = array_decls_.find(name);
+            if (it != array_decls_.end()) {
+                return it->second.elements;
+            }
+            throw std::runtime_error("Unknown variable array: " + name);
+        }
+        throw std::runtime_error("Expected array of variables");
+    };
+
     // Helper to get or create variable from argument
     auto get_var = [&](const ConstraintArg& arg) -> VariablePtr {
         if (std::holds_alternative<std::string>(arg)) {
@@ -156,10 +206,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("all_different_int requires 1 argument (array)");
             }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
-                throw std::runtime_error("all_different_int argument must be an array of variables");
-            }
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
                 auto it = var_map.find(name);
@@ -173,10 +220,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("circuit requires 1 argument (array)");
             }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
-                throw std::runtime_error("circuit argument must be an array of variables");
-            }
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
                 auto it = var_map.find(name);
@@ -190,17 +234,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_eq requires 3 arguments (coeffs, vars, sum)");
             }
-            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
-                throw std::runtime_error("int_lin_eq: first argument must be an array of integers");
-            }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
-                throw std::runtime_error("int_lin_eq: second argument must be an array of variables");
-            }
             if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 throw std::runtime_error("int_lin_eq: third argument must be an integer");
             }
-            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
             auto sum = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
@@ -217,17 +255,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_le requires 3 arguments (coeffs, vars, bound)");
             }
-            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
-                throw std::runtime_error("int_lin_le: first argument must be an array of integers");
-            }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
-                throw std::runtime_error("int_lin_le: second argument must be an array of variables");
-            }
             if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 throw std::runtime_error("int_lin_le: third argument must be an integer");
             }
-            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
             auto bound = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
@@ -244,17 +276,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_ne requires 3 arguments (coeffs, vars, target)");
             }
-            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
-                throw std::runtime_error("int_lin_ne: first argument must be an array of integers");
-            }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
-                throw std::runtime_error("int_lin_ne: second argument must be an array of variables");
-            }
             if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 throw std::runtime_error("int_lin_ne: third argument must be an integer");
             }
-            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
             auto target = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());

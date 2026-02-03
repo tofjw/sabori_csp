@@ -153,6 +153,22 @@ var_decl:
             ctx->model->add_var_decl(std::move(decl));
             delete $6;
         }
+    | VAR INT ':' identifier annotations ';'
+        {
+            // var int with no explicit bounds - use default range
+            VarDecl decl;
+            decl.name = *$4;
+            decl.lb = -1000000000;  // Default lower bound for unbounded int
+            decl.ub = 1000000000;   // Default upper bound for unbounded int
+            if ($5) {
+                for (const auto& ann : *$5) {
+                    if (ann == "output_var") decl.is_output = true;
+                }
+                delete $5;
+            }
+            ctx->model->add_var_decl(std::move(decl));
+            delete $4;
+        }
     | VAR BOOL ':' identifier annotations ';'
         {
             VarDecl decl;
@@ -260,6 +276,49 @@ var_decl:
                 vdecl.ub = 1;
                 ctx->model->add_var_decl(std::move(vdecl));
                 decl.elements.push_back(decl.name + "[" + std::to_string($3 + i) + "]");
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $11;
+        }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF VAR INT ':' identifier annotations ';'
+        {
+            // Array of var int (unbounded)
+            ArrayDecl decl;
+            decl.name = *$11;
+            decl.size = $5 - $3 + 1;
+            if ($12) {
+                for (const auto& ann : *$12) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $12;
+            }
+            // Create individual var int variables for array elements
+            for (size_t i = 0; i < decl.size; ++i) {
+                VarDecl vdecl;
+                vdecl.name = decl.name + "[" + std::to_string($3 + i) + "]";
+                vdecl.lb = -1000000000;
+                vdecl.ub = 1000000000;
+                ctx->model->add_var_decl(std::move(vdecl));
+                decl.elements.push_back(decl.name + "[" + std::to_string($3 + i) + "]");
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $11;
+        }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF VAR INT ':' identifier annotations '=' '[' id_list_inner ']' ';'
+        {
+            // Array of var int (unbounded) with assignment
+            ArrayDecl decl;
+            decl.name = *$11;
+            decl.size = $5 - $3 + 1;
+            if ($12) {
+                for (const auto& ann : *$12) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $12;
+            }
+            if ($15) {
+                decl.elements = *$15;
+                delete $15;
             }
             ctx->model->add_array_decl(std::move(decl));
             delete $11;
@@ -441,6 +500,8 @@ annotation_arg:
         { delete $2; }
     | '[' id_list_inner ']'
         { delete $2; }
+    | '[' int_literal DOTDOT int_literal ']'
+        { /* range like [1..4] - ignore */ }
     | STRING_LITERAL
         { delete $1; }
     ;
