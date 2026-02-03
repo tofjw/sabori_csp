@@ -407,25 +407,33 @@ size_t Solver::select_variable(const Model& model) {
     size_t best_idx = 0;
     bool found = false;
 
-    if (activity_selection_) {
-        // Activity 最大の未割当変数を選択
-        double best_activity = -1.0;
-        for (size_t i = 0; i < variables.size(); ++i) {
-            if (!variables[i]->is_assigned()) {
-                if (!found || activity_[i] > best_activity) {
-                    best_activity = activity_[i];
-                    best_idx = i;
-                    found = true;
+    // MRV (Minimum Remaining Values) + Activity tie-breaking
+    // 最小ドメインサイズを優先、同サイズなら Activity 最大を選択
+    size_t min_domain_size = SIZE_MAX;
+    double best_activity = -1.0;
+
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (!variables[i]->is_assigned()) {
+            size_t domain_size = variables[i]->domain().size();
+
+            // 1. ドメインサイズが小さいものを優先
+            // 2. 同じサイズなら Activity が高いものを優先
+            bool better = false;
+            if (!found) {
+                better = true;
+            } else if (domain_size < min_domain_size) {
+                better = true;
+            } else if (domain_size == min_domain_size && activity_selection_) {
+                if (activity_[i] > best_activity) {
+                    better = true;
                 }
             }
-        }
-    } else {
-        // 最初の未割当変数を選択
-        for (size_t i = 0; i < variables.size(); ++i) {
-            if (!variables[i]->is_assigned()) {
+
+            if (better) {
+                min_domain_size = domain_size;
+                best_activity = activity_selection_ ? activity_[i] : 0.0;
                 best_idx = i;
                 found = true;
-                break;
             }
         }
     }

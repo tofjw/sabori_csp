@@ -1009,7 +1009,97 @@ std::optional<bool> IntElementConstraint::is_satisfied() const {
 }
 
 bool IntElementConstraint::propagate() {
-    // 簡易伝播: 特に何もしない（on_instantiate で処理）
+    // Bounds propagation: index のドメインから result のドメインを絞る
+
+    // index が確定している場合
+    if (index_var_->is_assigned()) {
+        auto idx = index_var_->assigned_value().value();
+        auto idx_0based = index_to_0based(idx);
+        if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
+            return false;
+        }
+        auto expected = array_[static_cast<size_t>(idx_0based)];
+        if (result_var_->is_assigned()) {
+            return result_var_->assigned_value().value() == expected;
+        }
+        // result を expected に固定
+        return result_var_->domain().assign(expected);
+    }
+
+    // result が確定している場合
+    if (result_var_->is_assigned()) {
+        auto result_value = result_var_->assigned_value().value();
+        auto it = value_to_indices_.find(result_value);
+        if (it == value_to_indices_.end()) {
+            return false;  // この値を持つ index がない
+        }
+        // index のドメインを valid_indices に絞る
+        const auto& valid_indices = it->second;
+        auto& idx_domain = index_var_->domain();
+        auto idx_values = idx_domain.values();
+        for (auto v : idx_values) {
+            bool found = false;
+            for (auto vi : valid_indices) {
+                if (v == vi) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                idx_domain.remove(v);
+            }
+        }
+        return !idx_domain.empty();
+    }
+
+    // 両方未確定の場合: 双方向 bounds propagation
+
+    // 1. index のドメインから result の取りうる値を計算
+    std::set<Domain::value_type> valid_results;
+    auto idx_values = index_var_->domain().values();
+    for (auto idx : idx_values) {
+        auto idx_0based = index_to_0based(idx);
+        if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+            valid_results.insert(array_[static_cast<size_t>(idx_0based)]);
+        }
+    }
+
+    // 2. result のドメインを絞る
+    auto& result_domain = result_var_->domain();
+    auto result_values = result_domain.values();
+    for (auto v : result_values) {
+        if (valid_results.find(v) == valid_results.end()) {
+            result_domain.remove(v);
+        }
+    }
+    if (result_domain.empty()) {
+        return false;
+    }
+
+    // 3. result のドメインから index の有効な値を計算
+    std::set<Domain::value_type> valid_indices;
+    result_values = result_domain.values();  // 更新後
+    for (auto v : result_values) {
+        auto it = value_to_indices_.find(v);
+        if (it != value_to_indices_.end()) {
+            for (auto vi : it->second) {
+                valid_indices.insert(vi);
+            }
+        }
+    }
+
+    // 4. index のドメインを絞る
+    auto& idx_domain = index_var_->domain();
+    idx_values = idx_domain.values();  // 更新後
+    for (auto v : idx_values) {
+        if (valid_indices.find(v) == valid_indices.end()) {
+            idx_domain.remove(v);
+        }
+    }
+    if (idx_domain.empty()) {
+        return false;
+    }
+
     return true;
 }
 
