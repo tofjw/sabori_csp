@@ -369,7 +369,7 @@ void Solver::backtrack(Model& model, int save_point) {
     model.clear_pending_instantiations();
     model.rewind_to(save_point);
 
-    // 制約の状態も復元（AllDifferent, IntLinEq など）
+    // 制約の状態も復元（AllDifferent, IntLinEq, Circuit など）
     for (const auto& constraint : model.constraints()) {
         // dynamic_cast で型をチェックして rewind_to を呼び出す
         if (auto* alldiff = dynamic_cast<AllDifferentConstraint*>(constraint.get())) {
@@ -378,6 +378,10 @@ void Solver::backtrack(Model& model, int save_point) {
             lineq->rewind_to(save_point);
         } else if (auto* linle = dynamic_cast<IntLinLeConstraint*>(constraint.get())) {
             linle->rewind_to(save_point);
+        } else if (auto* circuit = dynamic_cast<CircuitConstraint*>(constraint.get())) {
+            circuit->rewind_to(save_point);
+        } else if (auto* int_element = dynamic_cast<IntElementConstraint*>(constraint.get())) {
+            int_element->rewind_to(save_point);
         }
     }
 }

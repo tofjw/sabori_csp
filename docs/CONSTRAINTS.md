@@ -12,6 +12,56 @@
 | `int_lt` | `IntLtConstraint` | x < y |
 | `int_le` | `IntLeConstraint` | x <= y |
 
+### グローバル制約 (global)
+
+| 制約名 | クラス | 説明 |
+|--------|--------|------|
+| `all_different` | `AllDifferentConstraint` | 全ての変数が異なる値を取る |
+| `int_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == target |
+| `int_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
+| `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
+| `int_element` | `IntElementConstraint` | array[index] = result を維持する |
+
+#### circuit 制約
+
+変数 `x[0], x[1], ..., x[n-1]` がハミルトン閉路を形成する制約。
+`x[i] = j` は「ノード i の次はノード j」を意味する。
+
+**特徴:**
+- Union-Find スタイルでパスを管理し、サブサーキット（部分閉路）を早期検出
+- AllDifferent の性質を内包（各ノードの入次数は最大1）
+- Sparse Set による値プール管理で効率的な重複チェック
+
+**例:** n=3 の場合、有効な解は以下の2つ:
+- `x = [1, 2, 0]` → 0 → 1 → 2 → 0
+- `x = [2, 0, 1]` → 0 → 2 → 1 → 0
+
+#### int_element 制約
+
+配列要素アクセス `array[index] = result` を維持する制約。
+
+**引数:**
+- `index_var`: インデックス変数（デフォルトは 1-based、MiniZinc 仕様）
+- `array`: 定数整数の配列
+- `result_var`: 結果変数
+- `zero_based`: true なら 0-based インデックス（デフォルト: false）
+
+**特徴:**
+- 状態を持たないため、バックトラック時の巻き戻し処理が不要
+- CSR（逆引き）データ構造で効率的に値からインデックスを検索
+- Monotonic Wrapper（prefix/suffix の min/max）を保持（将来の bounds propagation 用）
+
+**例:**
+```cpp
+// array = {10, 20, 30} (1-based: array[1]=10, array[2]=20, array[3]=30)
+auto index = make_var("index", 1, 3);
+auto result = make_var("result", 10, 30);
+std::vector<Domain::value_type> array = {10, 20, 30};
+IntElementConstraint c(index, array, result);
+
+// 有効な解: (1,10), (2,20), (3,30)
+```
+
 ## 制約の追加方法
 
 ### 1. 適切なグループを選択

@@ -5,6 +5,7 @@
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
 #include <set>
+#include <algorithm>
 
 using namespace sabori_csp;
 
@@ -701,4 +702,731 @@ TEST_CASE("Magic Square 3x3 - three rows fixed (inconsistent)", "[solver][magic_
     auto solution = solver.solve(model);
 
     REQUIRE_FALSE(solution.has_value());
+}
+
+// ============================================================================
+// CircuitConstraint tests
+// ============================================================================
+
+TEST_CASE("CircuitConstraint name", "[constraint][circuit]") {
+    auto x0 = make_var("x0", 0, 2);
+    auto x1 = make_var("x1", 0, 2);
+    auto x2 = make_var("x2", 0, 2);
+    CircuitConstraint c({x0, x1, x2});
+
+    REQUIRE(c.name() == "circuit");
+}
+
+TEST_CASE("CircuitConstraint variables", "[constraint][circuit]") {
+    auto x0 = make_var("x0", 0, 2);
+    auto x1 = make_var("x1", 0, 2);
+    auto x2 = make_var("x2", 0, 2);
+    CircuitConstraint c({x0, x1, x2});
+
+    auto vars = c.variables();
+    REQUIRE(vars.size() == 3);
+}
+
+TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
+    SECTION("valid circuit - satisfied") {
+        // Circuit: 0 -> 1 -> 2 -> 0
+        auto x0 = make_var("x0", 1);  // x[0] = 1
+        auto x1 = make_var("x1", 2);  // x[1] = 2
+        auto x2 = make_var("x2", 0);  // x[2] = 0
+        CircuitConstraint c({x0, x1, x2});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("subcircuit - violated") {
+        // Subcircuit: 0 -> 1 -> 0 (x[2] is not part of circuit)
+        auto x0 = make_var("x0", 1);  // x[0] = 1
+        auto x1 = make_var("x1", 0);  // x[1] = 0
+        auto x2 = make_var("x2", 2);  // x[2] = 2 (self-loop)
+        CircuitConstraint c({x0, x1, x2});
+
+        // This should be marked as initially inconsistent or is_satisfied returns false
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("duplicate values - violated") {
+        auto x0 = make_var("x0", 1);  // x[0] = 1
+        auto x1 = make_var("x1", 1);  // x[1] = 1 (duplicate)
+        auto x2 = make_var("x2", 0);  // x[2] = 0
+        CircuitConstraint c({x0, x1, x2});
+
+        // Duplicate value - should be initially inconsistent
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+
+    SECTION("not fully assigned") {
+        auto x0 = make_var("x0", 1);
+        auto x1 = make_var("x1", 0, 2);
+        auto x2 = make_var("x2", 0);
+        CircuitConstraint c({x0, x1, x2});
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("CircuitConstraint pool management", "[constraint][circuit]") {
+    auto x0 = make_var("x0", 0, 2);
+    auto x1 = make_var("x1", 0, 2);
+    auto x2 = make_var("x2", 0, 2);
+    CircuitConstraint c({x0, x1, x2});
+
+    SECTION("initial pool size") {
+        REQUIRE(c.pool_size() == 3);  // {0, 1, 2}
+    }
+}
+
+TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
+    SECTION("valid circuit") {
+        // Circuit: 0 -> 1 -> 2 -> 0
+        auto x0 = make_var("x0", 1);
+        auto x1 = make_var("x1", 2);
+        auto x2 = make_var("x2", 0);
+        CircuitConstraint c({x0, x1, x2});
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("valid circuit reversed") {
+        // Circuit: 0 -> 2 -> 1 -> 0
+        auto x0 = make_var("x0", 2);
+        auto x1 = make_var("x1", 0);
+        auto x2 = make_var("x2", 1);
+        CircuitConstraint c({x0, x1, x2});
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+}
+
+TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
+    auto x0 = make_var("x0", 0, 2);
+    auto x1 = make_var("x1", 0, 2);
+    auto x2 = make_var("x2", 0, 2);
+    CircuitConstraint c({x0, x1, x2});
+    Model model;
+
+    REQUIRE(c.pool_size() == 3);
+
+    // Simulate instantiation at level 1: x[0] = 1
+    x0->domain().assign(1);
+    REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
+    REQUIRE(c.pool_size() == 2);
+
+    // Simulate instantiation at level 2: x[1] = 2
+    x1->domain().assign(2);
+    REQUIRE(c.on_instantiate(model, 2, 1, 2, 0, 2));
+    REQUIRE(c.pool_size() == 1);
+
+    // Rewind to level 1
+    c.rewind_to(1);
+    REQUIRE(c.pool_size() == 2);
+
+    // Rewind to level 0
+    c.rewind_to(0);
+    REQUIRE(c.pool_size() == 3);
+}
+
+TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
+    SECTION("subcircuit detected during instantiation") {
+        auto x0 = make_var("x0", 0, 2);
+        auto x1 = make_var("x1", 0, 2);
+        auto x2 = make_var("x2", 0, 2);
+        CircuitConstraint c({x0, x1, x2});
+        Model model;
+
+        // x[0] = 1: 0 -> 1
+        x0->domain().assign(1);
+        REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
+
+        // x[1] = 0: 1 -> 0, forms subcircuit (0 -> 1 -> 0)
+        x1->domain().assign(0);
+        REQUIRE_FALSE(c.on_instantiate(model, 2, 1, 0, 0, 2));
+    }
+
+    SECTION("self-loop is subcircuit") {
+        auto x0 = make_var("x0", 0, 2);
+        auto x1 = make_var("x1", 0, 2);
+        auto x2 = make_var("x2", 0, 2);
+        CircuitConstraint c({x0, x1, x2});
+        Model model;
+
+        // x[0] = 0: self-loop, forms subcircuit of size 1
+        x0->domain().assign(0);
+        REQUIRE_FALSE(c.on_instantiate(model, 1, 0, 0, 0, 2));
+    }
+}
+
+TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
+    SECTION("n=3 find one solution") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 3; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        model.add_constraint(std::make_shared<CircuitConstraint>(vars));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+
+        // Verify it's a valid circuit
+        std::vector<int64_t> values;
+        for (int i = 0; i < 3; ++i) {
+            values.push_back(solution->at("x" + std::to_string(i)));
+        }
+
+        // Check all different
+        std::set<int64_t> unique_values(values.begin(), values.end());
+        REQUIRE(unique_values.size() == 3);
+
+        // Check forms a cycle starting from 0
+        std::set<int64_t> visited;
+        int64_t current = 0;
+        for (int i = 0; i < 3; ++i) {
+            REQUIRE(visited.find(current) == visited.end());
+            visited.insert(current);
+            current = values[static_cast<size_t>(current)];
+        }
+        REQUIRE(current == 0);  // Returns to start
+    }
+
+    SECTION("n=3 find all solutions") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 3; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        model.add_constraint(std::make_shared<CircuitConstraint>(vars));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // For n=3, there are exactly 2 Hamiltonian cycles:
+        // 0 -> 1 -> 2 -> 0
+        // 0 -> 2 -> 1 -> 0
+        REQUIRE(count == 2);
+        REQUIRE(solutions.size() == 2);
+
+        // Verify all solutions are valid and different
+        std::set<std::vector<int64_t>> unique_solutions;
+        for (const auto& sol : solutions) {
+            std::vector<int64_t> vals;
+            for (int i = 0; i < 3; ++i) {
+                vals.push_back(sol.at("x" + std::to_string(i)));
+            }
+
+            // Verify forms a valid circuit
+            std::set<int64_t> visited;
+            int64_t current = 0;
+            for (int i = 0; i < 3; ++i) {
+                REQUIRE(visited.find(current) == visited.end());
+                visited.insert(current);
+                current = vals[static_cast<size_t>(current)];
+            }
+            REQUIRE(current == 0);
+
+            unique_solutions.insert(vals);
+        }
+
+        REQUIRE(unique_solutions.size() == 2);
+    }
+
+    SECTION("n=4 find all solutions") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 4; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 3));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        model.add_constraint(std::make_shared<CircuitConstraint>(vars));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // For n=4, there are exactly 6 Hamiltonian cycles
+        // (n-1)!/2 = 3!/2 = 3 for undirected, but directed has (n-1)! = 6
+        REQUIRE(count == 6);
+
+        // Verify all solutions are valid
+        for (const auto& sol : solutions) {
+            std::vector<int64_t> vals;
+            for (int i = 0; i < 4; ++i) {
+                vals.push_back(sol.at("x" + std::to_string(i)));
+            }
+
+            std::set<int64_t> visited;
+            int64_t current = 0;
+            for (int i = 0; i < 4; ++i) {
+                REQUIRE(visited.find(current) == visited.end());
+                visited.insert(current);
+                current = vals[static_cast<size_t>(current)];
+            }
+            REQUIRE(current == 0);
+        }
+    }
+}
+
+// ============================================================================
+// IntElementConstraint tests
+// ============================================================================
+
+TEST_CASE("IntElementConstraint name", "[constraint][int_element]") {
+    auto index = make_var("index", 1, 3);
+    auto result = make_var("result", 10, 30);
+    std::vector<Domain::value_type> array = {10, 20, 30};
+    IntElementConstraint c(index, array, result);
+
+    REQUIRE(c.name() == "int_element");
+}
+
+TEST_CASE("IntElementConstraint variables", "[constraint][int_element]") {
+    auto index = make_var("index", 1, 3);
+    auto result = make_var("result", 10, 30);
+    std::vector<Domain::value_type> array = {10, 20, 30};
+    IntElementConstraint c(index, array, result);
+
+    auto vars = c.variables();
+    REQUIRE(vars.size() == 2);
+    REQUIRE(vars[0] == index);
+    REQUIRE(vars[1] == result);
+}
+
+TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
+    SECTION("satisfied - 1-based index") {
+        // array[1] = 10, array[2] = 20, array[3] = 30 (1-based)
+        auto index = make_var("index", 2);  // index = 2
+        auto result = make_var("result", 20);  // result = 20
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("satisfied - 0-based index") {
+        // array[0] = 10, array[1] = 20, array[2] = 30 (0-based)
+        auto index = make_var("index", 1);  // index = 1
+        auto result = make_var("result", 20);  // result = 20
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result, true);  // zero_based = true
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("violated - value mismatch") {
+        auto index = make_var("index", 2);  // index = 2 -> array[1] = 20
+        auto result = make_var("result", 30);  // result = 30 (wrong)
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("not fully assigned") {
+        auto index = make_var("index", 1, 3);
+        auto result = make_var("result", 20);
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("IntElementConstraint on_final_instantiate", "[constraint][int_element]") {
+    SECTION("satisfied") {
+        auto index = make_var("index", 1);  // index = 1 -> array[0] = 10
+        auto result = make_var("result", 10);
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("violated") {
+        auto index = make_var("index", 1);  // index = 1 -> array[0] = 10
+        auto result = make_var("result", 20);  // wrong
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.on_final_instantiate() == false);
+    }
+}
+
+TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]") {
+    SECTION("index out of range - too small") {
+        auto index = make_var("index", 0);  // 0 is out of range for 1-based
+        auto result = make_var("result", 10, 30);
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+
+    SECTION("index out of range - too large") {
+        auto index = make_var("index", 4);  // 4 is out of range for array of size 3 (1-based)
+        auto result = make_var("result", 10, 30);
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+
+    SECTION("result value not in array") {
+        auto index = make_var("index", 1, 3);
+        auto result = make_var("result", 99);  // 99 is not in array
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+
+    SECTION("consistent initial state") {
+        auto index = make_var("index", 1, 3);
+        auto result = make_var("result", 10, 30);
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        IntElementConstraint c(index, array, result);
+
+        REQUIRE(c.is_initially_inconsistent() == false);
+    }
+}
+
+TEST_CASE("IntElementConstraint rewind_to", "[constraint][int_element][trail]") {
+    // IntElementConstraint has no state, so rewind_to is a no-op
+    auto index = make_var("index", 1, 3);
+    auto result = make_var("result", 10, 30);
+    std::vector<Domain::value_type> array = {10, 20, 30};
+    IntElementConstraint c(index, array, result);
+
+    // Should not throw or cause issues
+    c.rewind_to(0);
+    c.rewind_to(5);
+    c.rewind_to(-1);
+
+    // Constraint should still work
+    REQUIRE(c.is_initially_inconsistent() == false);
+}
+
+TEST_CASE("IntElementConstraint with duplicate values in array", "[constraint][int_element]") {
+    // array = {10, 20, 10} - value 10 appears at indices 1 and 3 (1-based)
+    auto index = make_var("index", 1, 3);
+    auto result = make_var("result", 10);  // fixed to 10
+    std::vector<Domain::value_type> array = {10, 20, 10};
+    IntElementConstraint c(index, array, result);
+
+    // Should be consistent - index can be 1 or 3
+    REQUIRE(c.is_initially_inconsistent() == false);
+}
+
+TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
+    SECTION("find one solution - basic") {
+        Model model;
+
+        // array = {10, 20, 30} (1-based: array[1]=10, array[2]=20, array[3]=30)
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+
+        // Verify array[index] = result
+        auto idx = solution->at("index");
+        auto res = solution->at("result");
+        REQUIRE(idx >= 1);
+        REQUIRE(idx <= 3);
+        REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+    }
+
+    SECTION("find all solutions - basic") {
+        Model model;
+
+        // array = {10, 20, 30}
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // Should have exactly 3 solutions: (1,10), (2,20), (3,30)
+        REQUIRE(count == 3);
+
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+        }
+    }
+
+    SECTION("find all solutions - with duplicate values") {
+        Model model;
+
+        // array = {10, 20, 10} - value 10 appears twice
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(10, 20));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 10};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // Should have exactly 3 solutions: (1,10), (2,20), (3,10)
+        REQUIRE(count == 3);
+
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+        }
+    }
+
+    SECTION("no solution - contradictory result domain") {
+        Model model;
+
+        // array = {10, 20, 30}, but result domain is {40, 50}
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(40, 50));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());
+    }
+
+    SECTION("partial assignment - index fixed") {
+        Model model;
+
+        // array = {10, 20, 30}, index fixed to 2
+        auto index = std::make_shared<Variable>("index", Domain(2, 2));  // fixed to 2
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("index") == 2);
+        REQUIRE(solution->at("result") == 20);  // array[2-1] = 20
+    }
+
+    SECTION("partial assignment - result fixed") {
+        Model model;
+
+        // array = {10, 20, 30}, result fixed to 20
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // fixed to 20
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("index") == 2);  // only index 2 has value 20
+        REQUIRE(solution->at("result") == 20);
+    }
+
+    SECTION("with other constraints - sum constraint") {
+        Model model;
+
+        // array = {10, 20, 30}
+        // index + result = 22 (only solution: index=2, result=20)
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+
+        model.add_variable(index);
+        model.add_variable(result);
+
+        std::vector<Domain::value_type> array = {10, 20, 30};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+        model.add_constraint(std::make_shared<IntLinEqConstraint>(
+            std::vector<int64_t>{1, 1},
+            std::vector<VariablePtr>{index, result},
+            22
+        ));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("index") == 2);
+        REQUIRE(solution->at("result") == 20);
+    }
+}
+
+TEST_CASE("IntElementConstraint 0-based index", "[solver][int_element]") {
+    Model model;
+
+    // array = {10, 20, 30} (0-based: array[0]=10, array[1]=20, array[2]=30)
+    auto index = std::make_shared<Variable>("index", Domain(0, 2));
+    auto result = std::make_shared<Variable>("result", Domain(10, 30));
+
+    model.add_variable(index);
+    model.add_variable(result);
+
+    std::vector<Domain::value_type> array = {10, 20, 30};
+    model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result, true));  // zero_based = true
+
+    Solver solver;
+    std::vector<Solution> solutions;
+    size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    // Should have exactly 3 solutions: (0,10), (1,20), (2,30)
+    REQUIRE(count == 3);
+
+    for (const auto& sol : solutions) {
+        auto idx = sol.at("index");
+        auto res = sol.at("result");
+        REQUIRE(array[static_cast<size_t>(idx)] == res);  // 0-based, no offset
+    }
+}
+
+TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
+    SECTION("one variable fixed - consistent") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 3; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        // Fix x[0] = 1
+        vars[0]->domain().assign(1);
+
+        model.add_constraint(std::make_shared<CircuitConstraint>(vars));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("x0") == 1);
+
+        // Verify valid circuit
+        std::vector<int64_t> values = {
+            solution->at("x0"),
+            solution->at("x1"),
+            solution->at("x2")
+        };
+
+        std::set<int64_t> visited;
+        int64_t current = 0;
+        for (int i = 0; i < 3; ++i) {
+            REQUIRE(visited.find(current) == visited.end());
+            visited.insert(current);
+            current = values[static_cast<size_t>(current)];
+        }
+        REQUIRE(current == 0);
+    }
+
+    SECTION("two variables fixed - consistent") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 3; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        // Fix x[0] = 1, x[1] = 2 (forces x[2] = 0 for valid circuit)
+        vars[0]->domain().assign(1);
+        vars[1]->domain().assign(2);
+
+        model.add_constraint(std::make_shared<CircuitConstraint>(vars));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("x0") == 1);
+        REQUIRE(solution->at("x1") == 2);
+        REQUIRE(solution->at("x2") == 0);
+    }
+
+    SECTION("partial assignment creates subcircuit - inconsistent") {
+        Model model;
+        std::vector<VariablePtr> vars;
+        for (int i = 0; i < 3; ++i) {
+            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            vars.push_back(var);
+            model.add_variable(var);
+        }
+
+        // Fix x[0] = 1, x[1] = 0 (creates subcircuit 0 -> 1 -> 0)
+        vars[0]->domain().assign(1);
+        vars[1]->domain().assign(0);
+
+        auto constraint = std::make_shared<CircuitConstraint>(vars);
+        model.add_constraint(constraint);
+
+        // Should be initially inconsistent
+        REQUIRE(constraint->is_initially_inconsistent() == true);
+    }
 }
