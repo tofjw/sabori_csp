@@ -40,6 +40,30 @@ std::vector<std::string> Model::output_arrays() const {
     return result;
 }
 
+bool Model::set_var_upper_bound(const std::string& name, Domain::value_type ub) {
+    auto it = var_decls_.find(name);
+    if (it == var_decls_.end()) {
+        return false;
+    }
+    if (ub < it->second.lb) {
+        return false;  // Would make domain empty
+    }
+    it->second.ub = ub;
+    return true;
+}
+
+bool Model::set_var_lower_bound(const std::string& name, Domain::value_type lb) {
+    auto it = var_decls_.find(name);
+    if (it == var_decls_.end()) {
+        return false;
+    }
+    if (lb > it->second.ub) {
+        return false;  // Would make domain empty
+    }
+    it->second.lb = lb;
+    return true;
+}
+
 std::unique_ptr<sabori_csp::Model> Model::to_model() const {
     auto model = std::make_unique<sabori_csp::Model>();
     std::map<std::string, VariablePtr> var_map;

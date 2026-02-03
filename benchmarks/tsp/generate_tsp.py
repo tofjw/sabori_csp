@@ -116,7 +116,7 @@ def generate_fzn(n: int, dist: list[list[int]], bound: int, output_file: Path) -
         f.write(f"constraint int_lin_eq([{coeffs}], [{edge_vars}, total_cost], 0);\n\n")
 
         # Solve
-        f.write("solve satisfy;\n")
+        f.write("solve minimize total_cost;\n")
 
     print(f"Generated: {output_file}")
 

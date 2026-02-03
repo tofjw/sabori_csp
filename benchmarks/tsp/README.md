@@ -71,11 +71,15 @@ This represents the tour: 0 → 3 → 4 → 1 → 2 → 0 with total cost 98.
 
 ## Performance Results
 
-| Instance | Status | Cost | Time |
-|----------|--------|------|------|
-| small (n=5) | SAT | 98 | ~0.005s |
-| medium (n=8) | SAT | 281 | ~0.008s |
-| large (n=10) | SAT | 316 | ~0.096s |
+### Optimization (minimize total_cost)
+
+| Instance | Optimal Cost | sabori_csp | MiniZinc (Gecode) |
+|----------|--------------|------------|-------------------|
+| small (n=5) | 98 | 0.003s | 0.027s |
+| medium (n=8) | 219 | 0.054s | 0.028s |
+| large (n=10) | 220 | 1.52s | 0.030s |
+
+両ソルバーが同じ最適値を返すことを確認済み。
 
 ## Distance Matrices
 

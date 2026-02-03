@@ -451,6 +451,126 @@ void Solver::decay_activities() {
     }
 }
 
+void Solver::set_activity(const std::map<std::string, double>& activity, const Model& model) {
+    // activity_ のサイズを確保
+    if (activity_.size() < model.variables().size()) {
+        activity_.resize(model.variables().size(), 0.0);
+    }
+
+    // 名前からインデックスを解決して設定
+    for (const auto& [name, score] : activity) {
+        auto var = model.variable(name);
+        if (var) {
+            // 変数のインデックスを検索
+            for (size_t i = 0; i < model.variables().size(); ++i) {
+                if (model.variable(i) == var) {
+                    activity_[i] = score;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+std::map<std::string, double> Solver::get_activity_map(const Model& model) const {
+    std::map<std::string, double> result;
+    for (size_t i = 0; i < activity_.size() && i < model.variables().size(); ++i) {
+        auto var = model.variable(i);
+        if (var && activity_[i] > 0.0) {
+            result[var->name()] = activity_[i];
+        }
+    }
+    return result;
+}
+
+std::vector<NamedNoGood> Solver::get_nogoods(const Model& model, size_t max_count) const {
+    std::vector<NamedNoGood> result;
+    size_t count = 0;
+
+    for (const auto& ng : nogoods_) {
+        if (max_count > 0 && count >= max_count) {
+            break;
+        }
+
+        NamedNoGood named_ng;
+        bool valid = true;
+
+        for (const auto& lit : ng->literals) {
+            if (lit.var_idx >= model.variables().size()) {
+                valid = false;
+                break;
+            }
+            auto var = model.variable(lit.var_idx);
+            if (!var) {
+                valid = false;
+                break;
+            }
+            named_ng.literals.push_back({var->name(), lit.value});
+        }
+
+        if (valid && !named_ng.literals.empty()) {
+            result.push_back(std::move(named_ng));
+            ++count;
+        }
+    }
+
+    return result;
+}
+
+size_t Solver::add_nogoods(const std::vector<NamedNoGood>& nogoods, const Model& model) {
+    // 変数名 → インデックスのマップを構築
+    std::unordered_map<std::string, size_t> name_to_idx;
+    for (size_t i = 0; i < model.variables().size(); ++i) {
+        auto var = model.variable(i);
+        if (var) {
+            name_to_idx[var->name()] = i;
+        }
+    }
+
+    size_t added = 0;
+    for (const auto& named_ng : nogoods) {
+        std::vector<Literal> literals;
+        bool valid = true;
+
+        for (const auto& named_lit : named_ng.literals) {
+            auto it = name_to_idx.find(named_lit.var_name);
+            if (it == name_to_idx.end()) {
+                valid = false;
+                break;
+            }
+            literals.push_back({it->second, named_lit.value});
+        }
+
+        if (valid && !literals.empty()) {
+            add_nogood(literals);
+            ++added;
+        }
+    }
+
+    return added;
+}
+
+void Solver::set_hint_solution(const Solution& hint, const Model& model) {
+    current_best_assignment_.clear();
+
+    // 変数名 → インデックスのマップを構築
+    std::unordered_map<std::string, size_t> name_to_idx;
+    for (size_t i = 0; i < model.variables().size(); ++i) {
+        auto var = model.variable(i);
+        if (var) {
+            name_to_idx[var->name()] = i;
+        }
+    }
+
+    // ヒント解をインデックスベースに変換
+    for (const auto& [name, value] : hint) {
+        auto it = name_to_idx.find(name);
+        if (it != name_to_idx.end()) {
+            current_best_assignment_[it->second] = value;
+        }
+    }
+}
+
 void Solver::add_nogood(const std::vector<Literal>& literals) {
     auto ng = std::make_unique<NoGood>(literals);
     auto* ng_ptr = ng.get();

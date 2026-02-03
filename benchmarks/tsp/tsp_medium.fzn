@@ -57,4 +57,4 @@ constraint array_int_element(idx_7, dist_flat, edge_cost_7);
 % Total cost constraint
 constraint int_lin_eq([1, 1, 1, 1, 1, 1, 1, 1, -1], [edge_cost_0, edge_cost_1, edge_cost_2, edge_cost_3, edge_cost_4, edge_cost_5, edge_cost_6, edge_cost_7, total_cost], 0);
 
-solve satisfy;
+solve minimize total_cost;
