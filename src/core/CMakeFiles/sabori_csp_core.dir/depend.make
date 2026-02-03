@@ -1,0 +1,2 @@
+# Empty dependencies file for sabori_csp_core.
+# This may be replaced when dependencies are built.

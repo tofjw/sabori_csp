@@ -1,0 +1,2 @@
+/usr/bin/ar qc libsabori_csp_core.a CMakeFiles/sabori_csp_core.dir/domain.cpp.o CMakeFiles/sabori_csp_core.dir/variable.cpp.o CMakeFiles/sabori_csp_core.dir/constraint.cpp.o CMakeFiles/sabori_csp_core.dir/solver.cpp.o CMakeFiles/sabori_csp_core.dir/model.cpp.o CMakeFiles/sabori_csp_core.dir/constraints/comparison.cpp.o CMakeFiles/sabori_csp_core.dir/constraints/global.cpp.o
+/usr/bin/ranlib libsabori_csp_core.a

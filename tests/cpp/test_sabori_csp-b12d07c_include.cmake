@@ -1,0 +1,5 @@
+if(EXISTS "/home/tofjw/develop/cp/sabori_csp/tests/cpp/test_sabori_csp-b12d07c_tests.cmake")
+  include("/home/tofjw/develop/cp/sabori_csp/tests/cpp/test_sabori_csp-b12d07c_tests.cmake")
+else()
+  add_test(test_sabori_csp_NOT_BUILT-b12d07c test_sabori_csp_NOT_BUILT-b12d07c)
+endif()
