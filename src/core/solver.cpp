@@ -396,6 +396,8 @@ void Solver::backtrack(Model& model, int save_point) {
             int_max->rewind_to(save_point);
         } else if (auto* int_min = dynamic_cast<ArrayIntMinimumConstraint*>(constraint.get())) {
             int_min->rewind_to(save_point);
+        } else if (auto* int_times = dynamic_cast<IntTimesConstraint*>(constraint.get())) {
+            int_times->rewind_to(save_point);
         }
     }
 }

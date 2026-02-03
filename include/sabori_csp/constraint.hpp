@@ -267,6 +267,7 @@ using ConstraintPtr = std::shared_ptr<Constraint>;
 } // namespace sabori_csp
 
 // 各制約グループのヘッダをインクルード
+#include "sabori_csp/constraints/arithmetic.hpp"
 #include "sabori_csp/constraints/comparison.hpp"
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/constraints/logical.hpp"

@@ -6,6 +6,7 @@ add_library(sabori_csp_core
   solver.cpp
   model.cpp
   # Constraints
+  constraints/arithmetic.cpp
   constraints/comparison.cpp
   constraints/global.cpp
   constraints/logical.cpp

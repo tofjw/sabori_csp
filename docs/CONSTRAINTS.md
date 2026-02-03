@@ -13,6 +13,36 @@
 | `int_le` | `IntLeConstraint` | x <= y |
 | `int_le_reif` | `IntLeReifConstraint` | (x <= y) <-> b |
 
+### 算術制約 (arithmetic)
+
+| 制約名 | クラス | 説明 |
+|--------|--------|------|
+| `int_times` | `IntTimesConstraint` | x * y = z |
+
+#### int_times 制約
+
+乗算制約 `x * y = z`。
+
+**引数:**
+- `x`: 被乗数
+- `y`: 乗数
+- `z`: 積
+
+**伝播ロジック:**
+- bounds propagation: z の範囲を x * y の可能な範囲で制限
+- x または y が 0 の場合: z = 0
+- 2変数確定時: 残りの1変数を計算（割り切れる場合のみ）
+
+**例:**
+```cpp
+auto x = make_var("x", 1, 5);
+auto y = make_var("y", 1, 5);
+auto z = make_var("z", 1, 25);
+IntTimesConstraint c(x, y, z);
+
+// x=3, y=4 の場合 → z=12
+```
+
 ### Bool 制約 (int 制約のエイリアス)
 
 Bool 変数は 0-1 整数変数として扱われます。以下の bool 制約は対応する int 制約のエイリアスです。

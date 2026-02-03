@@ -2220,3 +2220,271 @@ TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_in
         REQUIRE(solution->at("x2") >= 5);
     }
 }
+
+// ============================================================================
+// IntTimesConstraint tests
+// ============================================================================
+
+TEST_CASE("IntTimesConstraint name", "[constraint][int_times]") {
+    auto x = make_var("x", 1, 5);
+    auto y = make_var("y", 1, 5);
+    auto z = make_var("z", 1, 25);
+    IntTimesConstraint c(x, y, z);
+
+    REQUIRE(c.name() == "int_times");
+}
+
+TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
+    SECTION("satisfied: 2 * 3 = 6") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        auto z = make_var("z", 6);
+        IntTimesConstraint c(x, y, z);
+
+        auto satisfied = c.is_satisfied();
+        REQUIRE(satisfied.has_value());
+        REQUIRE(satisfied.value() == true);
+    }
+
+    SECTION("not satisfied: 2 * 3 != 5") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        auto z = make_var("z", 5);
+        IntTimesConstraint c(x, y, z);
+
+        auto satisfied = c.is_satisfied();
+        REQUIRE(satisfied.has_value());
+        REQUIRE(satisfied.value() == false);
+    }
+
+    SECTION("unassigned") {
+        auto x = make_var("x", 1, 5);
+        auto y = make_var("y", 1, 5);
+        auto z = make_var("z", 1, 25);
+        IntTimesConstraint c(x, y, z);
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
+    SECTION("basic multiplication") {
+        Model model;
+        auto x = make_var("x", 3);  // x = 3
+        auto y = make_var("y", 4);  // y = 4
+        auto z = make_var("z", 1, 20);  // z to be determined
+
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("x") == 3);
+        REQUIRE(solution->at("y") == 4);
+        REQUIRE(solution->at("z") == 12);  // 3 * 4 = 12
+    }
+
+    SECTION("find factors") {
+        Model model;
+        auto x = make_var("x", 1, 10);
+        auto y = make_var("y", 1, 10);
+        auto z = make_var("z", 12);  // z = 12
+
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == 12);
+            return true;
+        });
+
+        // Factors of 12 in range 1-10: (1,12 no), (2,6), (3,4), (4,3), (6,2), (12,1 no)
+        // Valid: (2,6), (3,4), (4,3), (6,2)
+        REQUIRE(count == 4);
+    }
+
+    SECTION("multiplication by zero") {
+        Model model;
+        auto x = make_var("x", 0);  // x = 0
+        auto y = make_var("y", 1, 5);
+        auto z = make_var("z", 0, 10);
+
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == 0);  // 0 * y = 0
+    }
+
+    SECTION("unsatisfiable") {
+        Model model;
+        auto x = make_var("x", 2);  // x = 2
+        auto y = make_var("y", 3);  // y = 3
+        auto z = make_var("z", 5);  // z = 5, but 2 * 3 = 6
+
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());
+    }
+
+    SECTION("negative numbers") {
+        Model model;
+        auto x = make_var("x", -3);  // x = -3
+        auto y = make_var("y", 4);   // y = 4
+        auto z = make_var("z", -20, 20);
+
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == -12);  // -3 * 4 = -12
+    }
+}
+
+TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
+    SECTION("(+) * (+) = (+)") {
+        Model model;
+        auto x = make_var("x", 3);
+        auto y = make_var("y", 4);
+        auto z = make_var("z", -100, 100);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == 12);
+    }
+
+    SECTION("(+) * (-) = (-)") {
+        Model model;
+        auto x = make_var("x", 3);
+        auto y = make_var("y", -4);
+        auto z = make_var("z", -100, 100);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == -12);
+    }
+
+    SECTION("(-) * (+) = (-)") {
+        Model model;
+        auto x = make_var("x", -3);
+        auto y = make_var("y", 4);
+        auto z = make_var("z", -100, 100);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == -12);
+    }
+
+    SECTION("(-) * (-) = (+)") {
+        Model model;
+        auto x = make_var("x", -3);
+        auto y = make_var("y", -4);
+        auto z = make_var("z", -100, 100);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("z") == 12);
+    }
+
+    SECTION("find factors of positive with negative range") {
+        Model model;
+        auto x = make_var("x", -6, 6);
+        auto y = make_var("y", -6, 6);
+        auto z = make_var("z", 12);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == 12);
+            return true;
+        });
+        // (2,6), (3,4), (4,3), (6,2), (-2,-6), (-3,-4), (-4,-3), (-6,-2)
+        REQUIRE(count == 8);
+    }
+
+    SECTION("find factors of negative with mixed range") {
+        Model model;
+        auto x = make_var("x", -6, 6);
+        auto y = make_var("y", -6, 6);
+        auto z = make_var("z", -12);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == -12);
+            return true;
+        });
+        // (2,-6), (3,-4), (4,-3), (6,-2), (-2,6), (-3,4), (-4,3), (-6,2)
+        REQUIRE(count == 8);
+    }
+
+    SECTION("zero with mixed range") {
+        Model model;
+        auto x = make_var("x", -2, 2);
+        auto y = make_var("y", -2, 2);
+        auto z = make_var("z", 0);
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_variable(z);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == 0);
+            return true;
+        });
+        // x=0 with y in {-2,-1,0,1,2}: 5 solutions
+        // y=0 with x in {-2,-1,1,2}: 4 solutions (x=0,y=0 already counted)
+        // Total: 9
+        REQUIRE(count == 9);
+    }
+}
