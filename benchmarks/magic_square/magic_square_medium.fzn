@@ -1,0 +1,43 @@
+% Magic Square of order 4
+% Magic constant: 34
+% Variables: x_i_j for i,j in 0..3
+
+var 1..16: x_0_0 :: output_var;
+var 1..16: x_0_1 :: output_var;
+var 1..16: x_0_2 :: output_var;
+var 1..16: x_0_3 :: output_var;
+var 1..16: x_1_0 :: output_var;
+var 1..16: x_1_1 :: output_var;
+var 1..16: x_1_2 :: output_var;
+var 1..16: x_1_3 :: output_var;
+var 1..16: x_2_0 :: output_var;
+var 1..16: x_2_1 :: output_var;
+var 1..16: x_2_2 :: output_var;
+var 1..16: x_2_3 :: output_var;
+var 1..16: x_3_0 :: output_var;
+var 1..16: x_3_1 :: output_var;
+var 1..16: x_3_2 :: output_var;
+var 1..16: x_3_3 :: output_var;
+
+% All cells must have different values
+constraint all_different_int([x_0_0, x_0_1, x_0_2, x_0_3, x_1_0, x_1_1, x_1_2, x_1_3, x_2_0, x_2_1, x_2_2, x_2_3, x_3_0, x_3_1, x_3_2, x_3_3]);
+
+% Row sums = 34
+constraint int_lin_eq([1, 1, 1, 1], [x_0_0, x_0_1, x_0_2, x_0_3], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_1_0, x_1_1, x_1_2, x_1_3], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_2_0, x_2_1, x_2_2, x_2_3], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_3_0, x_3_1, x_3_2, x_3_3], 34);
+
+% Column sums = 34
+constraint int_lin_eq([1, 1, 1, 1], [x_0_0, x_1_0, x_2_0, x_3_0], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_0_1, x_1_1, x_2_1, x_3_1], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_0_2, x_1_2, x_2_2, x_3_2], 34);
+constraint int_lin_eq([1, 1, 1, 1], [x_0_3, x_1_3, x_2_3, x_3_3], 34);
+
+% Main diagonal sum = 34
+constraint int_lin_eq([1, 1, 1, 1], [x_0_0, x_1_1, x_2_2, x_3_3], 34);
+
+% Anti-diagonal sum = 34
+constraint int_lin_eq([1, 1, 1, 1], [x_0_3, x_1_2, x_2_1, x_3_0], 34);
+
+solve satisfy;

@@ -1,0 +1,54 @@
+% Magic Square of order 5
+% Magic constant: 65
+% Variables: x_i_j for i,j in 0..4
+
+var 1..25: x_0_0 :: output_var;
+var 1..25: x_0_1 :: output_var;
+var 1..25: x_0_2 :: output_var;
+var 1..25: x_0_3 :: output_var;
+var 1..25: x_0_4 :: output_var;
+var 1..25: x_1_0 :: output_var;
+var 1..25: x_1_1 :: output_var;
+var 1..25: x_1_2 :: output_var;
+var 1..25: x_1_3 :: output_var;
+var 1..25: x_1_4 :: output_var;
+var 1..25: x_2_0 :: output_var;
+var 1..25: x_2_1 :: output_var;
+var 1..25: x_2_2 :: output_var;
+var 1..25: x_2_3 :: output_var;
+var 1..25: x_2_4 :: output_var;
+var 1..25: x_3_0 :: output_var;
+var 1..25: x_3_1 :: output_var;
+var 1..25: x_3_2 :: output_var;
+var 1..25: x_3_3 :: output_var;
+var 1..25: x_3_4 :: output_var;
+var 1..25: x_4_0 :: output_var;
+var 1..25: x_4_1 :: output_var;
+var 1..25: x_4_2 :: output_var;
+var 1..25: x_4_3 :: output_var;
+var 1..25: x_4_4 :: output_var;
+
+% All cells must have different values
+constraint all_different_int([x_0_0, x_0_1, x_0_2, x_0_3, x_0_4, x_1_0, x_1_1, x_1_2, x_1_3, x_1_4, x_2_0, x_2_1, x_2_2, x_2_3, x_2_4, x_3_0, x_3_1, x_3_2, x_3_3, x_3_4, x_4_0, x_4_1, x_4_2, x_4_3, x_4_4]);
+
+% Row sums = 65
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_0, x_0_1, x_0_2, x_0_3, x_0_4], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_1_0, x_1_1, x_1_2, x_1_3, x_1_4], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_2_0, x_2_1, x_2_2, x_2_3, x_2_4], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_3_0, x_3_1, x_3_2, x_3_3, x_3_4], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_4_0, x_4_1, x_4_2, x_4_3, x_4_4], 65);
+
+% Column sums = 65
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_0, x_1_0, x_2_0, x_3_0, x_4_0], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_1, x_1_1, x_2_1, x_3_1, x_4_1], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_2, x_1_2, x_2_2, x_3_2, x_4_2], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_3, x_1_3, x_2_3, x_3_3, x_4_3], 65);
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_4, x_1_4, x_2_4, x_3_4, x_4_4], 65);
+
+% Main diagonal sum = 65
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_0, x_1_1, x_2_2, x_3_3, x_4_4], 65);
+
+% Anti-diagonal sum = 65
+constraint int_lin_eq([1, 1, 1, 1, 1], [x_0_4, x_1_3, x_2_2, x_3_1, x_4_0], 65);
+
+solve satisfy;
