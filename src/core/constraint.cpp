@@ -18,13 +18,15 @@ size_t Constraint::next_id_ = 0;
 Constraint::Constraint()
     : id_(next_id_++)
     , w1_(-1)
-    , w2_(-1) {}
+    , w2_(-1)
+    , is_initially_inconsistent_(false) {}
 
 Constraint::Constraint(const std::vector<VariablePtr>& vars)
     : id_(next_id_++)
     , vars_(vars)
     , w1_(-1)
-    , w2_(-1) {
+    , w2_(-1)
+    , is_initially_inconsistent_(false) {
     init_watches();
 }
 
@@ -74,21 +76,13 @@ bool Constraint::can_be_finalized() const {
     return vars_[w1_]->is_assigned() && vars_[w2_]->is_assigned();
 }
 
-bool Constraint::on_instantiate(Model& /*model*/, int /*save_point*/,
+bool Constraint::on_instantiate(Model& model, int save_point,
                                  size_t var_idx, Domain::value_type /*value*/,
                                  Domain::value_type /*prev_min*/,
                                  Domain::value_type /*prev_max*/) {
     // 確定した変数が監視変数でなければ何もしない
     if (w1_ < 0 || vars_.empty()) {
         return true;
-    }
-
-    // var_idx に対応する変数を特定
-    VariablePtr var = nullptr;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        // Model の変数インデックスと制約の変数リストを照合
-        // 注: ここでは変数ポインタで比較するのではなく、
-        // is_assigned() の状態で判断する
     }
 
     // w1 が確定した場合
@@ -105,9 +99,10 @@ bool Constraint::on_instantiate(Model& /*model*/, int /*save_point*/,
             }
         }
 
-        // 移せない場合、w2 がまだ未確定なら OK
+        // 移せない場合、w2 がまだ未確定なら残り1変数
         if (!vars_[w2_]->is_assigned()) {
-            return true;
+            // 残り1変数になった → on_last_uninstantiated を呼び出す
+            return on_last_uninstantiated(model, save_point, static_cast<size_t>(w2_));
         }
     }
     // w2 が確定した場合
@@ -124,9 +119,10 @@ bool Constraint::on_instantiate(Model& /*model*/, int /*save_point*/,
             }
         }
 
-        // 移せない場合、w1 がまだ未確定なら OK
+        // 移せない場合、w1 がまだ未確定なら残り1変数
         if (!vars_[w1_]->is_assigned()) {
-            return true;
+            // 残り1変数になった → on_last_uninstantiated を呼び出す
+            return on_last_uninstantiated(model, save_point, static_cast<size_t>(w1_));
         }
     } else {
         // 監視対象外の変数が確定した場合は何もしない
@@ -141,6 +137,43 @@ bool Constraint::on_final_instantiate() {
     // デフォルトでは is_satisfied() を使用
     auto result = is_satisfied();
     return result.value_or(true);
+}
+
+bool Constraint::on_last_uninstantiated(Model& /*model*/, int /*save_point*/,
+                                         size_t /*last_var_internal_idx*/) {
+    // デフォルトでは何もしない
+    // サブクラスでオーバーライドして、残りの変数のドメインを絞り込む
+    return true;
+}
+
+void Constraint::check_initial_consistency() {
+    // 全変数が確定している場合は is_satisfied() で判定
+    auto result = is_satisfied();
+    if (result.has_value() && !result.value()) {
+        set_initially_inconsistent(true);
+    }
+}
+
+size_t Constraint::count_uninstantiated() const {
+    size_t count = 0;
+    for (const auto& var : vars_) {
+        if (!var->is_assigned()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+size_t Constraint::find_last_uninstantiated() const {
+    size_t last_idx = SIZE_MAX;
+    size_t count = 0;
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (!vars_[i]->is_assigned()) {
+            last_idx = i;
+            ++count;
+        }
+    }
+    return (count == 1) ? last_idx : SIZE_MAX;
 }
 
 } // namespace sabori_csp

@@ -12,7 +12,9 @@ namespace sabori_csp {
 IntEqConstraint::IntEqConstraint(VariablePtr x, VariablePtr y)
     : Constraint({x, y})
     , x_(std::move(x))
-    , y_(std::move(y)) {}
+    , y_(std::move(y)) {
+    check_initial_consistency();
+}
 
 std::string IntEqConstraint::name() const {
     return "int_eq";
@@ -89,6 +91,25 @@ bool IntEqConstraint::on_final_instantiate() {
     return x_->assigned_value() == y_->assigned_value();
 }
 
+void IntEqConstraint::check_initial_consistency() {
+    // x == y: ドメインに共通の値がなければ矛盾
+    auto x_vals = x_->domain().values();
+    auto y_vals = y_->domain().values();
+    std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+
+    bool has_common = false;
+    for (auto v : x_vals) {
+        if (y_set.count(v) > 0) {
+            has_common = true;
+            break;
+        }
+    }
+
+    if (!has_common) {
+        set_initially_inconsistent(true);
+    }
+}
+
 // ============================================================================
 // IntEqReifConstraint implementation
 // ============================================================================
@@ -97,7 +118,9 @@ IntEqReifConstraint::IntEqReifConstraint(VariablePtr x, VariablePtr y, VariableP
     : Constraint({x, y, b})
     , x_(std::move(x))
     , y_(std::move(y))
-    , b_(std::move(b)) {}
+    , b_(std::move(b)) {
+    check_initial_consistency();
+}
 
 std::string IntEqReifConstraint::name() const {
     return "int_eq_reif";
@@ -201,6 +224,36 @@ bool IntEqReifConstraint::on_final_instantiate() {
     return eq == (b_->assigned_value().value() == 1);
 }
 
+void IntEqReifConstraint::check_initial_consistency() {
+    // (x == y) <-> b
+    // b=1 が強制で x,y に共通値がない、または b=0 が強制で x,y が同じシングルトン
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1) {
+            // x == y を満たす共通値が必要
+            auto x_vals = x_->domain().values();
+            auto y_vals = y_->domain().values();
+            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+
+            bool has_common = false;
+            for (auto v : x_vals) {
+                if (y_set.count(v) > 0) {
+                    has_common = true;
+                    break;
+                }
+            }
+            if (!has_common) {
+                set_initially_inconsistent(true);
+            }
+        } else {
+            // x != y が必要: 両方シングルトンで同じ値なら矛盾
+            if (x_->is_assigned() && y_->is_assigned() &&
+                x_->assigned_value() == y_->assigned_value()) {
+                set_initially_inconsistent(true);
+            }
+        }
+    }
+}
+
 // ============================================================================
 // IntNeConstraint implementation
 // ============================================================================
@@ -208,7 +261,9 @@ bool IntEqReifConstraint::on_final_instantiate() {
 IntNeConstraint::IntNeConstraint(VariablePtr x, VariablePtr y)
     : Constraint({x, y})
     , x_(std::move(x))
-    , y_(std::move(y)) {}
+    , y_(std::move(y)) {
+    check_initial_consistency();
+}
 
 std::string IntNeConstraint::name() const {
     return "int_ne";
@@ -261,6 +316,14 @@ bool IntNeConstraint::on_final_instantiate() {
     return x_->assigned_value() != y_->assigned_value();
 }
 
+void IntNeConstraint::check_initial_consistency() {
+    // x != y: 両方シングルトンで同じ値なら矛盾
+    if (x_->is_assigned() && y_->is_assigned() &&
+        x_->assigned_value() == y_->assigned_value()) {
+        set_initially_inconsistent(true);
+    }
+}
+
 // ============================================================================
 // IntLtConstraint implementation
 // ============================================================================
@@ -268,7 +331,9 @@ bool IntNeConstraint::on_final_instantiate() {
 IntLtConstraint::IntLtConstraint(VariablePtr x, VariablePtr y)
     : Constraint({x, y})
     , x_(std::move(x))
-    , y_(std::move(y)) {}
+    , y_(std::move(y)) {
+    check_initial_consistency();
+}
 
 std::string IntLtConstraint::name() const {
     return "int_lt";
@@ -356,6 +421,16 @@ bool IntLtConstraint::on_final_instantiate() {
     return x_->assigned_value() < y_->assigned_value();
 }
 
+void IntLtConstraint::check_initial_consistency() {
+    // x < y: x.min >= y.max なら矛盾
+    auto x_min = x_->domain().min();
+    auto y_max = y_->domain().max();
+
+    if (x_min && y_max && *x_min >= *y_max) {
+        set_initially_inconsistent(true);
+    }
+}
+
 // ============================================================================
 // IntLeConstraint implementation
 // ============================================================================
@@ -363,7 +438,9 @@ bool IntLtConstraint::on_final_instantiate() {
 IntLeConstraint::IntLeConstraint(VariablePtr x, VariablePtr y)
     : Constraint({x, y})
     , x_(std::move(x))
-    , y_(std::move(y)) {}
+    , y_(std::move(y)) {
+    check_initial_consistency();
+}
 
 std::string IntLeConstraint::name() const {
     return "int_le";
@@ -440,6 +517,16 @@ bool IntLeConstraint::on_instantiate(Model& model, int save_point,
 
 bool IntLeConstraint::on_final_instantiate() {
     return x_->assigned_value() <= y_->assigned_value();
+}
+
+void IntLeConstraint::check_initial_consistency() {
+    // x <= y: x.min > y.max なら矛盾
+    auto x_min = x_->domain().min();
+    auto y_max = y_->domain().max();
+
+    if (x_min && y_max && *x_min > *y_max) {
+        set_initially_inconsistent(true);
+    }
 }
 
 } // namespace sabori_csp

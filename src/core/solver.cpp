@@ -21,6 +21,18 @@ std::optional<Solution> Solver::solve(Model& model) {
     current_decision_ = 0;
     stats_ = SolverStats{};
 
+    // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
+    for (const auto& constraint : model.constraints()) {
+        if (constraint->is_initially_inconsistent()) {
+            return std::nullopt;  // UNSAT
+        }
+    }
+
+    // 初期伝播: 残り1変数の制約を処理
+    if (!initial_propagate(model)) {
+        return std::nullopt;  // UNSAT
+    }
+
     // リスタート有効時は専用ループを使用
     if (restart_enabled_) {
         return search_with_restart(model);
@@ -50,6 +62,20 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     ng_watches_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
+
+    // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
+    for (const auto& constraint : model.constraints()) {
+        if (constraint->is_initially_inconsistent()) {
+            restart_enabled_ = old_restart;
+            return 0;  // UNSAT
+        }
+    }
+
+    // 初期伝播: 残り1変数の制約を処理
+    if (!initial_propagate(model)) {
+        restart_enabled_ = old_restart;
+        return 0;  // UNSAT
+    }
 
     size_t count = 0;
     int conflict_limit = std::numeric_limits<int>::max();
@@ -222,6 +248,47 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 
     return SearchResult::UNSAT;
+}
+
+bool Solver::initial_propagate(Model& model) {
+    const auto& constraints = model.constraints();
+
+    // 固定点に達するまで繰り返す
+    bool changed = true;
+    while (changed) {
+        changed = false;
+
+        for (const auto& constraint : constraints) {
+            // 残り1変数の制約を検出
+            size_t uninstantiated_count = constraint->count_uninstantiated();
+
+            if (uninstantiated_count == 1) {
+                size_t last_idx = constraint->find_last_uninstantiated();
+                if (last_idx != SIZE_MAX) {
+                    if (!constraint->on_last_uninstantiated(model, current_decision_, last_idx)) {
+                        return false;  // 矛盾
+                    }
+                }
+            } else if (uninstantiated_count == 0) {
+                // 全変数確定済み → 最終チェック
+                if (!constraint->on_final_instantiate()) {
+                    return false;  // 矛盾
+                }
+            }
+        }
+
+        // キューを処理
+        if (!process_queue(model)) {
+            return false;  // 矛盾
+        }
+
+        // pending があれば変更あり
+        if (!model.pending_instantiations().empty()) {
+            changed = true;
+        }
+    }
+
+    return true;
 }
 
 bool Solver::propagate_all(Model& model) {
@@ -608,7 +675,11 @@ bool Solver::process_queue(Model& model) {
 
         auto& var = variables[var_idx];
         if (var->is_assigned()) {
-            continue;
+            // 既に確定済みで異なる値が要求されている場合は矛盾
+            if (var->assigned_value().value() != val) {
+                return false;
+            }
+            continue;  // 同じ値なら OK
         }
 
         auto prev_min = var->domain().min().value();
