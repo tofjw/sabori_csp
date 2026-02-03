@@ -1,0 +1,70 @@
+% TSP instance: n=10, bound=330
+% Distance matrix (flattened, 1-based index: dist_flat[i*n + j + 1] = dist[i][j])
+
+array [1..100] of int: dist_flat = [0, 53, 67, 70, 90, 15, 23, 49, 29, 38, 53, 0, 4, 29, 15, 73, 2, 13, 21, 100, 67, 4, 0, 66, 89, 39, 89, 82, 49, 76, 70, 29, 66, 0, 52, 99, 89, 86, 42, 46, 90, 15, 89, 52, 0, 10, 44, 37, 80, 21, 15, 73, 39, 99, 10, 0, 15, 66, 9, 76, 23, 2, 89, 89, 44, 15, 0, 13, 35, 41, 49, 13, 82, 86, 37, 66, 13, 0, 14, 81, 29, 21, 49, 42, 80, 9, 35, 14, 0, 38, 38, 100, 76, 46, 21, 76, 41, 81, 38, 0];
+
+var 0..9: next_0 :: output_var;
+var 0..9: next_1 :: output_var;
+var 0..9: next_2 :: output_var;
+var 0..9: next_3 :: output_var;
+var 0..9: next_4 :: output_var;
+var 0..9: next_5 :: output_var;
+var 0..9: next_6 :: output_var;
+var 0..9: next_7 :: output_var;
+var 0..9: next_8 :: output_var;
+var 0..9: next_9 :: output_var;
+
+var 2..100: edge_cost_0;
+var 2..100: edge_cost_1;
+var 2..100: edge_cost_2;
+var 2..100: edge_cost_3;
+var 2..100: edge_cost_4;
+var 2..100: edge_cost_5;
+var 2..100: edge_cost_6;
+var 2..100: edge_cost_7;
+var 2..100: edge_cost_8;
+var 2..100: edge_cost_9;
+
+var 1..10: idx_0;
+var 11..20: idx_1;
+var 21..30: idx_2;
+var 31..40: idx_3;
+var 41..50: idx_4;
+var 51..60: idx_5;
+var 61..70: idx_6;
+var 71..80: idx_7;
+var 81..90: idx_8;
+var 91..100: idx_9;
+
+var 20..330: total_cost :: output_var;
+
+constraint circuit([next_0, next_1, next_2, next_3, next_4, next_5, next_6, next_7, next_8, next_9]);
+
+% Index constraints: idx_i = next_i + i*n + 1
+constraint int_lin_eq([1, -1], [next_0, idx_0], -1);
+constraint int_lin_eq([1, -1], [next_1, idx_1], -11);
+constraint int_lin_eq([1, -1], [next_2, idx_2], -21);
+constraint int_lin_eq([1, -1], [next_3, idx_3], -31);
+constraint int_lin_eq([1, -1], [next_4, idx_4], -41);
+constraint int_lin_eq([1, -1], [next_5, idx_5], -51);
+constraint int_lin_eq([1, -1], [next_6, idx_6], -61);
+constraint int_lin_eq([1, -1], [next_7, idx_7], -71);
+constraint int_lin_eq([1, -1], [next_8, idx_8], -81);
+constraint int_lin_eq([1, -1], [next_9, idx_9], -91);
+
+% Edge cost constraints: edge_cost_i = dist_flat[idx_i]
+constraint array_int_element(idx_0, dist_flat, edge_cost_0);
+constraint array_int_element(idx_1, dist_flat, edge_cost_1);
+constraint array_int_element(idx_2, dist_flat, edge_cost_2);
+constraint array_int_element(idx_3, dist_flat, edge_cost_3);
+constraint array_int_element(idx_4, dist_flat, edge_cost_4);
+constraint array_int_element(idx_5, dist_flat, edge_cost_5);
+constraint array_int_element(idx_6, dist_flat, edge_cost_6);
+constraint array_int_element(idx_7, dist_flat, edge_cost_7);
+constraint array_int_element(idx_8, dist_flat, edge_cost_8);
+constraint array_int_element(idx_9, dist_flat, edge_cost_9);
+
+% Total cost constraint
+constraint int_lin_eq([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1], [edge_cost_0, edge_cost_1, edge_cost_2, edge_cost_3, edge_cost_4, edge_cost_5, edge_cost_6, edge_cost_7, edge_cost_8, edge_cost_9, total_cost], 0);
+
+solve satisfy;
