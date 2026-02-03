@@ -1,0 +1,6 @@
+% int_times test: find factors of 12
+var 1..10: x :: output_var;
+var 1..10: y :: output_var;
+var 12..12: z :: output_var;
+constraint int_times(x, y, z);
+solve satisfy;

@@ -1,0 +1,5 @@
+% int_lin_ne test with coefficients: 2*x - y != 3
+var 1..3: x :: output_var;
+var 1..3: y :: output_var;
+constraint int_lin_ne([2, -1], [x, y], 3);
+solve satisfy;

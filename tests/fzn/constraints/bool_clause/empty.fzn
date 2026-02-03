@@ -1,0 +1,3 @@
+% Empty clause is unsatisfiable
+constraint bool_clause([], []);
+solve satisfy;

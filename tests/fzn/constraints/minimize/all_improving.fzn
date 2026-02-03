@@ -1,0 +1,31 @@
+% Minimize with improving solutions test
+% Circuit on 3 nodes with edge costs
+var 0..2: next_0 :: output_var;
+var 0..2: next_1 :: output_var;
+var 0..2: next_2 :: output_var;
+
+% Edge costs: 0->1=5, 0->2=3, 1->0=4, 1->2=2, 2->0=6, 2->1=1
+array [1..9] of int: costs = [99, 5, 3, 4, 99, 2, 6, 1, 99];
+
+var 1..9: idx_0;
+var 4..6: idx_1;
+var 7..9: idx_2;
+var 1..20: c0;
+var 1..20: c1;
+var 1..20: c2;
+var 3..20: total :: output_var;
+
+constraint circuit([next_0, next_1, next_2]);
+
+% idx_i = next_i + i*3 + 1
+constraint int_lin_eq([1, -1], [next_0, idx_0], -1);
+constraint int_lin_eq([1, -1], [next_1, idx_1], -4);
+constraint int_lin_eq([1, -1], [next_2, idx_2], -7);
+
+constraint array_int_element(idx_0, costs, c0);
+constraint array_int_element(idx_1, costs, c1);
+constraint array_int_element(idx_2, costs, c2);
+
+constraint int_lin_eq([1, 1, 1, -1], [c0, c1, c2, total], 0);
+
+solve minimize total;

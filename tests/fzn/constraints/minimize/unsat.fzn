@@ -1,0 +1,8 @@
+% Minimize UNSAT test
+var 1..5: x :: output_var;
+var 10..15: y :: output_var;
+
+% x = y is impossible with these domains
+constraint int_eq(x, y);
+
+solve minimize x;

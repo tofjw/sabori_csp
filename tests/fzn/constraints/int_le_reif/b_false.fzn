@@ -1,0 +1,10 @@
+% int_le_reif test: (x <= y) <-> b with b=0
+var 1..10: x :: output_var;
+var 1..10: y :: output_var;
+var 0..1: b :: output_var;
+
+constraint int_le_reif(x, y, b);
+constraint int_eq(b, 0);
+constraint int_eq(y, 3);
+
+solve satisfy;

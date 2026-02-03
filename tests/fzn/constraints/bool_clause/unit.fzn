@@ -1,0 +1,4 @@
+% Unit propagation test: p1 must be true (single literal clause)
+var bool: p1 :: output_var;
+constraint bool_clause([p1], []);
+solve satisfy;

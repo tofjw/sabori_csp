@@ -1,0 +1,5 @@
+% Mixed bool_clause test: p1 OR NOT n1
+var bool: p1 :: output_var;
+var bool: n1 :: output_var;
+constraint bool_clause([p1], [n1]);
+solve satisfy;

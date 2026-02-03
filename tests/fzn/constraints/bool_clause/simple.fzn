@@ -1,0 +1,5 @@
+% Simple bool_clause test: p1 OR p2
+var bool: p1 :: output_var;
+var bool: p2 :: output_var;
+constraint bool_clause([p1, p2], []);
+solve satisfy;

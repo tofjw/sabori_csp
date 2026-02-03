@@ -1,0 +1,8 @@
+% Simple int_times test: x * y = z with fixed x and y
+var 1..10: x :: output_var;
+var 1..10: y :: output_var;
+var 1..100: z :: output_var;
+constraint int_eq(x, 3);
+constraint int_eq(y, 4);
+constraint int_times(x, y, z);
+solve satisfy;

@@ -1,0 +1,6 @@
+% int_lin_ne test: x + y != 5, x in [1,3], y in [1,3]
+% Valid: 7 solutions (all except (2,3) and (3,2))
+var 1..3: x :: output_var;
+var 1..3: y :: output_var;
+constraint int_lin_ne([1, 1], [x, y], 5);
+solve satisfy;

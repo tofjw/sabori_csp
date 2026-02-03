@@ -1,0 +1,6 @@
+% Bool_clause with negated literals: NOT n1 OR NOT n2
+% At least one of n1 or n2 must be false
+var bool: n1 :: output_var;
+var bool: n2 :: output_var;
+constraint bool_clause([], [n1, n2]);
+solve satisfy;
