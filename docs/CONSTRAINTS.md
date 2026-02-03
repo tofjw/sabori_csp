@@ -70,6 +70,7 @@ ArrayBoolAndConstraint c({b1, b2, b3}, r);
 | `all_different` | `AllDifferentConstraint` | 全ての変数が異なる値を取る |
 | `int_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == target |
 | `int_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
+| `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
 
