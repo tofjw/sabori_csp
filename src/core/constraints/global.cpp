@@ -624,6 +624,7 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     , tail_(n_)
     , size_(n_, 1)
     , in_degree_(n_, 0)
+    , unfixed_count_(0)
     , pool_n_(n_) {
     // 初期状態: 各ノードは長さ1のパス（自分自身が root）
     for (size_t i = 0; i < n_; ++i) {
@@ -643,7 +644,7 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
         var_ptr_to_idx_[vars_[i].get()] = i;
     }
 
-    // 既に確定している変数のパス結合と入次数を設定
+    // 既に確定している変数のパス結合と入次数を設定 + 未確定カウント
     for (size_t i = 0; i < n_; ++i) {
         if (vars_[i]->is_assigned()) {
             auto val = vars_[i]->assigned_value().value();
@@ -675,6 +676,8 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
 
             in_degree_[j] = 1;
             remove_from_pool(val);
+        } else {
+            ++unfixed_count_;
         }
     }
 
@@ -787,20 +790,23 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         // size == n なら正当な完全閉路
         // 入次数とプールを更新して trail に記録
         size_t old_pool_n = pool_n_;
+        size_t old_unfixed_count = unfixed_count_;
         in_degree_[j] = 1;
         remove_from_pool(value);
+        --unfixed_count_;
 
-        TrailEntry entry{0, 0, 0, 0, value, old_pool_n, false};
+        TrailEntry entry{0, 0, 0, 0, value, old_pool_n, old_unfixed_count, false};
         trail_.push_back({save_point, entry});
 
-        // 残り1変数チェック
-        size_t uninstantiated_count = count_uninstantiated();
-        if (uninstantiated_count == 1) {
+        // 残り1変数チェック（O(1)）
+        if (unfixed_count_ == 1) {
             size_t last_idx = find_last_uninstantiated();
-            if (!on_last_uninstantiated(model, save_point, last_idx)) {
-                return false;
+            if (last_idx != SIZE_MAX) {
+                if (!on_last_uninstantiated(model, save_point, last_idx)) {
+                    return false;
+                }
             }
-        } else if (uninstantiated_count == 0) {
+        } else if (unfixed_count_ == 0) {
             return on_final_instantiate();
         }
 
@@ -814,8 +820,9 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
     size_t old_tail_h1 = tail_[h1];
     size_t old_size_h1 = size_[h1];
     size_t old_pool_n = pool_n_;
+    size_t old_unfixed_count = unfixed_count_;
 
-    TrailEntry entry{h1, old_tail_h1, h2, old_size_h1, value, old_pool_n, true};
+    TrailEntry entry{h1, old_tail_h1, h2, old_size_h1, value, old_pool_n, old_unfixed_count, true};
     trail_.push_back({save_point, entry});
 
     // 更新: h2 のパスを h1 のパスに統合
@@ -824,15 +831,22 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
     size_[h1] += size_[h2];
     in_degree_[j] = 1;  // ノード j の入次数をインクリメント
     remove_from_pool(value);  // 値 j をプールから削除
+    --unfixed_count_;
 
-    // 残り1変数チェック
-    size_t uninstantiated_count = count_uninstantiated();
-    if (uninstantiated_count == 1) {
+    // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
+    if (unfixed_count_ > pool_n_) {
+        return false;
+    }
+
+    // 残り1変数チェック（O(1)）
+    if (unfixed_count_ == 1) {
         size_t last_idx = find_last_uninstantiated();
-        if (!on_last_uninstantiated(model, save_point, last_idx)) {
-            return false;
+        if (last_idx != SIZE_MAX) {
+            if (!on_last_uninstantiated(model, save_point, last_idx)) {
+                return false;
+            }
         }
-    } else if (uninstantiated_count == 0) {
+    } else if (unfixed_count_ == 0) {
         return on_final_instantiate();
     }
 
@@ -889,6 +903,9 @@ void CircuitConstraint::rewind_to(int save_point) {
         // プールを戻す
         pool_n_ = entry.old_pool_n;
 
+        // 未確定カウントを戻す
+        unfixed_count_ = entry.old_unfixed_count;
+
         // パス結合の場合のみ head/tail/size を戻す
         if (entry.is_merge) {
             tail_[entry.h1] = entry.old_tail_h1;
@@ -907,13 +924,7 @@ void CircuitConstraint::check_initial_consistency() {
     }
 
     // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
-    size_t uninstantiated_count = 0;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            ++uninstantiated_count;
-        }
-    }
-    if (uninstantiated_count > pool_n_) {
+    if (unfixed_count_ > pool_n_) {
         set_initially_inconsistent(true);
     }
 }

@@ -283,6 +283,9 @@ private:
     // 入次数（AllDifferent 用）
     std::vector<int> in_degree_;
 
+    // 未確定変数カウント（差分更新用）
+    size_t unfixed_count_;
+
     // 値プール（Sparse Set）
     std::vector<Domain::value_type> pool_;
     std::unordered_map<Domain::value_type, size_t> pool_idx_;
@@ -296,6 +299,7 @@ private:
         size_t old_size_h1;
         Domain::value_type j;
         size_t old_pool_n;
+        size_t old_unfixed_count;
         bool is_merge;  // パス結合かどうか（false なら閉路形成）
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
