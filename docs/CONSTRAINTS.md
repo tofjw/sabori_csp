@@ -11,6 +11,57 @@
 | `int_ne` | `IntNeConstraint` | x != y |
 | `int_lt` | `IntLtConstraint` | x < y |
 | `int_le` | `IntLeConstraint` | x <= y |
+| `int_le_reif` | `IntLeReifConstraint` | (x <= y) <-> b |
+
+### Bool 制約 (int 制約のエイリアス)
+
+Bool 変数は 0-1 整数変数として扱われます。以下の bool 制約は対応する int 制約のエイリアスです。
+
+| 制約名 | エイリアス先 | 説明 |
+|--------|-------------|------|
+| `bool_eq` | `IntEqConstraint` | a == b |
+| `bool_ne` | `IntNeConstraint` | a != b |
+| `bool_lt` | `IntLtConstraint` | a < b |
+| `bool_le` | `IntLeConstraint` | a <= b (a implies b) |
+| `bool_eq_reif` | `IntEqReifConstraint` | (a == b) <-> r |
+| `bool_le_reif` | `IntLeReifConstraint` | (a <= b) <-> r |
+| `bool_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == sum |
+| `bool_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
+
+### 論理制約 (logical)
+
+| 制約名 | クラス | 説明 |
+|--------|--------|------|
+| `array_bool_and` | `ArrayBoolAndConstraint` | r = b1 ∧ b2 ∧ ... ∧ bn |
+| `array_bool_or` | `ArrayBoolOrConstraint` | r = b1 ∨ b2 ∨ ... ∨ bn |
+
+#### array_bool_and / array_bool_or 制約
+
+配列の bool 変数に対する論理演算制約。2-watched literal (2WL) を使用して効率的に伝播を行う。
+
+**伝播ロジック (array_bool_and):**
+- r = 1 のとき: 全ての bi = 1 に確定
+- bi = 0 が1つでも確定したとき: r = 0 に確定
+- r = 0 で残り1つの未確定 bi があり、他が全て 1 のとき: その bi = 0 に確定
+
+**2-watched literal の仕組み:**
+- r = 0 のとき、「0 になりうる変数」を2つ監視
+- 監視変数の1つが 1 に確定したら、別の候補に監視を移動
+- 移動先がなく、もう一方も 1 に確定していたら矛盾
+- 移動先がなく、もう一方が未確定なら、それを 0 に確定
+
+**例:**
+```cpp
+// r = b1 ∧ b2 ∧ b3
+auto b1 = make_var("b1", 0, 1);
+auto b2 = make_var("b2", 0, 1);
+auto b3 = make_var("b3", 0, 1);
+auto r = make_var("r", 0, 1);
+ArrayBoolAndConstraint c({b1, b2, b3}, r);
+
+// r = 1 を設定すると、全ての bi = 1 が導かれる
+// bi のいずれかが 0 になると、r = 0 が導かれる
+```
 
 ### グローバル制約 (global)
 
