@@ -104,6 +104,8 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
+| `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |
+| `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
 
 #### circuit 制約
 
@@ -143,6 +145,39 @@ std::vector<Domain::value_type> array = {10, 20, 30};
 IntElementConstraint c(index, array, result);
 
 // 有効な解: (1,10), (2,20), (3,30)
+```
+
+#### array_int_maximum / array_int_minimum 制約
+
+配列の最大値・最小値を取る制約。`m = max(x[0], ..., x[n-1])` または `m = min(x[0], ..., x[n-1])`。
+
+**引数:**
+- `m`: 最大値/最小値を格納する変数
+- `x`: 整数変数の配列
+
+**伝播ロジック (array_int_maximum):**
+- m の下限: 配列要素の下限の最大値 (`max(x[i].min())`)
+- m の上限: 配列要素の上限の最大値 (`max(x[i].max())`)
+- 各 x[i] の上限: m の上限で制限
+- x[i] が確定して m.max と等しい場合: m を確定
+
+**伝播ロジック (array_int_minimum):**
+- m の下限: 配列要素の下限の最小値 (`min(x[i].min())`)
+- m の上限: 配列要素の上限の最小値 (`min(x[i].max())`)
+- 各 x[i] の下限: m の下限で制限
+- x[i] が確定して m.min と等しい場合: m を確定
+
+**例:**
+```cpp
+// m = max(x1, x2, x3)
+auto m = make_var("m", 1, 10);
+auto x1 = make_var("x1", 1, 5);
+auto x2 = make_var("x2", 3, 7);
+auto x3 = make_var("x3", 2, 4);
+ArrayIntMaximumConstraint c(m, {x1, x2, x3});
+
+// 伝播後: m の範囲は [3, 7] に絞られる
+// (下限 = max(1,3,2) = 3, 上限 = max(5,7,4) = 7)
 ```
 
 ## 制約の追加方法

@@ -485,6 +485,90 @@ private:
     Domain::value_type index_to_0based(Domain::value_type idx) const;
 };
 
+/**
+ * @brief array_int_maximum制約: m = max(x[0], x[1], ..., x[n-1])
+ *
+ * 変数 m は配列 x の最大値と等しい。
+ *
+ * 伝播ルール:
+ * - m.min = max(x[i].min) - m は全ての x[i] の最小値の最大値以上
+ * - m.max = max(x[i].max) - m は全ての x[i] の最大値の最大値以下
+ * - x[i].max <= m.max - 各 x[i] は m の最大値以下
+ * - m 確定時: 少なくとも1つの x[i] が m に等しくなれる必要がある
+ */
+class ArrayIntMaximumConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param m 最大値を表す変数
+     * @param vars 配列変数
+     */
+    ArrayIntMaximumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す（状態を持たないので空実装）
+     */
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr m_;                // 最大値変数
+    std::vector<VariablePtr> x_;   // 配列変数
+    size_t n_;                     // 配列サイズ
+
+    // 変数ポインタ → 内部インデックス (0: m, 1..n: x[0]..x[n-1])
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+};
+
+/**
+ * @brief array_int_minimum制約: m = min(x[0], x[1], ..., x[n-1])
+ *
+ * 変数 m は配列 x の最小値と等しい。
+ */
+class ArrayIntMinimumConstraint : public Constraint {
+public:
+    ArrayIntMinimumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                size_t last_var_internal_idx) override;
+
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr m_;
+    std::vector<VariablePtr> x_;
+    size_t n_;
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

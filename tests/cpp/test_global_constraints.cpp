@@ -2032,3 +2032,191 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
         REQUIRE(count == 2);
     }
 }
+
+// ============================================================================
+// ArrayIntMaximumConstraint tests
+// ============================================================================
+
+TEST_CASE("ArrayIntMaximumConstraint name", "[constraint][array_int_maximum]") {
+    auto m = make_var("m", 1, 5);
+    auto x1 = make_var("x1", 1, 5);
+    auto x2 = make_var("x2", 1, 5);
+    ArrayIntMaximumConstraint c(m, {x1, x2});
+
+    REQUIRE(c.name() == "array_int_maximum");
+}
+
+TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maximum]") {
+    SECTION("satisfied when m equals max") {
+        auto m = make_var("m", 3);
+        auto x1 = make_var("x1", 1);
+        auto x2 = make_var("x2", 3);
+        auto x3 = make_var("x3", 2);
+        ArrayIntMaximumConstraint c(m, {x1, x2, x3});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("not satisfied when m differs from max") {
+        auto m = make_var("m", 2);
+        auto x1 = make_var("x1", 1);
+        auto x2 = make_var("x2", 3);
+        ArrayIntMaximumConstraint c(m, {x1, x2});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("undetermined when variables unassigned") {
+        auto m = make_var("m", 1, 5);
+        auto x1 = make_var("x1", 1, 5);
+        auto x2 = make_var("x2", 1, 5);
+        ArrayIntMaximumConstraint c(m, {x1, x2});
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("ArrayIntMaximumConstraint solver integration", "[constraint][array_int_maximum]") {
+    SECTION("finds maximum value") {
+        Model model;
+        auto m = make_var("m", 1, 10);
+        auto x1 = make_var("x1", 3);  // fixed
+        auto x2 = make_var("x2", 7);  // fixed
+        auto x3 = make_var("x3", 5);  // fixed
+
+        model.add_variable(m);
+        model.add_variable(x1);
+        model.add_variable(x2);
+        model.add_variable(x3);
+        model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2, x3}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("m") == 7);
+    }
+
+    SECTION("propagates constraints correctly") {
+        Model model;
+        auto m = make_var("m", 5);  // m fixed to 5
+        auto x1 = make_var("x1", 1, 10);
+        auto x2 = make_var("x2", 1, 10);
+
+        model.add_variable(m);
+        model.add_variable(x1);
+        model.add_variable(x2);
+        model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("m") == 5);
+        // At least one of x1, x2 must be 5
+        REQUIRE((solution->at("x1") == 5 || solution->at("x2") == 5));
+        // Both must be <= 5
+        REQUIRE(solution->at("x1") <= 5);
+        REQUIRE(solution->at("x2") <= 5);
+    }
+
+    SECTION("detects unsatisfiable") {
+        Model model;
+        auto m = make_var("m", 3);  // m fixed to 3
+        auto x1 = make_var("x1", 5, 10);  // x1 >= 5 > m
+        auto x2 = make_var("x2", 1, 2);
+
+        model.add_variable(m);
+        model.add_variable(x1);
+        model.add_variable(x2);
+        model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());
+    }
+}
+
+// ============================================================================
+// ArrayIntMinimumConstraint tests
+// ============================================================================
+
+TEST_CASE("ArrayIntMinimumConstraint name", "[constraint][array_int_minimum]") {
+    auto m = make_var("m", 1, 5);
+    auto x1 = make_var("x1", 1, 5);
+    auto x2 = make_var("x2", 1, 5);
+    ArrayIntMinimumConstraint c(m, {x1, x2});
+
+    REQUIRE(c.name() == "array_int_minimum");
+}
+
+TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_minimum]") {
+    SECTION("satisfied when m equals min") {
+        auto m = make_var("m", 1);
+        auto x1 = make_var("x1", 1);
+        auto x2 = make_var("x2", 3);
+        auto x3 = make_var("x3", 2);
+        ArrayIntMinimumConstraint c(m, {x1, x2, x3});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("not satisfied when m differs from min") {
+        auto m = make_var("m", 2);
+        auto x1 = make_var("x1", 1);
+        auto x2 = make_var("x2", 3);
+        ArrayIntMinimumConstraint c(m, {x1, x2});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+}
+
+TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_int_minimum]") {
+    SECTION("finds minimum value") {
+        Model model;
+        auto m = make_var("m", 1, 10);
+        auto x1 = make_var("x1", 3);  // fixed
+        auto x2 = make_var("x2", 7);  // fixed
+        auto x3 = make_var("x3", 5);  // fixed
+
+        model.add_variable(m);
+        model.add_variable(x1);
+        model.add_variable(x2);
+        model.add_variable(x3);
+        model.add_constraint(std::make_shared<ArrayIntMinimumConstraint>(m, std::vector<VariablePtr>{x1, x2, x3}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("m") == 3);
+    }
+
+    SECTION("propagates constraints correctly") {
+        Model model;
+        auto m = make_var("m", 5);  // m fixed to 5
+        auto x1 = make_var("x1", 1, 10);
+        auto x2 = make_var("x2", 1, 10);
+
+        model.add_variable(m);
+        model.add_variable(x1);
+        model.add_variable(x2);
+        model.add_constraint(std::make_shared<ArrayIntMinimumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("m") == 5);
+        // At least one of x1, x2 must be 5
+        REQUIRE((solution->at("x1") == 5 || solution->at("x2") == 5));
+        // Both must be >= 5
+        REQUIRE(solution->at("x1") >= 5);
+        REQUIRE(solution->at("x2") >= 5);
+    }
+}

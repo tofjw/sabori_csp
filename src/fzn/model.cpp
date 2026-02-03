@@ -546,6 +546,38 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
 
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+        } else if (decl.name == "array_int_maximum" || decl.name == "int_max") {
+            // array_int_maximum(m, [x1, x2, ...]) means m = max(x1, x2, ...)
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("array_int_maximum requires 2 arguments (max_var, array)");
+            }
+            auto m = get_var(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in array_int_maximum: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<ArrayIntMaximumConstraint>(m, vars);
+        } else if (decl.name == "array_int_minimum" || decl.name == "int_min") {
+            // array_int_minimum(m, [x1, x2, ...]) means m = min(x1, x2, ...)
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("array_int_minimum requires 2 arguments (min_var, array)");
+            }
+            auto m = get_var(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in array_int_minimum: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<ArrayIntMinimumConstraint>(m, vars);
         } else {
             // Unknown constraint - skip for now (skeleton implementation)
             continue;
