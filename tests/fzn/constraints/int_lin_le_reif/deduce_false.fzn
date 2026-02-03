@@ -1,0 +1,6 @@
+% int_lin_le_reif test: constraint never holds, so b must be false
+% 1*x <= 0, where x in 1..5, never holds
+var 1..5: x :: output_var;
+var bool: b :: output_var;
+constraint int_lin_le_reif([1], [x], 0, b);
+solve satisfy;

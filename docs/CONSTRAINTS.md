@@ -12,6 +12,7 @@
 | `int_lt` | `IntLtConstraint` | x < y |
 | `int_le` | `IntLeConstraint` | x <= y |
 | `int_le_reif` | `IntLeReifConstraint` | (x <= y) <-> b |
+| `int_max` | `IntMaxConstraint` | max(x, y) = m |
 
 ### 算術制約 (arithmetic)
 
@@ -132,6 +133,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == target |
 | `int_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
 | `int_lin_le_imp` | `IntLinLeImpConstraint` | b = 1 -> Σ(coeffs[i] * vars[i]) <= bound |
+| `int_lin_le_reif` | `IntLinLeReifConstraint` | Σ(coeffs[i] * vars[i]) <= bound <-> b |
 | `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
@@ -204,6 +206,62 @@ IntLinLeImpConstraint c({2, 3}, {x, y}, 10, b);
 
 // b = 0 の場合: x, y は自由に選べる
 // b = 1 の場合: 2*x + 3*y <= 10 を満たす必要がある
+```
+
+#### int_lin_le_reif 制約
+
+完全具象化版の線形不等式制約。`Σ(coeffs[i] * vars[i]) <= bound <-> b`
+
+**引数:**
+- `coeffs`: 係数の配列
+- `vars`: 変数の配列
+- `bound`: 上限値
+- `b`: 具象化変数（bool）
+
+**特徴:**
+- `b = 1` の場合: 線形不等式 `sum <= bound` を強制
+- `b = 0` の場合: 線形不等式 `sum > bound` を強制
+- `b` が未確定でも、線形制約が常に成立する場合は `b = 1` に推論
+- `b` が未確定でも、線形制約が常に不成立の場合は `b = 0` に推論
+- `_imp` との違い: `_imp` は単方向（`b -> P`）だが、`_reif` は双方向（`P <-> b`）
+
+**例:**
+```cpp
+// 2*x + 3*y <= 10 <-> b
+auto x = make_var("x", 1, 5);
+auto y = make_var("y", 1, 5);
+auto b = make_var("b", 0, 1);
+IntLinLeReifConstraint c({2, 3}, {x, y}, 10, b);
+
+// x, y が小さい値に制限されると b = 1 に推論される
+// x = y = 5 の場合: sum = 25 > 10 なので b = 0 に推論される
+```
+
+#### int_max 制約 (2変数版)
+
+2変数の最大値制約。`max(x, y) = m`
+
+**引数:**
+- `x`: 第1引数
+- `y`: 第2引数
+- `m`: 最大値を格納する変数
+
+**伝播ロジック:**
+- m の下限: max(x.min(), y.min())
+- m の上限: max(x.max(), y.max())
+- x, y の上限: m の上限で制限
+- x または y が確定して m.max と等しい場合: m を確定
+
+**例:**
+```cpp
+// m = max(x, y)
+auto x = make_var("x", 1, 5);
+auto y = make_var("y", 3, 7);
+auto m = make_var("m", 1, 10);
+IntMaxConstraint c(x, y, m);
+
+// 伝播後: m の範囲は [3, 7] に絞られる
+// (下限 = max(1,3) = 3, 上限 = max(5,7) = 7)
 ```
 
 #### array_int_maximum / array_int_minimum 制約

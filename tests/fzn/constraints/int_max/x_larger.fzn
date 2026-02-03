@@ -1,0 +1,8 @@
+% int_max test: x is larger, so m = x
+var 5..5: x :: output_var;
+var 1..3: y :: output_var;
+var 1..5: m :: output_var;
+
+constraint int_max(x, y, m);
+
+solve satisfy;

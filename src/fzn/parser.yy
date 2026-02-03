@@ -561,6 +561,19 @@ id_list_inner:
             $$->push_back(*$3);
             delete $3;
         }
+    | id_list_inner ',' int_literal
+        {
+            // Support mixed lists with inline integer literals
+            // Convert the literal to a constant variable name
+            $$ = $1;
+            $$->push_back("__inline_" + std::to_string($3));
+        }
+    | int_literal
+        {
+            // Support starting with an integer literal
+            $$ = new std::vector<std::string>();
+            $$->push_back("__inline_" + std::to_string($1));
+        }
     ;
 
 int_literal:

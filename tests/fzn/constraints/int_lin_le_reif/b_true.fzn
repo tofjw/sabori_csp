@@ -1,0 +1,7 @@
+% int_lin_le_reif test: b = true, so constraint must hold
+% 2*x + 3*y <= 10, with b=true
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var bool: b = true;
+constraint int_lin_le_reif([2, 3], [x, y], 10, b);
+solve satisfy;

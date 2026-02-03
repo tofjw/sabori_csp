@@ -830,4 +830,224 @@ void IntLeReifConstraint::check_initial_consistency() {
     }
 }
 
+// ============================================================================
+// IntMaxConstraint implementation
+// ============================================================================
+
+IntMaxConstraint::IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m)
+    : Constraint({x, y, m})
+    , x_(std::move(x))
+    , y_(std::move(y))
+    , m_(std::move(m)) {
+    check_initial_consistency();
+}
+
+std::string IntMaxConstraint::name() const {
+    return "int_max";
+}
+
+std::vector<VariablePtr> IntMaxConstraint::variables() const {
+    return {x_, y_, m_};
+}
+
+std::optional<bool> IntMaxConstraint::is_satisfied() const {
+    if (x_->is_assigned() && y_->is_assigned() && m_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        auto m_val = m_->assigned_value().value();
+        return m_val == std::max(x_val, y_val);
+    }
+    return std::nullopt;
+}
+
+bool IntMaxConstraint::propagate(Model& /*model*/) {
+    // m = max(x, y) の bounds propagation
+    auto x_min = x_->domain().min();
+    auto x_max = x_->domain().max();
+    auto y_min = y_->domain().min();
+    auto y_max = y_->domain().max();
+
+    if (!x_min || !x_max || !y_min || !y_max) {
+        return false;
+    }
+
+    // m.min = max(x.min, y.min)
+    // m.max = max(x.max, y.max)
+    auto m_lower = std::max(*x_min, *y_min);
+    auto m_upper = std::max(*x_max, *y_max);
+
+    // m のドメインを絞る
+    auto m_values = m_->domain().values();
+    for (auto v : m_values) {
+        if (v < m_lower || v > m_upper) {
+            m_->domain().remove(v);
+        }
+    }
+    if (m_->domain().empty()) return false;
+
+    // x.max <= m.max, y.max <= m.max
+    auto m_max = m_->domain().max().value();
+    auto x_values = x_->domain().values();
+    for (auto v : x_values) {
+        if (v > m_max) {
+            x_->domain().remove(v);
+        }
+    }
+    if (x_->domain().empty()) return false;
+
+    auto y_values = y_->domain().values();
+    for (auto v : y_values) {
+        if (v > m_max) {
+            y_->domain().remove(v);
+        }
+    }
+    if (y_->domain().empty()) return false;
+
+    return true;
+}
+
+bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
+                                       size_t var_idx, Domain::value_type value,
+                                       Domain::value_type prev_min,
+                                       Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
+        for (size_t i = 0; i < model.variables().size(); ++i) {
+            if (model.variable(i) == var) {
+                return i;
+            }
+        }
+        return SIZE_MAX;
+    };
+
+    // m が確定した場合
+    if (m_->is_assigned()) {
+        auto m_val = m_->assigned_value().value();
+
+        // x.max と y.max を m に制限
+        if (!x_->is_assigned()) {
+            auto x_max = x_->domain().max();
+            if (x_max && *x_max > m_val) {
+                size_t x_idx = find_model_idx(x_);
+                if (x_idx != SIZE_MAX) {
+                    model.enqueue_set_max(x_idx, m_val);
+                }
+            }
+        }
+        if (!y_->is_assigned()) {
+            auto y_max = y_->domain().max();
+            if (y_max && *y_max > m_val) {
+                size_t y_idx = find_model_idx(y_);
+                if (y_idx != SIZE_MAX) {
+                    model.enqueue_set_max(y_idx, m_val);
+                }
+            }
+        }
+
+        // x または y が確定していて m と等しい場合は OK
+        // 両方確定していて max != m なら矛盾
+        if (x_->is_assigned() && y_->is_assigned()) {
+            auto x_val = x_->assigned_value().value();
+            auto y_val = y_->assigned_value().value();
+            if (std::max(x_val, y_val) != m_val) {
+                return false;
+            }
+        }
+        // 片方だけ確定している場合
+        else if (x_->is_assigned()) {
+            auto x_val = x_->assigned_value().value();
+            if (x_val == m_val) {
+                // y <= m で OK
+            } else {
+                // y == m が必要
+                if (!y_->domain().contains(m_val)) {
+                    return false;
+                }
+            }
+        } else if (y_->is_assigned()) {
+            auto y_val = y_->assigned_value().value();
+            if (y_val == m_val) {
+                // x <= m で OK
+            } else {
+                // x == m が必要
+                if (!x_->domain().contains(m_val)) {
+                    return false;
+                }
+            }
+        } else {
+            // 両方未確定: 少なくとも一方が m になれる必要
+            if (!x_->domain().contains(m_val) && !y_->domain().contains(m_val)) {
+                return false;
+            }
+        }
+    }
+
+    // x と y が両方確定した場合、m を確定
+    if (x_->is_assigned() && y_->is_assigned() && !m_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        auto max_val = std::max(x_val, y_val);
+        size_t m_idx = find_model_idx(m_);
+        if (m_idx != SIZE_MAX) {
+            model.enqueue_instantiate(m_idx, max_val);
+        }
+    }
+
+    // x または y が確定した場合、m の下限を更新
+    if (x_->is_assigned() || y_->is_assigned()) {
+        auto x_min_val = x_->is_assigned() ? x_->assigned_value().value() : x_->domain().min().value();
+        auto y_min_val = y_->is_assigned() ? y_->assigned_value().value() : y_->domain().min().value();
+        auto new_m_min = std::max(x_min_val, y_min_val);
+
+        if (!m_->is_assigned()) {
+            auto m_min = m_->domain().min();
+            if (m_min && *m_min < new_m_min) {
+                size_t m_idx = find_model_idx(m_);
+                if (m_idx != SIZE_MAX) {
+                    model.enqueue_set_min(m_idx, new_m_min);
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntMaxConstraint::on_final_instantiate() {
+    auto x_val = x_->assigned_value().value();
+    auto y_val = y_->assigned_value().value();
+    auto m_val = m_->assigned_value().value();
+    return m_val == std::max(x_val, y_val);
+}
+
+void IntMaxConstraint::check_initial_consistency() {
+    auto x_min = x_->domain().min();
+    auto x_max = x_->domain().max();
+    auto y_min = y_->domain().min();
+    auto y_max = y_->domain().max();
+    auto m_min = m_->domain().min();
+    auto m_max = m_->domain().max();
+
+    if (!x_min || !x_max || !y_min || !y_max || !m_min || !m_max) {
+        set_initially_inconsistent(true);
+        return;
+    }
+
+    // m.max < max(x.min, y.min) なら矛盾
+    if (*m_max < std::max(*x_min, *y_min)) {
+        set_initially_inconsistent(true);
+        return;
+    }
+
+    // m.min > max(x.max, y.max) なら矛盾
+    if (*m_min > std::max(*x_max, *y_max)) {
+        set_initially_inconsistent(true);
+        return;
+    }
+}
+
 } // namespace sabori_csp

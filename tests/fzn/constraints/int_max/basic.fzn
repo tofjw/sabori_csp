@@ -1,0 +1,9 @@
+% int_max basic test: m = max(x, y), m = 5
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: m :: output_var;
+
+constraint int_max(x, y, m);
+constraint int_eq(m, 5);
+
+solve satisfy;
