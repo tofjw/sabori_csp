@@ -36,6 +36,14 @@ public:
     bool on_final_instantiate() override;
 
     /**
+     * @brief 残り1変数になった時の伝播
+     *
+     * 利用可能な値が1つだけなら、その値で確定させる。
+     */
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
@@ -44,6 +52,12 @@ public:
      * @brief 現在のプールサイズを取得
      */
     size_t pool_size() const { return pool_n_; }
+
+protected:
+    /**
+     * @brief 初期整合性チェック
+     */
+    void check_initial_consistency() override;
 
 private:
     // 値プール（Sparse Set）
@@ -91,6 +105,14 @@ public:
     bool on_final_instantiate() override;
 
     /**
+     * @brief 残り1変数になった時の伝播
+     *
+     * 残りの変数の値を一意に決定できる場合は確定させる。
+     */
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
@@ -104,6 +126,12 @@ public:
      * @brief 係数リストを取得
      */
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
+
+protected:
+    /**
+     * @brief 初期整合性チェック
+     */
+    void check_initial_consistency() override;
 
 private:
     std::vector<int64_t> coeffs_;
@@ -152,6 +180,12 @@ public:
     bool on_final_instantiate() override;
 
     void rewind_to(int save_point);
+
+protected:
+    /**
+     * @brief 初期整合性チェック
+     */
+    void check_initial_consistency() override;
 
 private:
     std::vector<int64_t> coeffs_;

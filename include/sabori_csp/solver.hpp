@@ -151,6 +151,16 @@ private:
                             SolutionCallback callback, bool find_all);
 
     /**
+     * @brief 初期伝播を実行（探索開始前）
+     *
+     * 残り1変数の制約に対して on_last_uninstantiated() を呼び出し、
+     * 固定点に達するまで繰り返す。
+     *
+     * @return 伝播成功ならtrue、矛盾が検出されたらfalse
+     */
+    bool initial_propagate(Model& model);
+
+    /**
      * @brief 全ての制約を伝播
      */
     bool propagate_all(Model& model);

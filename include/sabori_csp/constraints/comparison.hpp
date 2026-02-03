@@ -26,6 +26,9 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+protected:
+    void check_initial_consistency() override;
+
 private:
     VariablePtr x_;
     VariablePtr y_;
@@ -47,6 +50,9 @@ public:
                         size_t var_idx, Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
+
+protected:
+    void check_initial_consistency() override;
 
 private:
     VariablePtr x_;
@@ -71,6 +77,9 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+protected:
+    void check_initial_consistency() override;
+
 private:
     VariablePtr x_;
     VariablePtr y_;
@@ -93,6 +102,9 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+protected:
+    void check_initial_consistency() override;
+
 private:
     VariablePtr x_;
     VariablePtr y_;
@@ -114,6 +126,9 @@ public:
                         size_t var_idx, Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
+
+protected:
+    void check_initial_consistency() override;
 
 private:
     VariablePtr x_;
