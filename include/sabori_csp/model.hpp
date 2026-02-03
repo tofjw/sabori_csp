@@ -41,6 +41,16 @@ struct ConstraintTrailEntry {
 };
 
 /**
+ * @brief 保留中のドメイン更新操作
+ */
+struct PendingUpdate {
+    enum class Type { Instantiate, SetMin, SetMax, RemoveValue };
+    Type type;
+    size_t var_idx;
+    Domain::value_type value;
+};
+
+/**
  * @brief CSPモデル
  *
  * 変数と制約を管理し、SoA形式で高速アクセス用データを保持する。
@@ -195,14 +205,29 @@ public:
     void enqueue_instantiate(size_t var_idx, Domain::value_type value);
 
     /**
-     * @brief 保留中の確定操作を取得
+     * @brief 下限設定をキューに追加
      */
-    const std::vector<std::pair<size_t, Domain::value_type>>& pending_instantiations() const;
+    void enqueue_set_min(size_t var_idx, Domain::value_type new_min);
 
     /**
-     * @brief 保留中の確定操作をクリア
+     * @brief 上限設定をキューに追加
      */
-    void clear_pending_instantiations();
+    void enqueue_set_max(size_t var_idx, Domain::value_type new_max);
+
+    /**
+     * @brief 値除去をキューに追加
+     */
+    void enqueue_remove_value(size_t var_idx, Domain::value_type value);
+
+    /**
+     * @brief 保留中の更新操作を取得
+     */
+    const std::vector<PendingUpdate>& pending_updates() const;
+
+    /**
+     * @brief 保留中の更新操作をクリア
+     */
+    void clear_pending_updates();
 
 private:
     std::vector<VariablePtr> variables_;
@@ -221,8 +246,8 @@ private:
     // 最後に保存した変数ごとのセーブポイント（重複保存防止）
     std::vector<int> last_saved_level_;
 
-    // 伝播キュー（制約が追加した保留中の確定操作）
-    std::vector<std::pair<size_t, Domain::value_type>> pending_instantiations_;
+    // 伝播キュー（制約が追加した保留中のドメイン更新操作）
+    std::vector<PendingUpdate> pending_updates_;
 
     // 制約ウォッチリスト: 各変数に関連する制約のリスト
     std::vector<std::vector<size_t>> var_to_constraint_indices_;

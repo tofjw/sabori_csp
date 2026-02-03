@@ -230,9 +230,14 @@ private:
     // ===== 伝播キュー =====
 
     /**
-     * @brief 伝播キューに追加
+     * @brief 確定操作を伝播キューに追加
      */
     void enqueue_instantiate(size_t var_idx, Domain::value_type value);
+
+    /**
+     * @brief 更新操作を伝播キューに追加
+     */
+    void enqueue_update(const PendingUpdate& update);
 
     /**
      * @brief 伝播キューを処理
@@ -250,7 +255,7 @@ private:
     int current_decision_ = 0;
     std::vector<double> activity_;
     std::vector<Literal> decision_trail_;
-    std::deque<std::pair<size_t, Domain::value_type>> propagation_queue_;
+    std::deque<PendingUpdate> propagation_queue_;
 
     // NoGood
     std::vector<std::unique_ptr<NoGood>> nogoods_;

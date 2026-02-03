@@ -215,5 +215,6 @@ using ConstraintPtr = std::shared_ptr<Constraint>;
 // 各制約グループのヘッダをインクルード
 #include "sabori_csp/constraints/comparison.hpp"
 #include "sabori_csp/constraints/global.hpp"
+#include "sabori_csp/constraints/logical.hpp"
 
 #endif // SABORI_CSP_CONSTRAINT_HPP
