@@ -293,21 +293,55 @@ void Model::sync_to_domains() {
 }
 
 void Model::enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-    // 重複チェック
-    for (const auto& [idx, val] : pending_instantiations_) {
-        if (idx == var_idx) {
+    // 同じ変数の Instantiate が既にあればスキップ
+    for (const auto& update : pending_updates_) {
+        if (update.var_idx == var_idx && update.type == PendingUpdate::Type::Instantiate) {
             return;
         }
     }
-    pending_instantiations_.push_back({var_idx, value});
+    pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
 }
 
-const std::vector<std::pair<size_t, Domain::value_type>>& Model::pending_instantiations() const {
-    return pending_instantiations_;
+void Model::enqueue_set_min(size_t var_idx, Domain::value_type new_min) {
+    // 同じ変数の SetMin をマージ（最大値を採用）
+    for (auto& update : pending_updates_) {
+        if (update.var_idx == var_idx && update.type == PendingUpdate::Type::SetMin) {
+            update.value = std::max(update.value, new_min);
+            return;
+        }
+    }
+    pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min});
 }
 
-void Model::clear_pending_instantiations() {
-    pending_instantiations_.clear();
+void Model::enqueue_set_max(size_t var_idx, Domain::value_type new_max) {
+    // 同じ変数の SetMax をマージ（最小値を採用）
+    for (auto& update : pending_updates_) {
+        if (update.var_idx == var_idx && update.type == PendingUpdate::Type::SetMax) {
+            update.value = std::min(update.value, new_max);
+            return;
+        }
+    }
+    pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max});
+}
+
+void Model::enqueue_remove_value(size_t var_idx, Domain::value_type value) {
+    // RemoveValue は同じ (var_idx, value) ペアのみスキップ
+    for (const auto& update : pending_updates_) {
+        if (update.var_idx == var_idx &&
+            update.type == PendingUpdate::Type::RemoveValue &&
+            update.value == value) {
+            return;
+        }
+    }
+    pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
+}
+
+const std::vector<PendingUpdate>& Model::pending_updates() const {
+    return pending_updates_;
+}
+
+void Model::clear_pending_updates() {
+    pending_updates_.clear();
 }
 
 void Model::build_constraint_watch_list() {

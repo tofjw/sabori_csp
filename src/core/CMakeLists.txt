@@ -8,6 +8,7 @@ add_library(sabori_csp_core
   # Constraints
   constraints/comparison.cpp
   constraints/global.cpp
+  constraints/logical.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC

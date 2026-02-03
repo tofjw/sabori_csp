@@ -119,6 +119,14 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntLeConstraint>(x, y);
+        } else if (decl.name == "int_le_reif") {
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("int_le_reif requires 3 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            auto b = get_var(decl.args[2]);
+            constraint = std::make_shared<IntLeReifConstraint>(x, y, b);
         } else if (decl.name == "all_different_int" || decl.name == "alldifferent_int") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("all_different_int requires 1 argument (array)");
@@ -207,6 +215,155 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+        // ========================================
+        // Bool constraints (aliases for int constraints with 0-1 variables)
+        // ========================================
+        } else if (decl.name == "bool_eq") {
+            // bool_eq(a, b) is equivalent to int_eq(a, b) for 0-1 variables
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_eq requires 2 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            constraint = std::make_shared<IntEqConstraint>(x, y);
+        } else if (decl.name == "bool_ne") {
+            // bool_ne(a, b) is equivalent to int_ne(a, b) for 0-1 variables
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_ne requires 2 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            constraint = std::make_shared<IntNeConstraint>(x, y);
+        } else if (decl.name == "bool_lt") {
+            // bool_lt(a, b) is equivalent to int_lt(a, b) for 0-1 variables
+            // a < b with a,b in {0,1} means a=0, b=1
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_lt requires 2 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            constraint = std::make_shared<IntLtConstraint>(x, y);
+        } else if (decl.name == "bool_le") {
+            // bool_le(a, b) is equivalent to int_le(a, b) for 0-1 variables
+            // a <= b means not(a) or b, i.e., a implies b
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_le requires 2 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            constraint = std::make_shared<IntLeConstraint>(x, y);
+        } else if (decl.name == "bool_eq_reif") {
+            // bool_eq_reif(a, b, r) is equivalent to int_eq_reif(a, b, r)
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("bool_eq_reif requires 3 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            auto r = get_var(decl.args[2]);
+            constraint = std::make_shared<IntEqReifConstraint>(x, y, r);
+        } else if (decl.name == "bool_le_reif") {
+            // bool_le_reif(a, b, r) is equivalent to int_le_reif(a, b, r)
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("bool_le_reif requires 3 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            auto r = get_var(decl.args[2]);
+            constraint = std::make_shared<IntLeReifConstraint>(x, y, r);
+        } else if (decl.name == "bool_lin_eq") {
+            // bool_lin_eq(coeffs, vars, sum) is equivalent to int_lin_eq
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("bool_lin_eq requires 3 arguments");
+            }
+            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
+                throw std::runtime_error("bool_lin_eq: first argument must be an array of integers");
+            }
+            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
+                throw std::runtime_error("bool_lin_eq: second argument must be an array of variables");
+            }
+            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                throw std::runtime_error("bool_lin_eq: third argument must be an integer");
+            }
+            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
+            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            auto sum = std::get<Domain::value_type>(decl.args[2]);
+
+            std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in bool_lin_eq: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+        } else if (decl.name == "bool_lin_le") {
+            // bool_lin_le(coeffs, vars, bound) is equivalent to int_lin_le
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("bool_lin_le requires 3 arguments");
+            }
+            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
+                throw std::runtime_error("bool_lin_le: first argument must be an array of integers");
+            }
+            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
+                throw std::runtime_error("bool_lin_le: second argument must be an array of variables");
+            }
+            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                throw std::runtime_error("bool_lin_le: third argument must be an integer");
+            }
+            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
+            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            auto bound = std::get<Domain::value_type>(decl.args[2]);
+
+            std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in bool_lin_le: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+        } else if (decl.name == "array_bool_and") {
+            // array_bool_and([b1, b2, ..., bn], r) means r = b1 ∧ b2 ∧ ... ∧ bn
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("array_bool_and requires 2 arguments");
+            }
+            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
+                throw std::runtime_error("array_bool_and: first argument must be an array of variables");
+            }
+            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in array_bool_and: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            auto r = get_var(decl.args[1]);
+            constraint = std::make_shared<ArrayBoolAndConstraint>(vars, r);
+        } else if (decl.name == "array_bool_or") {
+            // array_bool_or([b1, b2, ..., bn], r) means r = b1 ∨ b2 ∨ ... ∨ bn
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("array_bool_or requires 2 arguments");
+            }
+            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
+                throw std::runtime_error("array_bool_or: first argument must be an array of variables");
+            }
+            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in array_bool_or: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            auto r = get_var(decl.args[1]);
+            constraint = std::make_shared<ArrayBoolOrConstraint>(vars, r);
         } else if (decl.name == "array_int_element" || decl.name == "int_element") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_element requires 3 arguments (index, array, result)");

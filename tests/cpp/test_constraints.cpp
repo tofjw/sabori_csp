@@ -614,3 +614,191 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         REQUIRE(c.on_final_instantiate() == false);
     }
 }
+
+// ============================================================================
+// IntLeReifConstraint tests
+// ============================================================================
+
+TEST_CASE("IntLeReifConstraint name", "[constraint][int_le_reif]") {
+    auto x = make_var("x", 1, 3);
+    auto y = make_var("y", 1, 3);
+    auto b = make_var("b", 0, 1);
+    IntLeReifConstraint c(x, y, b);
+
+    REQUIRE(c.name() == "int_le_reif");
+}
+
+TEST_CASE("IntLeReifConstraint variables", "[constraint][int_le_reif]") {
+    auto x = make_var("x", 1, 3);
+    auto y = make_var("y", 1, 3);
+    auto b = make_var("b", 0, 1);
+    IntLeReifConstraint c(x, y, b);
+
+    auto vars = c.variables();
+    REQUIRE(vars.size() == 3);
+    REQUIRE(vars[0] == x);
+    REQUIRE(vars[1] == y);
+    REQUIRE(vars[2] == b);
+}
+
+TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
+    SECTION("x <= y and b == 1") {
+        auto x = make_var("x", 3);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("x == y and b == 1") {
+        auto x = make_var("x", 5);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("x > y and b == 0") {
+        auto x = make_var("x", 7);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("x <= y but b == 0") {
+        auto x = make_var("x", 3);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("x > y but b == 1") {
+        auto x = make_var("x", 7);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("not fully assigned") {
+        auto x = make_var("x", 1, 3);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 0, 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
+    SECTION("b=1 enforces x <= y") {
+        auto x = make_var("x", 1, 10);
+        auto y = make_var("y", 1, 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.propagate() == true);
+        REQUIRE(x->domain().max() == 5);  // x <= y.max
+    }
+
+    SECTION("b=0 enforces x > y") {
+        auto x = make_var("x", 1, 10);
+        auto y = make_var("y", 3, 8);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.propagate() == true);
+        REQUIRE(x->domain().min() == 4);  // x > y.min (3)
+        REQUIRE(y->domain().max() == 8);  // y < x.max would be 9, but y.max is 8
+    }
+
+    SECTION("x.max <= y.min implies b=1") {
+        auto x = make_var("x", 1, 3);
+        auto y = make_var("y", 5, 10);
+        auto b = make_var("b", 0, 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.propagate() == true);
+        REQUIRE(b->is_assigned());
+        REQUIRE(b->assigned_value().value() == 1);
+    }
+
+    SECTION("x.min > y.max implies b=0") {
+        auto x = make_var("x", 8, 10);
+        auto y = make_var("y", 1, 5);
+        auto b = make_var("b", 0, 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.propagate() == true);
+        REQUIRE(b->is_assigned());
+        REQUIRE(b->assigned_value().value() == 0);
+    }
+
+    SECTION("b=1 with x.min > y.max is infeasible") {
+        auto x = make_var("x", 8, 10);
+        auto y = make_var("y", 1, 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+
+    SECTION("b=0 with x.max <= y.min is infeasible") {
+        auto x = make_var("x", 1, 3);
+        auto y = make_var("y", 5, 10);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.is_initially_inconsistent() == true);
+    }
+}
+
+TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]") {
+    SECTION("satisfied - x <= y and b=1") {
+        auto x = make_var("x", 3);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("satisfied - x > y and b=0") {
+        auto x = make_var("x", 7);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("violated - x <= y but b=0") {
+        auto x = make_var("x", 3);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 0);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.on_final_instantiate() == false);
+    }
+
+    SECTION("violated - x > y but b=1") {
+        auto x = make_var("x", 7);
+        auto y = make_var("y", 5);
+        auto b = make_var("b", 1);
+        IntLeReifConstraint c(x, y, b);
+
+        REQUIRE(c.on_final_instantiate() == false);
+    }
+}

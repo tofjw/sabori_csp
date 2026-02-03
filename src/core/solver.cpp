@@ -289,7 +289,7 @@ bool Solver::initial_propagate(Model& model) {
         }
 
         // pending があれば変更あり
-        if (!model.pending_instantiations().empty()) {
+        if (!model.pending_updates().empty()) {
             changed = true;
         }
     }
@@ -362,7 +362,7 @@ bool Solver::propagate(Model& model, size_t var_idx,
 
 void Solver::backtrack(Model& model, int save_point) {
     propagation_queue_.clear();
-    model.clear_pending_instantiations();
+    model.clear_pending_updates();
     model.rewind_to(save_point);
 
     // 制約の状態も復元（AllDifferent, IntLinEq, Circuit など）
@@ -378,6 +378,10 @@ void Solver::backtrack(Model& model, int save_point) {
             circuit->rewind_to(save_point);
         } else if (auto* int_element = dynamic_cast<IntElementConstraint*>(constraint.get())) {
             int_element->rewind_to(save_point);
+        } else if (auto* bool_and = dynamic_cast<ArrayBoolAndConstraint*>(constraint.get())) {
+            bool_and->rewind_to(save_point);
+        } else if (auto* bool_or = dynamic_cast<ArrayBoolOrConstraint*>(constraint.get())) {
+            bool_or->rewind_to(save_point);
         }
     }
 }
@@ -655,13 +659,17 @@ std::unordered_map<size_t, Domain::value_type> Solver::select_best_assignment() 
 }
 
 void Solver::enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-    // 重複チェック
-    for (const auto& [idx, _] : propagation_queue_) {
-        if (idx == var_idx) {
+    // 同じ変数の Instantiate が既にあればスキップ
+    for (const auto& update : propagation_queue_) {
+        if (update.var_idx == var_idx && update.type == PendingUpdate::Type::Instantiate) {
             return;
         }
     }
-    propagation_queue_.push_back({var_idx, value});
+    propagation_queue_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
+}
+
+void Solver::enqueue_update(const PendingUpdate& update) {
+    propagation_queue_.push_back(update);
 }
 
 bool Solver::process_queue(Model& model) {
@@ -669,36 +677,80 @@ bool Solver::process_queue(Model& model) {
 
     while (true) {
         // Model の pending を取り込む
-        for (const auto& [idx, val] : model.pending_instantiations()) {
-            enqueue_instantiate(idx, val);
+        for (const auto& update : model.pending_updates()) {
+            propagation_queue_.push_back(update);
         }
-        model.clear_pending_instantiations();
+        model.clear_pending_updates();
 
         if (propagation_queue_.empty()) {
             break;
         }
 
-        auto [var_idx, val] = propagation_queue_.front();
+        auto update = propagation_queue_.front();
         propagation_queue_.pop_front();
 
+        size_t var_idx = update.var_idx;
         auto& var = variables[var_idx];
-        if (var->is_assigned()) {
-            // 既に確定済みで異なる値が要求されている場合は矛盾
-            if (var->assigned_value().value() != val) {
+
+        // 操作前の状態を保存
+        auto prev_min = var->domain().min().value_or(0);
+        auto prev_max = var->domain().max().value_or(0);
+        size_t prev_size = var->domain().size();
+        bool was_instantiated = var->is_assigned();
+
+        bool need_propagate = false;
+
+        switch (update.type) {
+        case PendingUpdate::Type::Instantiate: {
+            if (var->is_assigned()) {
+                // 既に確定済みで異なる値が要求されている場合は矛盾
+                if (var->assigned_value().value() != update.value) {
+                    return false;
+                }
+                continue;  // 同じ値なら OK
+            }
+            if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return false;
             }
-            continue;  // 同じ値なら OK
+            need_propagate = true;
+            break;
+        }
+        case PendingUpdate::Type::SetMin: {
+            if (!model.set_min(current_decision_, var_idx, update.value)) {
+                return false;
+            }
+            // 新たに確定した場合のみ伝播（既に確定済みだった場合は不要）
+            if (!was_instantiated && model.is_instantiated(var_idx)) {
+                need_propagate = true;
+            }
+            break;
+        }
+        case PendingUpdate::Type::SetMax: {
+            if (!model.set_max(current_decision_, var_idx, update.value)) {
+                return false;
+            }
+            // 新たに確定した場合のみ伝播
+            if (!was_instantiated && model.is_instantiated(var_idx)) {
+                need_propagate = true;
+            }
+            break;
+        }
+        case PendingUpdate::Type::RemoveValue: {
+            if (!model.remove_value(current_decision_, var_idx, update.value)) {
+                return false;
+            }
+            // 新たに確定した場合のみ伝播
+            if (!was_instantiated && model.is_instantiated(var_idx)) {
+                need_propagate = true;
+            }
+            break;
+        }
         }
 
-        auto prev_min = var->domain().min().value();
-        auto prev_max = var->domain().max().value();
-
-        if (!model.instantiate(current_decision_, var_idx, val)) {
-            return false;
-        }
-
-        if (!propagate(model, var_idx, prev_min, prev_max)) {
-            return false;
+        if (need_propagate) {
+            if (!propagate(model, var_idx, prev_min, prev_max)) {
+                return false;
+            }
         }
     }
 

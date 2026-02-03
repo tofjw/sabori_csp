@@ -1441,3 +1441,256 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         REQUIRE(constraint->is_initially_inconsistent() == true);
     }
 }
+
+// ============================================================================
+// ArrayBoolAndConstraint tests
+// ============================================================================
+
+TEST_CASE("ArrayBoolAndConstraint name", "[constraint][array_bool_and]") {
+    auto b1 = make_var("b1", 0, 1);
+    auto b2 = make_var("b2", 0, 1);
+    auto r = make_var("r", 0, 1);
+    ArrayBoolAndConstraint c({b1, b2}, r);
+
+    REQUIRE(c.name() == "array_bool_and");
+}
+
+TEST_CASE("ArrayBoolAndConstraint variables", "[constraint][array_bool_and]") {
+    auto b1 = make_var("b1", 0, 1);
+    auto b2 = make_var("b2", 0, 1);
+    auto r = make_var("r", 0, 1);
+    ArrayBoolAndConstraint c({b1, b2}, r);
+
+    auto vars = c.variables();
+    REQUIRE(vars.size() == 3);  // b1, b2, r
+}
+
+TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]") {
+    SECTION("all true - r=1 satisfied") {
+        auto b1 = make_var("b1", 1);
+        auto b2 = make_var("b2", 1);
+        auto r = make_var("r", 1);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("one false - r=0 satisfied") {
+        auto b1 = make_var("b1", 1);
+        auto b2 = make_var("b2", 0);
+        auto r = make_var("r", 0);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("one false - r=1 not satisfied") {
+        auto b1 = make_var("b1", 1);
+        auto b2 = make_var("b2", 0);
+        auto r = make_var("r", 1);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("not all assigned - unknown") {
+        auto b1 = make_var("b1", 0, 1);
+        auto b2 = make_var("b2", 1);
+        auto r = make_var("r", 0, 1);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("ArrayBoolAndConstraint on_final_instantiate", "[constraint][array_bool_and]") {
+    SECTION("all true - r=1") {
+        auto b1 = make_var("b1", 1);
+        auto b2 = make_var("b2", 1);
+        auto r = make_var("r", 1);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("one false - r=0") {
+        auto b1 = make_var("b1", 0);
+        auto b2 = make_var("b2", 1);
+        auto r = make_var("r", 0);
+        ArrayBoolAndConstraint c({b1, b2}, r);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+}
+
+TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_and]") {
+    SECTION("r=1 forces all bi=1") {
+        Model model;
+        auto b1 = make_var("b1", 0, 1);
+        auto b2 = make_var("b2", 0, 1);
+        auto b3 = make_var("b3", 0, 1);
+        auto r = make_var("r", 1);  // r = 1 fixed
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(b3);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("b1") == 1);
+        REQUIRE(solution->at("b2") == 1);
+        REQUIRE(solution->at("b3") == 1);
+        REQUIRE(solution->at("r") == 1);
+    }
+
+    SECTION("r=0, b1=b2=1 forces b3=0") {
+        Model model;
+        auto b1 = make_var("b1", 1);  // fixed
+        auto b2 = make_var("b2", 1);  // fixed
+        auto b3 = make_var("b3", 0, 1);
+        auto r = make_var("r", 0);  // r = 0 fixed
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(b3);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("b3") == 0);
+    }
+
+    SECTION("all solutions enumeration") {
+        Model model;
+        auto b1 = make_var("b1", 0, 1);
+        auto b2 = make_var("b2", 0, 1);
+        auto r = make_var("r", 0, 1);
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+            std::vector<VariablePtr>{b1, b2}, r));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+
+        REQUIRE(count == 4);  // (0,0,0), (0,1,0), (1,0,0), (1,1,1)
+    }
+}
+
+// ============================================================================
+// ArrayBoolOrConstraint tests
+// ============================================================================
+
+TEST_CASE("ArrayBoolOrConstraint name", "[constraint][array_bool_or]") {
+    auto b1 = make_var("b1", 0, 1);
+    auto b2 = make_var("b2", 0, 1);
+    auto r = make_var("r", 0, 1);
+    ArrayBoolOrConstraint c({b1, b2}, r);
+
+    REQUIRE(c.name() == "array_bool_or");
+}
+
+TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
+    SECTION("one true - r=1 satisfied") {
+        auto b1 = make_var("b1", 0);
+        auto b2 = make_var("b2", 1);
+        auto r = make_var("r", 1);
+        ArrayBoolOrConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("all false - r=0 satisfied") {
+        auto b1 = make_var("b1", 0);
+        auto b2 = make_var("b2", 0);
+        auto r = make_var("r", 0);
+        ArrayBoolOrConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("all false - r=1 not satisfied") {
+        auto b1 = make_var("b1", 0);
+        auto b2 = make_var("b2", 0);
+        auto r = make_var("r", 1);
+        ArrayBoolOrConstraint c({b1, b2}, r);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+}
+
+TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_or]") {
+    SECTION("r=0 forces all bi=0") {
+        Model model;
+        auto b1 = make_var("b1", 0, 1);
+        auto b2 = make_var("b2", 0, 1);
+        auto r = make_var("r", 0);  // r = 0 fixed
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
+            std::vector<VariablePtr>{b1, b2}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("b1") == 0);
+        REQUIRE(solution->at("b2") == 0);
+    }
+
+    SECTION("r=1, b1=0 forces b2=1 (2WL propagation)") {
+        Model model;
+        auto b1 = make_var("b1", 0);  // fixed to 0
+        auto b2 = make_var("b2", 0, 1);
+        auto r = make_var("r", 1);  // r = 1 fixed
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
+            std::vector<VariablePtr>{b1, b2}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("b2") == 1);
+    }
+
+    SECTION("all solutions enumeration") {
+        Model model;
+        auto b1 = make_var("b1", 0, 1);
+        auto b2 = make_var("b2", 0, 1);
+        auto r = make_var("r", 0, 1);
+
+        model.add_variable(b1);
+        model.add_variable(b2);
+        model.add_variable(r);
+        model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
+            std::vector<VariablePtr>{b1, b2}, r));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+
+        REQUIRE(count == 4);  // (0,0,0), (0,1,1), (1,0,1), (1,1,1)
+    }
+}
