@@ -131,6 +131,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `all_different` | `AllDifferentConstraint` | 全ての変数が異なる値を取る |
 | `int_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == target |
 | `int_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
+| `int_lin_le_imp` | `IntLinLeImpConstraint` | b = 1 -> Σ(coeffs[i] * vars[i]) <= bound |
 | `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
@@ -175,6 +176,34 @@ std::vector<Domain::value_type> array = {10, 20, 30};
 IntElementConstraint c(index, array, result);
 
 // 有効な解: (1,10), (2,20), (3,30)
+```
+
+#### int_lin_le_imp 制約
+
+半具象化（含意）版の線形不等式制約。`b = 1 -> Σ(coeffs[i] * vars[i]) <= bound`
+
+**引数:**
+- `coeffs`: 係数の配列
+- `vars`: 変数の配列
+- `bound`: 上限値
+- `b`: 含意変数（bool）
+
+**特徴:**
+- `b = 1` の場合: 線形不等式 `sum <= bound` を強制
+- `b = 0` の場合: 制約は無条件で充足（vacuously true）
+- `_reif` との違い: `_reif` は双方向（`P <-> b`）だが、`_imp` は単方向（`b -> P`）
+- `b` が未確定でも、線形変数の状態は追跡される（後で `b = 1` になる可能性があるため）
+
+**例:**
+```cpp
+// b = 1 -> 2*x + 3*y <= 10
+auto x = make_var("x", 1, 5);
+auto y = make_var("y", 1, 5);
+auto b = make_var("b", 0, 1);
+IntLinLeImpConstraint c({2, 3}, {x, y}, 10, b);
+
+// b = 0 の場合: x, y は自由に選べる
+// b = 1 の場合: 2*x + 3*y <= 10 を満たす必要がある
 ```
 
 #### array_int_maximum / array_int_minimum 制約

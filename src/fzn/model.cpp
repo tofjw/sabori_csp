@@ -279,6 +279,28 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+        } else if (decl.name == "int_lin_le_imp") {
+            if (decl.args.size() != 4) {
+                throw std::runtime_error("int_lin_le_imp requires 4 arguments (coeffs, vars, bound, b)");
+            }
+            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                throw std::runtime_error("int_lin_le_imp: third argument must be an integer");
+            }
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
+            auto bound = std::get<Domain::value_type>(decl.args[2]);
+            auto b = get_var(decl.args[3]);
+
+            std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in int_lin_le_imp: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<IntLinLeImpConstraint>(coeffs, vars, bound, b);
         } else if (decl.name == "int_lin_ne") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_ne requires 3 arguments (coeffs, vars, target)");

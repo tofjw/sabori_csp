@@ -569,6 +569,64 @@ private:
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
+/**
+ * @brief int_lin_le_imp制約: b = 1 -> Σ(coeffs[i] * vars[i]) <= bound
+ *
+ * 半具象化（含意）版の線形不等式制約。
+ * b が 1 の場合のみ、線形不等式を強制する。
+ * b が 0 の場合は制約は無条件で充足される。
+ *
+ * _reif との違い:
+ * - _reif: (P) <-> b （双方向）
+ * - _imp: b -> P （単方向、b から P への含意のみ）
+ */
+class IntLinLeImpConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param coeffs 係数リスト
+     * @param vars 変数リスト
+     * @param bound 上限
+     * @param b 含意変数（b = 1 のとき制約を強制）
+     */
+    IntLinLeImpConstraint(std::vector<int64_t> coeffs,
+                          std::vector<VariablePtr> vars,
+                          int64_t bound,
+                          VariablePtr b);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す
+     */
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    std::vector<int64_t> coeffs_;
+    int64_t bound_;
+    VariablePtr b_;  // 含意変数
+    int64_t current_fixed_sum_;
+    int64_t min_rem_potential_;
+
+    struct TrailEntry {
+        int64_t fixed_sum;
+        int64_t min_pot;
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

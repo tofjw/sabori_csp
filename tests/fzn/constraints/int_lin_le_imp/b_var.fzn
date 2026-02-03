@@ -1,0 +1,8 @@
+% int_lin_le_imp: b is a variable
+% When b=1, 2*x + 3*y <= 10 must hold
+% When b=0, any x,y is fine
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 0..1: b :: output_var;
+constraint int_lin_le_imp([2, 3], [x, y], 10, b);
+solve satisfy;

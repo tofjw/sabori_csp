@@ -1,0 +1,8 @@
+% int_lin_le_imp: b = false -> constraint is vacuously satisfied
+% 2*x + 3*y <= 1 would normally be unsat for x,y in 1..5
+% but b = false means the constraint doesn't apply
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var bool: b = false;
+constraint int_lin_le_imp([2, 3], [x, y], 1, b);
+solve satisfy;

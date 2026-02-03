@@ -1,0 +1,7 @@
+% int_lin_le_imp: UNSAT when b=true and constraint cannot be satisfied
+% 2*x + 3*y <= 1 is impossible for x,y in 1..5 and b=true
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var bool: b = true;
+constraint int_lin_le_imp([2, 3], [x, y], 1, b);
+solve satisfy;
