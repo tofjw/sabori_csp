@@ -85,9 +85,13 @@ bool Constraint::on_instantiate(Model& model, int save_point,
         return true;
     }
 
+    // 確定した変数を取得（モデルインデックス → 変数ポインタ）
+    VariablePtr assigned_var = model.variable(var_idx);
+
     // w1 が確定した場合
-    if (static_cast<size_t>(w1_) == var_idx ||
-        (var_idx < vars_.size() && vars_[w1_]->is_assigned())) {
+    // 注意: var_idx はモデル内のインデックス、w1_/w2_ は制約内のインデックス
+    // ポインタ比較で正しく判定する
+    if (vars_[w1_] == assigned_var || vars_[w1_]->is_assigned()) {
         // 別の未確定変数を探して監視を移す
         for (size_t idx = 0; idx < vars_.size(); ++idx) {
             if (static_cast<int>(idx) == w1_ || static_cast<int>(idx) == w2_) {
@@ -106,8 +110,7 @@ bool Constraint::on_instantiate(Model& model, int save_point,
         }
     }
     // w2 が確定した場合
-    else if (static_cast<size_t>(w2_) == var_idx ||
-             (var_idx < vars_.size() && vars_[w2_]->is_assigned())) {
+    else if (vars_[w2_] == assigned_var || vars_[w2_]->is_assigned()) {
         // 別の未確定変数を探して監視を移す
         for (size_t idx = 0; idx < vars_.size(); ++idx) {
             if (static_cast<int>(idx) == w1_ || static_cast<int>(idx) == w2_) {

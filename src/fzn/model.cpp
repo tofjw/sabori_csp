@@ -127,6 +127,13 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 return it->second.elements;
             }
             throw std::runtime_error("Unknown variable array: " + name);
+        } else if (std::holds_alternative<std::vector<Domain::value_type>>(arg)) {
+            // Empty array [] is parsed as vector<int64_t>{}
+            const auto& int_vec = std::get<std::vector<Domain::value_type>>(arg);
+            if (int_vec.empty()) {
+                return {};  // Empty variable array
+            }
+            throw std::runtime_error("Expected array of variables, got array of integers");
         }
         throw std::runtime_error("Expected array of variables");
     };
@@ -442,6 +449,30 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             }
             auto r = get_var(decl.args[1]);
             constraint = std::make_shared<ArrayBoolOrConstraint>(vars, r);
+        } else if (decl.name == "bool_clause") {
+            // bool_clause([pos], [neg]) means ∨(pos) ∨ ∨(¬neg)
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_clause requires 2 arguments");
+            }
+            const auto pos_names = resolve_var_array(decl.args[0]);
+            const auto neg_names = resolve_var_array(decl.args[1]);
+            std::vector<VariablePtr> pos_vars;
+            std::vector<VariablePtr> neg_vars;
+            for (const auto& name : pos_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in bool_clause: " + name);
+                }
+                pos_vars.push_back(it->second);
+            }
+            for (const auto& name : neg_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in bool_clause: " + name);
+                }
+                neg_vars.push_back(it->second);
+            }
+            constraint = std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
         } else if (decl.name == "array_int_element" || decl.name == "int_element") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_element requires 3 arguments (index, array, result)");

@@ -390,6 +390,8 @@ void Solver::backtrack(Model& model, int save_point) {
             bool_and->rewind_to(save_point);
         } else if (auto* bool_or = dynamic_cast<ArrayBoolOrConstraint*>(constraint.get())) {
             bool_or->rewind_to(save_point);
+        } else if (auto* bool_clause = dynamic_cast<BoolClauseConstraint*>(constraint.get())) {
+            bool_clause->rewind_to(save_point);
         }
     }
 }

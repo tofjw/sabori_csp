@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "sabori_csp/constraint.hpp"
+#include "sabori_csp/constraints/logical.hpp"
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/domain.hpp"
 #include "sabori_csp/model.hpp"
@@ -1826,5 +1827,208 @@ TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_o
         size_t count = solver.solve_all(model, [](const Solution&) { return true; });
 
         REQUIRE(count == 4);  // (0,0,0), (0,1,1), (1,0,1), (1,1,1)
+    }
+}
+
+// ============================================================================
+// BoolClauseConstraint tests
+// ============================================================================
+
+TEST_CASE("BoolClauseConstraint name", "[constraint][bool_clause]") {
+    auto p1 = make_var("p1", 0, 1);
+    auto n1 = make_var("n1", 0, 1);
+    BoolClauseConstraint c({p1}, {n1});
+
+    REQUIRE(c.name() == "bool_clause");
+}
+
+TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
+    SECTION("positive literal true - satisfied") {
+        // p1 ∨ ¬n1, p1=1 → satisfied
+        auto p1 = make_var("p1", 1);
+        auto n1 = make_var("n1", 1);
+        BoolClauseConstraint c({p1}, {n1});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("negative literal false - satisfied") {
+        // p1 ∨ ¬n1, p1=0, n1=0 → satisfied (because ¬n1 = true)
+        auto p1 = make_var("p1", 0);
+        auto n1 = make_var("n1", 0);
+        BoolClauseConstraint c({p1}, {n1});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("all falsified - not satisfied") {
+        // p1 ∨ ¬n1, p1=0, n1=1 → not satisfied
+        auto p1 = make_var("p1", 0);
+        auto n1 = make_var("n1", 1);
+        BoolClauseConstraint c({p1}, {n1});
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("undetermined") {
+        auto p1 = make_var("p1", 0, 1);
+        auto n1 = make_var("n1", 0, 1);
+        BoolClauseConstraint c({p1}, {n1});
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("BoolClauseConstraint unit propagation", "[constraint][bool_clause]") {
+    SECTION("single positive literal - forces true") {
+        // p1 (clause with only positive), p1 must be 1
+        Model model;
+        auto p1 = make_var("p1", 0, 1);
+
+        model.add_variable(p1);
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("p1") == 1);
+    }
+
+    SECTION("single negative literal - forces false") {
+        // ¬n1 (clause with only negative), n1 must be 0
+        Model model;
+        auto n1 = make_var("n1", 0, 1);
+
+        model.add_variable(n1);
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{}, std::vector<VariablePtr>{n1}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("n1") == 0);
+    }
+
+    SECTION("2WL propagation - last unset literal") {
+        // p1 ∨ p2 ∨ p3, p1=0, p2=0 → p3 must be 1
+        Model model;
+        auto p1 = make_var("p1", 0);  // fixed to 0
+        auto p2 = make_var("p2", 0);  // fixed to 0
+        auto p3 = make_var("p3", 0, 1);
+
+        model.add_variable(p1);
+        model.add_variable(p2);
+        model.add_variable(p3);
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1, p2, p3}, std::vector<VariablePtr>{}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("p3") == 1);
+    }
+
+    SECTION("mixed clause propagation") {
+        // p1 ∨ ¬n1 ∨ ¬n2, p1=0, n1=1 → n2 must be 0
+        Model model;
+        auto p1 = make_var("p1", 0);  // fixed to 0
+        auto n1 = make_var("n1", 1);  // fixed to 1 (so ¬n1=0)
+        auto n2 = make_var("n2", 0, 1);
+
+        model.add_variable(p1);
+        model.add_variable(n1);
+        model.add_variable(n2);
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{n1, n2}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("n2") == 0);
+    }
+}
+
+TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]") {
+    SECTION("empty clause is unsatisfiable") {
+        Model model;
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{}, std::vector<VariablePtr>{}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());
+    }
+
+    SECTION("conflicting clauses") {
+        // p1 AND ¬p1 is unsatisfiable
+        Model model;
+        auto p1 = make_var("p1", 0, 1);
+
+        model.add_variable(p1);
+        // clause 1: p1 (p1 must be true)
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{}));
+        // clause 2: ¬p1 (p1 must be false)
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{}, std::vector<VariablePtr>{p1}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());
+    }
+
+    SECTION("all solutions for simple clause") {
+        // p1 ∨ p2 has 3 solutions: (0,1), (1,0), (1,1)
+        Model model;
+        auto p1 = make_var("p1", 0, 1);
+        auto p2 = make_var("p2", 0, 1);
+
+        model.add_variable(p1);
+        model.add_variable(p2);
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1, p2}, std::vector<VariablePtr>{}));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+
+        REQUIRE(count == 3);
+    }
+
+    SECTION("backtracking with multiple clauses") {
+        // (p1 ∨ p2) ∧ (¬p1 ∨ p3) ∧ (¬p2 ∨ ¬p3)
+        // Solutions: (0,1,0), (1,0,1) = 2 solutions
+        Model model;
+        auto p1 = make_var("p1", 0, 1);
+        auto p2 = make_var("p2", 0, 1);
+        auto p3 = make_var("p3", 0, 1);
+
+        model.add_variable(p1);
+        model.add_variable(p2);
+        model.add_variable(p3);
+
+        // p1 ∨ p2
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p1, p2}, std::vector<VariablePtr>{}));
+        // ¬p1 ∨ p3 (pos={p3}, neg={p1})
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{p3}, std::vector<VariablePtr>{p1}));
+        // ¬p2 ∨ ¬p3 (pos={}, neg={p2, p3})
+        model.add_constraint(std::make_shared<BoolClauseConstraint>(
+            std::vector<VariablePtr>{}, std::vector<VariablePtr>{p2, p3}));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+
+        REQUIRE(count == 2);
     }
 }
