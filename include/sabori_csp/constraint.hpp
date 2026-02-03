@@ -54,10 +54,15 @@ public:
     virtual std::optional<bool> is_satisfied() const = 0;
 
     /**
-     * @brief 制約伝播を実行（レガシー、後方互換性用）
-     * @return 伝播が成功すればtrue、失敗（定義域が空）すればfalse
+     * @brief 初期制約伝播を実行
+     *
+     * 探索開始前に呼び出され、変数の bounds を絞り込む。
+     * Model を通じて enqueue_set_min/enqueue_set_max を使用可能。
+     *
+     * @param model モデルへの参照
+     * @return 伝播が成功すればtrue、失敗（矛盾検出）すればfalse
      */
-    virtual bool propagate() = 0;
+    virtual bool propagate(Model& model) = 0;
 
     // ===== 2-Watched Literal (2WL) インターフェース =====
 
@@ -106,6 +111,55 @@ public:
      */
     virtual bool on_last_uninstantiated(Model& model, int save_point,
                                          size_t last_var_internal_idx);
+
+    /**
+     * @brief 変数の下限が更新された時に呼ばれる
+     *
+     * サブクラスでオーバーライドしてインクリメンタルな伝播を行う。
+     * デフォルトでは何もしない（trueを返す）。
+     *
+     * @param model モデルへの参照
+     * @param save_point バックトラック用セーブポイント
+     * @param var_idx 更新された変数のグローバルインデックス
+     * @param new_min 新しい下限
+     * @param old_min 更新前の下限
+     * @return 伝播が成功すればtrue、失敗すればfalse
+     */
+    virtual bool on_set_min(Model& model, int save_point,
+                            size_t var_idx, Domain::value_type new_min,
+                            Domain::value_type old_min);
+
+    /**
+     * @brief 変数の上限が更新された時に呼ばれる
+     *
+     * サブクラスでオーバーライドしてインクリメンタルな伝播を行う。
+     * デフォルトでは何もしない（trueを返す）。
+     *
+     * @param model モデルへの参照
+     * @param save_point バックトラック用セーブポイント
+     * @param var_idx 更新された変数のグローバルインデックス
+     * @param new_max 新しい上限
+     * @param old_max 更新前の上限
+     * @return 伝播が成功すればtrue、失敗すればfalse
+     */
+    virtual bool on_set_max(Model& model, int save_point,
+                            size_t var_idx, Domain::value_type new_max,
+                            Domain::value_type old_max);
+
+    /**
+     * @brief 変数から値が削除された時に呼ばれる
+     *
+     * サブクラスでオーバーライドしてインクリメンタルな伝播を行う。
+     * デフォルトでは何もしない（trueを返す）。
+     *
+     * @param model モデルへの参照
+     * @param save_point バックトラック用セーブポイント
+     * @param var_idx 更新された変数のグローバルインデックス
+     * @param removed_value 削除された値
+     * @return 伝播が成功すればtrue、失敗すればfalse
+     */
+    virtual bool on_remove_value(Model& model, int save_point,
+                                  size_t var_idx, Domain::value_type removed_value);
 
     /**
      * @brief 制約設定直後に全変数が確定しているかどうか

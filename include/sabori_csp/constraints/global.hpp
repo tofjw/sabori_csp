@@ -28,7 +28,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate() override;
+    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -104,7 +104,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate() override;
+    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -118,6 +118,20 @@ public:
      */
     bool on_last_uninstantiated(Model& model, int save_point,
                                  size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
 
     /**
      * @brief 指定セーブポイントまで状態を巻き戻す
@@ -183,7 +197,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate() override;
+    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -241,7 +255,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate() override;
+    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -319,6 +333,81 @@ private:
 };
 
 /**
+ * @brief int_lin_ne制約: Σ(coeffs[i] * vars[i]) != target
+ *
+ * 線形不等式制約。全変数が確定したときに和が target と等しくないことを確認。
+ * 残り1変数の場合、禁止値を除外する。
+ */
+class IntLinNeConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param coeffs 係数リスト
+     * @param vars 変数リスト
+     * @param target 禁止値
+     */
+    IntLinNeConstraint(std::vector<int64_t> coeffs,
+                       std::vector<VariablePtr> vars,
+                       int64_t target);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    /**
+     * @brief 残り1変数になった時の伝播
+     *
+     * 残りの変数が禁止値を取る場合、その値を除外する。
+     */
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す
+     */
+    void rewind_to(int save_point);
+
+    /**
+     * @brief 目標値を取得
+     */
+    int64_t target() const { return target_; }
+
+    /**
+     * @brief 係数リストを取得
+     */
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    std::vector<int64_t> coeffs_;
+    int64_t target_;
+
+    // 現在の確定変数の和
+    int64_t current_fixed_sum_;
+
+    // 未確定変数カウント
+    size_t unfixed_count_;
+
+    // Trail: (save_point, (fixed_sum, unfixed_count))
+    struct TrailEntry {
+        int64_t fixed_sum;
+        size_t unfixed_count;
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    // 変数ポインタ → 内部インデックスへのマップ
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+};
+
+/**
  * @brief int_element制約: array[index] = result を維持する
  *
  * - index: インデックス変数（1-based、MiniZinc 仕様。zero_based=true で 0-based）
@@ -344,7 +433,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate() override;
+    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,

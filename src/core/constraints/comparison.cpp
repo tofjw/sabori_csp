@@ -31,7 +31,7 @@ std::optional<bool> IntEqConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntEqConstraint::propagate() {
+bool IntEqConstraint::propagate(Model& /*model*/) {
     // Intersect domains
     auto x_vals = x_->domain().values();
     auto y_vals = y_->domain().values();
@@ -152,7 +152,7 @@ std::optional<bool> IntEqReifConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntEqReifConstraint::propagate() {
+bool IntEqReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 1, enforce x == y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         auto x_vals = x_->domain().values();
@@ -329,7 +329,7 @@ std::optional<bool> IntNeConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntNeConstraint::propagate() {
+bool IntNeConstraint::propagate(Model& /*model*/) {
     // If one is singleton, remove that value from the other
     if (x_->is_assigned()) {
         y_->domain().remove(x_->assigned_value().value());
@@ -415,7 +415,7 @@ std::optional<bool> IntLtConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLtConstraint::propagate() {
+bool IntLtConstraint::propagate(Model& /*model*/) {
     // x < y means x.max < y and y > x.min
     auto x_max = x_->domain().max();
     auto y_min = y_->domain().min();
@@ -530,7 +530,7 @@ std::optional<bool> IntLeConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLeConstraint::propagate() {
+bool IntLeConstraint::propagate(Model& /*model*/) {
     // x <= y
     auto y_max = y_->domain().max();
     if (y_max) {
@@ -638,7 +638,7 @@ std::optional<bool> IntLeReifConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLeReifConstraint::propagate() {
+bool IntLeReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 1, enforce x <= y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         // x <= y: x の上限を y.max に、y の下限を x.min に

@@ -259,6 +259,11 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 bool Solver::initial_propagate(Model& model) {
     const auto& constraints = model.constraints();
 
+    // まず全制約の propagate() を実行（bounds propagation など）
+    if (!propagate_all(model)) {
+        return false;  // 矛盾
+    }
+
     // 固定点に達するまで繰り返す
     bool changed = true;
     while (changed) {
@@ -300,6 +305,7 @@ bool Solver::initial_propagate(Model& model) {
 bool Solver::propagate_all(Model& model) {
     const auto& constraints = model.constraints();
 
+    // 固定点に達するまで繰り返す
     bool changed = true;
     while (changed) {
         changed = false;
@@ -309,7 +315,7 @@ bool Solver::propagate_all(Model& model) {
                 total_size_before += var->domain().size();
             }
 
-            if (!constraint->propagate()) {
+            if (!constraint->propagate(model)) {
                 return false;
             }
 
@@ -374,6 +380,8 @@ void Solver::backtrack(Model& model, int save_point) {
             lineq->rewind_to(save_point);
         } else if (auto* linle = dynamic_cast<IntLinLeConstraint*>(constraint.get())) {
             linle->rewind_to(save_point);
+        } else if (auto* linne = dynamic_cast<IntLinNeConstraint*>(constraint.get())) {
+            linne->rewind_to(save_point);
         } else if (auto* circuit = dynamic_cast<CircuitConstraint*>(constraint.get())) {
             circuit->rewind_to(save_point);
         } else if (auto* int_element = dynamic_cast<IntElementConstraint*>(constraint.get())) {
@@ -411,31 +419,36 @@ size_t Solver::select_variable(const Model& model) {
     size_t best_idx = 0;
     bool found = false;
 
-    // MRV (Minimum Remaining Values) + Activity tie-breaking
-    // 最小ドメインサイズを優先、同サイズなら Activity 最大を選択
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
 
     for (size_t i = 0; i < variables.size(); ++i) {
         if (!variables[i]->is_assigned()) {
             size_t domain_size = variables[i]->domain().size();
+            double act = activity_selection_ ? activity_[i] : 0.0;
 
-            // 1. ドメインサイズが小さいものを優先
-            // 2. 同じサイズなら Activity が高いものを優先
             bool better = false;
             if (!found) {
                 better = true;
-            } else if (domain_size < min_domain_size) {
-                better = true;
-            } else if (domain_size == min_domain_size && activity_selection_) {
-                if (activity_[i] > best_activity) {
+            } else if (activity_first_) {
+                // Activity 優先: Activity が高いものを優先、同じなら MRV
+                if (act > best_activity) {
+                    better = true;
+                } else if (act == best_activity && domain_size < min_domain_size) {
+                    better = true;
+                }
+            } else {
+                // MRV 優先（デフォルト）: ドメインサイズが小さいものを優先、同じなら Activity
+                if (domain_size < min_domain_size) {
+                    better = true;
+                } else if (domain_size == min_domain_size && act > best_activity) {
                     better = true;
                 }
             }
 
             if (better) {
                 min_domain_size = domain_size;
-                best_activity = activity_selection_ ? activity_[i] : 0.0;
+                best_activity = act;
                 best_idx = i;
                 found = true;
             }
@@ -794,6 +807,7 @@ void Solver::enqueue_update(const PendingUpdate& update) {
 
 bool Solver::process_queue(Model& model) {
     const auto& variables = model.variables();
+    const auto& constraints = model.constraints();
 
     while (true) {
         // Model の pending を取り込む
@@ -836,32 +850,65 @@ bool Solver::process_queue(Model& model) {
             break;
         }
         case PendingUpdate::Type::SetMin: {
-            if (!model.set_min(current_decision_, var_idx, update.value)) {
+            auto new_min = update.value;
+            if (new_min <= prev_min) continue;  // 変化なし
+            if (!model.set_min(current_decision_, var_idx, new_min)) {
                 return false;
             }
-            // 新たに確定した場合のみ伝播（既に確定済みだった場合は不要）
+            // 確定した場合は on_instantiate、そうでなければ on_set_min
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 need_propagate = true;
+            } else if (!was_instantiated) {
+                // on_set_min を関連する全制約に呼び出す
+                const auto& constraint_indices = model.constraints_for_var(var_idx);
+                for (size_t c_idx : constraint_indices) {
+                    if (!constraints[c_idx]->on_set_min(model, current_decision_,
+                                                         var_idx, new_min, prev_min)) {
+                        return false;
+                    }
+                }
             }
             break;
         }
         case PendingUpdate::Type::SetMax: {
-            if (!model.set_max(current_decision_, var_idx, update.value)) {
+            auto new_max = update.value;
+            if (new_max >= prev_max) continue;  // 変化なし
+            if (!model.set_max(current_decision_, var_idx, new_max)) {
                 return false;
             }
-            // 新たに確定した場合のみ伝播
+            // 確定した場合は on_instantiate、そうでなければ on_set_max
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 need_propagate = true;
+            } else if (!was_instantiated) {
+                // on_set_max を関連する全制約に呼び出す
+                const auto& constraint_indices = model.constraints_for_var(var_idx);
+                for (size_t c_idx : constraint_indices) {
+                    if (!constraints[c_idx]->on_set_max(model, current_decision_,
+                                                         var_idx, new_max, prev_max)) {
+                        return false;
+                    }
+                }
             }
             break;
         }
         case PendingUpdate::Type::RemoveValue: {
-            if (!model.remove_value(current_decision_, var_idx, update.value)) {
+            auto removed_value = update.value;
+            if (!var->domain().contains(removed_value)) continue;  // 既に存在しない
+            if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return false;
             }
-            // 新たに確定した場合のみ伝播
+            // 確定した場合は on_instantiate、そうでなければ on_remove_value
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 need_propagate = true;
+            } else if (!was_instantiated) {
+                // on_remove_value を関連する全制約に呼び出す
+                const auto& constraint_indices = model.constraints_for_var(var_idx);
+                for (size_t c_idx : constraint_indices) {
+                    if (!constraints[c_idx]->on_remove_value(model, current_decision_,
+                                                              var_idx, removed_value)) {
+                        return false;
+                    }
+                }
             }
             break;
         }

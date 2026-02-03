@@ -146,6 +146,26 @@ bool Constraint::on_last_uninstantiated(Model& /*model*/, int /*save_point*/,
     return true;
 }
 
+bool Constraint::on_set_min(Model& /*model*/, int /*save_point*/,
+                            size_t /*var_idx*/, Domain::value_type /*new_min*/,
+                            Domain::value_type /*old_min*/) {
+    // デフォルトでは何もしない
+    return true;
+}
+
+bool Constraint::on_set_max(Model& /*model*/, int /*save_point*/,
+                            size_t /*var_idx*/, Domain::value_type /*new_max*/,
+                            Domain::value_type /*old_max*/) {
+    // デフォルトでは何もしない
+    return true;
+}
+
+bool Constraint::on_remove_value(Model& /*model*/, int /*save_point*/,
+                                  size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+    // デフォルトでは何もしない
+    return true;
+}
+
 void Constraint::check_initial_consistency() {
     // 全変数が確定している場合は is_satisfied() で判定
     auto result = is_satisfied();

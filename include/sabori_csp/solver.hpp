@@ -47,6 +47,21 @@ struct Literal {
 };
 
 /**
+ * @brief 名前付きリテラル（NoGood の引き継ぎ用）
+ */
+struct NamedLiteral {
+    std::string var_name;
+    Domain::value_type value;
+};
+
+/**
+ * @brief 名前付き NoGood（NoGood の引き継ぎ用）
+ */
+struct NamedNoGood {
+    std::vector<NamedLiteral> literals;
+};
+
+/**
  * @brief NoGood（失敗パターン）
  *
  * これらのリテラルが全て成立すると矛盾。
@@ -135,6 +150,53 @@ public:
      * @brief Activity-based 変数選択を有効/無効にする
      */
     void set_activity_selection(bool enabled) { activity_selection_ = enabled; }
+
+    /**
+     * @brief Activity 優先の変数選択を有効/無効にする
+     * true: Activity → ドメインサイズ
+     * false: ドメインサイズ → Activity（デフォルト）
+     */
+    void set_activity_first(bool enabled) { activity_first_ = enabled; }
+
+    /**
+     * @brief Activity スコアを取得（最適化の引き継ぎ用）
+     */
+    const std::vector<double>& activity() const { return activity_; }
+
+    /**
+     * @brief Activity スコアを設定（最適化の引き継ぎ用）
+     * @param activity 変数名 -> activity スコアのマップ
+     * @param model 変数名からインデックスを解決するためのモデル
+     */
+    void set_activity(const std::map<std::string, double>& activity, const Model& model);
+
+    /**
+     * @brief Activity スコアを名前付きマップとして取得
+     * @param model 変数名を解決するためのモデル
+     */
+    std::map<std::string, double> get_activity_map(const Model& model) const;
+
+    /**
+     * @brief NoGood を名前付き形式で取得（最適化の引き継ぎ用）
+     * @param model 変数名を解決するためのモデル
+     * @param max_count 取得する最大数（0 = 全て）
+     */
+    std::vector<NamedNoGood> get_nogoods(const Model& model, size_t max_count = 0) const;
+
+    /**
+     * @brief 名前付き NoGood を追加（最適化の引き継ぎ用）
+     * @param nogoods 追加する NoGood のリスト
+     * @param model 変数名からインデックスを解決するためのモデル
+     * @return 追加された NoGood の数
+     */
+    size_t add_nogoods(const std::vector<NamedNoGood>& nogoods, const Model& model);
+
+    /**
+     * @brief ヒント解を設定（値選択の優先度に使用）
+     * @param hint 変数名 -> 値のマップ
+     * @param model 変数名からインデックスを解決するためのモデル
+     */
+    void set_hint_solution(const Solution& hint, const Model& model);
 
 private:
     // ===== 探索 =====
@@ -250,6 +312,7 @@ private:
     bool nogood_learning_ = true;
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
+    bool activity_first_ = false;  // false: MRV優先, true: Activity優先
 
     // 状態
     int current_decision_ = 0;

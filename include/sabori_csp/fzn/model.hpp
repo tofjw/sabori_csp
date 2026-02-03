@@ -134,6 +134,18 @@ public:
      */
     const SolveDecl& solve_decl() const { return solve_decl_; }
 
+    /**
+     * @brief 変数の上限を設定（最適化用）
+     * @return 成功したらtrue
+     */
+    bool set_var_upper_bound(const std::string& name, Domain::value_type ub);
+
+    /**
+     * @brief 変数の下限を設定（最適化用）
+     * @return 成功したらtrue
+     */
+    bool set_var_lower_bound(const std::string& name, Domain::value_type lb);
+
 private:
     std::map<std::string, VarDecl> var_decls_;
     std::map<std::string, ArrayDecl> array_decls_;

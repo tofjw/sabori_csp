@@ -151,7 +151,8 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
             constraint = std::make_shared<IntLeReifConstraint>(x, y, b);
-        } else if (decl.name == "all_different_int" || decl.name == "alldifferent_int") {
+        } else if (decl.name == "all_different_int" || decl.name == "alldifferent_int" ||
+                   decl.name == "fzn_all_different_int") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("all_different_int requires 1 argument (array)");
             }
@@ -239,6 +240,33 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+        } else if (decl.name == "int_lin_ne") {
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("int_lin_ne requires 3 arguments (coeffs, vars, target)");
+            }
+            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
+                throw std::runtime_error("int_lin_ne: first argument must be an array of integers");
+            }
+            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
+                throw std::runtime_error("int_lin_ne: second argument must be an array of variables");
+            }
+            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                throw std::runtime_error("int_lin_ne: third argument must be an integer");
+            }
+            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
+            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
+            auto target = std::get<Domain::value_type>(decl.args[2]);
+
+            std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in int_lin_ne: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<IntLinNeConstraint>(coeffs, vars, target);
         // ========================================
         // Bool constraints (aliases for int constraints with 0-1 variables)
         // ========================================

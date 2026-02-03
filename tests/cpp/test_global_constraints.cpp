@@ -18,6 +18,9 @@ static VariablePtr make_var(const std::string& name, Domain::value_type value) {
     return std::make_shared<Variable>(name, Domain(value, value));
 }
 
+// Dummy model for propagate() calls
+static Model dummy_model;
+
 // ============================================================================
 // AllDifferentConstraint tests
 // ============================================================================
@@ -78,7 +81,7 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
         auto z = make_var("z", 1, 3);
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.propagate() == true);
+        REQUIRE(c.propagate(dummy_model) == true);
         REQUIRE_FALSE(y->domain().contains(2));
         REQUIRE_FALSE(z->domain().contains(2));
     }
@@ -357,6 +360,137 @@ TEST_CASE("IntLinLeConstraint on_final_instantiate", "[constraint][int_lin_le]")
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == false);
+    }
+}
+
+// ============================================================================
+// IntLinNeConstraint tests
+// ============================================================================
+
+TEST_CASE("IntLinNeConstraint name", "[constraint][int_lin_ne]") {
+    auto x = make_var("x", 1, 3);
+    auto y = make_var("y", 1, 3);
+    IntLinNeConstraint c({1, 1}, {x, y}, 5);
+
+    REQUIRE(c.name() == "int_lin_ne");
+}
+
+TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
+    SECTION("satisfied: 1*2 + 1*3 != 4") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        IntLinNeConstraint c({1, 1}, {x, y}, 4);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("satisfied: 1*2 + 1*3 != 6") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        IntLinNeConstraint c({1, 1}, {x, y}, 6);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("violated: 1*2 + 1*3 == 5") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        IntLinNeConstraint c({1, 1}, {x, y}, 5);
+
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("not fully assigned") {
+        auto x = make_var("x", 1, 3);
+        auto y = make_var("y", 2);
+        IntLinNeConstraint c({1, 1}, {x, y}, 5);
+
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("IntLinNeConstraint on_final_instantiate", "[constraint][int_lin_ne]") {
+    SECTION("satisfied - not equal") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        IntLinNeConstraint c({1, 1}, {x, y}, 4);
+
+        REQUIRE(c.on_final_instantiate() == true);
+    }
+
+    SECTION("violated - equal") {
+        auto x = make_var("x", 2);
+        auto y = make_var("y", 3);
+        IntLinNeConstraint c({1, 1}, {x, y}, 5);
+
+        REQUIRE(c.on_final_instantiate() == false);
+    }
+}
+
+TEST_CASE("IntLinNeConstraint with Solver", "[constraint][int_lin_ne][solver]") {
+    SECTION("simple: x + y != 5 with x,y in [1,3]") {
+        // x + y != 5 with x,y in {1,2,3}
+        // Valid combinations: (1,1)=2, (1,2)=3, (1,3)=4, (2,1)=3, (2,2)=4, (3,1)=4, (3,3)=6
+        // Invalid: (2,3)=5, (3,2)=5
+        Model model;
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(1, 3));
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_constraint(std::make_shared<IntLinNeConstraint>(
+            std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{x, y}, 5));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // 9 total - 2 invalid = 7 solutions
+        REQUIRE(count == 7);
+        REQUIRE(solutions.size() == 7);
+
+        // Verify (2,3) and (3,2) are not in solutions
+        for (const auto& sol : solutions) {
+            int sum = sol.at("x") + sol.at("y");
+            REQUIRE(sum != 5);
+        }
+    }
+
+    SECTION("coefficient test: 2*x - y != 3 with x,y in [1,3]") {
+        // 2*x - y != 3
+        // 2*1 - y != 3 => y != -1 (always satisfied for y in [1,3])
+        // 2*2 - y != 3 => y != 1
+        // 2*3 - y != 3 => y != 3
+        // Invalid: (2,1)=3, (3,3)=3
+        Model model;
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(1, 3));
+        model.add_variable(x);
+        model.add_variable(y);
+        model.add_constraint(std::make_shared<IntLinNeConstraint>(
+            std::vector<int64_t>{2, -1}, std::vector<VariablePtr>{x, y}, 3));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // 9 total - 2 invalid = 7 solutions
+        REQUIRE(count == 7);
+        REQUIRE(solutions.size() == 7);
+
+        // Verify constraints
+        for (const auto& sol : solutions) {
+            int val = 2 * sol.at("x") - sol.at("y");
+            REQUIRE(val != 3);
+        }
     }
 }
 
