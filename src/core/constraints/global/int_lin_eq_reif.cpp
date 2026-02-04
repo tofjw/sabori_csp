@@ -133,15 +133,6 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
 
     size_t internal_idx = it->second;
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // b が確定した場合
     if (internal_idx == SIZE_MAX) {
         int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
@@ -195,15 +186,12 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
         }
     } else {
         // b を推論
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            if (min_sum == target_ && max_sum == target_) {
-                // sum == target が常に真 → b = 1
-                model.enqueue_instantiate(b_idx, 1);
-            } else if (target_ < min_sum || target_ > max_sum) {
-                // sum == target が常に偽 → b = 0
-                model.enqueue_instantiate(b_idx, 0);
-            }
+        if (min_sum == target_ && max_sum == target_) {
+            // sum == target が常に真 → b = 1
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (target_ < min_sum || target_ > max_sum) {
+            // sum == target が常に偽 → b = 0
+            model.enqueue_instantiate(b_->id(), 0);
         }
     }
 

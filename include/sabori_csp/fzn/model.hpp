@@ -24,6 +24,7 @@ struct VarDecl {
     Domain::value_type lb;  // lower bound
     Domain::value_type ub;  // upper bound
     bool is_output = false;
+    bool is_bool = false;   // true if declared as "var bool"
     std::optional<Domain::value_type> fixed_value;  // For par (constant) values
 };
 
@@ -35,6 +36,7 @@ struct ArrayDecl {
     size_t size;
     std::vector<std::string> elements;  // Variable names or literals
     bool is_output = false;
+    bool is_bool = false;   // true if declared as "array of var bool"
 };
 
 /**

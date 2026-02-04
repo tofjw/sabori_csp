@@ -175,6 +175,7 @@ var_decl:
             decl.name = *$4;
             decl.lb = 0;
             decl.ub = 1;
+            decl.is_bool = true;
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
@@ -190,6 +191,7 @@ var_decl:
             decl.name = *$4;
             decl.lb = 0;
             decl.ub = 1;
+            decl.is_bool = true;
             decl.fixed_value = $7;
             if ($5) {
                 for (const auto& ann : *$5) {
@@ -262,6 +264,7 @@ var_decl:
             ArrayDecl decl;
             decl.name = *$11;
             decl.size = $5 - $3 + 1;
+            decl.is_bool = true;
             if ($12) {
                 for (const auto& ann : *$12) {
                     if (ann == "output_array") decl.is_output = true;
@@ -274,6 +277,7 @@ var_decl:
                 vdecl.name = decl.name + "[" + std::to_string($3 + i) + "]";
                 vdecl.lb = 0;
                 vdecl.ub = 1;
+                vdecl.is_bool = true;
                 ctx->model->add_var_decl(std::move(vdecl));
                 decl.elements.push_back(decl.name + "[" + std::to_string($3 + i) + "]");
             }
@@ -286,6 +290,7 @@ var_decl:
             ArrayDecl decl;
             decl.name = *$11;
             decl.size = $5 - $3 + 1;
+            decl.is_bool = true;
             if ($12) {
                 for (const auto& ann : *$12) {
                     if (ann == "output_array") decl.is_output = true;

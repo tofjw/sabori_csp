@@ -12,13 +12,25 @@ void print_usage(const char* program) {
     std::cerr << "  -a    Find all solutions (or all improving solutions for optimization)\n";
 }
 
+void print_value(int64_t value, bool is_bool) {
+    if (is_bool) {
+        std::cout << (value ? "true" : "false");
+    } else {
+        std::cout << value;
+    }
+}
+
 void print_solution(const sabori_csp::Solution& sol,
                    const sabori_csp::fzn::Model& model) {
     // Print output variables
     for (const auto& name : model.output_vars()) {
         auto it = sol.find(name);
         if (it != sol.end()) {
-            std::cout << name << " = " << it->second << ";\n";
+            auto var_it = model.var_decls().find(name);
+            bool is_bool = (var_it != model.var_decls().end() && var_it->second.is_bool);
+            std::cout << name << " = ";
+            print_value(it->second, is_bool);
+            std::cout << ";\n";
         }
     }
 
@@ -32,9 +44,24 @@ void print_solution(const sabori_csp::Solution& sol,
             for (const auto& elem : decl.elements) {
                 if (!first) std::cout << ", ";
                 first = false;
-                auto elem_it = sol.find(elem);
-                if (elem_it != sol.end()) {
-                    std::cout << elem_it->second;
+
+                // Check if it's an inline literal (__inline_N)
+                if (elem.rfind("__inline_", 0) == 0) {
+                    // Extract the value from the name
+                    std::string val_str = elem.substr(9);  // strlen("__inline_") = 9
+                    int64_t val = std::stoll(val_str);
+                    print_value(val, decl.is_bool);
+                } else {
+                    auto elem_it = sol.find(elem);
+                    if (elem_it != sol.end()) {
+                        // Check if element is bool (use array's is_bool or individual var's is_bool)
+                        bool is_bool = decl.is_bool;
+                        if (!is_bool) {
+                            auto var_it = model.var_decls().find(elem);
+                            is_bool = (var_it != model.var_decls().end() && var_it->second.is_bool);
+                        }
+                        print_value(elem_it->second, is_bool);
+                    }
                 }
             }
             std::cout << "];\n";

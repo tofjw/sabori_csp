@@ -70,36 +70,20 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x == y なので、一方が確定したら他方も同じ値に固定（キューイング）
     if (x_->is_assigned() && !y_->is_assigned()) {
         auto val = x_->assigned_value().value();
         if (!y_->domain().contains(val)) {
             return false;
         }
-        size_t y_idx = find_model_idx(y_);
-        if (y_idx != SIZE_MAX) {
-            model.enqueue_instantiate(y_idx, val);
-        }
+        model.enqueue_instantiate(y_->id(), val);
     }
     if (y_->is_assigned() && !x_->is_assigned()) {
         auto val = y_->assigned_value().value();
         if (!x_->domain().contains(val)) {
             return false;
         }
-        size_t x_idx = find_model_idx(x_);
-        if (x_idx != SIZE_MAX) {
-            model.enqueue_instantiate(x_idx, val);
-        }
+        model.enqueue_instantiate(x_->id(), val);
     }
 
     return true;
@@ -204,6 +188,29 @@ bool IntEqReifConstraint::propagate(Model& /*model*/) {
         b_->domain().assign(eq ? 1 : 0);
     }
 
+    // If y is a singleton and x's domain doesn't contain y's value, then b = 0
+    // (x can never equal y)
+    if (!b_->is_assigned() && y_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        if (!x_->domain().contains(y_val)) {
+            if (!b_->domain().contains(0)) {
+                return false;
+            }
+            b_->domain().assign(0);
+        }
+    }
+
+    // If x is a singleton and y's domain doesn't contain x's value, then b = 0
+    if (!b_->is_assigned() && x_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        if (!y_->domain().contains(x_val)) {
+            if (!b_->domain().contains(0)) {
+                return false;
+            }
+            b_->domain().assign(0);
+        }
+    }
+
     return true;
 }
 
@@ -217,16 +224,6 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // 伝播ロジック（キューイング）
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
@@ -236,34 +233,22 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
                 if (!y_->domain().contains(val)) {
                     return false;
                 }
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(y_idx, val);
-                }
+                model.enqueue_instantiate(y_->id(), val);
             }
             if (y_->is_assigned() && !x_->is_assigned()) {
                 auto val = y_->assigned_value().value();
                 if (!x_->domain().contains(val)) {
                     return false;
                 }
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(x_idx, val);
-                }
+                model.enqueue_instantiate(x_->id(), val);
             }
         } else {
             // x != y を強制
             if (x_->is_assigned()) {
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    model.enqueue_remove_value(y_idx, x_->assigned_value().value());
-                }
+                model.enqueue_remove_value(y_->id(), x_->assigned_value().value());
             }
             if (y_->is_assigned()) {
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    model.enqueue_remove_value(x_idx, y_->assigned_value().value());
-                }
+                model.enqueue_remove_value(x_->id(), y_->assigned_value().value());
             }
         }
     }
@@ -271,9 +256,33 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
     // x と y が両方確定したら b を決定
     if (x_->is_assigned() && y_->is_assigned() && !b_->is_assigned()) {
         bool eq = (x_->assigned_value() == y_->assigned_value());
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            model.enqueue_instantiate(b_idx, eq ? 1 : 0);
+        model.enqueue_instantiate(b_->id(), eq ? 1 : 0);
+    }
+
+    return true;
+}
+
+bool IntEqReifConstraint::on_remove_value(Model& model, int /*save_point*/,
+                                           size_t var_idx, Domain::value_type removed_value) {
+    (void)removed_value;
+
+    // x または y から値が削除された場合、b を更新
+    if (!b_->is_assigned()) {
+        // y がシングルトンで、x から値が削除された場合
+        if (y_->is_assigned() && var_idx == x_->id()) {
+            auto y_val = y_->assigned_value().value();
+            // x の現在のドメインに y_val がない場合、b = 0
+            if (!x_->domain().contains(y_val)) {
+                model.enqueue_instantiate(b_->id(), 0);
+            }
+        }
+        // x がシングルトンで、y から値が削除された場合
+        if (x_->is_assigned() && var_idx == y_->id()) {
+            auto x_val = x_->assigned_value().value();
+            // y の現在のドメインに x_val がない場合、b = 0
+            if (!y_->domain().contains(x_val)) {
+                model.enqueue_instantiate(b_->id(), 0);
+            }
         }
     }
 
@@ -366,28 +375,12 @@ bool IntNeConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x != y なので、一方が確定したら他方からその値を削除（キューイング）
     if (x_->is_assigned()) {
-        size_t y_idx = find_model_idx(y_);
-        if (y_idx != SIZE_MAX) {
-            model.enqueue_remove_value(y_idx, x_->assigned_value().value());
-        }
+        model.enqueue_remove_value(y_->id(), x_->assigned_value().value());
     }
     if (y_->is_assigned()) {
-        size_t x_idx = find_model_idx(x_);
-        if (x_idx != SIZE_MAX) {
-            model.enqueue_remove_value(x_idx, y_->assigned_value().value());
-        }
+        model.enqueue_remove_value(x_->id(), y_->assigned_value().value());
     }
 
     return true;
@@ -480,6 +473,29 @@ bool IntNeReifConstraint::propagate(Model& /*model*/) {
         b_->domain().assign(ne ? 1 : 0);
     }
 
+    // If y is a singleton and x's domain doesn't contain y's value, then b = 1
+    // (x can never equal y, so x != y is always true)
+    if (!b_->is_assigned() && y_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        if (!x_->domain().contains(y_val)) {
+            if (!b_->domain().contains(1)) {
+                return false;
+            }
+            b_->domain().assign(1);
+        }
+    }
+
+    // If x is a singleton and y's domain doesn't contain x's value, then b = 1
+    if (!b_->is_assigned() && x_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        if (!y_->domain().contains(x_val)) {
+            if (!b_->domain().contains(1)) {
+                return false;
+            }
+            b_->domain().assign(1);
+        }
+    }
+
     return true;
 }
 
@@ -493,31 +509,15 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // 伝播ロジック（キューイング）
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
             // x != y を強制
             if (x_->is_assigned()) {
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    model.enqueue_remove_value(y_idx, x_->assigned_value().value());
-                }
+                model.enqueue_remove_value(y_->id(), x_->assigned_value().value());
             }
             if (y_->is_assigned()) {
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    model.enqueue_remove_value(x_idx, y_->assigned_value().value());
-                }
+                model.enqueue_remove_value(x_->id(), y_->assigned_value().value());
             }
         } else {
             // x == y を強制
@@ -526,20 +526,14 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
                 if (!y_->domain().contains(val)) {
                     return false;
                 }
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(y_idx, val);
-                }
+                model.enqueue_instantiate(y_->id(), val);
             }
             if (y_->is_assigned() && !x_->is_assigned()) {
                 auto val = y_->assigned_value().value();
                 if (!x_->domain().contains(val)) {
                     return false;
                 }
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(x_idx, val);
-                }
+                model.enqueue_instantiate(x_->id(), val);
             }
         }
     }
@@ -547,10 +541,7 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
     // x と y が両方確定したら b を決定
     if (x_->is_assigned() && y_->is_assigned() && !b_->is_assigned()) {
         bool ne = (x_->assigned_value() != y_->assigned_value());
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            model.enqueue_instantiate(b_idx, ne ? 1 : 0);
-        }
+        model.enqueue_instantiate(b_->id(), ne ? 1 : 0);
     }
 
     return true;
@@ -559,6 +550,33 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
 bool IntNeReifConstraint::on_final_instantiate() {
     bool ne = (x_->assigned_value() != y_->assigned_value());
     return ne == (b_->assigned_value().value() == 1);
+}
+
+bool IntNeReifConstraint::on_remove_value(Model& model, int /*save_point*/,
+                                           size_t var_idx, Domain::value_type removed_value) {
+    (void)removed_value;
+
+    // x または y から値が削除された場合、b を更新
+    // int_ne_reif: (x != y) <-> b
+    // y がシングルトンで、その値が x から削除された場合、x != y は確定で真、よって b = 1
+    if (!b_->is_assigned()) {
+        if (y_->is_assigned() && var_idx == x_->id()) {
+            auto y_val = y_->assigned_value().value();
+            // x の現在のドメインに y_val がない場合、x != y は確定、b = 1
+            if (!x_->domain().contains(y_val)) {
+                model.enqueue_instantiate(b_->id(), 1);
+            }
+        }
+        if (x_->is_assigned() && var_idx == y_->id()) {
+            auto x_val = x_->assigned_value().value();
+            // y の現在のドメインに x_val がない場合、x != y は確定、b = 1
+            if (!y_->domain().contains(x_val)) {
+                model.enqueue_instantiate(b_->id(), 1);
+            }
+        }
+    }
+
+    return true;
 }
 
 void IntNeReifConstraint::check_initial_consistency() {
@@ -662,34 +680,18 @@ bool IntLtConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x < y: x が確定したら y の下限を更新（キューイング）
     if (x_->is_assigned()) {
         auto x_val = x_->assigned_value().value();
         // y > x_val なので y の下限は x_val + 1
-        size_t y_idx = find_model_idx(y_);
-        if (y_idx != SIZE_MAX) {
-            model.enqueue_set_min(y_idx, x_val + 1);
-        }
+        model.enqueue_set_min(y_->id(), x_val + 1);
     }
 
     // y が確定したら x の上限を更新（キューイング）
     if (y_->is_assigned()) {
         auto y_val = y_->assigned_value().value();
         // x < y_val なので x の上限は y_val - 1
-        size_t x_idx = find_model_idx(x_);
-        if (x_idx != SIZE_MAX) {
-            model.enqueue_set_max(x_idx, y_val - 1);
-        }
+        model.enqueue_set_max(x_->id(), y_val - 1);
     }
 
     return true;
@@ -772,34 +774,18 @@ bool IntLeConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x <= y: x が確定したら y の下限を更新（キューイング）
     if (x_->is_assigned()) {
         auto x_val = x_->assigned_value().value();
         // y >= x_val
-        size_t y_idx = find_model_idx(y_);
-        if (y_idx != SIZE_MAX) {
-            model.enqueue_set_min(y_idx, x_val);
-        }
+        model.enqueue_set_min(y_->id(), x_val);
     }
 
     // y が確定したら x の上限を更新（キューイング）
     if (y_->is_assigned()) {
         auto y_val = y_->assigned_value().value();
         // x <= y_val
-        size_t x_idx = find_model_idx(x_);
-        if (x_idx != SIZE_MAX) {
-            model.enqueue_set_max(x_idx, y_val);
-        }
+        model.enqueue_set_max(x_->id(), y_val);
     }
 
     return true;
@@ -939,53 +925,31 @@ bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // b が確定した場合の伝播（キューイング）
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
             // x <= y を強制
             if (x_->is_assigned()) {
                 auto x_val = x_->assigned_value().value();
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    // y >= x_val
-                    model.enqueue_set_min(y_idx, x_val);
-                }
+                // y >= x_val
+                model.enqueue_set_min(y_->id(), x_val);
             }
             if (y_->is_assigned()) {
                 auto y_val = y_->assigned_value().value();
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    // x <= y_val
-                    model.enqueue_set_max(x_idx, y_val);
-                }
+                // x <= y_val
+                model.enqueue_set_max(x_->id(), y_val);
             }
         } else {
             // x > y を強制
             if (x_->is_assigned()) {
                 auto x_val = x_->assigned_value().value();
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    // y < x_val, つまり y <= x_val - 1
-                    model.enqueue_set_max(y_idx, x_val - 1);
-                }
+                // y < x_val, つまり y <= x_val - 1
+                model.enqueue_set_max(y_->id(), x_val - 1);
             }
             if (y_->is_assigned()) {
                 auto y_val = y_->assigned_value().value();
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    // x > y_val, つまり x >= y_val + 1
-                    model.enqueue_set_min(x_idx, y_val + 1);
-                }
+                // x > y_val, つまり x >= y_val + 1
+                model.enqueue_set_min(x_->id(), y_val + 1);
             }
         }
     }
@@ -997,25 +961,19 @@ bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
     auto y_max = y_->domain().max();
 
     if (!b_->is_assigned()) {
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            if (x_max && y_min && *x_max <= *y_min) {
-                // x <= y is always true
-                model.enqueue_instantiate(b_idx, 1);
-            } else if (x_min && y_max && *x_min > *y_max) {
-                // x <= y is always false
-                model.enqueue_instantiate(b_idx, 0);
-            }
+        if (x_max && y_min && *x_max <= *y_min) {
+            // x <= y is always true
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (x_min && y_max && *x_min > *y_max) {
+            // x <= y is always false
+            model.enqueue_instantiate(b_->id(), 0);
         }
     }
 
     // x と y が両方確定したら b を決定
     if (x_->is_assigned() && y_->is_assigned() && !b_->is_assigned()) {
         bool le = (x_->assigned_value() <= y_->assigned_value());
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            model.enqueue_instantiate(b_idx, le ? 1 : 0);
-        }
+        model.enqueue_instantiate(b_->id(), le ? 1 : 0);
     }
 
     return true;
@@ -1135,15 +1093,6 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // m が確定した場合
     if (m_->is_assigned()) {
         auto m_val = m_->assigned_value().value();
@@ -1152,19 +1101,13 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
         if (!x_->is_assigned()) {
             auto x_max = x_->domain().max();
             if (x_max && *x_max > m_val) {
-                size_t x_idx = find_model_idx(x_);
-                if (x_idx != SIZE_MAX) {
-                    model.enqueue_set_max(x_idx, m_val);
-                }
+                model.enqueue_set_max(x_->id(), m_val);
             }
         }
         if (!y_->is_assigned()) {
             auto y_max = y_->domain().max();
             if (y_max && *y_max > m_val) {
-                size_t y_idx = find_model_idx(y_);
-                if (y_idx != SIZE_MAX) {
-                    model.enqueue_set_max(y_idx, m_val);
-                }
+                model.enqueue_set_max(y_->id(), m_val);
             }
         }
 
@@ -1211,10 +1154,7 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
         auto x_val = x_->assigned_value().value();
         auto y_val = y_->assigned_value().value();
         auto max_val = std::max(x_val, y_val);
-        size_t m_idx = find_model_idx(m_);
-        if (m_idx != SIZE_MAX) {
-            model.enqueue_instantiate(m_idx, max_val);
-        }
+        model.enqueue_instantiate(m_->id(), max_val);
     }
 
     // x または y が確定した場合、m の下限を更新
@@ -1226,10 +1166,7 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
         if (!m_->is_assigned()) {
             auto m_min = m_->domain().min();
             if (m_min && *m_min < new_m_min) {
-                size_t m_idx = find_model_idx(m_);
-                if (m_idx != SIZE_MAX) {
-                    model.enqueue_set_min(m_idx, new_m_min);
-                }
+                model.enqueue_set_min(m_->id(), new_m_min);
             }
         }
     }

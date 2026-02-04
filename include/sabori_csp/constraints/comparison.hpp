@@ -49,6 +49,8 @@ public:
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
     bool on_final_instantiate() override;
 
 protected:
@@ -100,6 +102,8 @@ public:
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
     bool on_final_instantiate() override;
 
 protected:

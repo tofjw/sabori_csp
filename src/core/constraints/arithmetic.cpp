@@ -130,16 +130,6 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x * y = z の伝播
     if (x_->is_assigned() && y_->is_assigned() && !z_->is_assigned()) {
         // x と y が確定したら z を確定
@@ -147,10 +137,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         if (!z_->domain().contains(product)) {
             return false;
         }
-        size_t z_idx = find_model_idx(z_);
-        if (z_idx != SIZE_MAX) {
-            model.enqueue_instantiate(z_idx, product);
-        }
+        model.enqueue_instantiate(z_->id(), product);
     }
 
     if (x_->is_assigned() && z_->is_assigned() && !y_->is_assigned()) {
@@ -172,10 +159,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!y_->domain().contains(y_val)) {
                 return false;
             }
-            size_t y_idx = find_model_idx(y_);
-            if (y_idx != SIZE_MAX) {
-                model.enqueue_instantiate(y_idx, y_val);
-            }
+            model.enqueue_instantiate(y_->id(), y_val);
         }
     }
 
@@ -198,10 +182,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!x_->domain().contains(x_val)) {
                 return false;
             }
-            size_t x_idx = find_model_idx(x_);
-            if (x_idx != SIZE_MAX) {
-                model.enqueue_instantiate(x_idx, x_val);
-            }
+            model.enqueue_instantiate(x_->id(), x_val);
         }
     }
 
@@ -213,22 +194,16 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!z_->domain().contains(0)) {
                 return false;
             }
-            size_t z_idx = find_model_idx(z_);
-            if (z_idx != SIZE_MAX) {
-                model.enqueue_instantiate(z_idx, 0);
-            }
+            model.enqueue_instantiate(z_->id(), 0);
         } else {
             // z のドメインから x * y で生成できない値を削除
             std::set<Domain::value_type> valid_z;
             for (auto y_val : y_->domain().values()) {
                 valid_z.insert(x_val * y_val);
             }
-            size_t z_idx = find_model_idx(z_);
             for (auto z_val : z_->domain().values()) {
                 if (valid_z.count(z_val) == 0) {
-                    if (z_idx != SIZE_MAX) {
-                        model.enqueue_remove_value(z_idx, z_val);
-                    }
+                    model.enqueue_remove_value(z_->id(), z_val);
                 }
             }
         }
@@ -241,22 +216,16 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!z_->domain().contains(0)) {
                 return false;
             }
-            size_t z_idx = find_model_idx(z_);
-            if (z_idx != SIZE_MAX) {
-                model.enqueue_instantiate(z_idx, 0);
-            }
+            model.enqueue_instantiate(z_->id(), 0);
         } else {
             // z のドメインから x * y で生成できない値を削除
             std::set<Domain::value_type> valid_z;
             for (auto x_val : x_->domain().values()) {
                 valid_z.insert(x_val * y_val);
             }
-            size_t z_idx = find_model_idx(z_);
             for (auto z_val : z_->domain().values()) {
                 if (valid_z.count(z_val) == 0) {
-                    if (z_idx != SIZE_MAX) {
-                        model.enqueue_remove_value(z_idx, z_val);
-                    }
+                    model.enqueue_remove_value(z_->id(), z_val);
                 }
             }
         }
@@ -272,15 +241,6 @@ bool IntTimesConstraint::on_final_instantiate() {
 
 bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                  size_t last_var_internal_idx) {
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     if (last_var_internal_idx == 0) {
         // x が未確定、y と z は確定
         auto y_val = y_->assigned_value().value();
@@ -298,10 +258,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
             if (!x_->domain().contains(x_val)) {
                 return false;
             }
-            size_t x_idx = find_model_idx(x_);
-            if (x_idx != SIZE_MAX) {
-                model.enqueue_instantiate(x_idx, x_val);
-            }
+            model.enqueue_instantiate(x_->id(), x_val);
         }
     } else if (last_var_internal_idx == 1) {
         // y が未確定、x と z は確定
@@ -320,10 +277,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
             if (!y_->domain().contains(y_val)) {
                 return false;
             }
-            size_t y_idx = find_model_idx(y_);
-            if (y_idx != SIZE_MAX) {
-                model.enqueue_instantiate(y_idx, y_val);
-            }
+            model.enqueue_instantiate(y_->id(), y_val);
         }
     } else if (last_var_internal_idx == 2) {
         // z が未確定、x と y は確定
@@ -331,10 +285,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
         if (!z_->domain().contains(product)) {
             return false;
         }
-        size_t z_idx = find_model_idx(z_);
-        if (z_idx != SIZE_MAX) {
-            model.enqueue_instantiate(z_idx, product);
-        }
+        model.enqueue_instantiate(z_->id(), product);
     }
 
     return true;
@@ -520,16 +471,6 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // x が確定したら y を確定
     if (x_->is_assigned() && !y_->is_assigned()) {
         auto x_val = x_->assigned_value().value();
@@ -537,23 +478,17 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
         if (!y_->domain().contains(abs_x)) {
             return false;
         }
-        size_t y_idx = find_model_idx(y_);
-        if (y_idx != SIZE_MAX) {
-            model.enqueue_instantiate(y_idx, abs_x);
-        }
+        model.enqueue_instantiate(y_->id(), abs_x);
     }
 
     // y が確定したら x のドメインをフィルタリング
     if (y_->is_assigned() && !x_->is_assigned()) {
         auto y_val = y_->assigned_value().value();
-        size_t x_idx = find_model_idx(x_);
-        if (x_idx != SIZE_MAX) {
-            // x は y_val または -y_val のみ
-            auto x_vals = x_->domain().values();
-            for (auto v : x_vals) {
-                if (v != y_val && v != -y_val) {
-                    model.enqueue_remove_value(x_idx, v);
-                }
+        // x は y_val または -y_val のみ
+        auto x_vals = x_->domain().values();
+        for (auto v : x_vals) {
+            if (v != y_val && v != -y_val) {
+                model.enqueue_remove_value(x_->id(), v);
             }
         }
     }

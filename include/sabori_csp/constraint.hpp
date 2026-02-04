@@ -250,6 +250,28 @@ protected:
     // 制約に関与する変数（サブクラスで管理してもよい）
     std::vector<VariablePtr> vars_;
 
+    // 変数のModel内ID（vars_と同じ順序）
+    std::vector<size_t> var_ids_;
+
+    /**
+     * @brief 変数のModel内IDを取得
+     * @param internal_idx 制約内での変数インデックス
+     */
+    size_t var_id(size_t internal_idx) const {
+        return var_ids_[internal_idx];
+    }
+
+    /**
+     * @brief 変数IDキャッシュを更新
+     */
+    void update_var_ids() {
+        var_ids_.clear();
+        var_ids_.reserve(vars_.size());
+        for (const auto& var : vars_) {
+            var_ids_.push_back(var->id());
+        }
+    }
+
 private:
     static size_t next_id_;
     size_t id_;

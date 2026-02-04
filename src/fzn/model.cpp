@@ -189,6 +189,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntEqConstraint>(x, y);
         } else if (decl.name == "int_eq_reif") {
+#if 1 /* broken */
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_eq_reif requires 3 arguments");
             }
@@ -196,6 +197,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
             constraint = std::make_shared<IntEqReifConstraint>(x, y, b);
+#endif
         } else if (decl.name == "int_ne") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error("int_ne requires 2 arguments");
@@ -204,6 +206,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntNeConstraint>(x, y);
         } else if (decl.name == "int_ne_reif") {
+#if 1
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_ne_reif requires 3 arguments");
             }
@@ -211,6 +214,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
             constraint = std::make_shared<IntNeReifConstraint>(x, y, b);
+#endif
         } else if (decl.name == "int_lt") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error("int_lt requires 2 arguments");
@@ -263,6 +267,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             }
             constraint = std::make_shared<CircuitConstraint>(vars);
         } else if (decl.name == "int_lin_eq") {
+#if 1
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_eq requires 3 arguments (coeffs, vars, sum)");
             }
@@ -283,6 +288,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+#endif
         } else if (decl.name == "int_lin_le") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_le requires 3 arguments (coeffs, vars, bound)");
@@ -305,6 +311,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
         } else if (decl.name == "int_lin_eq_reif") {
+#if 1
             if (decl.args.size() != 4) {
                 throw std::runtime_error("int_lin_eq_reif requires 4 arguments (coeffs, vars, target, b)");
             }
@@ -326,6 +333,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
+#endif
         } else if (decl.name == "int_lin_ne_reif") {
             if (decl.args.size() != 4) {
                 throw std::runtime_error("int_lin_ne_reif requires 4 arguments (coeffs, vars, target, b)");
@@ -417,6 +425,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         // Bool constraints (aliases for int constraints with 0-1 variables)
         // ========================================
         } else if (decl.name == "bool2int") {
+#if 1
             // bool2int(b, i) means b <-> i, where b is bool and i is int
             // Since both are 0-1 integer variables internally, this is just int_eq
             if (decl.args.size() != 2) {
@@ -425,6 +434,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto b = get_var(decl.args[0]);
             auto i = get_var(decl.args[1]);
             constraint = std::make_shared<IntEqConstraint>(b, i);
+#endif
         } else if (decl.name == "bool_eq") {
             // bool_eq(a, b) is equivalent to int_eq(a, b) for 0-1 variables
             if (decl.args.size() != 2) {
@@ -534,14 +544,12 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
         } else if (decl.name == "array_bool_and") {
+#if 1
             // array_bool_and([b1, b2, ..., bn], r) means r = b1 ∧ b2 ∧ ... ∧ bn
             if (decl.args.size() != 2) {
                 throw std::runtime_error("array_bool_and requires 2 arguments");
             }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
-                throw std::runtime_error("array_bool_and: first argument must be an array of variables");
-            }
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
                 auto it = var_map.find(name);
@@ -552,15 +560,13 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             }
             auto r = get_var(decl.args[1]);
             constraint = std::make_shared<ArrayBoolAndConstraint>(vars, r);
+#endif
         } else if (decl.name == "array_bool_or") {
             // array_bool_or([b1, b2, ..., bn], r) means r = b1 ∨ b2 ∨ ... ∨ bn
             if (decl.args.size() != 2) {
                 throw std::runtime_error("array_bool_or requires 2 arguments");
             }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[0])) {
-                throw std::runtime_error("array_bool_or: first argument must be an array of variables");
-            }
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
                 auto it = var_map.find(name);
@@ -572,6 +578,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto r = get_var(decl.args[1]);
             constraint = std::make_shared<ArrayBoolOrConstraint>(vars, r);
         } else if (decl.name == "bool_clause") {
+#if 1 /* broken */
             // bool_clause([pos], [neg]) means ∨(pos) ∨ ∨(¬neg)
             if (decl.args.size() != 2) {
                 throw std::runtime_error("bool_clause requires 2 arguments");
@@ -595,7 +602,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 neg_vars.push_back(it->second);
             }
             constraint = std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
+#endif
         } else if (decl.name == "bool_not") {
+#if 1
             // bool_not(a, b) means ¬a = b (i.e., a + b = 1)
             if (decl.args.size() != 2) {
                 throw std::runtime_error("bool_not requires 2 arguments");
@@ -603,6 +612,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto a = get_var(decl.args[0]);
             auto b = get_var(decl.args[1]);
             constraint = std::make_shared<BoolNotConstraint>(a, b);
+#endif
         } else if (decl.name == "array_int_element" || decl.name == "int_element") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_element requires 3 arguments (index, array, result)");
@@ -677,6 +687,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
         } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
+#if 1
             // array_var_int_element(index, array, result) where array contains variables
             // array_var_bool_element is the same but with bool variables (0-1 domain)
             if (decl.args.size() != 3) {
@@ -698,6 +709,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<ArrayVarIntElementConstraint>(
                 index_var, array_vars, result_var, false);
+#endif
         } else if (decl.name == "array_int_maximum") {
             // array_int_maximum(m, [x1, x2, ...]) means m = max(x1, x2, ...)
             if (decl.args.size() != 2) {

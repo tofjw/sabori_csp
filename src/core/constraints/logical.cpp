@@ -167,22 +167,11 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // どの変数が確定したか特定
     size_t internal_idx = SIZE_MAX;
-    for (const auto& [ptr, idx] : var_ptr_to_idx_) {
-        size_t model_idx = find_model_idx(VariablePtr(ptr, [](Variable*){}));
-        if (model_idx == var_idx) {
-            internal_idx = idx;
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (vars_[i]->id() == var_idx) {
+            internal_idx = i;
             break;
         }
     }
@@ -197,10 +186,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
             // r = 1: 全ての bi = 1（キューイング）
             for (size_t i = 0; i < n_; ++i) {
                 if (!vars_[i]->is_assigned()) {
-                    size_t bi_idx = find_model_idx(vars_[i]);
-                    if (bi_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(bi_idx, 1);
-                    }
+                    model.enqueue_instantiate(vars_[i]->id(), 1);
                 } else if (vars_[i]->assigned_value().value() != 1) {
                     return false;  // 既に 0 が確定している bi がある
                 }
@@ -214,10 +200,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
     if (value == 0) {
         // bi = 0 → r = 0（キューイング）
         if (!r_->is_assigned()) {
-            size_t r_idx = find_model_idx(r_);
-            if (r_idx != SIZE_MAX) {
-                model.enqueue_instantiate(r_idx, 0);
-            }
+            model.enqueue_instantiate(r_->id(), 0);
         } else if (r_->assigned_value().value() != 0) {
             return false;  // r = 1 だが bi = 0
         }
@@ -237,10 +220,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         }
     }
     if (all_one && !r_->is_assigned()) {
-        size_t r_idx = find_model_idx(r_);
-        if (r_idx != SIZE_MAX) {
-            model.enqueue_instantiate(r_idx, 1);
-        }
+        model.enqueue_instantiate(r_->id(), 1);
     }
 
     // r = 0 で bi = 1 が確定した場合: 2WL 処理
@@ -267,10 +247,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                     // other_watch = 0 なら OK（r = 0 が満たされる）
                 } else {
                     // other_watch が未確定 → それを 0 に確定（キューイング）
-                    size_t other_model_idx = find_model_idx(vars_[other_watch]);
-                    if (other_model_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(other_model_idx, 0);
-                    }
+                    model.enqueue_instantiate(vars_[other_watch]->id(), 0);
                 }
             }
         }
@@ -292,14 +269,7 @@ bool ArrayBoolAndConstraint::on_final_instantiate() {
 
 bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                      size_t last_var_internal_idx) {
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
+    (void)save_point;
 
     if (last_var_internal_idx == n_) {
         // r が最後の未確定変数
@@ -310,19 +280,13 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
                 break;
             }
         }
-        size_t r_idx = find_model_idx(r_);
-        if (r_idx != SIZE_MAX) {
-            model.enqueue_instantiate(r_idx, all_one ? 1 : 0);
-        }
+        model.enqueue_instantiate(r_->id(), all_one ? 1 : 0);
     } else {
         // bi が最後の未確定変数
         if (r_->is_assigned()) {
             if (r_->assigned_value().value() == 1) {
                 // r = 1 なら bi = 1
-                size_t bi_idx = find_model_idx(vars_[last_var_internal_idx]);
-                if (bi_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(bi_idx, 1);
-                }
+                model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 1);
             } else {
                 // r = 0 で他の全ての bj = 1 なら bi = 0
                 bool others_all_one = true;
@@ -335,10 +299,7 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
                     }
                 }
                 if (others_all_one) {
-                    size_t bi_idx = find_model_idx(vars_[last_var_internal_idx]);
-                    if (bi_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(bi_idx, 0);
-                    }
+                    model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 0);
                 }
             }
         }
@@ -566,20 +527,10 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     size_t internal_idx = SIZE_MAX;
-    for (const auto& [ptr, idx] : var_ptr_to_idx_) {
-        size_t model_idx = find_model_idx(VariablePtr(ptr, [](Variable*){}));
-        if (model_idx == var_idx) {
-            internal_idx = idx;
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (vars_[i]->id() == var_idx) {
+            internal_idx = i;
             break;
         }
     }
@@ -592,10 +543,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
             // r = 0: 全ての bi = 0（キューイング）
             for (size_t i = 0; i < n_; ++i) {
                 if (!vars_[i]->is_assigned()) {
-                    size_t bi_idx = find_model_idx(vars_[i]);
-                    if (bi_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(bi_idx, 0);
-                    }
+                    model.enqueue_instantiate(vars_[i]->id(), 0);
                 } else if (vars_[i]->assigned_value().value() != 0) {
                     return false;
                 }
@@ -608,10 +556,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
     if (value == 1) {
         // bi = 1 → r = 1（キューイング）
         if (!r_->is_assigned()) {
-            size_t r_idx = find_model_idx(r_);
-            if (r_idx != SIZE_MAX) {
-                model.enqueue_instantiate(r_idx, 1);
-            }
+            model.enqueue_instantiate(r_->id(), 1);
         } else if (r_->assigned_value().value() != 1) {
             return false;
         }
@@ -631,10 +576,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
         }
     }
     if (all_zero && !r_->is_assigned()) {
-        size_t r_idx = find_model_idx(r_);
-        if (r_idx != SIZE_MAX) {
-            model.enqueue_instantiate(r_idx, 0);
-        }
+        model.enqueue_instantiate(r_->id(), 0);
     }
 
     // r = 1 で bi = 0 が確定した場合: 2WL 処理
@@ -654,10 +596,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
                     }
                 } else {
                     // other_watch が未確定 → それを 1 に確定（キューイング）
-                    size_t other_model_idx = find_model_idx(vars_[other_watch]);
-                    if (other_model_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(other_model_idx, 1);
-                    }
+                    model.enqueue_instantiate(vars_[other_watch]->id(), 1);
                 }
             }
         }
@@ -679,14 +618,7 @@ bool ArrayBoolOrConstraint::on_final_instantiate() {
 
 bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                     size_t last_var_internal_idx) {
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
+    (void)save_point;
 
     if (last_var_internal_idx == n_) {
         bool has_one = false;
@@ -696,17 +628,11 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
                 break;
             }
         }
-        size_t r_idx = find_model_idx(r_);
-        if (r_idx != SIZE_MAX) {
-            model.enqueue_instantiate(r_idx, has_one ? 1 : 0);
-        }
+        model.enqueue_instantiate(r_->id(), has_one ? 1 : 0);
     } else {
         if (r_->is_assigned()) {
             if (r_->assigned_value().value() == 0) {
-                size_t bi_idx = find_model_idx(vars_[last_var_internal_idx]);
-                if (bi_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(bi_idx, 0);
-                }
+                model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 0);
             } else {
                 bool others_have_one = false;
                 for (size_t i = 0; i < n_; ++i) {
@@ -718,10 +644,7 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
                     }
                 }
                 if (!others_have_one) {
-                    size_t bi_idx = find_model_idx(vars_[last_var_internal_idx]);
-                    if (bi_idx != SIZE_MAX) {
-                        model.enqueue_instantiate(bi_idx, 1);
-                    }
+                    model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 1);
                 }
             }
         }
@@ -932,29 +855,19 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // 確定した変数が watched かどうかチェック
-    VariablePtr assigned_var = model.variable(var_idx);
     size_t assigned_lit = SIZE_MAX;
 
     // この変数に対応するリテラルを探す
     for (size_t i = 0; i < n_pos_; ++i) {
-        if (pos_[i] == assigned_var) {
+        if (pos_[i]->id() == var_idx) {
             assigned_lit = i;
             break;
         }
     }
     if (assigned_lit == SIZE_MAX) {
         for (size_t i = 0; i < n_neg_; ++i) {
-            if (neg_[i] == assigned_var) {
+            if (neg_[i]->id() == var_idx) {
                 assigned_lit = n_pos_ + i;
                 break;
             }
@@ -995,10 +908,7 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
                 }
             } else {
                 // Unit propagation: other_watch を充足方向に確定
-                size_t other_model_idx = find_model_idx(other_var);
-                if (other_model_idx != SIZE_MAX) {
-                    model.enqueue_instantiate(other_model_idx, satisfying_value(other_watch));
-                }
+                model.enqueue_instantiate(other_var->id(), satisfying_value(other_watch));
             }
         }
     }
@@ -1019,15 +929,6 @@ bool BoolClauseConstraint::on_final_instantiate() {
 
 bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                     size_t last_var_internal_idx) {
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
         if (is_satisfied_by(i)) {
@@ -1055,10 +956,7 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
     }
 
     if (last_lit != SIZE_MAX) {
-        size_t model_idx = find_model_idx(last_var);
-        if (model_idx != SIZE_MAX) {
-            model.enqueue_instantiate(model_idx, satisfying_value(last_lit));
-        }
+        model.enqueue_instantiate(last_var->id(), satisfying_value(last_lit));
     }
 
     return true;
@@ -1204,26 +1102,13 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 変数のモデル内インデックスを検索するヘルパー
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     // a が確定したら b を決定（キューイング）
     if (a_->is_assigned() && !b_->is_assigned()) {
         auto val = 1 - a_->assigned_value().value();
         if (!b_->domain().contains(val)) {
             return false;
         }
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            model.enqueue_instantiate(b_idx, val);
-        }
+        model.enqueue_instantiate(b_->id(), val);
     }
 
     // b が確定したら a を決定（キューイング）
@@ -1232,10 +1117,7 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
         if (!a_->domain().contains(val)) {
             return false;
         }
-        size_t a_idx = find_model_idx(a_);
-        if (a_idx != SIZE_MAX) {
-            model.enqueue_instantiate(a_idx, val);
-        }
+        model.enqueue_instantiate(a_->id(), val);
     }
 
     return true;

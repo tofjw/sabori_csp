@@ -27,11 +27,13 @@ Constraint::Constraint(const std::vector<VariablePtr>& vars)
     , w1_(-1)
     , w2_(-1)
     , is_initially_inconsistent_(false) {
+    update_var_ids();
     init_watches();
 }
 
 void Constraint::set_variables(const std::vector<VariablePtr>& vars) {
     vars_ = vars;
+    update_var_ids();
     init_watches();
 }
 

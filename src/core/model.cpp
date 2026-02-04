@@ -5,8 +5,15 @@
 
 namespace sabori_csp {
 
+VariablePtr Model::create_variable(std::string name, Domain domain) {
+    auto var = std::make_shared<Variable>(std::move(name), std::move(domain));
+    add_variable(var);
+    return var;
+}
+
 size_t Model::add_variable(VariablePtr var) {
-    size_t id = variables_.size();
+    size_t id = next_var_id_++;
+    var->set_id(id);
     name_to_id_[var->name()] = id;
     variables_.push_back(var);
 
@@ -85,7 +92,7 @@ Domain::value_type Model::value(size_t var_idx) const {
 }
 
 bool Model::contains(size_t var_idx, Domain::value_type val) const {
-    // TODO: min <= val && val <= min であることを先に確認する
+    // TODO: min <= val && val <= max であることを先に確認する
     return variables_[var_idx]->domain().contains(val);
 }
 
@@ -354,12 +361,10 @@ void Model::build_constraint_watch_list() {
         const auto& vars = constraint->variables();
 
         for (const auto& var : vars) {
-            // 変数のモデル内インデックスを探す
-            for (size_t v_idx = 0; v_idx < variables_.size(); ++v_idx) {
-                if (variables_[v_idx] == var) {
-                    var_to_constraint_indices_[v_idx].push_back(c_idx);
-                    break;
-                }
+            // 変数の ID を直接インデックスとして使用
+            size_t v_idx = var->id();
+            if (v_idx < var_to_constraint_indices_.size()) {
+                var_to_constraint_indices_[v_idx].push_back(c_idx);
             }
         }
     }

@@ -119,15 +119,6 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
         return true;
     }
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     size_t internal_idx = it->second;
 
     if (internal_idx == 0) {
@@ -137,10 +128,7 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
             if (!var->is_assigned()) {
                 auto var_min = var->domain().min().value();
                 if (var_min < value) {
-                    size_t idx = find_model_idx(var);
-                    if (idx != SIZE_MAX) {
-                        model.enqueue_set_min(idx, value);
-                    }
+                    model.enqueue_set_min(var->id(), value);
                 }
                 if (var->domain().contains(value)) {
                     can_achieve = true;
@@ -166,10 +154,7 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
         } else {
             auto m_max = m_->domain().max().value();
             if (m_max > value) {
-                size_t m_idx = find_model_idx(m_);
-                if (m_idx != SIZE_MAX) {
-                    model.enqueue_set_max(m_idx, value);
-                }
+                model.enqueue_set_max(m_->id(), value);
             }
         }
     }
@@ -193,15 +178,6 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
                                                          size_t last_var_internal_idx) {
     auto& last_var = vars_[last_var_internal_idx];
 
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-        for (size_t i = 0; i < model.variables().size(); ++i) {
-            if (model.variable(i) == var) {
-                return i;
-            }
-        }
-        return SIZE_MAX;
-    };
-
     if (last_var.get() == m_.get()) {
         // m が最後: 全 x[i] の最小値を計算して m を確定
         Domain::value_type min_val = x_[0]->assigned_value().value();
@@ -214,10 +190,7 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
         }
 
         if (m_->domain().contains(min_val)) {
-            size_t m_idx = find_model_idx(m_);
-            if (m_idx != SIZE_MAX) {
-                model.enqueue_instantiate(m_idx, min_val);
-            }
+            model.enqueue_instantiate(m_->id(), min_val);
             return true;
         }
         return false;
@@ -240,10 +213,7 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
         if (other_min > m_val) {
             // last_var == m_val でなければならない
             if (last_var->domain().contains(m_val)) {
-                size_t idx = find_model_idx(last_var);
-                if (idx != SIZE_MAX) {
-                    model.enqueue_instantiate(idx, m_val);
-                }
+                model.enqueue_instantiate(last_var->id(), m_val);
                 return true;
             }
             return false;
@@ -251,10 +221,7 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
             // last_var >= m_val であれば OK
             auto var_min = last_var->domain().min().value();
             if (var_min < m_val) {
-                size_t idx = find_model_idx(last_var);
-                if (idx != SIZE_MAX) {
-                    model.enqueue_set_min(idx, m_val);
-                }
+                model.enqueue_set_min(last_var->id(), m_val);
             }
             return !last_var->domain().empty();
         } else {

@@ -112,24 +112,16 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point, ...) {
 
 #### 変数のモデル内インデックス取得
 
-```cpp
-// on_instantiate 内でモデル内インデックスを検索
-auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
-    for (size_t i = 0; i < model.variables().size(); ++i) {
-        if (model.variable(i) == var) {
-            return i;
-        }
-    }
-    return SIZE_MAX;
-};
+Variable は `id()` メソッドでモデル内のインデックスを O(1) で取得できます：
 
-size_t b_idx = find_model_idx(b_);
-if (b_idx != SIZE_MAX) {
-    model.enqueue_instantiate(b_idx, 1);
-}
+```cpp
+// on_instantiate 内で変数のモデル内インデックスを取得
+model.enqueue_instantiate(b_->id(), 1);
+model.enqueue_set_min(x_->id(), new_min);
+model.enqueue_remove_value(y_->id(), val);
 ```
 
-**Tips**: 変数インデックスの検索を毎回行うのはコストがかかるため、コンストラクタで `var_ptr_to_idx_` のようなマップを構築しておくことを推奨。
+**注意**: `var->id()` は Model が `create_variable()` で変数を作成した際に自動的に設定されます。FlatZinc パーサ経由で作成された変数は常に有効な ID を持ちます。
 
 ### 2.2 propagate() と on_instantiate() の違い
 
@@ -176,41 +168,30 @@ void MyConstraint::check_initial_consistency() {
 
 ```cpp
 bool MyReifConstraint::on_instantiate(Model& model, int save_point, ...) {
-    auto find_model_idx = [&model](const VariablePtr& var) -> size_t { ... };
-
     // 1. b が確定している場合
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
             // P を強制（x, y のドメインを絞る）
-            // 例: model.enqueue_set_max(x_idx, y_max);
+            // 例: model.enqueue_set_max(x_->id(), y_max);
         } else {
             // ¬P を強制（x, y のドメインを絞る）
-            // 例: model.enqueue_set_min(x_idx, y_min + 1);
+            // 例: model.enqueue_set_min(x_->id(), y_min + 1);
         }
     }
 
     // 2. x, y の bounds から b を決定できるか
     if (!b_->is_assigned()) {
         if (/* P が必ず真 */) {
-            size_t b_idx = find_model_idx(b_);
-            if (b_idx != SIZE_MAX) {
-                model.enqueue_instantiate(b_idx, 1);
-            }
+            model.enqueue_instantiate(b_->id(), 1);
         } else if (/* P が必ず偽 */) {
-            size_t b_idx = find_model_idx(b_);
-            if (b_idx != SIZE_MAX) {
-                model.enqueue_instantiate(b_idx, 0);
-            }
+            model.enqueue_instantiate(b_->id(), 0);
         }
     }
 
     // 3. x, y が両方確定したら b を決定
     if (x_->is_assigned() && y_->is_assigned() && !b_->is_assigned()) {
         bool p_holds = /* P の真偽を計算 */;
-        size_t b_idx = find_model_idx(b_);
-        if (b_idx != SIZE_MAX) {
-            model.enqueue_instantiate(b_idx, p_holds ? 1 : 0);
-        }
+        model.enqueue_instantiate(b_->id(), p_holds ? 1 : 0);
     }
 
     return !x_->domain().empty() && !y_->domain().empty() && !b_->domain().empty();

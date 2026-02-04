@@ -63,7 +63,15 @@ public:
     // ===== 変数・制約管理 =====
 
     /**
-     * @brief 変数を追加
+     * @brief 変数を作成して登録（推奨）
+     * @param name 変数名
+     * @param domain 定義域
+     * @return 作成された変数へのポインタ
+     */
+    VariablePtr create_variable(std::string name, Domain domain);
+
+    /**
+     * @brief 変数を追加（既存の変数を登録する場合）
      * @param var 追加する変数
      * @return 変数のID（インデックス）
      */
@@ -233,6 +241,9 @@ private:
     std::vector<VariablePtr> variables_;
     std::vector<ConstraintPtr> constraints_;
     std::map<std::string, size_t> name_to_id_;
+
+    // 変数IDカウンタ
+    size_t next_var_id_ = 0;
 
     // SoA データ（高速アクセス用）
     std::vector<Domain::value_type> mins_;
