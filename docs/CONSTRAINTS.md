@@ -137,6 +137,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_le_imp` | `IntLinLeImpConstraint` | b = 1 -> Σ(coeffs[i] * vars[i]) <= bound |
 | `int_lin_le_reif` | `IntLinLeReifConstraint` | Σ(coeffs[i] * vars[i]) <= bound <-> b |
 | `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
+| `int_lin_ne_reif` | `IntLinNeReifConstraint` | Σ(coeffs[i] * vars[i]) != target <-> b |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
 | `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |

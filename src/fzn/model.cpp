@@ -301,6 +301,28 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
+        } else if (decl.name == "int_lin_ne_reif") {
+            if (decl.args.size() != 4) {
+                throw std::runtime_error("int_lin_ne_reif requires 4 arguments (coeffs, vars, target, b)");
+            }
+            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                throw std::runtime_error("int_lin_ne_reif: third argument must be an integer");
+            }
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
+            auto target = std::get<Domain::value_type>(decl.args[2]);
+            auto b = get_var(decl.args[3]);
+
+            std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                auto it = var_map.find(name);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in int_lin_ne_reif: " + name);
+                }
+                vars.push_back(it->second);
+            }
+            constraint = std::make_shared<IntLinNeReifConstraint>(coeffs, vars, target, b);
         } else if (decl.name == "int_lin_le_reif") {
             if (decl.args.size() != 4) {
                 throw std::runtime_error("int_lin_le_reif requires 4 arguments (coeffs, vars, bound, b)");

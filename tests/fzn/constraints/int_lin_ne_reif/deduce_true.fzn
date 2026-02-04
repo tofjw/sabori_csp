@@ -1,0 +1,9 @@
+% int_lin_ne_reif test: deduce b = 1
+% x in 1..2, y in 1..2 => sum in [5, 10], 12 not reachable => b must be 1
+var 1..2: x :: output_var;
+var 1..2: y :: output_var;
+var bool: b :: output_var;
+
+constraint int_lin_ne_reif([2, 3], [x, y], 12, b);
+
+solve satisfy;
