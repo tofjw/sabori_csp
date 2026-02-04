@@ -347,6 +347,15 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         // ========================================
         // Bool constraints (aliases for int constraints with 0-1 variables)
         // ========================================
+        } else if (decl.name == "bool2int") {
+            // bool2int(b, i) means b <-> i, where b is bool and i is int
+            // Since both are 0-1 integer variables internally, this is just int_eq
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool2int requires 2 arguments");
+            }
+            auto b = get_var(decl.args[0]);
+            auto i = get_var(decl.args[1]);
+            constraint = std::make_shared<IntEqConstraint>(b, i);
         } else if (decl.name == "bool_eq") {
             // bool_eq(a, b) is equivalent to int_eq(a, b) for 0-1 variables
             if (decl.args.size() != 2) {

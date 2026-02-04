@@ -1,0 +1,8 @@
+% bool2int reverse test: i = 1 -> b = true
+var bool: b :: output_var;
+var 0..1: i :: output_var;
+
+constraint bool2int(b, i);
+constraint int_eq(i, 1);
+
+solve satisfy;

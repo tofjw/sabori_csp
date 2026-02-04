@@ -1,0 +1,8 @@
+% bool2int test: b = false -> i = 0
+var bool: b :: output_var;
+var 0..10: i :: output_var;
+
+constraint bool2int(b, i);
+constraint int_eq(b, 0);
+
+solve satisfy;

@@ -50,6 +50,7 @@ Bool 変数は 0-1 整数変数として扱われます。以下の bool 制約�
 
 | 制約名 | エイリアス先 | 説明 |
 |--------|-------------|------|
+| `bool2int` | `IntEqConstraint` | b <-> i (bool を int に変換) |
 | `bool_eq` | `IntEqConstraint` | a == b |
 | `bool_ne` | `IntNeConstraint` | a != b |
 | `bool_lt` | `IntLtConstraint` | a < b |
