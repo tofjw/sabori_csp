@@ -1,0 +1,6 @@
+% int_abs test: |x| = y where x is negative
+var -10..-1: x :: output_var;
+var 0..10: y :: output_var;
+constraint int_eq(x, -7);
+constraint int_abs(x, y);
+solve satisfy;

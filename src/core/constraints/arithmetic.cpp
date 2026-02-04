@@ -382,4 +382,216 @@ void IntTimesConstraint::check_initial_consistency() {
     }
 }
 
+// ============================================================================
+// IntAbsConstraint implementation
+// ============================================================================
+
+IntAbsConstraint::IntAbsConstraint(VariablePtr x, VariablePtr y)
+    : Constraint({x, y})
+    , x_(std::move(x))
+    , y_(std::move(y)) {
+    check_initial_consistency();
+}
+
+std::string IntAbsConstraint::name() const {
+    return "int_abs";
+}
+
+std::vector<VariablePtr> IntAbsConstraint::variables() const {
+    return {x_, y_};
+}
+
+std::optional<bool> IntAbsConstraint::is_satisfied() const {
+    if (x_->is_assigned() && y_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        return (x_val >= 0 ? x_val : -x_val) == y_val;
+    }
+    return std::nullopt;
+}
+
+bool IntAbsConstraint::propagate(Model& /*model*/) {
+    return propagate_bounds();
+}
+
+bool IntAbsConstraint::propagate_bounds() {
+    // |x| = y の bounds propagation
+
+    auto x_min = x_->domain().min();
+    auto x_max = x_->domain().max();
+    auto y_min = y_->domain().min();
+    auto y_max = y_->domain().max();
+
+    if (!x_min || !x_max || !y_min || !y_max) {
+        return false;
+    }
+
+    // y >= 0 を強制
+    if (*y_min < 0) {
+        auto y_vals = y_->domain().values();
+        for (auto v : y_vals) {
+            if (v < 0) {
+                y_->domain().remove(v);
+            }
+        }
+        if (y_->domain().empty()) {
+            return false;
+        }
+        y_min = y_->domain().min();
+        y_max = y_->domain().max();
+    }
+
+    // y の範囲を |x| の可能な範囲で制限
+    // |x| の最小値: x が 0 を含む場合は 0、そうでなければ min(|x_min|, |x_max|)
+    // |x| の最大値: max(|x_min|, |x_max|)
+    Domain::value_type abs_x_min, abs_x_max;
+    auto abs_x_min_val = (*x_min >= 0) ? *x_min : -*x_min;
+    auto abs_x_max_val = (*x_max >= 0) ? *x_max : -*x_max;
+
+    if (*x_min <= 0 && *x_max >= 0) {
+        // x が 0 を含む
+        abs_x_min = 0;
+    } else {
+        abs_x_min = std::min(abs_x_min_val, abs_x_max_val);
+    }
+    abs_x_max = std::max(abs_x_min_val, abs_x_max_val);
+
+    // y のドメインから範囲外の値を削除
+    auto y_vals = y_->domain().values();
+    for (auto v : y_vals) {
+        if (v < abs_x_min || v > abs_x_max) {
+            y_->domain().remove(v);
+        }
+    }
+
+    if (y_->domain().empty()) {
+        return false;
+    }
+
+    // x の範囲を y の範囲から制限
+    // |x| <= y_max → -y_max <= x <= y_max
+    y_max = y_->domain().max();
+    if (y_max) {
+        auto x_vals = x_->domain().values();
+        for (auto v : x_vals) {
+            if (v < -*y_max || v > *y_max) {
+                x_->domain().remove(v);
+            }
+        }
+    }
+
+    if (x_->domain().empty()) {
+        return false;
+    }
+
+    // x のドメインから、対応する |x| が y のドメインにない値を削除
+    auto x_vals = x_->domain().values();
+    y_vals = y_->domain().values();
+    std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+    for (auto v : x_vals) {
+        auto abs_v = (v >= 0) ? v : -v;
+        if (y_set.count(abs_v) == 0) {
+            x_->domain().remove(v);
+        }
+    }
+
+    if (x_->domain().empty()) {
+        return false;
+    }
+
+    // y のドメインから、対応する x が x のドメインにない値を削除
+    x_vals = x_->domain().values();
+    std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
+    y_vals = y_->domain().values();
+    for (auto v : y_vals) {
+        // v = |x| となる x は v または -v
+        if (x_set.count(v) == 0 && x_set.count(-v) == 0) {
+            y_->domain().remove(v);
+        }
+    }
+
+    return !x_->domain().empty() && !y_->domain().empty();
+}
+
+bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
+                                       size_t var_idx, Domain::value_type value,
+                                       Domain::value_type prev_min,
+                                       Domain::value_type prev_max) {
+    // 基底クラスの処理
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    // 変数のモデル内インデックスを検索するヘルパー
+    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
+        for (size_t i = 0; i < model.variables().size(); ++i) {
+            if (model.variable(i) == var) {
+                return i;
+            }
+        }
+        return SIZE_MAX;
+    };
+
+    // x が確定したら y を確定
+    if (x_->is_assigned() && !y_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto abs_x = (x_val >= 0) ? x_val : -x_val;
+        if (!y_->domain().contains(abs_x)) {
+            return false;
+        }
+        size_t y_idx = find_model_idx(y_);
+        if (y_idx != SIZE_MAX) {
+            model.enqueue_instantiate(y_idx, abs_x);
+        }
+    }
+
+    // y が確定したら x のドメインをフィルタリング
+    if (y_->is_assigned() && !x_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        size_t x_idx = find_model_idx(x_);
+        if (x_idx != SIZE_MAX) {
+            // x は y_val または -y_val のみ
+            auto x_vals = x_->domain().values();
+            for (auto v : x_vals) {
+                if (v != y_val && v != -y_val) {
+                    model.enqueue_remove_value(x_idx, v);
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntAbsConstraint::on_final_instantiate() {
+    auto x_val = x_->assigned_value().value();
+    auto y_val = y_->assigned_value().value();
+    return (x_val >= 0 ? x_val : -x_val) == y_val;
+}
+
+void IntAbsConstraint::check_initial_consistency() {
+    // |x| = y の初期整合性チェック
+
+    // y < 0 なら矛盾
+    auto y_min = y_->domain().min();
+    if (y_min && *y_min < 0) {
+        // y に負の値しかない場合は矛盾
+        auto y_max = y_->domain().max();
+        if (y_max && *y_max < 0) {
+            set_initially_inconsistent(true);
+            return;
+        }
+    }
+
+    // 全て確定している場合、等式を確認
+    if (x_->is_assigned() && y_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        if ((x_val >= 0 ? x_val : -x_val) != y_val) {
+            set_initially_inconsistent(true);
+        }
+    }
+}
+
 } // namespace sabori_csp

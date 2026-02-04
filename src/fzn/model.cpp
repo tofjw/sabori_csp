@@ -700,6 +700,14 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             auto z = get_var(decl.args[2]);
             constraint = std::make_shared<IntTimesConstraint>(x, y, z);
+        } else if (decl.name == "int_abs") {
+            // int_abs(x, y) means |x| = y
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("int_abs requires 2 arguments (x, y)");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            constraint = std::make_shared<IntAbsConstraint>(x, y);
         } else if (decl.name == "int_max") {
             // int_max(x, y, m) means max(x, y) = m
             if (decl.args.size() != 3) {

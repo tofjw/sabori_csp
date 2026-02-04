@@ -72,6 +72,51 @@ private:
     bool propagate_bounds();
 };
 
+/**
+ * @brief int_abs制約: |x| = y
+ *
+ * 絶対値制約。
+ *
+ * 伝播ルール:
+ * - y >= 0（絶対値は非負）
+ * - x >= 0 の場合: y = x
+ * - x < 0 の場合: y = -x
+ * - y の bounds は x の範囲から計算
+ * - x の bounds は y の範囲から制限
+ */
+class IntAbsConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param x 入力変数
+     * @param y 絶対値変数（|x| = y）
+     */
+    IntAbsConstraint(VariablePtr x, VariablePtr y);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr x_;  // 入力変数
+    VariablePtr y_;  // 絶対値変数
+
+    /**
+     * @brief bounds propagation を実行
+     * @return 矛盾がなければ true
+     */
+    bool propagate_bounds();
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_ARITHMETIC_HPP

@@ -20,6 +20,7 @@
 | 制約名 | クラス | 説明 |
 |--------|--------|------|
 | `int_times` | `IntTimesConstraint` | x * y = z |
+| `int_abs` | `IntAbsConstraint` | \|x\| = y |
 
 #### int_times 制約
 
@@ -43,6 +44,31 @@ auto z = make_var("z", 1, 25);
 IntTimesConstraint c(x, y, z);
 
 // x=3, y=4 の場合 → z=12
+```
+
+#### int_abs 制約
+
+絶対値制約 `|x| = y`。
+
+**引数:**
+- `x`: 入力変数
+- `y`: 絶対値変数（|x| = y）
+
+**伝播ロジック:**
+- y >= 0（絶対値は非負）
+- x >= 0 の場合: y = x
+- x < 0 の場合: y = -x
+- y の bounds は x の範囲から計算
+- x の bounds は y の範囲から制限（-y_max <= x <= y_max）
+
+**例:**
+```cpp
+auto x = make_var("x", -10, 10);
+auto y = make_var("y", 0, 10);
+IntAbsConstraint c(x, y);
+
+// x=-5 の場合 → y=5
+// x=3 の場合 → y=3
 ```
 
 ### Bool 制約 (int 制約のエイリアス)
