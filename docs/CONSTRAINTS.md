@@ -9,6 +9,7 @@
 | `int_eq` | `IntEqConstraint` | x == y |
 | `int_eq_reif` | `IntEqReifConstraint` | (x == y) <-> b |
 | `int_ne` | `IntNeConstraint` | x != y |
+| `int_ne_reif` | `IntNeReifConstraint` | (x != y) <-> b |
 | `int_lt` | `IntLtConstraint` | x < y |
 | `int_le` | `IntLeConstraint` | x <= y |
 | `int_le_reif` | `IntLeReifConstraint` | (x <= y) <-> b |

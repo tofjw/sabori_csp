@@ -1,0 +1,9 @@
+% int_ne_reif test: deduce b = 0
+% x = 3, y = 3 => x == y => x != y is false => b must be 0
+var 3..3: x :: output_var;
+var 3..3: y :: output_var;
+var bool: b :: output_var;
+
+constraint int_ne_reif(x, y, b);
+
+solve satisfy;

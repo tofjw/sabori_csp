@@ -186,6 +186,14 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntNeConstraint>(x, y);
+        } else if (decl.name == "int_ne_reif") {
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("int_ne_reif requires 3 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            auto b = get_var(decl.args[2]);
+            constraint = std::make_shared<IntNeReifConstraint>(x, y, b);
         } else if (decl.name == "int_lt") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error("int_lt requires 2 arguments");
