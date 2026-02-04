@@ -168,6 +168,8 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_ne_reif` | `IntLinNeReifConstraint` | Σ(coeffs[i] * vars[i]) != target <-> b |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
+| `array_var_int_element` | `ArrayVarIntElementConstraint` | array[index] = result（配列が変数） |
+| `array_var_bool_element` | `ArrayVarIntElementConstraint` | bool配列版（int版を流用） |
 | `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |
 | `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
 
@@ -209,6 +211,40 @@ std::vector<Domain::value_type> array = {10, 20, 30};
 IntElementConstraint c(index, array, result);
 
 // 有効な解: (1,10), (2,20), (3,30)
+```
+
+#### array_var_int_element 制約
+
+可変配列要素アクセス `array[index] = result` を維持する制約。配列要素が変数の場合に使用。
+
+**引数:**
+- `index`: インデックス変数（デフォルトは 1-based、MiniZinc 仕様）
+- `array`: 変数の配列
+- `result`: 結果変数
+- `zero_based`: true なら 0-based インデックス（デフォルト: false）
+
+**伝播ルール:**
+- result.min = min { array[i].min : i ∈ dom(index) }
+- result.max = max { array[i].max : i ∈ dom(index) }
+- index から i を削除: array[i] と result の bounds が重ならない場合
+- index 確定時: array[index] = result として bounds を同期
+
+**Bounds support tracking:**
+- result の下限をサポートするインデックス集合を追跡
+- result の上限をサポートするインデックス集合を追跡
+- サポートが失われたら bounds を再計算
+
+**例:**
+```cpp
+// array[index] = result where array contains variables
+auto index = make_var("index", 1, 3);
+auto a1 = make_var("a1", 1, 10);
+auto a2 = make_var("a2", 5, 15);
+auto a3 = make_var("a3", 10, 20);
+auto result = make_var("result", 1, 20);
+ArrayVarIntElementConstraint c(index, {a1, a2, a3}, result);
+
+// index = 2 なら result = a2
 ```
 
 #### int_lin_le_imp 制約

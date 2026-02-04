@@ -406,6 +406,8 @@ void Solver::backtrack(Model& model, int save_point) {
             lin_eq_reif->rewind_to(save_point);
         } else if (auto* lin_ne_reif = dynamic_cast<IntLinNeReifConstraint*>(constraint.get())) {
             lin_ne_reif->rewind_to(save_point);
+        } else if (auto* arr_var_elem = dynamic_cast<ArrayVarIntElementConstraint*>(constraint.get())) {
+            arr_var_elem->rewind_to(save_point);
         }
     }
 }

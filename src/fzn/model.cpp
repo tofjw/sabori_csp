@@ -659,6 +659,32 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
 
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+        } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
+            // array_var_int_element(index, array, result) where array contains variables
+            // array_var_bool_element is the same but with bool variables (0-1 domain)
+            if (decl.args.size() != 3) {
+                throw std::runtime_error(decl.name + " requires 3 arguments (index, array, result)");
+            }
+            // index variable
+            VariablePtr index_var = get_var(decl.args[0]);
+
+            // array of variables
+            const auto var_names = resolve_var_array(decl.args[1]);
+            std::vector<VariablePtr> array_vars;
+            for (const auto& vname : var_names) {
+                auto it = var_map.find(vname);
+                if (it == var_map.end()) {
+                    throw std::runtime_error("Unknown variable in " + decl.name + ": " + vname);
+                }
+                array_vars.push_back(it->second);
+            }
+
+            // result variable
+            VariablePtr result_var = get_var(decl.args[2]);
+
+            // FlatZinc uses 1-based indexing by default
+            constraint = std::make_shared<ArrayVarIntElementConstraint>(
+                index_var, array_vars, result_var, false);
         } else if (decl.name == "array_int_maximum") {
             // array_int_maximum(m, [x1, x2, ...]) means m = max(x1, x2, ...)
             if (decl.args.size() != 2) {

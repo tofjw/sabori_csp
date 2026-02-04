@@ -796,6 +796,117 @@ private:
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
+/**
+ * @brief array_var_int_element制約: array[index] = result（配列要素が変数）
+ *
+ * 配列要素が変数の element 制約。bounds consistency を維持。
+ *
+ * 伝播ルール:
+ * - result.min = min { array[i].min : i ∈ dom(index) }
+ * - result.max = max { array[i].max : i ∈ dom(index) }
+ * - index から i を削除: array[i] と result の bounds が重ならない場合
+ * - index 確定時: array[index] = result（等式として伝播）
+ *
+ * Bounds support tracking:
+ * - result の下限をサポートするインデックス集合を追跡
+ * - result の上限をサポートするインデックス集合を追跡
+ * - サポートが失われたら bounds を再計算
+ */
+class ArrayVarIntElementConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param index インデックス変数
+     * @param array 変数の配列
+     * @param result 結果変数
+     * @param zero_based true なら 0-based インデックス（デフォルトは 1-based）
+     */
+    ArrayVarIntElementConstraint(VariablePtr index,
+                                  std::vector<VariablePtr> array,
+                                  VariablePtr result,
+                                  bool zero_based = false);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す
+     */
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr index_;
+    std::vector<VariablePtr> array_;
+    VariablePtr result_;
+    size_t n_;  // array size
+    bool zero_based_;
+
+    // 変数ポインタ → 内部インデックス
+    // 0: index, 1: result, 2..n+1: array[0]..array[n-1]
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    // Bounds support tracking
+    // result の下限をサポートするインデックス（array[i].min が最小のもの）
+    Domain::value_type current_result_min_support_;  // サポートしている最小値
+    // result の上限をサポートするインデックス（array[i].max が最大のもの）
+    Domain::value_type current_result_max_support_;  // サポートしている最大値
+
+    // Trail for bounds support
+    struct TrailEntry {
+        Domain::value_type min_support;
+        Domain::value_type max_support;
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    /**
+     * @brief index を 0-based に変換
+     */
+    Domain::value_type index_to_0based(Domain::value_type idx) const;
+
+    /**
+     * @brief 0-based index を 1-based (or 0-based) に変換
+     */
+    Domain::value_type index_from_0based(size_t idx_0based) const;
+
+    /**
+     * @brief bounds consistency を維持
+     * @return 矛盾がなければ true
+     */
+    bool propagate_bounds(Model& model);
+
+    /**
+     * @brief result の bounds support を再計算
+     */
+    void recompute_bounds_support();
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP
