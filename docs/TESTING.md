@@ -89,3 +89,83 @@ tests/
 | `[int_lt]` | int_lt制約 (x < y) |
 | `[int_le]` | int_le制約 (x <= y) |
 | `[int_eq_reif]` | int_eq_reif制約 ((x == y) <-> b) |
+
+## MiniZinc経由のテスト
+
+ビルド時に `build/share/minizinc/` に MiniZinc ソルバー設定ファイルが生成されます。
+
+### 環境変数の設定
+
+```bash
+export MZN_SOLVER_PATH=/path/to/sabori_csp/build/share/minizinc/solvers
+```
+
+### ソルバーの確認
+
+```bash
+minizinc --solvers | grep sabori
+```
+
+出力例:
+```
+  sabori_csp 1.0.0 (io.github.tofjw.sabori_csp, cp)
+```
+
+### MiniZincモデルの実行
+
+```bash
+# 1解
+minizinc --solver sabori_csp model.mzn
+
+# 全解
+minizinc --solver sabori_csp -a model.mzn
+
+# FlatZinc出力の確認（デバッグ用）
+minizinc --solver sabori_csp -c model.mzn
+cat model.fzn
+```
+
+### テスト例
+
+```bash
+# alldifferent制約のテスト
+cat > /tmp/test.mzn << 'EOF'
+include "alldifferent.mzn";
+var 1..3: x;
+var 1..3: y;
+var 1..3: z;
+constraint alldifferent([x, y, z]);
+solve satisfy;
+output ["x=\(x), y=\(y), z=\(z)\n"];
+EOF
+
+MZN_SOLVER_PATH=$PWD/build/share/minizinc/solvers \
+minizinc --solver sabori_csp -a /tmp/test.mzn
+```
+
+### ネイティブサポートされるグローバル制約
+
+以下の制約は分解されずにネイティブ実装が使用されます:
+
+| MiniZinc | FlatZinc出力 | sabori_csp内部 |
+|----------|--------------|----------------|
+| `alldifferent` | `fzn_all_different_int` | `AllDifferentConstraint` |
+| `circuit` | `fzn_circuit` | `CircuitConstraint` |
+
+### ファイル構成
+
+```
+share/minizinc/
+├── solvers/
+│   └── sabori_csp.msc.in    # テンプレート（ソース管理）
+└── sabori_csp/
+    ├── redefinitions.mzn    # リダイレクト定義の読み込み
+    ├── fzn_all_different_int.mzn
+    └── fzn_circuit.mzn
+
+build/share/minizinc/        # ビルド時に生成
+├── solvers/
+│   └── sabori_csp.msc       # 絶対パス埋め込み済み
+└── sabori_csp/
+    └── *.mzn                # コピー
+```

@@ -223,7 +223,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(it->second);
             }
             constraint = std::make_shared<AllDifferentConstraint>(vars);
-        } else if (decl.name == "circuit") {
+        } else if (decl.name == "circuit" || decl.name == "fzn_circuit") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("circuit requires 1 argument (array)");
             }
