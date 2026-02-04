@@ -288,6 +288,7 @@ protected:
 
 private:
     size_t n_;  // ノード数
+    Domain::value_type base_offset_;  // 1-based インデックスのオフセット（通常は1）
 
     // Union-Find スタイルのパス管理
     std::vector<size_t> head_;  // head[i] = parent of i (root if self)
