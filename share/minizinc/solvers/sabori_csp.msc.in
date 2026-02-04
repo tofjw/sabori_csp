@@ -1,0 +1,15 @@
+{
+  "name": "sabori_csp",
+  "version": "1.0.0",
+  "id": "io.github.tofjw.sabori_csp",
+  "executable": "@FZN_SABORI_EXECUTABLE@",
+  "mznlib": "@SABORI_CSP_MZNLIB_DIR@",
+  "tags": ["cp"],
+  "stdFlags": ["-a"],
+  "supportsMzn": false,
+  "supportsFzn": true,
+  "needsSolns2Out": true,
+  "needsMznExecutable": false,
+  "needsStdlibDir": false,
+  "isGUIApplication": false
+}
