@@ -68,6 +68,7 @@ Bool 変数は 0-1 整数変数として扱われます。以下の bool 制約�
 | `array_bool_and` | `ArrayBoolAndConstraint` | r = b1 ∧ b2 ∧ ... ∧ bn |
 | `array_bool_or` | `ArrayBoolOrConstraint` | r = b1 ∨ b2 ∨ ... ∨ bn |
 | `bool_clause` | `BoolClauseConstraint` | SAT節: ∨pos[i] ∨ ∨¬neg[j] |
+| `bool_not` | `BoolNotConstraint` | ¬a = b (a + b = 1) |
 
 #### array_bool_and / array_bool_or 制約
 

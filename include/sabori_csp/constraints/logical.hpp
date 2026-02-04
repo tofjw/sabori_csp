@@ -211,6 +211,37 @@ private:
     void move_watch(int save_point, int which_watch, size_t new_idx);
 };
 
+/**
+ * @brief bool_not制約: ¬a = b (つまり a + b = 1)
+ *
+ * a と b は論理否定の関係。
+ * - a = 0 → b = 1
+ * - a = 1 → b = 0
+ * - b = 0 → a = 1
+ * - b = 1 → a = 0
+ */
+class BoolNotConstraint : public Constraint {
+public:
+    BoolNotConstraint(VariablePtr a, VariablePtr b);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool propagate(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr a_;
+    VariablePtr b_;
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_LOGICAL_HPP

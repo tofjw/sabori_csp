@@ -1145,4 +1145,113 @@ void BoolClauseConstraint::move_watch(int save_point, int which_watch, size_t ne
     }
 }
 
+// ============================================================================
+// BoolNotConstraint implementation
+// ============================================================================
+
+BoolNotConstraint::BoolNotConstraint(VariablePtr a, VariablePtr b)
+    : Constraint({a, b})
+    , a_(std::move(a))
+    , b_(std::move(b)) {
+    check_initial_consistency();
+}
+
+std::string BoolNotConstraint::name() const {
+    return "bool_not";
+}
+
+std::vector<VariablePtr> BoolNotConstraint::variables() const {
+    return {a_, b_};
+}
+
+std::optional<bool> BoolNotConstraint::is_satisfied() const {
+    if (a_->is_assigned() && b_->is_assigned()) {
+        // a + b = 1 (つまり a != b)
+        return a_->assigned_value().value() != b_->assigned_value().value();
+    }
+    return std::nullopt;
+}
+
+bool BoolNotConstraint::propagate(Model& /*model*/) {
+    // a が確定したら b を決定
+    if (a_->is_assigned() && !b_->is_assigned()) {
+        auto val = 1 - a_->assigned_value().value();
+        if (!b_->domain().contains(val)) {
+            return false;
+        }
+        b_->domain().assign(val);
+    }
+
+    // b が確定したら a を決定
+    if (b_->is_assigned() && !a_->is_assigned()) {
+        auto val = 1 - b_->assigned_value().value();
+        if (!a_->domain().contains(val)) {
+            return false;
+        }
+        a_->domain().assign(val);
+    }
+
+    return !a_->domain().empty() && !b_->domain().empty();
+}
+
+bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
+                                        size_t var_idx, Domain::value_type value,
+                                        Domain::value_type prev_min,
+                                        Domain::value_type prev_max) {
+    // 基底クラスの処理
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    // 変数のモデル内インデックスを検索するヘルパー
+    auto find_model_idx = [&model](const VariablePtr& var) -> size_t {
+        for (size_t i = 0; i < model.variables().size(); ++i) {
+            if (model.variable(i) == var) {
+                return i;
+            }
+        }
+        return SIZE_MAX;
+    };
+
+    // a が確定したら b を決定（キューイング）
+    if (a_->is_assigned() && !b_->is_assigned()) {
+        auto val = 1 - a_->assigned_value().value();
+        if (!b_->domain().contains(val)) {
+            return false;
+        }
+        size_t b_idx = find_model_idx(b_);
+        if (b_idx != SIZE_MAX) {
+            model.enqueue_instantiate(b_idx, val);
+        }
+    }
+
+    // b が確定したら a を決定（キューイング）
+    if (b_->is_assigned() && !a_->is_assigned()) {
+        auto val = 1 - b_->assigned_value().value();
+        if (!a_->domain().contains(val)) {
+            return false;
+        }
+        size_t a_idx = find_model_idx(a_);
+        if (a_idx != SIZE_MAX) {
+            model.enqueue_instantiate(a_idx, val);
+        }
+    }
+
+    return true;
+}
+
+bool BoolNotConstraint::on_final_instantiate() {
+    // a + b = 1 を確認
+    return a_->assigned_value().value() != b_->assigned_value().value();
+}
+
+void BoolNotConstraint::check_initial_consistency() {
+    // 両方が確定していて同じ値なら矛盾
+    if (a_->is_assigned() && b_->is_assigned() &&
+        a_->assigned_value() == b_->assigned_value()) {
+        set_initially_inconsistent(true);
+    }
+}
+
 } // namespace sabori_csp

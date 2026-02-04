@@ -578,6 +578,14 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 neg_vars.push_back(it->second);
             }
             constraint = std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
+        } else if (decl.name == "bool_not") {
+            // bool_not(a, b) means ¬a = b (i.e., a + b = 1)
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("bool_not requires 2 arguments");
+            }
+            auto a = get_var(decl.args[0]);
+            auto b = get_var(decl.args[1]);
+            constraint = std::make_shared<BoolNotConstraint>(a, b);
         } else if (decl.name == "array_int_element" || decl.name == "int_element") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_element requires 3 arguments (index, array, result)");
