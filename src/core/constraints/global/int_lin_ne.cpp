@@ -138,8 +138,7 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& /*model*/, int /*save_poi
 
         // 禁止値がドメインに含まれている場合は除外
         if (last_var->domain().contains(forbidden_value)) {
-            last_var->domain().remove(forbidden_value);
-            if (last_var->domain().empty()) {
+            if (!last_var->domain().remove(forbidden_value)) {
                 return false;
             }
         }

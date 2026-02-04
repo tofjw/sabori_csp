@@ -77,10 +77,11 @@ bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
     auto m_values = m_domain.values();
     for (auto v : m_values) {
         if (v < max_of_min || v > max_of_max) {
-            m_domain.remove(v);
+            if (!m_domain.remove(v)) {
+                return false;
+            }
         }
     }
-    if (m_domain.empty()) return false;
 
     // 4. 各 x[i].max を m.max 以下に絞る
     auto m_max = m_domain.max().value();
@@ -88,10 +89,11 @@ bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
         auto x_values = var->domain().values();
         for (auto v : x_values) {
             if (v > m_max) {
-                var->domain().remove(v);
+                if (!var->domain().remove(v)) {
+                    return false;
+                }
             }
         }
-        if (var->domain().empty()) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある

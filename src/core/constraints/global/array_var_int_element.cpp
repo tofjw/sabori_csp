@@ -128,11 +128,10 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
     auto result_values = result_domain.values();
     for (auto v : result_values) {
         if (v < new_result_min || v > new_result_max) {
-            result_domain.remove(v);
+            if (!result_domain.remove(v)) {
+                return false;
+            }
         }
-    }
-    if (result_domain.empty()) {
-        return false;
     }
 
     // 2. index のドメインから、result と重ならないインデックスを削除
@@ -149,7 +148,9 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
             // 範囲外のインデックスは削除
-            index_domain.remove(idx);
+            if (!index_domain.remove(idx)) {
+                return false;
+            }
             continue;
         }
 
@@ -158,19 +159,19 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
         auto arr_max = arr_var->domain().max();
         if (!arr_min || !arr_max) {
             // 配列要素のドメインが空
-            index_domain.remove(idx);
+            if (!index_domain.remove(idx)) {
+                return false;
+            }
             continue;
         }
 
         // array[i] の bounds と result の bounds に重なりがあるか
         if (*arr_max < *result_min || *arr_min > *result_max) {
             // 重ならない → このインデックスは無効
-            index_domain.remove(idx);
+            if (!index_domain.remove(idx)) {
+                return false;
+            }
         }
-    }
-
-    if (index_domain.empty()) {
-        return false;
     }
 
     // 3. index が確定している場合、array[index] と result の bounds を同期
@@ -202,19 +203,21 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
             auto arr_values = arr_domain.values();
             for (auto v : arr_values) {
                 if (v < common_min || v > common_max) {
-                    arr_domain.remove(v);
+                    if (!arr_domain.remove(v)) {
+                        return false;
+                    }
                 }
             }
-            if (arr_domain.empty()) return false;
 
             // result から範囲外の値を削除
             result_values = result_domain.values();
             for (auto v : result_values) {
                 if (v < common_min || v > common_max) {
-                    result_domain.remove(v);
+                    if (!result_domain.remove(v)) {
+                        return false;
+                    }
                 }
             }
-            if (result_domain.empty()) return false;
         }
     }
 

@@ -176,10 +176,11 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
                 auto vals = vars_[j]->domain().values();
                 for (auto v : vals) {
                     if (v < new_min) {
-                        vars_[j]->domain().remove(v);
+                        if (!vars_[j]->domain().remove(v)) {
+                            return false;
+                        }
                     }
                 }
-                if (vars_[j]->domain().empty()) return false;
                 auto new_cur_min = vars_[j]->domain().min().value();
                 if (c >= 0) {
                     total_min += c * (new_cur_min - *cur_min);
@@ -194,10 +195,11 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
                 auto vals = vars_[j]->domain().values();
                 for (auto v : vals) {
                     if (v > new_max) {
-                        vars_[j]->domain().remove(v);
+                        if (!vars_[j]->domain().remove(v)) {
+                            return false;
+                        }
                     }
                 }
-                if (vars_[j]->domain().empty()) return false;
                 auto new_cur_max = vars_[j]->domain().max().value();
                 if (c >= 0) {
                     total_max += c * (new_cur_max - *cur_max);

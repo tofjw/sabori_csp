@@ -71,12 +71,10 @@ bool IntTimesConstraint::propagate_bounds() {
     auto z_vals = z_->domain().values();
     for (auto v : z_vals) {
         if (v < *prod_min || v > *prod_max) {
-            z_->domain().remove(v);
+            if (!z_->domain().remove(v)) {
+                return false;
+            }
         }
-    }
-
-    if (z_->domain().empty()) {
-        return false;
     }
 
     // x が 0 のみを含む場合、z = 0
@@ -87,7 +85,9 @@ bool IntTimesConstraint::propagate_bounds() {
         z_vals = z_->domain().values();
         for (auto v : z_vals) {
             if (v != 0) {
-                z_->domain().remove(v);
+                if (!z_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -100,7 +100,9 @@ bool IntTimesConstraint::propagate_bounds() {
         z_vals = z_->domain().values();
         for (auto v : z_vals) {
             if (v != 0) {
-                z_->domain().remove(v);
+                if (!z_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -115,7 +117,7 @@ bool IntTimesConstraint::propagate_bounds() {
         }
     }
 
-    return !x_->domain().empty() && !y_->domain().empty() && !z_->domain().empty();
+    return true;
 }
 
 bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
@@ -431,11 +433,10 @@ bool IntAbsConstraint::propagate_bounds() {
         auto y_vals = y_->domain().values();
         for (auto v : y_vals) {
             if (v < 0) {
-                y_->domain().remove(v);
+                if (!y_->domain().remove(v)) {
+                    return false;
+                }
             }
-        }
-        if (y_->domain().empty()) {
-            return false;
         }
         y_min = y_->domain().min();
         y_max = y_->domain().max();
@@ -460,12 +461,10 @@ bool IntAbsConstraint::propagate_bounds() {
     auto y_vals = y_->domain().values();
     for (auto v : y_vals) {
         if (v < abs_x_min || v > abs_x_max) {
-            y_->domain().remove(v);
+            if (!y_->domain().remove(v)) {
+                return false;
+            }
         }
-    }
-
-    if (y_->domain().empty()) {
-        return false;
     }
 
     // x の範囲を y の範囲から制限
@@ -475,13 +474,11 @@ bool IntAbsConstraint::propagate_bounds() {
         auto x_vals = x_->domain().values();
         for (auto v : x_vals) {
             if (v < -*y_max || v > *y_max) {
-                x_->domain().remove(v);
+                if (!x_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
-    }
-
-    if (x_->domain().empty()) {
-        return false;
     }
 
     // x のドメインから、対応する |x| が y のドメインにない値を削除
@@ -491,12 +488,10 @@ bool IntAbsConstraint::propagate_bounds() {
     for (auto v : x_vals) {
         auto abs_v = (v >= 0) ? v : -v;
         if (y_set.count(abs_v) == 0) {
-            x_->domain().remove(v);
+            if (!x_->domain().remove(v)) {
+                return false;
+            }
         }
-    }
-
-    if (x_->domain().empty()) {
-        return false;
     }
 
     // y のドメインから、対応する x が x のドメインにない値を削除
@@ -506,7 +501,9 @@ bool IntAbsConstraint::propagate_bounds() {
     for (auto v : y_vals) {
         // v = |x| となる x は v または -v
         if (x_set.count(v) == 0 && x_set.count(-v) == 0) {
-            y_->domain().remove(v);
+            if (!y_->domain().remove(v)) {
+                return false;
+            }
         }
     }
 

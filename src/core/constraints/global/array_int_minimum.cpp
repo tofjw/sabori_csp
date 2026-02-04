@@ -74,10 +74,11 @@ bool ArrayIntMinimumConstraint::propagate(Model& /*model*/) {
     auto m_values = m_domain.values();
     for (auto v : m_values) {
         if (v < min_of_min || v > min_of_max) {
-            m_domain.remove(v);
+            if (!m_domain.remove(v)) {
+                return false;
+            }
         }
     }
-    if (m_domain.empty()) return false;
 
     // 4. 各 x[i].min を m.min 以上に絞る
     auto m_min = m_domain.min().value();
@@ -85,10 +86,11 @@ bool ArrayIntMinimumConstraint::propagate(Model& /*model*/) {
         auto x_values = var->domain().values();
         for (auto v : x_values) {
             if (v < m_min) {
-                var->domain().remove(v);
+                if (!var->domain().remove(v)) {
+                    return false;
+                }
             }
         }
-        if (var->domain().empty()) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある

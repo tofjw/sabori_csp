@@ -123,10 +123,12 @@ bool IntElementConstraint::propagate(Model& /*model*/) {
                 }
             }
             if (!found) {
-                idx_domain.remove(v);
+                if (!idx_domain.remove(v)) {
+                    return false;
+                }
             }
         }
-        return !idx_domain.empty();
+        return true;
     }
 
     // 両方未確定の場合: 双方向 bounds propagation
@@ -146,11 +148,10 @@ bool IntElementConstraint::propagate(Model& /*model*/) {
     auto result_values = result_domain.values();
     for (auto v : result_values) {
         if (valid_results.find(v) == valid_results.end()) {
-            result_domain.remove(v);
+            if (!result_domain.remove(v)) {
+                return false;
+            }
         }
-    }
-    if (result_domain.empty()) {
-        return false;
     }
 
     // 3. result のドメインから index の有効な値を計算
@@ -170,11 +171,10 @@ bool IntElementConstraint::propagate(Model& /*model*/) {
     idx_values = idx_domain.values();  // 更新後
     for (auto v : idx_values) {
         if (valid_indices.find(v) == valid_indices.end()) {
-            idx_domain.remove(v);
+            if (!idx_domain.remove(v)) {
+                return false;
+            }
         }
-    }
-    if (idx_domain.empty()) {
-        return false;
     }
 
     return true;

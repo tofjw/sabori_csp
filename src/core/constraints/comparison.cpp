@@ -855,7 +855,9 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
         if (y_max) {
             for (auto v : x_->domain().values()) {
                 if (v > *y_max) {
-                    x_->domain().remove(v);
+                    if (!x_->domain().remove(v)) {
+                        return false;
+                    }
                 }
             }
         }
@@ -864,7 +866,9 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
         if (x_min) {
             for (auto v : y_->domain().values()) {
                 if (v < *x_min) {
-                    y_->domain().remove(v);
+                    if (!y_->domain().remove(v)) {
+                        return false;
+                    }
                 }
             }
         }
@@ -877,7 +881,9 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
         if (y_min) {
             for (auto v : x_->domain().values()) {
                 if (v <= *y_min) {
-                    x_->domain().remove(v);
+                    if (!x_->domain().remove(v)) {
+                        return false;
+                    }
                 }
             }
         }
@@ -886,7 +892,9 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
         if (x_max) {
             for (auto v : y_->domain().values()) {
                 if (v >= *x_max) {
-                    y_->domain().remove(v);
+                    if (!y_->domain().remove(v)) {
+                        return false;
+                    }
                 }
             }
         }
@@ -1089,28 +1097,31 @@ bool IntMaxConstraint::propagate(Model& /*model*/) {
     auto m_values = m_->domain().values();
     for (auto v : m_values) {
         if (v < m_lower || v > m_upper) {
-            m_->domain().remove(v);
+            if (!m_->domain().remove(v)) {
+                return false;
+            }
         }
     }
-    if (m_->domain().empty()) return false;
 
     // x.max <= m.max, y.max <= m.max
     auto m_max = m_->domain().max().value();
     auto x_values = x_->domain().values();
     for (auto v : x_values) {
         if (v > m_max) {
-            x_->domain().remove(v);
+            if (!x_->domain().remove(v)) {
+                return false;
+            }
         }
     }
-    if (x_->domain().empty()) return false;
 
     auto y_values = y_->domain().values();
     for (auto v : y_values) {
         if (v > m_max) {
-            y_->domain().remove(v);
+            if (!y_->domain().remove(v)) {
+                return false;
+            }
         }
     }
-    if (y_->domain().empty()) return false;
 
     return true;
 }
