@@ -60,8 +60,18 @@ TEST_CASE("Domain remove", "[domain]") {
     }
 
     SECTION("remove non-existent value") {
-        REQUIRE(!d.remove(10));
+        // 存在しない値の削除は成功（変更なし）として扱う
+        REQUIRE(d.remove(10));
         REQUIRE(d.size() == 5);
+    }
+
+    SECTION("remove from singleton fails") {
+        // singleton から削除しようとすると失敗
+        Domain singleton(3, 3);
+        REQUIRE(singleton.is_singleton());
+        REQUIRE(!singleton.remove(3));  // 空になるので失敗
+        REQUIRE(singleton.size() == 1);  // 削除されていない
+        REQUIRE(singleton.contains(3));
     }
 }
 

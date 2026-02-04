@@ -76,7 +76,12 @@ bool Domain::contains(value_type value) const {
 bool Domain::remove(value_type value) {
     auto it = sparse_.find(value);
     if (it == sparse_.end() || it->second >= n_) {
-        return false;  // 元々存在しない
+        return true;  // 元々存在しない → 成功（変更なし）
+    }
+
+    // 削除すると空になる場合は失敗
+    if (n_ == 1) {
+        return false;
     }
 
     size_t idx = it->second;
@@ -84,10 +89,8 @@ bool Domain::remove(value_type value) {
     --n_;
 
     // min/max の更新
-    if (n_ > 0) {
-        if (value == min_ || value == max_) {
-            update_bounds();
-        }
+    if (value == min_ || value == max_) {
+        update_bounds();
     }
     return true;
 }

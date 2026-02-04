@@ -177,6 +177,11 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     size_t var_idx = select_variable(model);
     auto& var = variables[var_idx];
 
+    // 空ドメインのチェック
+    if (var->domain().empty()) {
+        return SearchResult::UNSAT;
+    }
+
     int save_point = current_decision_;
     auto prev_min = var->domain().min().value();
     auto prev_max = var->domain().max().value();

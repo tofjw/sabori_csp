@@ -138,15 +138,32 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         throw std::runtime_error("Expected array of variables");
     };
 
+    // Helper to get or create variable by name (handles __inline_ prefix for literals)
+    auto get_var_by_name = [&](const std::string& name) -> VariablePtr {
+        // First check if variable already exists
+        auto it = var_map.find(name);
+        if (it != var_map.end()) {
+            return it->second;
+        }
+        // Check if it's an inline literal that needs to be created
+        if (name.rfind("__inline_", 0) == 0) {
+            // Extract the value from the name
+            std::string val_str = name.substr(9);  // strlen("__inline_") = 9
+            int64_t val = std::stoll(val_str);
+            // Create a constant variable
+            auto var = std::make_shared<Variable>(name, Domain(val, val));
+            var_map[name] = var;
+            model->add_variable(var);
+            return var;
+        }
+        throw std::runtime_error("Unknown variable: " + name);
+    };
+
     // Helper to get or create variable from argument
     auto get_var = [&](const ConstraintArg& arg) -> VariablePtr {
         if (std::holds_alternative<std::string>(arg)) {
             const auto& name = std::get<std::string>(arg);
-            auto it = var_map.find(name);
-            if (it != var_map.end()) {
-                return it->second;
-            }
-            throw std::runtime_error("Unknown variable: " + name);
+            return get_var_by_name(name);
         } else if (std::holds_alternative<Domain::value_type>(arg)) {
             // Create a constant variable
             auto val = std::get<Domain::value_type>(arg);
@@ -668,15 +685,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // index variable
             VariablePtr index_var = get_var(decl.args[0]);
 
-            // array of variables
+            // array of variables (may contain __inline_ literals)
             const auto var_names = resolve_var_array(decl.args[1]);
             std::vector<VariablePtr> array_vars;
             for (const auto& vname : var_names) {
-                auto it = var_map.find(vname);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in " + decl.name + ": " + vname);
-                }
-                array_vars.push_back(it->second);
+                array_vars.push_back(get_var_by_name(vname));
             }
 
             // result variable

@@ -42,18 +42,22 @@ bool IntEqConstraint::propagate(Model& /*model*/) {
     // Remove values from x that are not in y
     for (auto v : x_vals) {
         if (y_set.count(v) == 0) {
-            x_->domain().remove(v);
+            if (!x_->domain().remove(v)) {
+                return false;
+            }
         }
     }
 
     // Remove values from y that are not in x
     for (auto v : y_vals) {
         if (x_set.count(v) == 0) {
-            y_->domain().remove(v);
+            if (!y_->domain().remove(v)) {
+                return false;
+            }
         }
     }
 
-    return !x_->domain().empty() && !y_->domain().empty();
+    return true;
 }
 
 bool IntEqConstraint::on_instantiate(Model& model, int save_point,
@@ -162,12 +166,16 @@ bool IntEqReifConstraint::propagate(Model& /*model*/) {
 
         for (auto v : x_vals) {
             if (y_set.count(v) == 0) {
-                x_->domain().remove(v);
+                if (!x_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
         for (auto v : y_vals) {
             if (x_set.count(v) == 0) {
-                y_->domain().remove(v);
+                if (!y_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -175,10 +183,14 @@ bool IntEqReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 0 and one variable is singleton, remove that value from the other
     if (b_->is_assigned() && b_->assigned_value().value() == 0) {
         if (x_->is_assigned()) {
-            y_->domain().remove(x_->assigned_value().value());
+            if (!y_->domain().remove(x_->assigned_value().value())) {
+                return false;
+            }
         }
         if (y_->is_assigned()) {
-            x_->domain().remove(y_->assigned_value().value());
+            if (!x_->domain().remove(y_->assigned_value().value())) {
+                return false;
+            }
         }
     }
 
@@ -192,7 +204,7 @@ bool IntEqReifConstraint::propagate(Model& /*model*/) {
         b_->domain().assign(eq ? 1 : 0);
     }
 
-    return !x_->domain().empty() && !y_->domain().empty() && !b_->domain().empty();
+    return true;
 }
 
 bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
@@ -332,12 +344,16 @@ std::optional<bool> IntNeConstraint::is_satisfied() const {
 bool IntNeConstraint::propagate(Model& /*model*/) {
     // If one is singleton, remove that value from the other
     if (x_->is_assigned()) {
-        y_->domain().remove(x_->assigned_value().value());
+        if (!y_->domain().remove(x_->assigned_value().value())) {
+            return false;
+        }
     }
     if (y_->is_assigned()) {
-        x_->domain().remove(y_->assigned_value().value());
+        if (!x_->domain().remove(y_->assigned_value().value())) {
+            return false;
+        }
     }
-    return !x_->domain().empty() && !y_->domain().empty();
+    return true;
 }
 
 bool IntNeConstraint::on_instantiate(Model& model, int save_point,
@@ -421,10 +437,14 @@ bool IntNeReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 1, enforce x != y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         if (x_->is_assigned()) {
-            y_->domain().remove(x_->assigned_value().value());
+            if (!y_->domain().remove(x_->assigned_value().value())) {
+                return false;
+            }
         }
         if (y_->is_assigned()) {
-            x_->domain().remove(y_->assigned_value().value());
+            if (!x_->domain().remove(y_->assigned_value().value())) {
+                return false;
+            }
         }
     }
 
@@ -437,12 +457,16 @@ bool IntNeReifConstraint::propagate(Model& /*model*/) {
 
         for (auto v : x_vals) {
             if (y_set.count(v) == 0) {
-                x_->domain().remove(v);
+                if (!x_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
         for (auto v : y_vals) {
             if (x_set.count(v) == 0) {
-                y_->domain().remove(v);
+                if (!y_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -456,7 +480,7 @@ bool IntNeReifConstraint::propagate(Model& /*model*/) {
         b_->domain().assign(ne ? 1 : 0);
     }
 
-    return !x_->domain().empty() && !y_->domain().empty() && !b_->domain().empty();
+    return true;
 }
 
 bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
@@ -606,7 +630,9 @@ bool IntLtConstraint::propagate(Model& /*model*/) {
     if (y_max) {
         for (auto v : x_->domain().values()) {
             if (v >= *y_max) {
-                x_->domain().remove(v);
+                if (!x_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -616,12 +642,14 @@ bool IntLtConstraint::propagate(Model& /*model*/) {
     if (x_min) {
         for (auto v : y_->domain().values()) {
             if (v <= *x_min) {
-                y_->domain().remove(v);
+                if (!y_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
 
-    return !x_->domain().empty() && !y_->domain().empty();
+    return true;
 }
 
 bool IntLtConstraint::on_instantiate(Model& model, int save_point,
@@ -713,7 +741,9 @@ bool IntLeConstraint::propagate(Model& /*model*/) {
     if (y_max) {
         for (auto v : x_->domain().values()) {
             if (v > *y_max) {
-                x_->domain().remove(v);
+                if (!x_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
@@ -722,12 +752,14 @@ bool IntLeConstraint::propagate(Model& /*model*/) {
     if (x_min) {
         for (auto v : y_->domain().values()) {
             if (v < *x_min) {
-                y_->domain().remove(v);
+                if (!y_->domain().remove(v)) {
+                    return false;
+                }
             }
         }
     }
 
-    return !x_->domain().empty() && !y_->domain().empty();
+    return true;
 }
 
 bool IntLeConstraint::on_instantiate(Model& model, int save_point,

@@ -280,6 +280,25 @@ var_decl:
             ctx->model->add_array_decl(std::move(decl));
             delete $11;
         }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF VAR BOOL ':' identifier annotations '=' '[' id_list_inner ']' ';'
+        {
+            // Array of var bool with assignment (mixed identifiers and bool literals)
+            ArrayDecl decl;
+            decl.name = *$11;
+            decl.size = $5 - $3 + 1;
+            if ($12) {
+                for (const auto& ann : *$12) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $12;
+            }
+            if ($15) {
+                decl.elements = *$15;
+                delete $15;
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $11;
+        }
     | ARRAY '[' int_literal DOTDOT int_literal ']' OF VAR INT ':' identifier annotations ';'
         {
             // Array of var int (unbounded)
@@ -571,6 +590,18 @@ id_list_inner:
     | int_literal
         {
             // Support starting with an integer literal
+            $$ = new std::vector<std::string>();
+            $$->push_back("__inline_" + std::to_string($1));
+        }
+    | id_list_inner ',' bool_literal
+        {
+            // Support mixed lists with inline bool literals (true/false)
+            $$ = $1;
+            $$->push_back("__inline_" + std::to_string($3));
+        }
+    | bool_literal
+        {
+            // Support starting with a bool literal
             $$ = new std::vector<std::string>();
             $$->push_back("__inline_" + std::to_string($1));
         }
