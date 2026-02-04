@@ -1,0 +1,9 @@
+% int_lin_eq_reif test: b = 1 -> 2*x + 3*y == 12
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var bool: b :: output_var;
+
+constraint int_lin_eq_reif([2, 3], [x, y], 12, b);
+constraint int_eq(b, 1);
+
+solve satisfy;

@@ -1,0 +1,9 @@
+% int_lin_eq_reif test: deduce b = 1
+% x=3, y=2 => sum = 2*3 + 3*2 = 12 == 12 => b must be 1
+var 3..3: x :: output_var;
+var 2..2: y :: output_var;
+var bool: b :: output_var;
+
+constraint int_lin_eq_reif([2, 3], [x, y], 12, b);
+
+solve satisfy;

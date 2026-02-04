@@ -18,6 +18,7 @@ add_library(sabori_csp_core
   constraints/global/int_element.cpp
   constraints/global/array_int_maximum.cpp
   constraints/global/array_int_minimum.cpp
+  constraints/global/int_lin_eq_reif.cpp
   constraints/global/int_lin_le_reif.cpp
   constraints/global/int_lin_le_imp.cpp
 )

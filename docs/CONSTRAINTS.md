@@ -132,6 +132,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 |--------|--------|------|
 | `all_different` | `AllDifferentConstraint` | 全ての変数が異なる値を取る |
 | `int_lin_eq` | `IntLinEqConstraint` | Σ(coeffs[i] * vars[i]) == target |
+| `int_lin_eq_reif` | `IntLinEqReifConstraint` | Σ(coeffs[i] * vars[i]) == target <-> b |
 | `int_lin_le` | `IntLinLeConstraint` | Σ(coeffs[i] * vars[i]) <= bound |
 | `int_lin_le_imp` | `IntLinLeImpConstraint` | b = 1 -> Σ(coeffs[i] * vars[i]) <= bound |
 | `int_lin_le_reif` | `IntLinLeReifConstraint` | Σ(coeffs[i] * vars[i]) <= bound <-> b |
