@@ -184,6 +184,19 @@ public:
     void rewind_to(int save_point);
 
     /**
+     * @brief 制約が状態を変更したことを記録
+     * @param constraint_idx 制約のインデックス
+     * @param save_point 変更時のセーブポイント
+     */
+    void mark_constraint_dirty(size_t constraint_idx, int save_point);
+
+    /**
+     * @brief dirty な制約の rewind_to を呼び出し
+     * @param save_point 復元先のセーブポイント
+     */
+    void rewind_dirty_constraints(int save_point);
+
+    /**
      * @brief 変数 Trail のサイズを取得
      */
     size_t var_trail_size() const;
@@ -253,6 +266,7 @@ private:
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;
     std::vector<std::pair<int, ConstraintTrailEntry>> constraint_trail_;
+    std::vector<std::pair<int, size_t>> dirty_constraint_trail_;  // (save_point, constraint_idx)
 
     // 最後に保存した変数ごとのセーブポイント（重複保存防止）
     std::vector<int> last_saved_level_;

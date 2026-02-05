@@ -90,6 +90,7 @@ bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,
     // Trail に保存
     if (trail_.empty() || trail_.back().first != save_point) {
         trail_.push_back({save_point, {current_fixed_sum_, unfixed_count_}});
+        model.mark_constraint_dirty(model_index(), save_point);
     }
 
     // 差分更新

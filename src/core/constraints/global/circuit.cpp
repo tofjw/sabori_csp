@@ -221,6 +221,7 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         // TrailEntryのjは内部インデックスを保存
         TrailEntry entry{0, 0, 0, 0, static_cast<Domain::value_type>(j), old_pool_n, old_unfixed_count, false};
         trail_.push_back({save_point, entry});
+        model.mark_constraint_dirty(model_index(), save_point);
 
         // 残り1変数チェック（O(1)）
         if (unfixed_count_ == 1) {
@@ -249,6 +250,7 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
     // TrailEntryのjは内部インデックスを保存
     TrailEntry entry{h1, old_tail_h1, h2, old_size_h1, static_cast<Domain::value_type>(j), old_pool_n, old_unfixed_count, true};
     trail_.push_back({save_point, entry});
+    model.mark_constraint_dirty(model_index(), save_point);
 
     // 更新: h2 のパスを h1 のパスに統合
     tail_[h1] = t2;

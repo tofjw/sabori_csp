@@ -5,6 +5,18 @@
 
 namespace sabori_csp {
 
+namespace {
+// MurmurHash3 64-bit finalizer
+inline uint64_t fmix64(uint64_t k) {
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    return k;
+}
+}  // namespace
+
 Solver::Solver()
     : rng_(12345678) {}
 
@@ -150,6 +162,8 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
             }
 
             // UNKNOWN: リスタート
+            propagation_queue_.clear();
+            model.clear_pending_updates();
             backtrack(model, root_point);
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
@@ -240,6 +254,14 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     // 値を試行順序で取得
     auto values = var->domain().values();
 
+    // ハッシュ順でソート（値の試行順序にばらつきを持たせる）
+    uint64_t hash_seed = static_cast<uint64_t>(var_idx) ^ static_cast<uint64_t>(conflict_limit);
+    std::sort(values.begin(), values.end(), [hash_seed](auto a, auto b) {
+        uint64_t ha = fmix64(static_cast<uint64_t>(a) ^ hash_seed);
+        uint64_t hb = fmix64(static_cast<uint64_t>(b) ^ hash_seed);
+        return ha < hb;
+    });
+
     // 保存された値がある場合は優先
     if (current_best_assignment_.count(var_idx)) {
         auto best_val = current_best_assignment_[var_idx];
@@ -262,9 +284,12 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
         }
 
         // 伝播
-        if (propagate(model, var_idx, prev_min, prev_max)) {
+        bool propagate_ok = propagate(model, var_idx, prev_min, prev_max);
+        bool queue_ok = false;
+        if (propagate_ok) {
             // キュー処理
-            if (process_queue(model)) {
+            queue_ok = process_queue(model);
+            if (queue_ok) {
                 decision_trail_.push_back({var_idx, val});
 
                 auto res = run_search(model, conflict_limit, depth + 1, callback, find_all);
@@ -282,6 +307,12 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
                 conflict_limit--;
             }
+        }
+
+        // 伝播失敗時はキューに残りがある可能性があるのでクリア
+        if (!propagate_ok || !queue_ok) {
+            propagation_queue_.clear();
+            model.clear_pending_updates();
         }
 
         current_decision_--;
@@ -434,49 +465,8 @@ bool Solver::propagate(Model& model, size_t var_idx,
 }
 
 void Solver::backtrack(Model& model, int save_point) {
-    propagation_queue_.clear();
-    model.clear_pending_updates();
     model.rewind_to(save_point);
-
-    // 制約の状態も復元（AllDifferent, IntLinEq, Circuit など）
-    for (const auto& constraint : model.constraints()) {
-        // dynamic_cast で型をチェックして rewind_to を呼び出す
-        if (auto* alldiff = dynamic_cast<AllDifferentConstraint*>(constraint.get())) {
-            alldiff->rewind_to(save_point);
-        } else if (auto* lineq = dynamic_cast<IntLinEqConstraint*>(constraint.get())) {
-            lineq->rewind_to(save_point);
-        } else if (auto* linle = dynamic_cast<IntLinLeConstraint*>(constraint.get())) {
-            linle->rewind_to(save_point);
-        } else if (auto* linne = dynamic_cast<IntLinNeConstraint*>(constraint.get())) {
-            linne->rewind_to(save_point);
-        } else if (auto* circuit = dynamic_cast<CircuitConstraint*>(constraint.get())) {
-            circuit->rewind_to(save_point);
-        } else if (auto* int_element = dynamic_cast<IntElementConstraint*>(constraint.get())) {
-            int_element->rewind_to(save_point);
-        } else if (auto* bool_and = dynamic_cast<ArrayBoolAndConstraint*>(constraint.get())) {
-            bool_and->rewind_to(save_point);
-        } else if (auto* bool_or = dynamic_cast<ArrayBoolOrConstraint*>(constraint.get())) {
-            bool_or->rewind_to(save_point);
-        } else if (auto* bool_clause = dynamic_cast<BoolClauseConstraint*>(constraint.get())) {
-            bool_clause->rewind_to(save_point);
-        } else if (auto* int_max = dynamic_cast<ArrayIntMaximumConstraint*>(constraint.get())) {
-            int_max->rewind_to(save_point);
-        } else if (auto* int_min = dynamic_cast<ArrayIntMinimumConstraint*>(constraint.get())) {
-            int_min->rewind_to(save_point);
-        } else if (auto* int_times = dynamic_cast<IntTimesConstraint*>(constraint.get())) {
-            int_times->rewind_to(save_point);
-        } else if (auto* lin_le_imp = dynamic_cast<IntLinLeImpConstraint*>(constraint.get())) {
-            lin_le_imp->rewind_to(save_point);
-        } else if (auto* lin_le_reif = dynamic_cast<IntLinLeReifConstraint*>(constraint.get())) {
-            lin_le_reif->rewind_to(save_point);
-        } else if (auto* lin_eq_reif = dynamic_cast<IntLinEqReifConstraint*>(constraint.get())) {
-            lin_eq_reif->rewind_to(save_point);
-        } else if (auto* lin_ne_reif = dynamic_cast<IntLinNeReifConstraint*>(constraint.get())) {
-            lin_ne_reif->rewind_to(save_point);
-        } else if (auto* arr_var_elem = dynamic_cast<ArrayVarIntElementConstraint*>(constraint.get())) {
-            arr_var_elem->rewind_to(save_point);
-        }
-    }
+    model.rewind_dirty_constraints(save_point);
 }
 
 Solution Solver::build_solution(const Model& model) const {
@@ -501,42 +491,53 @@ bool Solver::verify_solution(const Model& model) const {
 
 size_t Solver::select_variable(const Model& model) {
     const auto& variables = model.variables();
-    size_t best_idx = 0;
-    bool found = false;
 
-    size_t min_domain_size = SIZE_MAX;
-    double best_activity = -1.0;
-
+    // 未確定変数のインデックスを収集
+    std::vector<size_t> candidates;
+    candidates.reserve(variables.size());
     for (size_t i = 0; i < variables.size(); ++i) {
         if (!variables[i]->is_assigned()) {
-            size_t domain_size = variables[i]->domain().size();
-            double act = activity_selection_ ? activity_[i] : 0.0;
+            candidates.push_back(i);
+        }
+    }
 
-            bool better = false;
-            if (!found) {
+    if (candidates.empty()) {
+        return 0;
+    }
+
+    // シャッフルしてタイブレークをランダム化
+    std::shuffle(candidates.begin(), candidates.end(), rng_);
+
+    size_t best_idx = candidates[0];
+    size_t min_domain_size = variables[best_idx]->domain().size();
+    double best_activity = activity_[best_idx];
+
+    for (size_t j = 1; j < candidates.size(); ++j) {
+        size_t i = candidates[j];
+        size_t domain_size = variables[i]->domain().size();
+        double act = activity_[i];
+
+        bool better = false;
+        if (activity_first_) {
+            // Activity 優先: Activity が高いものを優先、同じなら MRV
+            if (act > best_activity) {
                 better = true;
-            } else if (activity_first_) {
-                // Activity 優先: Activity が高いものを優先、同じなら MRV
-                if (act > best_activity) {
-                    better = true;
-                } else if (act == best_activity && domain_size < min_domain_size) {
-                    better = true;
-                }
-            } else {
-                // MRV 優先（デフォルト）: ドメインサイズが小さいものを優先、同じなら Activity
-                if (domain_size < min_domain_size) {
-                    better = true;
-                } else if (domain_size == min_domain_size && act > best_activity) {
-                    better = true;
-                }
+            } else if (act == best_activity && domain_size < min_domain_size) {
+                better = true;
             }
+        } else {
+            // MRV 優先（デフォルト）: ドメインサイズが小さいものを優先、同じなら Activity
+            if (domain_size < min_domain_size) {
+                better = true;
+            } else if (domain_size == min_domain_size && act > best_activity) {
+                better = true;
+            }
+        }
 
-            if (better) {
-                min_domain_size = domain_size;
-                best_activity = act;
-                best_idx = i;
-                found = true;
-            }
+        if (better) {
+            min_domain_size = domain_size;
+            best_activity = act;
+            best_idx = i;
         }
     }
 

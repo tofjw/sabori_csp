@@ -392,6 +392,7 @@ bool ArrayVarIntElementConstraint::on_instantiate(
 
     // Trail に状態を保存
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
+    model.mark_constraint_dirty(model_index(), save_point);
 
     // bounds を再伝播
     if (!propagate_bounds(model, save_point)) {
@@ -442,6 +443,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
 
     // Trail に状態を保存
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
+    model.mark_constraint_dirty(model_index(), save_point);
 
     // 変更された変数を特定
     auto it = var_ptr_to_idx_.find(vars_[var_idx].get());
@@ -480,6 +482,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
 
     // Trail に状態を保存
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
+    model.mark_constraint_dirty(model_index(), save_point);
 
     auto it = var_ptr_to_idx_.find(vars_[var_idx].get());
     if (it == var_ptr_to_idx_.end()) {

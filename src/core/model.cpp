@@ -31,6 +31,7 @@ size_t Model::add_variable(VariablePtr var) {
 }
 
 void Model::add_constraint(ConstraintPtr constraint) {
+    constraint->set_model_index(constraints_.size());
     constraints_.push_back(std::move(constraint));
 }
 
@@ -278,6 +279,19 @@ void Model::rewind_to(int save_point) {
         // 制約の restore_state は Solver から呼び出される想定
         // ここでは Trail のエントリを削除するだけ
         constraint_trail_.pop_back();
+    }
+}
+
+void Model::mark_constraint_dirty(size_t constraint_idx, int save_point) {
+    dirty_constraint_trail_.push_back({save_point, constraint_idx});
+}
+
+void Model::rewind_dirty_constraints(int save_point) {
+    while (!dirty_constraint_trail_.empty() &&
+           dirty_constraint_trail_.back().first > save_point) {
+        size_t c_idx = dirty_constraint_trail_.back().second;
+        constraints_[c_idx]->rewind_to(save_point);
+        dirty_constraint_trail_.pop_back();
     }
 }
 

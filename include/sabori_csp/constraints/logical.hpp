@@ -41,7 +41,6 @@ public:
     /**
      * @brief バックトラック時に watched literal の状態を復元
      */
-    void rewind_to(int save_point);
 
 protected:
     void check_initial_consistency() override;
@@ -56,7 +55,6 @@ private:
     size_t w2_;  // 2つ目の watched index
 
     // Trail for watched literals: (save_point, old_w1, old_w2)
-    std::vector<std::tuple<int, size_t, size_t>> watch_trail_;
 
     // 変数ポインタ → 内部インデックス (0..n-1: vars_, n: r_)
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
@@ -74,11 +72,12 @@ private:
 
     /**
      * @brief watched literal を移動する
+     * @param model モデルへの参照
      * @param save_point 現在のセーブポイント
      * @param which_watch 移動する watch (1 or 2)
      * @param new_idx 新しいインデックス
      */
-    void move_watch(int save_point, int which_watch, size_t new_idx);
+    void move_watch(Model& model, int save_point, int which_watch, size_t new_idx);
 };
 
 /**
@@ -102,7 +101,6 @@ public:
     bool on_last_uninstantiated(Model& model, int save_point,
                                 size_t last_var_internal_idx) override;
 
-    void rewind_to(int save_point);
 
 protected:
     void check_initial_consistency() override;
@@ -115,14 +113,13 @@ private:
     size_t w1_;
     size_t w2_;
 
-    std::vector<std::tuple<int, size_t, size_t>> watch_trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_idx_;
 
     size_t find_unwatched_candidate(size_t exclude1, size_t exclude2) const;
-    void move_watch(int save_point, int which_watch, size_t new_idx);
+    void move_watch(Model& model, int save_point, int which_watch, size_t new_idx);
 };
 
 /**
@@ -158,7 +155,6 @@ public:
     bool on_last_uninstantiated(Model& model, int save_point,
                                 size_t last_var_internal_idx) override;
 
-    void rewind_to(int save_point);
 
 protected:
     void check_initial_consistency() override;
@@ -177,7 +173,6 @@ private:
     size_t w2_;
 
     // Trail for watched literals
-    std::vector<std::tuple<int, size_t, size_t>> watch_trail_;
 
     // 変数ポインタ → リテラルインデックス
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
@@ -219,7 +214,7 @@ private:
     /**
      * @brief watch を移動
      */
-    void move_watch(int save_point, int which_watch, size_t new_idx);
+    void move_watch(Model& model, int save_point, int which_watch, size_t new_idx);
 };
 
 /**

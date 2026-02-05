@@ -140,6 +140,7 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
     // Trail に保存
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
         pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+        model.mark_constraint_dirty(model_index(), save_point);
     }
 
     // プールから削除

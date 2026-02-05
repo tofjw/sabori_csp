@@ -102,8 +102,6 @@ bool ArrayBoolAndConstraint::presolve(Model& /*model*/) {
     // 2WL を初期化
     init_watches();
 
-    // trail をクリア
-    watch_trail_.clear();
 
     // 初期整合性チェック
     // r = 1 だが bi = 0 が存在する場合は矛盾
@@ -282,7 +280,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
 
             if (new_watch != SIZE_MAX) {
                 // 移動可能
-                move_watch(save_point, watched_idx, new_watch);
+                move_watch(model, save_point, watched_idx, new_watch);
             } else {
                 // 移動先がない: もう一方の watched 変数をチェック
                 if (vars_[other_watch]->is_assigned()) {
@@ -355,15 +353,6 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
     return true;
 }
 
-void ArrayBoolAndConstraint::rewind_to(int save_point) {
-    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
-        auto& [level, old_w1, old_w2] = watch_trail_.back();
-        w1_ = old_w1;
-        w2_ = old_w2;
-        watch_trail_.pop_back();
-    }
-}
-
 void ArrayBoolAndConstraint::check_initial_consistency() {
     // r = 1 だが bi = 0 が存在する場合は矛盾
     if (r_->is_assigned() && r_->assigned_value().value() == 1) {
@@ -417,12 +406,8 @@ size_t ArrayBoolAndConstraint::find_unwatched_candidate(size_t exclude1, size_t 
     return SIZE_MAX;
 }
 
-void ArrayBoolAndConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
-    // Trail に保存
-    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
-        watch_trail_.push_back({save_point, w1_, w2_});
-    }
-
+void ArrayBoolAndConstraint::move_watch(Model& /*model*/, int /*save_point*/, int which_watch, size_t new_idx) {
+    // 2WL はバックトラック時に復元不要
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {
@@ -633,7 +618,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
             size_t new_watch = find_unwatched_candidate(w1_, w2_);
 
             if (new_watch != SIZE_MAX) {
-                move_watch(save_point, watched_idx, new_watch);
+                move_watch(model, save_point, watched_idx, new_watch);
             } else {
                 if (vars_[other_watch]->is_assigned()) {
                     if (vars_[other_watch]->assigned_value().value() == 0) {
@@ -698,15 +683,6 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
     return true;
 }
 
-void ArrayBoolOrConstraint::rewind_to(int save_point) {
-    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
-        auto& [level, old_w1, old_w2] = watch_trail_.back();
-        w1_ = old_w1;
-        w2_ = old_w2;
-        watch_trail_.pop_back();
-    }
-}
-
 void ArrayBoolOrConstraint::check_initial_consistency() {
     if (r_->is_assigned() && r_->assigned_value().value() == 0) {
         for (const auto& var : vars_) {
@@ -756,11 +732,8 @@ size_t ArrayBoolOrConstraint::find_unwatched_candidate(size_t exclude1, size_t e
     return SIZE_MAX;
 }
 
-void ArrayBoolOrConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
-    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
-        watch_trail_.push_back({save_point, w1_, w2_});
-    }
-
+void ArrayBoolOrConstraint::move_watch(Model& /*model*/, int /*save_point*/, int which_watch, size_t new_idx) {
+    // 2WL はバックトラック時に復元不要
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {
@@ -869,8 +842,6 @@ bool BoolClauseConstraint::presolve(Model& /*model*/) {
     // 2WL を初期化
     init_watches();
 
-    // trail をクリア
-    watch_trail_.clear();
 
     // 初期整合性チェック: 全てのリテラルが充足不可能なら矛盾
     bool has_satisfiable = false;
@@ -964,7 +935,7 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         size_t new_watch = find_unwatched_candidate(w1_, w2_);
 
         if (new_watch != SIZE_MAX) {
-            move_watch(save_point, watched_idx, new_watch);
+            move_watch(model, save_point, watched_idx, new_watch);
         } else {
             // 移動先がない
             if (!can_satisfy(other_watch)) {
@@ -1034,15 +1005,6 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
     return true;
 }
 
-void BoolClauseConstraint::rewind_to(int save_point) {
-    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
-        auto& [level, old_w1, old_w2] = watch_trail_.back();
-        w1_ = old_w1;
-        w2_ = old_w2;
-        watch_trail_.pop_back();
-    }
-}
-
 void BoolClauseConstraint::check_initial_consistency() {
     // 全てのリテラルが充足不可能なら矛盾
     bool has_satisfiable = false;
@@ -1103,11 +1065,8 @@ size_t BoolClauseConstraint::find_unwatched_candidate(size_t exclude1, size_t ex
     return SIZE_MAX;
 }
 
-void BoolClauseConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
-    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
-        watch_trail_.push_back({save_point, w1_, w2_});
-    }
-
+void BoolClauseConstraint::move_watch(Model& /*model*/, int /*save_point*/, int which_watch, size_t new_idx) {
+    // 2WL はバックトラック時に復元不要
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {

@@ -37,6 +37,16 @@ public:
     size_t id() const { return id_; }
 
     /**
+     * @brief Model 内のインデックスを設定
+     */
+    void set_model_index(size_t idx) { model_idx_ = idx; }
+
+    /**
+     * @brief Model 内のインデックスを取得
+     */
+    size_t model_index() const { return model_idx_; }
+
+    /**
      * @brief 制約の名前を取得
      */
     virtual std::string name() const = 0;
@@ -229,6 +239,16 @@ public:
      */
     virtual void sync_after_propagation() {}
 
+    /**
+     * @brief バックトラック時に内部状態を復元する
+     *
+     * trail ベースの状態管理を行う制約でオーバーライドする。
+     * デフォルトでは何もしない。
+     *
+     * @param save_point 復元先のセーブポイント
+     */
+    virtual void rewind_to(int /*save_point*/) {}
+
 protected:
     /**
      * @brief コンストラクタ
@@ -299,6 +319,7 @@ protected:
 private:
     static size_t next_id_;
     size_t id_;
+    size_t model_idx_ = SIZE_MAX;  // Model 内のインデックス
 
     // 2-Watched Literal
     int w1_ = -1;  // 監視変数1のインデックス
