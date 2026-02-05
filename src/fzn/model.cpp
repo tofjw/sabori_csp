@@ -769,8 +769,8 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto m = get_var(decl.args[2]);
             constraint = std::make_shared<IntMaxConstraint>(x, y, m);
         } else {
-            // Unknown constraint - skip for now (skeleton implementation)
-            continue;
+            // Unknown constraint - error
+            throw std::runtime_error("Unsupported constraint: " + decl.name);
         }
 
         if (constraint) {
