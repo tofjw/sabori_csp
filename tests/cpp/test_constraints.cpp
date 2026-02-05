@@ -76,10 +76,10 @@ TEST_CASE("IntEqConstraint propagate", "[constraint][int_eq]") {
         IntEqConstraint c(x, y);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(x->domain().min() == 3);
-        REQUIRE(x->domain().max() == 5);
-        REQUIRE(y->domain().min() == 3);
-        REQUIRE(y->domain().max() == 5);
+        REQUIRE(x->min() == 3);
+        REQUIRE(x->max() == 5);
+        REQUIRE(y->min() == 3);
+        REQUIRE(y->max() == 5);
     }
 
     SECTION("no intersection - failure") {
@@ -248,8 +248,8 @@ TEST_CASE("IntLtConstraint propagate", "[constraint][int_lt]") {
 
         REQUIRE(c.propagate(dummy_model) == true);
         // x < y means x.max < y.max, y.min > x.min
-        REQUIRE(x->domain().max() == 4);  // x < 5
-        REQUIRE(y->domain().min() == 2);  // y > 1
+        REQUIRE(x->max() == 4);  // x < 5
+        REQUIRE(y->min() == 2);  // y > 1
     }
 
     SECTION("infeasible - x.min >= y.max") {
@@ -332,8 +332,8 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
 
         REQUIRE(c.propagate(dummy_model) == true);
         // x <= y means x.max <= y.max, y.min >= x.min
-        REQUIRE(x->domain().max() == 5);
-        REQUIRE(y->domain().min() == 1);
+        REQUIRE(x->max() == 5);
+        REQUIRE(y->min() == 1);
     }
 
     SECTION("propagate upper bound of x") {
@@ -342,7 +342,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         IntLeConstraint c(x, y);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(x->domain().max() == 5);  // x <= y.max
+        REQUIRE(x->max() == 5);  // x <= y.max
     }
 
     SECTION("propagate lower bound of y") {
@@ -351,7 +351,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         IntLeConstraint c(x, y);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(y->domain().min() == 3);  // y >= x.min
+        REQUIRE(y->min() == 3);  // y >= x.min
     }
 
     SECTION("infeasible - x.min > y.max") {
@@ -456,10 +456,10 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         IntEqReifConstraint c(x, y, b);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(x->domain().min() == 3);
-        REQUIRE(x->domain().max() == 5);
-        REQUIRE(y->domain().min() == 3);
-        REQUIRE(y->domain().max() == 5);
+        REQUIRE(x->min() == 3);
+        REQUIRE(x->max() == 5);
+        REQUIRE(y->min() == 3);
+        REQUIRE(y->max() == 5);
     }
 
     SECTION("b=0 and x singleton removes from y") {
@@ -714,7 +714,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         IntLeReifConstraint c(x, y, b);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(x->domain().max() == 5);  // x <= y.max
+        REQUIRE(x->max() == 5);  // x <= y.max
     }
 
     SECTION("b=0 enforces x > y") {
@@ -724,8 +724,8 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         IntLeReifConstraint c(x, y, b);
 
         REQUIRE(c.propagate(dummy_model) == true);
-        REQUIRE(x->domain().min() == 4);  // x > y.min (3)
-        REQUIRE(y->domain().max() == 8);  // y < x.max would be 9, but y.max is 8
+        REQUIRE(x->min() == 4);  // x > y.min (3)
+        REQUIRE(y->max() == 8);  // y < x.max would be 9, but y.max is 8
     }
 
     SECTION("x.max <= y.min implies b=1") {

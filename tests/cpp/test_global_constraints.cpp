@@ -152,16 +152,19 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
     auto z = make_var("z", 1, 3);
     AllDifferentConstraint c({x, y, z});
     Model model;
+    model.add_variable(x);
+    model.add_variable(y);
+    model.add_variable(z);
 
     REQUIRE(c.pool_size() == 3);
 
     // Simulate instantiation at level 1
-    x->domain().assign(1);
+    model.instantiate(1, x->id(), 1);
     REQUIRE(c.on_instantiate(model, 1, 0, 1, 1, 3));
     REQUIRE(c.pool_size() == 2);
 
     // Simulate instantiation at level 2
-    y->domain().assign(2);
+    model.instantiate(2, y->id(), 2);
     REQUIRE(c.on_instantiate(model, 2, 1, 2, 1, 3));
     REQUIRE(c.pool_size() == 1);
 
@@ -274,11 +277,11 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
     REQUIRE(initial_sum == 6);
 
     // Simulate instantiation at level 1
-    x->domain().assign(2);
+    model.instantiate(1, x->id(), 2);
     c.on_instantiate(model, 1, 0, 2, 1, 5);
 
     // Simulate instantiation at level 2
-    y->domain().assign(4);
+    model.instantiate(2, y->id(), 4);
     c.on_instantiate(model, 2, 1, 4, 1, 5);
 
     // Verify final state
@@ -673,9 +676,9 @@ static Model create_magic_square_model(
         model.add_variable(var);
     }
 
-    // Fix specified cells
+    // Fix specified cells via Model API
     for (const auto& [idx, val] : fixed_cells) {
-        cells[idx]->domain().assign(val);
+        model.instantiate(0, cells[idx]->id(), val);
     }
 
     // AllDifferent constraint
@@ -954,12 +957,12 @@ TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
     REQUIRE(c.pool_size() == 3);
 
     // Simulate instantiation at level 1: x[0] = 1
-    x0->domain().assign(1);
+    model.instantiate(1, x0->id(), 1);
     REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
     REQUIRE(c.pool_size() == 2);
 
     // Simulate instantiation at level 2: x[1] = 2
-    x1->domain().assign(2);
+    model.instantiate(2, x1->id(), 2);
     REQUIRE(c.on_instantiate(model, 2, 1, 2, 0, 2));
     REQUIRE(c.pool_size() == 1);
 
@@ -984,11 +987,11 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
         model.add_variable(x2);
 
         // x[0] = 1: 0 -> 1
-        x0->domain().assign(1);
+        model.instantiate(1, x0->id(), 1);
         REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
 
         // x[1] = 0: 1 -> 0, forms subcircuit (0 -> 1 -> 0)
-        x1->domain().assign(0);
+        model.instantiate(2, x1->id(), 0);
         REQUIRE_FALSE(c.on_instantiate(model, 2, 1, 0, 0, 2));
     }
 
@@ -1003,7 +1006,7 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
         model.add_variable(x2);
 
         // x[0] = 0: self-loop, forms subcircuit of size 1
-        x0->domain().assign(0);
+        model.instantiate(1, x0->id(), 0);
         REQUIRE_FALSE(c.on_instantiate(model, 1, 0, 0, 0, 2));
     }
 }
@@ -1505,7 +1508,7 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         }
 
         // Fix x[0] = 1
-        vars[0]->domain().assign(1);
+        model.instantiate(0, vars[0]->id(), 1);
 
         model.add_constraint(std::make_shared<CircuitConstraint>(vars));
 
@@ -1542,8 +1545,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         }
 
         // Fix x[0] = 1, x[1] = 2 (forces x[2] = 0 for valid circuit)
-        vars[0]->domain().assign(1);
-        vars[1]->domain().assign(2);
+        model.instantiate(0, vars[0]->id(), 1);
+        model.instantiate(0, vars[1]->id(), 2);
 
         model.add_constraint(std::make_shared<CircuitConstraint>(vars));
 
@@ -1566,8 +1569,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         }
 
         // Fix x[0] = 1, x[1] = 0 (creates subcircuit 0 -> 1 -> 0)
-        vars[0]->domain().assign(1);
-        vars[1]->domain().assign(0);
+        model.instantiate(0, vars[0]->id(), 1);
+        model.instantiate(0, vars[1]->id(), 0);
 
         auto constraint = std::make_shared<CircuitConstraint>(vars);
         model.add_constraint(constraint);
