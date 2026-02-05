@@ -15,6 +15,7 @@ benchmarks/minizinc_challenge_2025/
 │       │   └── sabori.msc    # Sabori ソルバー設定
 │       └── sabori_csp/
 │           └── redefinitions.mzn  # Sabori 用制約定義
+├── run_single.py             # 単一問題実行スクリプト
 └── README.md
 ```
 
@@ -96,3 +97,70 @@ include "nosets.mzn";
 1. **直接 fzn_sabori を実行しない** - redefinitions.mzn が適用されず、未サポート制約でエラーになる
 2. **ソルバー名は "Sabori CSP"** - `--solver sabori` ではなく `--solver "Sabori CSP"`
 3. **作業ディレクトリ** - `benchmarks/minizinc_challenge_2025/` から実行すること
+
+## ベンチマーク実行条件
+
+### 実行環境
+- **並列数**: 最大4プロセス
+- **実行方法**: minizinc 経由（redefinitions.mzn 適用のため）
+- **タイムアウト**: 30秒
+- **比較対象**: Sabori CSP vs CP-SAT
+
+### 結果表示項目
+| 項目 | 説明 |
+|------|------|
+| 問題名 | MiniZinc Challenge の問題名 |
+| インスタンス名 | データファイル名（.dzn / .json） |
+| 問題タイプ | SAT（充足）/ MIN（最小化）/ MAX（最大化） |
+| 結果ステータス | OPTIMAL / SOL / TIMEOUT / ERROR / UNSAT |
+| 目的関数値 | 最適化問題の場合、最後に見つかった解の値 |
+| 解の数 | 途中解の場合、見つかった解の数 |
+
+### 結果ステータスの意味
+| ステータス | 意味 |
+|-----------|------|
+| OPTIMAL | 最適解を証明 |
+| SOL | 解は見つかったが最適性未証明（タイムアウト） |
+| TIMEOUT | 解が見つからずタイムアウト |
+| UNSAT | 充足不能 |
+| ERROR | パースエラーまたは未サポート制約 |
+
+### 既知の制限事項
+- `set_in_reif` + 集合リテラル `{1,3,5}` はパース未対応
+  - 影響: carpet-cutting, skill-allocation, stripboard
+
+## ベンチマークスクリプト
+
+### run_single.py - 単一問題実行
+
+個別の問題をデバッグ・テストするためのスクリプト。
+
+```bash
+cd /home/tofjw/develop/cp/sabori_csp/benchmarks/minizinc_challenge_2025
+
+# 基本: 最小インスタンスを両ソルバーで実行
+./run_single.py atsp
+
+# インスタンス指定
+./run_single.py atsp instance1_0p05
+
+# ソルバー指定
+./run_single.py hitori h5-1 --solver sabori
+./run_single.py hitori h5-1 --solver cpsat
+
+# タイムアウト指定（デフォルト30秒）
+./run_single.py fbd1 --timeout 60
+
+# 組み合わせ
+./run_single.py mondoku 8-8-4 --solver both --timeout 120
+```
+
+**オプション**:
+| オプション | 説明 | デフォルト |
+|-----------|------|-----------|
+| `problem` | 問題名（mznc2025_probs/のディレクトリ名） | 必須 |
+| `instance` | インスタンス名（.dzn/.json拡張子なし） | 最小番号 |
+| `--solver` | `sabori` / `cpsat` / `both` | `both` |
+| `--timeout` | タイムアウト秒数 | 30 |
+
+**出力**: 解の出力、ステータス（`==========` で最適解証明）、エラーメッセージ

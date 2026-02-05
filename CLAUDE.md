@@ -89,3 +89,19 @@ pytest tests/fzn/run_tests.py -v -k alldifferent   # FlatZinc特定制約
 - [制約実装ガイド](docs/constraint-implementation-guide.md)
 - [テスト方法](docs/TESTING.md)
 - [FlatZinc仕様](https://docs.minizinc.dev/en/2.9.5/fzn-spec.html)
+- [MiniZinc Challenge ベンチマーク](benchmarks/minizinc_challenge_2025/README.md)
+
+## ベンチマーク実行（重要）
+
+MiniZinc 問題のベンチマークは **必ず minizinc 経由** で実行すること。
+
+```bash
+cd benchmarks/minizinc_challenge_2025
+./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" \
+    mznc2025_probs/<problem>/<problem>.mzn \
+    mznc2025_probs/<problem>/<data>.dzn
+```
+
+**理由**: `redefinitions.mzn` により未サポート制約（gecode固有、set制約等）が標準分解に置き換えられる。直接 `fzn_sabori` を実行すると未サポート制約エラーになる。
+
+詳細は [benchmarks/minizinc_challenge_2025/README.md](benchmarks/minizinc_challenge_2025/README.md) を参照。
