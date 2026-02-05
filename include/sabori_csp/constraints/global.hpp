@@ -104,6 +104,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -137,6 +138,11 @@ public:
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
+
+    /**
+     * @brief 初期伝播後に内部状態を同期する
+     */
+    void sync_after_propagation() override;
 
     /**
      * @brief 目標値を取得
@@ -197,6 +203,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -354,6 +361,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -595,6 +603,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -603,6 +612,8 @@ public:
     bool on_final_instantiate() override;
 
     void rewind_to(int save_point);
+
+    void sync_after_propagation() override;
 
 protected:
     void check_initial_consistency() override;
@@ -651,6 +662,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -707,6 +719,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -766,6 +779,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -829,6 +843,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -897,9 +912,11 @@ private:
 
     /**
      * @brief bounds consistency を維持
+     * @param model モデル参照
+     * @param save_point セーブポイント（-1 の場合は直接ドメイン操作）
      * @return 矛盾がなければ true
      */
-    bool propagate_bounds(Model& model);
+    bool propagate_bounds(Model& model, int save_point = -1);
 
     /**
      * @brief result の bounds support を再計算

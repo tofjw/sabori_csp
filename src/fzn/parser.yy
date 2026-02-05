@@ -60,7 +60,7 @@ using namespace sabori_csp::fzn;
 
 %type <int_val> int_literal bool_literal
 %type <str_val> identifier
-%type <int_list> int_list int_list_inner
+%type <int_list> int_list int_list_inner bool_list bool_list_inner
 %type <str_list> id_list id_list_inner annotations annotation_list annotation
 %type <constraint_arg> constraint_arg
 %type <constraint_args> constraint_args
@@ -375,6 +375,36 @@ var_decl:
             ctx->model->add_array_decl(std::move(decl));
             delete $10;
         }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF BOOL ':' identifier annotations '=' '[' bool_list_inner ']' ';'
+        {
+            // Array of par bool (constants)
+            ArrayDecl decl;
+            decl.name = *$10;
+            decl.size = $5 - $3 + 1;
+            decl.is_bool = true;
+            if ($11) {
+                for (const auto& ann : *$11) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $11;
+            }
+            if ($14) {
+                for (size_t i = 0; i < $14->size(); ++i) {
+                    std::string elem_name = decl.name + "[" + std::to_string($3 + i) + "]";
+                    VarDecl vdecl;
+                    vdecl.name = elem_name;
+                    vdecl.lb = (*$14)[i];
+                    vdecl.ub = (*$14)[i];
+                    vdecl.fixed_value = (*$14)[i];
+                    vdecl.is_bool = true;
+                    ctx->model->add_var_decl(std::move(vdecl));
+                    decl.elements.push_back(elem_name);
+                }
+                delete $14;
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $10;
+        }
     | INT ':' identifier annotations '=' int_literal ';'
         {
             // par int constant
@@ -559,6 +589,26 @@ int_list_inner:
             $$->push_back($1);
         }
     | int_list_inner ',' int_literal
+        {
+            $$ = $1;
+            $$->push_back($3);
+        }
+    ;
+
+bool_list:
+    '[' bool_list_inner ']'
+        { $$ = $2; }
+    | '[' ']'
+        { $$ = new std::vector<int64_t>(); }
+    ;
+
+bool_list_inner:
+    bool_literal
+        {
+            $$ = new std::vector<int64_t>();
+            $$->push_back($1);
+        }
+    | bool_list_inner ',' bool_literal
         {
             $$ = $1;
             $$->push_back($3);

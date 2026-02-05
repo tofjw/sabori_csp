@@ -189,7 +189,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntEqConstraint>(x, y);
         } else if (decl.name == "int_eq_reif") {
-#if 1 /* broken */
+#if 1/* broken */
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_eq_reif requires 3 arguments");
             }
@@ -687,7 +687,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
         } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
-#if 1
+#if 1 /* broken */
             // array_var_int_element(index, array, result) where array contains variables
             // array_var_bool_element is the same but with bool variables (0-1 domain)
             if (decl.args.size() != 3) {

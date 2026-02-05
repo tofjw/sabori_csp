@@ -13,7 +13,7 @@ namespace sabori_csp {
 IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t target)
-    : Constraint(vars)
+    : Constraint(std::vector<VariablePtr>())  // 後で設定
     , target_(target)
     , current_fixed_sum_(0)
     , unfixed_count_(0) {
@@ -23,10 +23,9 @@ IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
         aggregated[vars[i].get()] += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築
-    vars_.clear();
-    coeffs_.clear();
+    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
     for (const auto& [var_ptr, coeff] : aggregated) {
+        if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
             if (var.get() == var_ptr) {
@@ -37,24 +36,17 @@ IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
         }
     }
 
+    // 全ての係数が0になった場合: presolve で処理
+    if (vars_.empty()) {
+        return;
+    }
+
     // 変数ポインタ → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
     }
 
-    // 初期和を計算（既に確定している変数は fixed_sum に加算）
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        int64_t c = coeffs_[i];
-
-        if (vars_[i]->is_assigned()) {
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
-        } else {
-            ++unfixed_count_;
-        }
-    }
-
-    // 初期整合性チェック
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntLinNeConstraint::name() const {
@@ -172,6 +164,40 @@ void IntLinNeConstraint::rewind_to(int save_point) {
         unfixed_count_ = entry.unfixed_count;
         trail_.pop_back();
     }
+}
+
+bool IntLinNeConstraint::presolve(Model& /*model*/) {
+    // 全ての係数が0の場合: 0 != target
+    if (vars_.empty()) {
+        return target_ != 0;
+    }
+
+    // 変数の現在状態に基づいて内部状態を初期化
+    current_fixed_sum_ = 0;
+    unfixed_count_ = 0;
+
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        int64_t c = coeffs_[i];
+
+        if (vars_[i]->is_assigned()) {
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        } else {
+            ++unfixed_count_;
+        }
+    }
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック: 全変数確定で sum == target なら矛盾
+    if (unfixed_count_ == 0 && current_fixed_sum_ == target_) {
+        return false;
+    }
+
+    return true;
 }
 
 // ============================================================================

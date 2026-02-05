@@ -14,46 +14,51 @@ IntLinEqReifConstraint::IntLinEqReifConstraint(std::vector<int64_t> coeffs,
                                                  std::vector<VariablePtr> vars,
                                                  int64_t target,
                                                  VariablePtr b)
-    : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = vars;
-        all_vars.push_back(b);
-        return all_vars;
-    }())
-    , coeffs_(std::move(coeffs))
+    : Constraint(std::vector<VariablePtr>())  // 後で設定
     , target_(target)
-    , b_(std::move(b))
+    , b_(b)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
     , max_rem_potential_(0)
     , unfixed_count_(0) {
-    std::vector<VariablePtr> linear_vars(vars_.begin(), vars_.end() - 1);
-
-    for (size_t i = 0; i < linear_vars.size(); ++i) {
-        var_ptr_to_idx_[linear_vars[i].get()] = i;
+    // 同一変数の係数を集約
+    std::unordered_map<Variable*, int64_t> aggregated;
+    for (size_t i = 0; i < vars.size(); ++i) {
+        aggregated[vars[i].get()] += coeffs[i];
     }
-    var_ptr_to_idx_[b_.get()] = SIZE_MAX;
 
-    for (size_t i = 0; i < linear_vars.size(); ++i) {
-        int64_t c = coeffs_[i];
-
-        if (linear_vars[i]->is_assigned()) {
-            current_fixed_sum_ += c * linear_vars[i]->assigned_value().value();
-        } else {
-            ++unfixed_count_;
-            auto min_val = linear_vars[i]->domain().min().value();
-            auto max_val = linear_vars[i]->domain().max().value();
-
-            if (c >= 0) {
-                min_rem_potential_ += c * min_val;
-                max_rem_potential_ += c * max_val;
-            } else {
-                min_rem_potential_ += c * max_val;
-                max_rem_potential_ += c * min_val;
+    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    for (const auto& [var_ptr, coeff] : aggregated) {
+        if (coeff == 0) continue;  // 係数が0の変数は除外
+        // shared_ptr を探す
+        for (const auto& var : vars) {
+            if (var.get() == var_ptr) {
+                vars_.push_back(var);
+                coeffs_.push_back(coeff);
+                break;
             }
         }
     }
 
-    check_initial_consistency();
+    // 全ての係数が0になった場合: b ↔ (0 == target)
+    // この場合は presolve で b を確定させる
+    if (coeffs_.empty()) {
+        vars_.push_back(b_);
+        var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+        return;
+    }
+
+    // b を末尾に追加
+    vars_.push_back(b_);
+
+    // 変数ポインタ → 内部インデックスマップを構築
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        var_ptr_to_idx_[vars_[i].get()] = i;
+    }
+    var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+
+    // 注意: 内部状態（current_fixed_sum_, unfixed_count_ 等）は presolve() で初期化
+    // コンストラクタでは変数の状態を参照しない
 }
 
 std::string IntLinEqReifConstraint::name() const {
@@ -149,6 +154,11 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
                 return false;
             }
         }
+
+        // 全線形変数が既に確定している場合は最終チェック
+        if (unfixed_count_ == 0) {
+            return on_final_instantiate();
+        }
         return true;
     }
 
@@ -195,13 +205,25 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
+    // 全線形変数が確定し、かつ b も確定している場合は最終チェック
+    if (unfixed_count_ == 0 && b_->is_assigned()) {
+        return on_final_instantiate();
+    }
+
     return true;
 }
 
 bool IntLinEqReifConstraint::on_final_instantiate() {
     int64_t sum = 0;
     for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        if (!vars_[i]->is_assigned()) {
+            return true;  // Not ready yet
+        }
         sum += coeffs_[i] * vars_[i]->assigned_value().value();
+    }
+
+    if (!b_->is_assigned()) {
+        return true;  // Not ready yet
     }
 
     bool eq = (sum == target_);
@@ -236,6 +258,79 @@ void IntLinEqReifConstraint::check_initial_consistency() {
             }
         }
     }
+}
+
+bool IntLinEqReifConstraint::presolve(Model& /*model*/) {
+    // 全ての係数が0の場合の特別処理
+    if (coeffs_.empty()) {
+        bool trivially_true = (target_ == 0);
+        if (b_->is_assigned()) {
+            bool b_val = (b_->assigned_value().value() == 1);
+            if (b_val != trivially_true) {
+                return false;  // 矛盾
+            }
+        } else {
+            b_->domain().assign(trivially_true ? 1 : 0);
+        }
+        return true;
+    }
+
+    // 変数の現在状態に基づいて内部状態を初期化
+    current_fixed_sum_ = 0;
+    min_rem_potential_ = 0;
+    max_rem_potential_ = 0;
+    unfixed_count_ = 0;
+
+    // linear variables は vars_[0..n-2] （b_ は vars_ の末尾）
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        int64_t c = coeffs_[i];
+
+        if (vars_[i]->is_assigned()) {
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        } else {
+            ++unfixed_count_;
+            auto min_val = vars_[i]->domain().min().value();
+            auto max_val = vars_[i]->domain().max().value();
+
+            if (c >= 0) {
+                min_rem_potential_ += c * min_val;
+                max_rem_potential_ += c * max_val;
+            } else {
+                min_rem_potential_ += c * max_val;
+                max_rem_potential_ += c * min_val;
+            }
+        }
+    }
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1) {
+            // sum == target が必要
+            if (target_ < min_sum || target_ > max_sum) {
+                return false;  // 矛盾
+            }
+        } else {
+            // sum != target が必要
+            if (min_sum == target_ && max_sum == target_) {
+                return false;  // 矛盾
+            }
+        }
+    }
+
+    return true;
+}
+
+void IntLinEqReifConstraint::sync_after_propagation() {
+    // presolve() に統合されたため、空実装
 }
 
 // ============================================================================

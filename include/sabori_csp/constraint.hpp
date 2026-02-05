@@ -54,6 +54,21 @@ public:
     virtual std::optional<bool> is_satisfied() const = 0;
 
     /**
+     * @brief 制約の事前解決（初期化）を実行
+     *
+     * 全制約が Model に追加された後、探索開始前に呼び出される。
+     * 変数の現在状態に基づいて内部状態を初期化し、
+     * 明らかな矛盾を検出し、自明な伝播を行う。
+     *
+     * 重要: コンストラクタでは変数の状態を参照せず、
+     * このメソッドで初期化を行うこと。
+     *
+     * @param model モデルへの参照
+     * @return 初期化が成功すればtrue、矛盾検出時はfalse
+     */
+    virtual bool presolve(Model& model);
+
+    /**
      * @brief 初期制約伝播を実行
      *
      * 探索開始前に呼び出され、変数の bounds を絞り込む。
@@ -204,6 +219,15 @@ public:
      * @return 未確定変数が1つだけならそのインデックス、それ以外はSIZE_MAX
      */
     size_t find_last_uninstantiated() const;
+
+    /**
+     * @brief 初期伝播後に内部状態を同期する
+     *
+     * 初期伝播中に他の制約によって変数が確定した場合、
+     * 内部状態（unfixed_count_ など）と実際の変数状態が
+     * 一致しなくなる可能性がある。このメソッドで再同期する。
+     */
+    virtual void sync_after_propagation() {}
 
 protected:
     /**

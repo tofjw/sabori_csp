@@ -2,6 +2,7 @@
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <limits>
+#include <iostream>
 
 namespace sabori_csp {
 
@@ -37,10 +38,7 @@ ArrayVarIntElementConstraint::ArrayVarIntElementConstraint(
         var_ptr_to_idx_[array_[i].get()] = 2 + i;
     }
 
-    // 初期 bounds support を計算
-    recompute_bounds_support();
-
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string ArrayVarIntElementConstraint::name() const {
@@ -100,7 +98,16 @@ std::optional<bool> ArrayVarIntElementConstraint::is_satisfied() const {
     return arr_var->assigned_value().value() == result_->assigned_value().value();
 }
 
-bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
+bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point) {
+#if 0 // DEBUG_ARRAY_VAR_ELEMENT
+    std::cerr << "[DEBUG] propagate_bounds: index=" << index_->name()
+              << " domain=[" << (index_->domain().min() ? std::to_string(*index_->domain().min()) : "?")
+              << ".." << (index_->domain().max() ? std::to_string(*index_->domain().max()) : "?") << "]"
+              << " result=" << result_->name()
+              << " domain=[" << (result_->domain().min() ? std::to_string(*result_->domain().min()) : "?")
+              << ".." << (result_->domain().max() ? std::to_string(*result_->domain().max()) : "?") << "]"
+              << std::endl;
+#endif
     // 1. result の bounds を計算
     Domain::value_type new_result_min = std::numeric_limits<Domain::value_type>::max();
     Domain::value_type new_result_max = std::numeric_limits<Domain::value_type>::min();
@@ -120,6 +127,23 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
     }
 
     if (new_result_min > new_result_max) {
+#if 1
+        std::cerr << "[DEBUG] FAIL(1): no valid index for result=" << result_->name()
+                  << " index=" << index_->name()
+                  << " index_domain=[" << (index_->domain().min() ? std::to_string(*index_->domain().min()) : "?")
+                  << ".." << (index_->domain().max() ? std::to_string(*index_->domain().max()) : "?") << "]";
+        // Print array element domains
+        for (auto idx : index_values) {
+            auto idx_0based = index_to_0based(idx);
+            if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+                auto& arr_var = array_[static_cast<size_t>(idx_0based)];
+                std::cerr << " arr[" << idx << "]=" << arr_var->name()
+                          << "[" << (arr_var->domain().min() ? std::to_string(*arr_var->domain().min()) : "?")
+                          << ".." << (arr_var->domain().max() ? std::to_string(*arr_var->domain().max()) : "?") << "]";
+            }
+        }
+        std::cerr << std::endl;
+#endif
         return false;  // 有効なインデックスがない
     }
 
@@ -128,7 +152,35 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
     auto result_values = result_domain.values();
     for (auto v : result_values) {
         if (v < new_result_min || v > new_result_max) {
-            if (!result_domain.remove(v)) {
+            bool success;
+            if (save_point >= 0) {
+                success = model.remove_value(save_point, result_->id(), v);
+            } else {
+                success = result_domain.remove(v);
+            }
+            if (!success) {
+#if 0
+                std::cerr << "[DEBUG] FAIL(3): result remove failed v=" << v
+                          << " result=" << result_->name()
+                          << " result_domain=[" << (result_domain.min() ? std::to_string(*result_domain.min()) : "?")
+                          << ".." << (result_domain.max() ? std::to_string(*result_domain.max()) : "?") << "]"
+                          << " new_result=[" << new_result_min << ".." << new_result_max << "]"
+                          << " index=" << index_->name()
+                          << " index_domain=[" << (index_->domain().min() ? std::to_string(*index_->domain().min()) : "?")
+                          << ".." << (index_->domain().max() ? std::to_string(*index_->domain().max()) : "?") << "]";
+                // Print array elements for valid indices
+                auto idx_vals = index_->domain().values();
+                for (auto idx : idx_vals) {
+                    auto idx_0based = index_to_0based(idx);
+                    if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+                        auto& arr_var = array_[static_cast<size_t>(idx_0based)];
+                        std::cerr << " arr[" << idx << "]=" << arr_var->name()
+                                  << "[" << (arr_var->domain().min() ? std::to_string(*arr_var->domain().min()) : "?")
+                                  << ".." << (arr_var->domain().max() ? std::to_string(*arr_var->domain().max()) : "?") << "]";
+                    }
+                }
+                std::cerr << std::endl;
+#endif
                 return false;
             }
         }
@@ -138,6 +190,10 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
     auto result_min = result_domain.min();
     auto result_max = result_domain.max();
     if (!result_min || !result_max) {
+#if 1
+        std::cerr << "[DEBUG] FAIL(2): result domain empty for result=" << result_->name()
+                  << " index=" << index_->name() << std::endl;
+#endif
         return false;
     }
 
@@ -148,7 +204,17 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
             // 範囲外のインデックスは削除
-            if (!index_domain.remove(idx)) {
+            bool success;
+            if (save_point >= 0) {
+                success = model.remove_value(save_point, index_->id(), idx);
+            } else {
+                success = index_domain.remove(idx);
+            }
+            if (!success) {
+#if 0
+                std::cerr << "[DEBUG] FAIL(4): index out of range remove failed idx=" << idx
+                          << " index=" << index_->name() << " result=" << result_->name() << std::endl;
+#endif
                 return false;
             }
             continue;
@@ -159,7 +225,17 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
         auto arr_max = arr_var->domain().max();
         if (!arr_min || !arr_max) {
             // 配列要素のドメインが空
-            if (!index_domain.remove(idx)) {
+            bool success;
+            if (save_point >= 0) {
+                success = model.remove_value(save_point, index_->id(), idx);
+            } else {
+                success = index_domain.remove(idx);
+            }
+            if (!success) {
+#if 0
+                std::cerr << "[DEBUG] FAIL(5): arr empty remove failed idx=" << idx
+                          << " index=" << index_->name() << " result=" << result_->name() << std::endl;
+#endif
                 return false;
             }
             continue;
@@ -168,7 +244,20 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
         // array[i] の bounds と result の bounds に重なりがあるか
         if (*arr_max < *result_min || *arr_min > *result_max) {
             // 重ならない → このインデックスは無効
-            if (!index_domain.remove(idx)) {
+            bool success;
+            if (save_point >= 0) {
+                success = model.remove_value(save_point, index_->id(), idx);
+            } else {
+                success = index_domain.remove(idx);
+            }
+            if (!success) {
+#if 0
+                std::cerr << "[DEBUG] FAIL(6): bounds mismatch remove failed idx=" << idx
+                          << " index=" << index_->name() << " result=" << result_->name()
+                          << " arr=[" << *arr_min << ".." << *arr_max << "]"
+                          << " res=[" << *result_min << ".." << *result_max << "]"
+                          << std::endl;
+#endif
                 return false;
             }
         }
@@ -203,7 +292,13 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
             auto arr_values = arr_domain.values();
             for (auto v : arr_values) {
                 if (v < common_min || v > common_max) {
-                    if (!arr_domain.remove(v)) {
+                    bool success;
+                    if (save_point >= 0) {
+                        success = model.remove_value(save_point, arr_var->id(), v);
+                    } else {
+                        success = arr_domain.remove(v);
+                    }
+                    if (!success) {
                         return false;
                     }
                 }
@@ -213,12 +308,51 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& /*model*/) {
             result_values = result_domain.values();
             for (auto v : result_values) {
                 if (v < common_min || v > common_max) {
-                    if (!result_domain.remove(v)) {
+                    bool success;
+                    if (save_point >= 0) {
+                        success = model.remove_value(save_point, result_->id(), v);
+                    } else {
+                        success = result_domain.remove(v);
+                    }
+                    if (!success) {
                         return false;
                     }
                 }
             }
         }
+    }
+
+    return true;
+}
+
+bool ArrayVarIntElementConstraint::presolve(Model& /*model*/) {
+    // bounds support を計算
+    recompute_bounds_support();
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック
+    // index のドメインが全て範囲外の場合
+    bool has_valid_index = false;
+    auto index_values = index_->domain().values();
+    for (auto idx : index_values) {
+        auto idx_0based = index_to_0based(idx);
+        if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+            has_valid_index = true;
+            break;
+        }
+    }
+    if (!has_valid_index) {
+        return false;
+    }
+
+    // bounds support が空の場合
+    if (current_result_min_support_ > current_result_max_support_) {
+        return false;
     }
 
     return true;
@@ -260,7 +394,16 @@ bool ArrayVarIntElementConstraint::on_instantiate(
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
 
     // bounds を再伝播
-    if (!propagate_bounds(model)) {
+    if (!propagate_bounds(model, save_point)) {
+#if 0
+        std::cerr << "[DEBUG] on_instantiate FAIL: propagate_bounds idx=" << index_->name()
+                  << " idx_dom=[" << (index_->domain().min() ? std::to_string(*index_->domain().min()) : "?")
+                  << ".." << (index_->domain().max() ? std::to_string(*index_->domain().max()) : "?") << "]"
+                  << " result=" << result_->name()
+                  << " res_dom=[" << (result_->domain().min() ? std::to_string(*result_->domain().min()) : "?")
+                  << ".." << (result_->domain().max() ? std::to_string(*result_->domain().max()) : "?") << "]"
+                  << std::endl;
+#endif
         return false;
     }
 
@@ -273,11 +416,20 @@ bool ArrayVarIntElementConstraint::on_instantiate(
         size_t last_idx = find_last_uninstantiated();
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
+#if 0
+                std::cerr << "[DEBUG] on_instantiate FAIL: on_last_uninstantiated" << std::endl;
+#endif
                 return false;
             }
         }
     } else if (uninstantiated_count == 0) {
-        return on_final_instantiate();
+        bool ok = on_final_instantiate();
+#if 0
+        if (!ok) {
+            std::cerr << "[DEBUG] on_instantiate FAIL: on_final_instantiate" << std::endl;
+        }
+#endif
+        return ok;
     }
 
     return true;
@@ -301,7 +453,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
 
     if (internal_idx == 1) {
         // result の下限が上がった → index のドメインを絞る
-        if (!propagate_bounds(model)) {
+        if (!propagate_bounds(model, save_point)) {
             return false;
         }
     } else if (internal_idx >= 2) {
@@ -312,7 +464,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
         if (index_->domain().contains(idx_value)) {
             // このインデックスがまだ有効 → bounds support を再計算
             recompute_bounds_support();
-            if (!propagate_bounds(model)) {
+            if (!propagate_bounds(model, save_point)) {
                 return false;
             }
         }
@@ -338,7 +490,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
 
     if (internal_idx == 1) {
         // result の上限が下がった → index のドメインを絞る
-        if (!propagate_bounds(model)) {
+        if (!propagate_bounds(model, save_point)) {
             return false;
         }
     } else if (internal_idx >= 2) {
@@ -348,7 +500,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
 
         if (index_->domain().contains(idx_value)) {
             recompute_bounds_support();
-            if (!propagate_bounds(model)) {
+            if (!propagate_bounds(model, save_point)) {
                 return false;
             }
         }
@@ -434,6 +586,9 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
 bool ArrayVarIntElementConstraint::on_final_instantiate() {
     // 全変数確定時の最終確認
     if (!index_->is_assigned() || !result_->is_assigned()) {
+#if 0
+        std::cerr << "[DEBUG] on_final_instantiate FAIL: index or result not assigned" << std::endl;
+#endif
         return false;
     }
 
@@ -441,19 +596,35 @@ bool ArrayVarIntElementConstraint::on_final_instantiate() {
     auto idx_0based = index_to_0based(idx);
 
     if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
+#if 0
+        std::cerr << "[DEBUG] on_final_instantiate FAIL: index out of range" << std::endl;
+#endif
         return false;
     }
 
     auto& arr_var = array_[static_cast<size_t>(idx_0based)];
     if (!arr_var->is_assigned()) {
+#if 0
+        std::cerr << "[DEBUG] on_final_instantiate FAIL: arr_var not assigned" << std::endl;
+#endif
         return false;
     }
 
-    return arr_var->assigned_value().value() == result_->assigned_value().value();
+    bool ok = arr_var->assigned_value().value() == result_->assigned_value().value();
+#if 0
+    if (!ok) {
+        std::cerr << "[DEBUG] on_final_instantiate FAIL: value mismatch idx=" << idx
+                  << " arr_var=" << arr_var->assigned_value().value()
+                  << " result=" << result_->assigned_value().value()
+                  << " result_name=" << result_->name()
+                  << std::endl;
+    }
+#endif
+    return ok;
 }
 
 void ArrayVarIntElementConstraint::rewind_to(int save_point) {
-    while (!trail_.empty() && trail_.back().first >= save_point) {
+    while (!trail_.empty() && trail_.back().first > save_point) {
         auto& entry = trail_.back().second;
         current_result_min_support_ = entry.min_support;
         current_result_max_support_ = entry.max_support;

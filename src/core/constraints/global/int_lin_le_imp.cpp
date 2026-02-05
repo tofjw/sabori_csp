@@ -14,47 +14,47 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
                                                std::vector<VariablePtr> vars,
                                                int64_t bound,
                                                VariablePtr b)
-    : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = vars;
-        all_vars.push_back(b);
-        return all_vars;
-    }())
-    , coeffs_(std::move(coeffs))
+    : Constraint(std::vector<VariablePtr>())  // 後で設定
     , bound_(bound)
     , b_(std::move(b))
     , current_fixed_sum_(0)
     , min_rem_potential_(0) {
-    // vars_ には coeffs に対応する変数のみを保持（b_ は含まない）
-    // Constraint の基底クラスには all_vars（b_ 含む）を渡すが、
-    // 係数計算用には元の vars を使う
-    std::vector<VariablePtr> linear_vars(vars_.begin(), vars_.end() - 1);  // b_ を除く
-
-    // 変数ポインタ → 内部インデックスマップを構築
-    for (size_t i = 0; i < linear_vars.size(); ++i) {
-        var_ptr_to_idx_[linear_vars[i].get()] = i;
+    // 同一変数の係数を集約
+    std::unordered_map<Variable*, int64_t> aggregated;
+    for (size_t i = 0; i < vars.size(); ++i) {
+        aggregated[vars[i].get()] += coeffs[i];
     }
-    // b_ は特別扱い（インデックスは SIZE_MAX で識別）
-    var_ptr_to_idx_[b_.get()] = SIZE_MAX;
 
-    // 初期ポテンシャルを計算（既に確定している変数は fixed_sum に加算）
-    for (size_t i = 0; i < linear_vars.size(); ++i) {
-        int64_t c = coeffs_[i];
-
-        if (linear_vars[i]->is_assigned()) {
-            current_fixed_sum_ += c * linear_vars[i]->assigned_value().value();
-        } else {
-            auto min_val = linear_vars[i]->domain().min().value();
-            auto max_val = linear_vars[i]->domain().max().value();
-
-            if (c >= 0) {
-                min_rem_potential_ += c * min_val;
-            } else {
-                min_rem_potential_ += c * max_val;
+    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    for (const auto& [var_ptr, coeff] : aggregated) {
+        if (coeff == 0) continue;  // 係数が0の変数は除外
+        // shared_ptr を探す
+        for (const auto& var : vars) {
+            if (var.get() == var_ptr) {
+                vars_.push_back(var);
+                coeffs_.push_back(coeff);
+                break;
             }
         }
     }
 
-    check_initial_consistency();
+    // 全ての係数が0になった場合: presolve で処理
+    if (coeffs_.empty()) {
+        vars_.push_back(b_);
+        var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+        return;
+    }
+
+    // b を末尾に追加
+    vars_.push_back(b_);
+
+    // 変数ポインタ → 内部インデックスマップを構築
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        var_ptr_to_idx_[vars_[i].get()] = i;
+    }
+    var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntLinLeImpConstraint::name() const {
@@ -182,6 +182,53 @@ void IntLinLeImpConstraint::check_initial_consistency() {
         }
     }
     // b が未確定または b = 0 の場合は矛盾なし
+}
+
+bool IntLinLeImpConstraint::presolve(Model& /*model*/) {
+    // 全ての係数が0の場合: b -> (0 <= bound)
+    if (coeffs_.empty()) {
+        // b = 1 で bound < 0 なら矛盾
+        if (b_->is_assigned() && b_->assigned_value().value() == 1 && bound_ < 0) {
+            return false;
+        }
+        return true;
+    }
+
+    // 変数の現在状態に基づいて内部状態を初期化
+    current_fixed_sum_ = 0;
+    min_rem_potential_ = 0;
+
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        int64_t c = coeffs_[i];
+
+        if (vars_[i]->is_assigned()) {
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        } else {
+            auto min_val = vars_[i]->domain().min().value();
+            auto max_val = vars_[i]->domain().max().value();
+
+            if (c >= 0) {
+                min_rem_potential_ += c * min_val;
+            } else {
+                min_rem_potential_ += c * max_val;
+            }
+        }
+    }
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック
+    if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+        if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 }  // namespace sabori_csp

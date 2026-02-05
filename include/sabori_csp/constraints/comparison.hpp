@@ -44,6 +44,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -97,6 +98,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
     bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,

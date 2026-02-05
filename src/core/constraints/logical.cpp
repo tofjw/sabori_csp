@@ -43,7 +43,7 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
     if (w1_ == SIZE_MAX) w1_ = 0;
     if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
 
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string ArrayBoolAndConstraint::name() const {
@@ -77,6 +77,57 @@ std::optional<bool> ArrayBoolAndConstraint::is_satisfied() const {
     }
 
     return and_result == (r_->assigned_value().value() == 1);
+}
+
+bool ArrayBoolAndConstraint::presolve(Model& /*model*/) {
+    // watch を再初期化: 0 になりうる変数を探す
+    w1_ = SIZE_MAX;
+    w2_ = SIZE_MAX;
+    for (size_t i = 0; i < n_; ++i) {
+        if (!vars_[i]->is_assigned() || vars_[i]->assigned_value().value() == 0) {
+            if (w1_ == SIZE_MAX) {
+                w1_ = i;
+            } else if (w2_ == SIZE_MAX) {
+                w2_ = i;
+                break;
+            }
+        }
+    }
+    // watch が2つ見つからなかった場合のフォールバック
+    if (w1_ == SIZE_MAX) w1_ = 0;
+    if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    watch_trail_.clear();
+
+    // 初期整合性チェック
+    // r = 1 だが bi = 0 が存在する場合は矛盾
+    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
+        for (const auto& var : vars_) {
+            if (var->is_assigned() && var->assigned_value().value() == 0) {
+                return false;
+            }
+        }
+    }
+
+    // r = 0 だが全ての bi = 1 の場合は矛盾
+    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
+        bool all_one = true;
+        for (const auto& var : vars_) {
+            if (!var->is_assigned() || var->assigned_value().value() != 1) {
+                all_one = false;
+                break;
+            }
+        }
+        if (all_one) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool ArrayBoolAndConstraint::propagate(Model& /*model*/) {
@@ -771,7 +822,7 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     if (w2_ == SIZE_MAX && n_pos_ + n_neg_ > 1) w2_ = 1;
     if (w2_ == SIZE_MAX) w2_ = w1_;
 
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string BoolClauseConstraint::name() const {
@@ -796,6 +847,47 @@ std::optional<bool> BoolClauseConstraint::is_satisfied() const {
     }
     // 全リテラルが確定し、いずれも充足していない
     return false;
+}
+
+bool BoolClauseConstraint::presolve(Model& /*model*/) {
+    // watch を再初期化: 節を充足しうるリテラルを2つ探す
+    w1_ = SIZE_MAX;
+    w2_ = SIZE_MAX;
+    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
+        if (can_satisfy(i)) {
+            if (w1_ == SIZE_MAX) {
+                w1_ = i;
+            } else if (w2_ == SIZE_MAX) {
+                w2_ = i;
+                break;
+            }
+        }
+    }
+
+    // watch が見つからなかった場合のフォールバック
+    if (w1_ == SIZE_MAX && n_pos_ + n_neg_ > 0) w1_ = 0;
+    if (w2_ == SIZE_MAX && n_pos_ + n_neg_ > 1) w2_ = 1;
+    if (w2_ == SIZE_MAX) w2_ = w1_;
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    watch_trail_.clear();
+
+    // 初期整合性チェック: 全てのリテラルが充足不可能なら矛盾
+    bool has_satisfiable = false;
+    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
+        if (can_satisfy(i)) {
+            has_satisfiable = true;
+            break;
+        }
+    }
+    if (!has_satisfiable) {
+        return false;
+    }
+
+    return true;
 }
 
 bool BoolClauseConstraint::propagate(Model& /*model*/) {
@@ -836,6 +928,7 @@ bool BoolClauseConstraint::propagate(Model& /*model*/) {
         }
     }
 
+      
     return true;
 }
 

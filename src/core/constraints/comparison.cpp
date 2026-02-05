@@ -121,7 +121,7 @@ IntEqReifConstraint::IntEqReifConstraint(VariablePtr x, VariablePtr y, VariableP
     , x_(std::move(x))
     , y_(std::move(y))
     , b_(std::move(b)) {
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntEqReifConstraint::name() const {
@@ -138,6 +138,42 @@ std::optional<bool> IntEqReifConstraint::is_satisfied() const {
         return eq == (b_->assigned_value().value() == 1);
     }
     return std::nullopt;
+}
+
+bool IntEqReifConstraint::presolve(Model& /*model*/) {
+    // 2WL を初期化
+    init_watches();
+
+    // 初期整合性チェック
+    // (x == y) <-> b
+    // b=1 が強制で x,y に共通値がない、または b=0 が強制で x,y が同じシングルトン
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1) {
+            // x == y を満たす共通値が必要
+            auto x_vals = x_->domain().values();
+            auto y_vals = y_->domain().values();
+            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+
+            bool has_common = false;
+            for (auto v : x_vals) {
+                if (y_set.count(v) > 0) {
+                    has_common = true;
+                    break;
+                }
+            }
+            if (!has_common) {
+                return false;
+            }
+        } else {
+            // x != y が必要: 両方シングルトンで同じ値なら矛盾
+            if (x_->is_assigned() && y_->is_assigned() &&
+                x_->assigned_value() == y_->assigned_value()) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 bool IntEqReifConstraint::propagate(Model& /*model*/) {
@@ -407,7 +443,7 @@ IntNeReifConstraint::IntNeReifConstraint(VariablePtr x, VariablePtr y, VariableP
     , x_(std::move(x))
     , y_(std::move(y))
     , b_(std::move(b)) {
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntNeReifConstraint::name() const {
@@ -424,6 +460,41 @@ std::optional<bool> IntNeReifConstraint::is_satisfied() const {
         return ne == (b_->assigned_value().value() == 1);
     }
     return std::nullopt;
+}
+
+bool IntNeReifConstraint::presolve(Model& /*model*/) {
+    // 2WL を初期化
+    init_watches();
+
+    // 初期整合性チェック
+    // (x != y) <-> b
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1) {
+            // x != y が必要: 両方シングルトンで同じ値なら矛盾
+            if (x_->is_assigned() && y_->is_assigned() &&
+                x_->assigned_value() == y_->assigned_value()) {
+                return false;
+            }
+        } else {
+            // x == y を満たす共通値が必要
+            auto x_vals = x_->domain().values();
+            auto y_vals = y_->domain().values();
+            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+
+            bool has_common = false;
+            for (auto v : x_vals) {
+                if (y_set.count(v) > 0) {
+                    has_common = true;
+                    break;
+                }
+            }
+            if (!has_common) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 bool IntNeReifConstraint::propagate(Model& /*model*/) {

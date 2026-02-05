@@ -13,7 +13,7 @@ namespace sabori_csp {
 IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t target_sum)
-    : Constraint(vars)
+    : Constraint(std::vector<VariablePtr>())  // 後で設定
     , target_sum_(target_sum)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
@@ -25,10 +25,9 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
         aggregated[vars[i].get()] += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築
-    vars_.clear();
-    coeffs_.clear();
+    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
     for (const auto& [var_ptr, coeff] : aggregated) {
+        if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
             if (var.get() == var_ptr) {
@@ -39,39 +38,21 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
         }
     }
 
+    // 全ての係数が0になった場合: 0 == target_sum
+    if (vars_.empty()) {
+        if (target_sum_ != 0) {
+            set_initially_inconsistent(true);
+        }
+        return;
+    }
+
     // 変数ポインタ → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
     }
 
-    // 初期ポテンシャルを計算（既に確定している変数は fixed_sum に加算）
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        int64_t c = coeffs_[i];
-
-        if (vars_[i]->is_assigned()) {
-            // 既に確定している変数
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
-        } else {
-            // 未確定の変数
-            ++unfixed_count_;
-            auto min_val = vars_[i]->domain().min().value();
-            auto max_val = vars_[i]->domain().max().value();
-
-            if (c >= 0) {
-                min_rem_potential_ += c * min_val;
-                max_rem_potential_ += c * max_val;
-            } else {
-                min_rem_potential_ += c * max_val;
-                max_rem_potential_ += c * min_val;
-            }
-        }
-    }
-
-    // 2WL を再初期化
-    init_watches();
-
-    // 初期整合性チェック
-    check_initial_consistency();
+    // 注意: 内部状態（current_fixed_sum_, unfixed_count_ 等）は presolve() で初期化
+    // コンストラクタでは変数の状態を参照しない
 }
 
 std::string IntLinEqConstraint::name() const {
@@ -251,6 +232,7 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
     // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
     Variable* var_ptr = model.variable(var_idx).get();
     auto it = var_ptr_to_idx_.find(var_ptr);
+
     if (it == var_ptr_to_idx_.end()) {
         // この制約に関係ない変数
         return true;
@@ -374,6 +356,56 @@ bool IntLinEqConstraint::on_set_max(Model& /*model*/, int /*save_point*/,
     // 初期伝播は propagate() で、探索中は on_instantiate で処理
     // on_set_min/on_set_max は今のところ使用しない
     return true;
+}
+
+bool IntLinEqConstraint::presolve(Model& /*model*/) {
+    // 変数の現在状態に基づいて内部状態を初期化
+    current_fixed_sum_ = 0;
+    min_rem_potential_ = 0;
+    max_rem_potential_ = 0;
+    unfixed_count_ = 0;
+
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        int64_t c = coeffs_[i];
+
+        if (vars_[i]->is_assigned()) {
+            // 確定している変数
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        } else {
+            // 未確定の変数
+            ++unfixed_count_;
+            auto min_val = vars_[i]->domain().min().value();
+            auto max_val = vars_[i]->domain().max().value();
+
+            if (c >= 0) {
+                min_rem_potential_ += c * min_val;
+                max_rem_potential_ += c * max_val;
+            } else {
+                min_rem_potential_ += c * max_val;
+                max_rem_potential_ += c * min_val;
+            }
+        }
+    }
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック
+    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
+    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
+    if (total_min > target_sum_ || total_max < target_sum_) {
+        return false;  // 矛盾
+    }
+
+    return true;
+}
+
+void IntLinEqConstraint::sync_after_propagation() {
+    // presolve() に統合されたため、空実装
+    // 後方互換性のために残す
 }
 
 

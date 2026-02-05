@@ -24,6 +24,11 @@ std::optional<Solution> Solver::solve(Model& model) {
     current_decision_ = 0;
     stats_ = SolverStats{};
 
+    // 事前解決: 各制約の内部状態を初期化
+    if (!model.presolve()) {
+        return std::nullopt;  // UNSAT
+    }
+
     // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
     for (const auto& constraint : model.constraints()) {
         if (constraint->is_initially_inconsistent()) {
@@ -68,6 +73,12 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     ng_watches_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
+
+    // 事前解決: 各制約の内部状態を初期化
+    if (!model.presolve()) {
+        restart_enabled_ = old_restart;
+        return 0;  // UNSAT
+    }
 
     // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
     for (const auto& constraint : model.constraints()) {
@@ -274,6 +285,12 @@ bool Solver::initial_propagate(Model& model) {
     while (changed) {
         changed = false;
 
+        // 各ループの先頭で内部状態を同期
+        // propagate() や on_last_uninstantiated() が変数を直接確定させた場合に対応
+        for (const auto& constraint : constraints) {
+            constraint->sync_after_propagation();
+        }
+
         for (const auto& constraint : constraints) {
             // 残り1変数の制約を検出
             size_t uninstantiated_count = constraint->count_uninstantiated();
@@ -302,6 +319,11 @@ bool Solver::initial_propagate(Model& model) {
         if (!model.pending_updates().empty()) {
             changed = true;
         }
+    }
+
+    // 最終的な内部状態を同期（探索フェーズに向けて）
+    for (const auto& constraint : constraints) {
+        constraint->sync_after_propagation();
     }
 
     return true;
@@ -864,7 +886,12 @@ bool Solver::process_queue(Model& model) {
                 if (var->assigned_value().value() != update.value) {
                     return false;
                 }
-                continue;  // 同じ値なら OK
+                // 同じ値で既に確定済み: ドメイン削減で確定した
+                // NOTE: この場合は propagate を呼ばない
+                // 理由: on_instantiate は同じ変数に対して2回呼ばれると
+                // 内部カウンタが二重にデクリメントされてしまうため
+                // ドメイン削減で確定した変数は、sync_after_propagation で対応する
+                continue;
             }
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return false;

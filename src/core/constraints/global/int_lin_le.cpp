@@ -13,38 +13,40 @@ namespace sabori_csp {
 IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t bound)
-    : Constraint(vars)
-    , coeffs_(std::move(coeffs))
+    : Constraint(std::vector<VariablePtr>())  // 後で設定
     , bound_(bound)
     , current_fixed_sum_(0)
     , min_rem_potential_(0) {
+    // 同一変数の係数を集約
+    std::unordered_map<Variable*, int64_t> aggregated;
+    for (size_t i = 0; i < vars.size(); ++i) {
+        aggregated[vars[i].get()] += coeffs[i];
+    }
+
+    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    for (const auto& [var_ptr, coeff] : aggregated) {
+        if (coeff == 0) continue;  // 係数が0の変数は除外
+        // shared_ptr を探す
+        for (const auto& var : vars) {
+            if (var.get() == var_ptr) {
+                vars_.push_back(var);
+                coeffs_.push_back(coeff);
+                break;
+            }
+        }
+    }
+
+    // 全ての係数が0になった場合: presolve で処理
+    if (vars_.empty()) {
+        return;
+    }
+
     // 変数ポインタ → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
     }
 
-    // 初期ポテンシャルを計算（既に確定している変数は fixed_sum に加算）
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        int64_t c = coeffs_[i];
-
-        if (vars_[i]->is_assigned()) {
-            // 既に確定している変数
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
-        } else {
-            // 未確定の変数
-            auto min_val = vars_[i]->domain().min().value();
-            auto max_val = vars_[i]->domain().max().value();
-
-            if (c >= 0) {
-                min_rem_potential_ += c * min_val;
-            } else {
-                min_rem_potential_ += c * max_val;
-            }
-        }
-    }
-
-    // 初期整合性チェック
-    check_initial_consistency();
+    // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntLinLeConstraint::name() const {
@@ -128,6 +130,47 @@ void IntLinLeConstraint::check_initial_consistency() {
     if (current_fixed_sum_ + min_rem_potential_ > bound_) {
         set_initially_inconsistent(true);
     }
+}
+
+bool IntLinLeConstraint::presolve(Model& /*model*/) {
+    // 全ての係数が0の場合: 0 <= bound
+    if (vars_.empty()) {
+        return bound_ >= 0;
+    }
+
+    // 変数の現在状態に基づいて内部状態を初期化
+    current_fixed_sum_ = 0;
+    min_rem_potential_ = 0;
+
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        int64_t c = coeffs_[i];
+
+        if (vars_[i]->is_assigned()) {
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        } else {
+            auto min_val = vars_[i]->domain().min().value();
+            auto max_val = vars_[i]->domain().max().value();
+
+            if (c >= 0) {
+                min_rem_potential_ += c * min_val;
+            } else {
+                min_rem_potential_ += c * max_val;
+            }
+        }
+    }
+
+    // 2WL を初期化
+    init_watches();
+
+    // trail をクリア
+    trail_.clear();
+
+    // 初期整合性チェック
+    if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+        return false;  // 矛盾
+    }
+
+    return true;
 }
 
 // ============================================================================

@@ -279,6 +279,16 @@ public:
      * @brief 制約ウォッチリストを構築（制約追加後に呼び出す）
      */
     void build_constraint_watch_list();
+
+    /**
+     * @brief 全制約の事前解決を実行
+     *
+     * 全制約が追加された後、探索開始前に呼び出す。
+     * 各制約の presolve() を順番に呼び出し、内部状態を初期化する。
+     *
+     * @return 全制約の presolve が成功すれば true、矛盾検出時は false
+     */
+    bool presolve();
 };
 
 // テンプレート実装

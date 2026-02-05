@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <limits>
+#include <iostream>
 
 namespace sabori_csp {
 
@@ -199,6 +200,8 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         return true;  // 既に無い
     }
 
+    bool was_singleton = (domain.n() == 1);
+
     save_var_state(save_point, var_idx);
 
     size_t idx = it->second;
@@ -218,6 +221,7 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         maxs_[var_idx] = domain.max().value();
     }
     sizes_[var_idx] = new_n;
+
     return true;
 }
 
@@ -368,6 +372,22 @@ void Model::build_constraint_watch_list() {
             }
         }
     }
+}
+
+bool Model::presolve() {
+    // 全制約の presolve を順番に実行
+    // 各制約は変数の現在状態を見て内部状態を初期化し、
+    // 必要に応じてドメインを絞り込む
+    for (const auto& constraint : constraints_) {
+        if (!constraint->presolve(*this)) {
+            return false;  // 矛盾検出
+        }
+    }
+
+    // presolve 後に SoA データを同期
+    sync_from_domains();
+
+    return true;
 }
 
 } // namespace sabori_csp

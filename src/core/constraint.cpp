@@ -144,6 +144,12 @@ bool Constraint::on_final_instantiate() {
     return result.value_or(true);
 }
 
+bool Constraint::presolve(Model& /*model*/) {
+    // デフォルトでは何もしない
+    // サブクラスでオーバーライドして内部状態を初期化する
+    return true;
+}
+
 bool Constraint::on_last_uninstantiated(Model& /*model*/, int /*save_point*/,
                                          size_t /*last_var_internal_idx*/) {
     // デフォルトでは何もしない
