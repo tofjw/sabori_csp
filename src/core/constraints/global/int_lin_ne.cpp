@@ -112,7 +112,7 @@ bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool IntLinNeConstraint::on_last_uninstantiated(Model& /*model*/, int /*save_point*/,
+bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                   size_t last_var_internal_idx) {
     int64_t last_coeff = coeffs_[last_var_internal_idx];
     int64_t remaining = target_ - current_fixed_sum_;
@@ -129,8 +129,9 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& /*model*/, int /*save_poi
         int64_t forbidden_value = remaining / last_coeff;
 
         // 禁止値がドメインに含まれている場合は除外
+        // Model 経由で Trail に記録し、バックトラック時に復元可能にする
         if (last_var->domain().contains(forbidden_value)) {
-            if (!last_var->domain().remove(forbidden_value)) {
+            if (!model.remove_value(save_point, last_var->id(), forbidden_value)) {
                 return false;
             }
         }
