@@ -19,10 +19,9 @@ size_t Model::add_variable(VariablePtr var) {
     variables_.push_back(var);
 
     // SoA データを更新
-    const auto& domain = var->domain();
-    mins_.push_back(domain.min().value_or(0));
-    maxs_.push_back(domain.max().value_or(0));
-    sizes_.push_back(domain.size());
+    mins_.push_back(var->min());
+    maxs_.push_back(var->max());
+    sizes_.push_back(var->domain().size());
 
     // 重複保存防止用
     last_saved_level_.push_back(-1);
@@ -218,8 +217,8 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
     // min/max の更新が必要な場合
     if (val == mins_[var_idx] || val == maxs_[var_idx]) {
         domain.update_bounds();
-        mins_[var_idx] = domain.min().value();
-        maxs_[var_idx] = domain.max().value();
+        mins_[var_idx] = variables_[var_idx]->min();
+        maxs_[var_idx] = variables_[var_idx]->max();
     }
     sizes_[var_idx] = new_n;
 
@@ -305,10 +304,9 @@ size_t Model::constraint_trail_size() const {
 
 void Model::sync_from_domains() {
     for (size_t i = 0; i < variables_.size(); ++i) {
-        const auto& domain = variables_[i]->domain();
-        mins_[i] = domain.min().value_or(0);
-        maxs_[i] = domain.max().value_or(0);
-        sizes_[i] = domain.size();
+        mins_[i] = variables_[i]->min();
+        maxs_[i] = variables_[i]->max();
+        sizes_[i] = variables_[i]->domain().size();
     }
 }
 

@@ -25,8 +25,8 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     if (!vars.empty()) {
         Domain::value_type global_min = std::numeric_limits<Domain::value_type>::max();
         for (const auto& v : vars) {
-            if (v->domain().min().has_value()) {
-                global_min = std::min(global_min, v->domain().min().value());
+            if (!v->domain().empty()) {
+                global_min = std::min(global_min, v->min());
             }
         }
         if (global_min != std::numeric_limits<Domain::value_type>::max()) {

@@ -61,15 +61,15 @@ bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
     }
 
     // 1. 全 x[i] の最大値の最大値を計算 -> m.max
-    Domain::value_type max_of_max = x_[0]->domain().max().value();
+    Domain::value_type max_of_max = x_[0]->max();
     for (size_t i = 1; i < n_; ++i) {
-        max_of_max = std::max(max_of_max, x_[i]->domain().max().value());
+        max_of_max = std::max(max_of_max, x_[i]->max());
     }
 
     // 2. 全 x[i] の最小値の最大値を計算 -> m.min
-    Domain::value_type max_of_min = x_[0]->domain().min().value();
+    Domain::value_type max_of_min = x_[0]->min();
     for (size_t i = 1; i < n_; ++i) {
-        max_of_min = std::max(max_of_min, x_[i]->domain().min().value());
+        max_of_min = std::max(max_of_min, x_[i]->min());
     }
 
     // 3. m のドメインを絞る: max_of_min <= m <= max_of_max
@@ -84,7 +84,7 @@ bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
     }
 
     // 4. 各 x[i].max を m.max 以下に絞る
-    auto m_max = m_domain.max().value();
+    auto m_max = m_->max();
     for (auto& var : x_) {
         auto x_values = var->domain().values();
         for (auto v : x_values) {
@@ -131,7 +131,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
         for (auto& var : x_) {
             if (!var->is_assigned()) {
                 // x[i].max を m 以下に
-                auto var_max = var->domain().max().value();
+                auto var_max = var->max();
                 if (var_max > value) {
                     model.enqueue_set_max(var->id(), value);
                 }
@@ -160,7 +160,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
             }
         } else {
             // m.min を更新
-            auto m_min = m_->domain().min().value();
+            auto m_min = m_->min();
             if (m_min < value) {
                 model.enqueue_set_min(m_->id(), value);
             }
@@ -235,7 +235,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
             return false;
         } else if (other_max == m_val) {
             // last_var <= m_val であれば OK
-            auto var_max = last_var->domain().max().value();
+            auto var_max = last_var->max();
             if (var_max > m_val) {
                 model.enqueue_set_max(last_var->id(), m_val);
             }

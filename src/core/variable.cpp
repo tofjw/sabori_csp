@@ -23,7 +23,7 @@ bool Variable::is_assigned() const {
 
 std::optional<Domain::value_type> Variable::assigned_value() const {
     if (is_assigned()) {
-        return domain_.min();
+        return min();
     }
     return std::nullopt;
 }

@@ -49,6 +49,18 @@ public:
     const Domain& domain() const;
 
     /**
+     * @brief 定義域の最小値を取得
+     * @pre ドメインが空でないこと
+     */
+    Domain::value_type min() const { return domain_.min().value(); }
+
+    /**
+     * @brief 定義域の最大値を取得
+     * @pre ドメインが空でないこと
+     */
+    Domain::value_type max() const { return domain_.max().value(); }
+
+    /**
      * @brief 値が割り当てられているか
      */
     bool is_assigned() const;

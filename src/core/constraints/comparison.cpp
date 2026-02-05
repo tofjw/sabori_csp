@@ -707,33 +707,23 @@ std::optional<bool> IntLtConstraint::is_satisfied() const {
 
 bool IntLtConstraint::propagate(Model& /*model*/) {
     // x < y means x.max < y and y > x.min
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-
-    if (!x_max || !y_min) {
-        return false;
-    }
 
     // Remove values from x that are >= y.max
-    auto y_max = y_->domain().max();
-    if (y_max) {
-        for (auto v : x_->domain().values()) {
-            if (v >= *y_max) {
-                if (!x_->domain().remove(v)) {
-                    return false;
-                }
+    auto y_max = y_->max();
+    for (auto v : x_->domain().values()) {
+        if (v >= y_max) {
+            if (!x_->domain().remove(v)) {
+                return false;
             }
         }
     }
 
     // Remove values from y that are <= x.min
-    auto x_min = x_->domain().min();
-    if (x_min) {
-        for (auto v : y_->domain().values()) {
-            if (v <= *x_min) {
-                if (!y_->domain().remove(v)) {
-                    return false;
-                }
+    auto x_min = x_->min();
+    for (auto v : y_->domain().values()) {
+        if (v <= x_min) {
+            if (!y_->domain().remove(v)) {
+                return false;
             }
         }
     }
@@ -774,10 +764,10 @@ bool IntLtConstraint::on_final_instantiate() {
 
 void IntLtConstraint::check_initial_consistency() {
     // x < y: x.min >= y.max なら矛盾
-    auto x_min = x_->domain().min();
-    auto y_max = y_->domain().max();
+    auto x_min = x_->min();
+    auto y_max = y_->max();
 
-    if (x_min && y_max && *x_min >= *y_max) {
+    if (x_min >= y_max) {
         set_initially_inconsistent(true);
     }
 }
@@ -810,24 +800,20 @@ std::optional<bool> IntLeConstraint::is_satisfied() const {
 
 bool IntLeConstraint::propagate(Model& /*model*/) {
     // x <= y
-    auto y_max = y_->domain().max();
-    if (y_max) {
-        for (auto v : x_->domain().values()) {
-            if (v > *y_max) {
-                if (!x_->domain().remove(v)) {
-                    return false;
-                }
+    auto y_max = y_->max();
+    for (auto v : x_->domain().values()) {
+        if (v > y_max) {
+            if (!x_->domain().remove(v)) {
+                return false;
             }
         }
     }
 
-    auto x_min = x_->domain().min();
-    if (x_min) {
-        for (auto v : y_->domain().values()) {
-            if (v < *x_min) {
-                if (!y_->domain().remove(v)) {
-                    return false;
-                }
+    auto x_min = x_->min();
+    for (auto v : y_->domain().values()) {
+        if (v < x_min) {
+            if (!y_->domain().remove(v)) {
+                return false;
             }
         }
     }
@@ -868,10 +854,10 @@ bool IntLeConstraint::on_final_instantiate() {
 
 void IntLeConstraint::check_initial_consistency() {
     // x <= y: x.min > y.max なら矛盾
-    auto x_min = x_->domain().min();
-    auto y_max = y_->domain().max();
+    auto x_min = x_->min();
+    auto y_max = y_->max();
 
-    if (x_min && y_max && *x_min > *y_max) {
+    if (x_min > y_max) {
         set_initially_inconsistent(true);
     }
 }
@@ -908,24 +894,20 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 1, enforce x <= y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         // x <= y: x の上限を y.max に、y の下限を x.min に
-        auto y_max = y_->domain().max();
-        if (y_max) {
-            for (auto v : x_->domain().values()) {
-                if (v > *y_max) {
-                    if (!x_->domain().remove(v)) {
-                        return false;
-                    }
+        auto y_max = y_->max();
+        for (auto v : x_->domain().values()) {
+            if (v > y_max) {
+                if (!x_->domain().remove(v)) {
+                    return false;
                 }
             }
         }
 
-        auto x_min = x_->domain().min();
-        if (x_min) {
-            for (auto v : y_->domain().values()) {
-                if (v < *x_min) {
-                    if (!y_->domain().remove(v)) {
-                        return false;
-                    }
+        auto x_min = x_->min();
+        for (auto v : y_->domain().values()) {
+            if (v < x_min) {
+                if (!y_->domain().remove(v)) {
+                    return false;
                 }
             }
         }
@@ -934,24 +916,20 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
     // If b is fixed to 0, enforce x > y
     if (b_->is_assigned() && b_->assigned_value().value() == 0) {
         // x > y: x の下限を y.min + 1 に、y の上限を x.max - 1 に
-        auto y_min = y_->domain().min();
-        if (y_min) {
-            for (auto v : x_->domain().values()) {
-                if (v <= *y_min) {
-                    if (!x_->domain().remove(v)) {
-                        return false;
-                    }
+        auto y_min = y_->min();
+        for (auto v : x_->domain().values()) {
+            if (v <= y_min) {
+                if (!x_->domain().remove(v)) {
+                    return false;
                 }
             }
         }
 
-        auto x_max = x_->domain().max();
-        if (x_max) {
-            for (auto v : y_->domain().values()) {
-                if (v >= *x_max) {
-                    if (!y_->domain().remove(v)) {
-                        return false;
-                    }
+        auto x_max = x_->max();
+        for (auto v : y_->domain().values()) {
+            if (v >= x_max) {
+                if (!y_->domain().remove(v)) {
+                    return false;
                 }
             }
         }
@@ -960,12 +938,12 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
     // If x and y bounds determine the relation, fix b
     // NOTE: propagate() は初期伝播で使用され、Trail は使用しない
     // on_instantiate で Model を通じた Trail 付き更新を行う
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto x_min = x_->domain().min();
-    auto y_max = y_->domain().max();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto x_min = x_->min();
+    auto y_max = y_->max();
 
-    if (x_max && y_min && *x_max <= *y_min) {
+    if (x_max <= y_min) {
         // x <= y is always true
         if (!b_->domain().contains(1)) {
             return false;
@@ -973,7 +951,7 @@ bool IntLeReifConstraint::propagate(Model& /*model*/) {
         if (!b_->is_assigned()) {
             b_->domain().assign(1);
         }
-    } else if (x_min && y_max && *x_min > *y_max) {
+    } else if (x_min > y_max) {
         // x <= y is always false (x > y)
         if (!b_->domain().contains(0)) {
             return false;
@@ -1026,16 +1004,16 @@ bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // x と y の bounds から b を決定できるか
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto x_min = x_->domain().min();
-    auto y_max = y_->domain().max();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto x_min = x_->min();
+    auto y_max = y_->max();
 
     if (!b_->is_assigned()) {
-        if (x_max && y_min && *x_max <= *y_min) {
+        if (x_max <= y_min) {
             // x <= y is always true
             model.enqueue_instantiate(b_->id(), 1);
-        } else if (x_min && y_max && *x_min > *y_max) {
+        } else if (x_min > y_max) {
             // x <= y is always false
             model.enqueue_instantiate(b_->id(), 0);
         }
@@ -1060,16 +1038,16 @@ void IntLeReifConstraint::check_initial_consistency() {
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
             // x <= y が必要: x.min > y.max なら矛盾
-            auto x_min = x_->domain().min();
-            auto y_max = y_->domain().max();
-            if (x_min && y_max && *x_min > *y_max) {
+            auto x_min = x_->min();
+            auto y_max = y_->max();
+            if (x_min > y_max) {
                 set_initially_inconsistent(true);
             }
         } else {
             // x > y が必要: x.max <= y.min なら矛盾
-            auto x_max = x_->domain().max();
-            auto y_min = y_->domain().min();
-            if (x_max && y_min && *x_max <= *y_min) {
+            auto x_max = x_->max();
+            auto y_min = y_->min();
+            if (x_max <= y_min) {
                 set_initially_inconsistent(true);
             }
         }
@@ -1108,19 +1086,15 @@ std::optional<bool> IntMaxConstraint::is_satisfied() const {
 
 bool IntMaxConstraint::propagate(Model& /*model*/) {
     // m = max(x, y) の bounds propagation
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max) {
-        return false;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
 
     // m.min = max(x.min, y.min)
     // m.max = max(x.max, y.max)
-    auto m_lower = std::max(*x_min, *y_min);
-    auto m_upper = std::max(*x_max, *y_max);
+    auto m_lower = std::max(x_min, y_min);
+    auto m_upper = std::max(x_max, y_max);
 
     // m のドメインを絞る
     auto m_values = m_->domain().values();
@@ -1133,7 +1107,7 @@ bool IntMaxConstraint::propagate(Model& /*model*/) {
     }
 
     // x.max <= m.max, y.max <= m.max
-    auto m_max = m_->domain().max().value();
+    auto m_max = m_->max();
     auto x_values = x_->domain().values();
     for (auto v : x_values) {
         if (v > m_max) {
@@ -1170,14 +1144,14 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
 
         // x.max と y.max を m に制限
         if (!x_->is_assigned()) {
-            auto x_max = x_->domain().max();
-            if (x_max && *x_max > m_val) {
+            auto x_max = x_->max();
+            if (x_max > m_val) {
                 model.enqueue_set_max(x_->id(), m_val);
             }
         }
         if (!y_->is_assigned()) {
-            auto y_max = y_->domain().max();
-            if (y_max && *y_max > m_val) {
+            auto y_max = y_->max();
+            if (y_max > m_val) {
                 model.enqueue_set_max(y_->id(), m_val);
             }
         }
@@ -1230,13 +1204,13 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
 
     // x または y が確定した場合、m の下限を更新
     if (x_->is_assigned() || y_->is_assigned()) {
-        auto x_min_val = x_->is_assigned() ? x_->assigned_value().value() : x_->domain().min().value();
-        auto y_min_val = y_->is_assigned() ? y_->assigned_value().value() : y_->domain().min().value();
+        auto x_min_val = x_->is_assigned() ? x_->assigned_value().value() : x_->min();
+        auto y_min_val = y_->is_assigned() ? y_->assigned_value().value() : y_->min();
         auto new_m_min = std::max(x_min_val, y_min_val);
 
         if (!m_->is_assigned()) {
-            auto m_min = m_->domain().min();
-            if (m_min && *m_min < new_m_min) {
+            auto m_min = m_->min();
+            if (m_min < new_m_min) {
                 model.enqueue_set_min(m_->id(), new_m_min);
             }
         }
@@ -1253,26 +1227,21 @@ bool IntMaxConstraint::on_final_instantiate() {
 }
 
 void IntMaxConstraint::check_initial_consistency() {
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-    auto m_min = m_->domain().min();
-    auto m_max = m_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max || !m_min || !m_max) {
-        set_initially_inconsistent(true);
-        return;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
+    auto m_min = m_->min();
+    auto m_max = m_->max();
 
     // m.max < max(x.min, y.min) なら矛盾
-    if (*m_max < std::max(*x_min, *y_min)) {
+    if (m_max < std::max(x_min, y_min)) {
         set_initially_inconsistent(true);
         return;
     }
 
     // m.min > max(x.max, y.max) なら矛盾
-    if (*m_min > std::max(*x_max, *y_max)) {
+    if (m_min > std::max(x_max, y_max)) {
         set_initially_inconsistent(true);
         return;
     }
@@ -1310,19 +1279,15 @@ std::optional<bool> IntMinConstraint::is_satisfied() const {
 
 bool IntMinConstraint::propagate(Model& /*model*/) {
     // m = min(x, y) の bounds propagation
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max) {
-        return false;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
 
     // m.min = min(x.min, y.min)
     // m.max = min(x.max, y.max)
-    auto m_lower = std::min(*x_min, *y_min);
-    auto m_upper = std::min(*x_max, *y_max);
+    auto m_lower = std::min(x_min, y_min);
+    auto m_upper = std::min(x_max, y_max);
 
     // m のドメインを絞る
     auto m_values = m_->domain().values();
@@ -1335,7 +1300,7 @@ bool IntMinConstraint::propagate(Model& /*model*/) {
     }
 
     // x.min >= m.min, y.min >= m.min
-    auto m_min_val = m_->domain().min().value();
+    auto m_min_val = m_->min();
     auto x_values = x_->domain().values();
     for (auto v : x_values) {
         if (v < m_min_val) {
@@ -1372,14 +1337,14 @@ bool IntMinConstraint::on_instantiate(Model& model, int save_point,
 
         // x.min と y.min を m に制限
         if (!x_->is_assigned()) {
-            auto x_min = x_->domain().min();
-            if (x_min && *x_min < m_val) {
+            auto x_min = x_->min();
+            if (x_min < m_val) {
                 model.enqueue_set_min(x_->id(), m_val);
             }
         }
         if (!y_->is_assigned()) {
-            auto y_min = y_->domain().min();
-            if (y_min && *y_min < m_val) {
+            auto y_min = y_->min();
+            if (y_min < m_val) {
                 model.enqueue_set_min(y_->id(), m_val);
             }
         }
@@ -1432,13 +1397,13 @@ bool IntMinConstraint::on_instantiate(Model& model, int save_point,
 
     // x または y が確定した場合、m の上限を更新
     if (x_->is_assigned() || y_->is_assigned()) {
-        auto x_max_val = x_->is_assigned() ? x_->assigned_value().value() : x_->domain().max().value();
-        auto y_max_val = y_->is_assigned() ? y_->assigned_value().value() : y_->domain().max().value();
+        auto x_max_val = x_->is_assigned() ? x_->assigned_value().value() : x_->max();
+        auto y_max_val = y_->is_assigned() ? y_->assigned_value().value() : y_->max();
         auto new_m_max = std::min(x_max_val, y_max_val);
 
         if (!m_->is_assigned()) {
-            auto m_max = m_->domain().max();
-            if (m_max && *m_max > new_m_max) {
+            auto m_max = m_->max();
+            if (m_max > new_m_max) {
                 model.enqueue_set_max(m_->id(), new_m_max);
             }
         }
@@ -1455,26 +1420,21 @@ bool IntMinConstraint::on_final_instantiate() {
 }
 
 void IntMinConstraint::check_initial_consistency() {
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-    auto m_min = m_->domain().min();
-    auto m_max = m_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max || !m_min || !m_max) {
-        set_initially_inconsistent(true);
-        return;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
+    auto m_min = m_->min();
+    auto m_max = m_->max();
 
     // m.max < min(x.min, y.min) なら矛盾
-    if (*m_max < std::min(*x_min, *y_min)) {
+    if (m_max < std::min(x_min, y_min)) {
         set_initially_inconsistent(true);
         return;
     }
 
     // m.min > min(x.max, y.max) なら矛盾
-    if (*m_min > std::min(*x_max, *y_max)) {
+    if (m_min > std::min(x_max, y_max)) {
         set_initially_inconsistent(true);
         return;
     }

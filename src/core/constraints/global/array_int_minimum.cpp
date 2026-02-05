@@ -58,15 +58,15 @@ bool ArrayIntMinimumConstraint::propagate(Model& /*model*/) {
     }
 
     // 1. 全 x[i] の最小値の最小値を計算 -> m.min
-    Domain::value_type min_of_min = x_[0]->domain().min().value();
+    Domain::value_type min_of_min = x_[0]->min();
     for (size_t i = 1; i < n_; ++i) {
-        min_of_min = std::min(min_of_min, x_[i]->domain().min().value());
+        min_of_min = std::min(min_of_min, x_[i]->min());
     }
 
     // 2. 全 x[i] の最大値の最小値を計算 -> m.max
-    Domain::value_type min_of_max = x_[0]->domain().max().value();
+    Domain::value_type min_of_max = x_[0]->max();
     for (size_t i = 1; i < n_; ++i) {
-        min_of_max = std::min(min_of_max, x_[i]->domain().max().value());
+        min_of_max = std::min(min_of_max, x_[i]->max());
     }
 
     // 3. m のドメインを絞る: min_of_min <= m <= min_of_max
@@ -81,7 +81,7 @@ bool ArrayIntMinimumConstraint::propagate(Model& /*model*/) {
     }
 
     // 4. 各 x[i].min を m.min 以上に絞る
-    auto m_min = m_domain.min().value();
+    auto m_min = m_->min();
     for (auto& var : x_) {
         auto x_values = var->domain().values();
         for (auto v : x_values) {
@@ -126,7 +126,7 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
         bool can_achieve = false;
         for (auto& var : x_) {
             if (!var->is_assigned()) {
-                auto var_min = var->domain().min().value();
+                auto var_min = var->min();
                 if (var_min < value) {
                     model.enqueue_set_min(var->id(), value);
                 }
@@ -152,7 +152,7 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
                 return false;
             }
         } else {
-            auto m_max = m_->domain().max().value();
+            auto m_max = m_->max();
             if (m_max > value) {
                 model.enqueue_set_max(m_->id(), value);
             }
@@ -219,7 +219,7 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
             return false;
         } else if (other_min == m_val) {
             // last_var >= m_val であれば OK
-            auto var_min = last_var->domain().min().value();
+            auto var_min = last_var->min();
             if (var_min < m_val) {
                 model.enqueue_set_min(last_var->id(), m_val);
             }

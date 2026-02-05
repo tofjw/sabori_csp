@@ -248,8 +248,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 
     int save_point = current_decision_;
-    auto prev_min = var->domain().min().value();
-    auto prev_max = var->domain().max().value();
+    auto prev_min = var->min();
+    auto prev_max = var->max();
 
     // 値を試行順序で取得
     auto values = var->domain().values();
@@ -913,8 +913,8 @@ bool Solver::process_queue(Model& model) {
         auto& var = variables[var_idx];
 
         // 操作前の状態を保存
-        auto prev_min = var->domain().min().value_or(0);
-        auto prev_max = var->domain().max().value_or(0);
+        auto prev_min = var->min();
+        auto prev_max = var->max();
         size_t prev_size = var->domain().size();
         bool was_instantiated = var->is_assigned();
 

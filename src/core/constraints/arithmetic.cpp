@@ -46,24 +46,20 @@ bool IntTimesConstraint::propagate(Model& /*model*/) {
 bool IntTimesConstraint::propagate_bounds() {
     // x * y = z の bounds propagation
 
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-    auto z_min = z_->domain().min();
-    auto z_max = z_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max || !z_min || !z_max) {
-        return false;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
+    auto z_min = z_->min();
+    auto z_max = z_->max();
 
     // z の範囲を x * y の可能な範囲で制限
     // 負の数を含む場合、積の範囲は複雑になる
     std::vector<Domain::value_type> products = {
-        *x_min * *y_min,
-        *x_min * *y_max,
-        *x_max * *y_min,
-        *x_max * *y_max
+        x_min * y_min,
+        x_min * y_max,
+        x_max * y_min,
+        x_max * y_max
     };
     auto [prod_min, prod_max] = std::minmax_element(products.begin(), products.end());
 
@@ -78,7 +74,7 @@ bool IntTimesConstraint::propagate_bounds() {
     }
 
     // x が 0 のみを含む場合、z = 0
-    if (*x_min == 0 && *x_max == 0) {
+    if (x_min == 0 && x_max == 0) {
         if (!z_->domain().contains(0)) {
             return false;
         }
@@ -93,7 +89,7 @@ bool IntTimesConstraint::propagate_bounds() {
     }
 
     // y が 0 のみを含む場合、z = 0
-    if (*y_min == 0 && *y_max == 0) {
+    if (y_min == 0 && y_max == 0) {
         if (!z_->domain().contains(0)) {
             return false;
         }
@@ -108,9 +104,9 @@ bool IntTimesConstraint::propagate_bounds() {
     }
 
     // z が 0 のみを含む場合、x = 0 または y = 0
-    z_min = z_->domain().min();
-    z_max = z_->domain().max();
-    if (z_min && z_max && *z_min == 0 && *z_max == 0) {
+    z_min = z_->min();
+    z_max = z_->max();
+    if (z_min == 0 && z_max == 0) {
         // x か y のどちらかが 0 を含む必要がある
         if (!x_->domain().contains(0) && !y_->domain().contains(0)) {
             return false;
@@ -308,29 +304,24 @@ void IntTimesConstraint::check_initial_consistency() {
     }
 
     // bounds の簡易チェック
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-    auto z_min = z_->domain().min();
-    auto z_max = z_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max || !z_min || !z_max) {
-        set_initially_inconsistent(true);
-        return;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
+    auto z_min = z_->min();
+    auto z_max = z_->max();
 
     // 積の範囲を計算
     std::vector<Domain::value_type> products = {
-        *x_min * *y_min,
-        *x_min * *y_max,
-        *x_max * *y_min,
-        *x_max * *y_max
+        x_min * y_min,
+        x_min * y_max,
+        x_max * y_min,
+        x_max * y_max
     };
     auto [prod_min, prod_max] = std::minmax_element(products.begin(), products.end());
 
     // z の範囲と積の範囲が交差しなければ矛盾
-    if (*prod_max < *z_min || *prod_min > *z_max) {
+    if (*prod_max < z_min || *prod_min > z_max) {
         set_initially_inconsistent(true);
     }
 }
@@ -370,17 +361,13 @@ bool IntAbsConstraint::propagate(Model& /*model*/) {
 bool IntAbsConstraint::propagate_bounds() {
     // |x| = y の bounds propagation
 
-    auto x_min = x_->domain().min();
-    auto x_max = x_->domain().max();
-    auto y_min = y_->domain().min();
-    auto y_max = y_->domain().max();
-
-    if (!x_min || !x_max || !y_min || !y_max) {
-        return false;
-    }
+    auto x_min = x_->min();
+    auto x_max = x_->max();
+    auto y_min = y_->min();
+    auto y_max = y_->max();
 
     // y >= 0 を強制
-    if (*y_min < 0) {
+    if (y_min < 0) {
         auto y_vals = y_->domain().values();
         for (auto v : y_vals) {
             if (v < 0) {
@@ -389,18 +376,18 @@ bool IntAbsConstraint::propagate_bounds() {
                 }
             }
         }
-        y_min = y_->domain().min();
-        y_max = y_->domain().max();
+        y_min = y_->min();
+        y_max = y_->max();
     }
 
     // y の範囲を |x| の可能な範囲で制限
     // |x| の最小値: x が 0 を含む場合は 0、そうでなければ min(|x_min|, |x_max|)
     // |x| の最大値: max(|x_min|, |x_max|)
     Domain::value_type abs_x_min, abs_x_max;
-    auto abs_x_min_val = (*x_min >= 0) ? *x_min : -*x_min;
-    auto abs_x_max_val = (*x_max >= 0) ? *x_max : -*x_max;
+    auto abs_x_min_val = (x_min >= 0) ? x_min : -x_min;
+    auto abs_x_max_val = (x_max >= 0) ? x_max : -x_max;
 
-    if (*x_min <= 0 && *x_max >= 0) {
+    if (x_min <= 0 && x_max >= 0) {
         // x が 0 を含む
         abs_x_min = 0;
     } else {
@@ -420,11 +407,11 @@ bool IntAbsConstraint::propagate_bounds() {
 
     // x の範囲を y の範囲から制限
     // |x| <= y_max → -y_max <= x <= y_max
-    y_max = y_->domain().max();
-    if (y_max) {
+    y_max = y_->max();
+    {
         auto x_vals = x_->domain().values();
         for (auto v : x_vals) {
-            if (v < -*y_max || v > *y_max) {
+            if (v < -y_max || v > y_max) {
                 if (!x_->domain().remove(v)) {
                     return false;
                 }
@@ -506,11 +493,11 @@ void IntAbsConstraint::check_initial_consistency() {
     // |x| = y の初期整合性チェック
 
     // y < 0 なら矛盾
-    auto y_min = y_->domain().min();
-    if (y_min && *y_min < 0) {
+    auto y_min = y_->min();
+    if (y_min < 0) {
         // y に負の値しかない場合は矛盾
-        auto y_max = y_->domain().max();
-        if (y_max && *y_max < 0) {
+        auto y_max = y_->max();
+        if (y_max < 0) {
             set_initially_inconsistent(true);
             return;
         }

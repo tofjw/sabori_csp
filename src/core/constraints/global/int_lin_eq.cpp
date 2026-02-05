@@ -82,16 +82,14 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
     int64_t total_max = 0;
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
-        auto min_val = vars_[i]->domain().min();
-        auto max_val = vars_[i]->domain().max();
-        if (!min_val || !max_val) return false;
-
+        auto min_val = vars_[i]->min();
+        auto max_val = vars_[i]->max();
         if (c >= 0) {
-            total_min += c * (*min_val);
-            total_max += c * (*max_val);
+            total_min += c * min_val;
+            total_max += c * max_val;
         } else {
-            total_min += c * (*max_val);
-            total_max += c * (*min_val);
+            total_min += c * max_val;
+            total_max += c * min_val;
         }
     }
 
@@ -111,19 +109,17 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
             int64_t c = coeffs_[j];
             if (c == 0) continue;
 
-            auto cur_min = vars_[j]->domain().min();
-            auto cur_max = vars_[j]->domain().max();
-            if (!cur_min || !cur_max) return false;
-
+            auto cur_min = vars_[j]->min();
+            auto cur_max = vars_[j]->max();
             // rest の min/max を計算
             int64_t rest_min = total_min;
             int64_t rest_max = total_max;
             if (c >= 0) {
-                rest_min -= c * (*cur_min);
-                rest_max -= c * (*cur_max);
+                rest_min -= c * cur_min;
+                rest_max -= c * cur_max;
             } else {
-                rest_min -= c * (*cur_max);
-                rest_max -= c * (*cur_min);
+                rest_min -= c * cur_max;
+                rest_max -= c * cur_min;
             }
 
             // 新しい bounds を計算
@@ -152,8 +148,8 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
             }
 
             // 直接ドメインを修正
-            if (new_min > *cur_min) {
-                if (new_min > *cur_max) return false;
+            if (new_min > cur_min) {
+                if (new_min > cur_max) return false;
                 auto vals = vars_[j]->domain().values();
                 for (auto v : vals) {
                     if (v < new_min) {
@@ -162,17 +158,17 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
                         }
                     }
                 }
-                auto new_cur_min = vars_[j]->domain().min().value();
+                auto new_cur_min = vars_[j]->min();
                 if (c >= 0) {
-                    total_min += c * (new_cur_min - *cur_min);
+                    total_min += c * (new_cur_min - cur_min);
                 } else {
-                    total_max += c * (new_cur_min - *cur_min);
+                    total_max += c * (new_cur_min - cur_min);
                 }
                 changed = true;
             }
-            if (new_max < *cur_max) {
-                auto cur_min_after = vars_[j]->domain().min();
-                if (!cur_min_after || new_max < *cur_min_after) return false;
+            if (new_max < cur_max) {
+                auto cur_min_after = vars_[j]->min();
+                if (new_max < cur_min_after) return false;
                 auto vals = vars_[j]->domain().values();
                 for (auto v : vals) {
                     if (v > new_max) {
@@ -181,11 +177,11 @@ bool IntLinEqConstraint::propagate(Model& /*model*/) {
                         }
                     }
                 }
-                auto new_cur_max = vars_[j]->domain().max().value();
+                auto new_cur_max = vars_[j]->max();
                 if (c >= 0) {
-                    total_max += c * (new_cur_max - *cur_max);
+                    total_max += c * (new_cur_max - cur_max);
                 } else {
-                    total_min += c * (new_cur_max - *cur_max);
+                    total_min += c * (new_cur_max - cur_max);
                 }
                 changed = true;
             }
@@ -369,8 +365,8 @@ bool IntLinEqConstraint::presolve(Model& /*model*/) {
         } else {
             // 未確定の変数
             ++unfixed_count_;
-            auto min_val = vars_[i]->domain().min().value();
-            auto max_val = vars_[i]->domain().max().value();
+            auto min_val = vars_[i]->min();
+            auto max_val = vars_[i]->max();
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

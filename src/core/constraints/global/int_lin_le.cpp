@@ -149,8 +149,8 @@ bool IntLinLeConstraint::presolve(Model& /*model*/) {
         if (vars_[i]->is_assigned()) {
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
-            auto min_val = vars_[i]->domain().min().value();
-            auto max_val = vars_[i]->domain().max().value();
+            auto min_val = vars_[i]->min();
+            auto max_val = vars_[i]->max();
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;
