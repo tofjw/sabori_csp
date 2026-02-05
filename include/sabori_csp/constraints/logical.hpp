@@ -61,6 +61,9 @@ private:
     // 変数ポインタ → 内部インデックス (0..n-1: vars_, n: r_)
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
+    // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
+    std::unordered_map<size_t, size_t> var_id_to_idx_;
+
     /**
      * @brief 未確定または 0 を含むドメインを持つ変数のインデックスを探す
      * @param exclude1 除外するインデックス
@@ -114,6 +117,9 @@ private:
 
     std::vector<std::tuple<int, size_t, size_t>> watch_trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
+    std::unordered_map<size_t, size_t> var_id_to_idx_;
 
     size_t find_unwatched_candidate(size_t exclude1, size_t exclude2) const;
     void move_watch(int save_point, int which_watch, size_t new_idx);
@@ -173,8 +179,11 @@ private:
     // Trail for watched literals
     std::vector<std::tuple<int, size_t, size_t>> watch_trail_;
 
-    // 変数ポインタ → 内部インデックス
+    // 変数ポインタ → リテラルインデックス
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    // 変数ID → リテラルインデックス（on_instantiate用、O(1)検索）
+    std::unordered_map<size_t, size_t> var_id_to_lit_idx_;
 
     /**
      * @brief リテラルが節を充足できるか

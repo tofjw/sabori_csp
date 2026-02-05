@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <deque>
 #include <random>
+#include <atomic>
 
 namespace sabori_csp {
 
@@ -198,7 +199,29 @@ public:
      */
     void set_hint_solution(const Solution& hint, const Model& model);
 
+    /**
+     * @brief 探索を停止する（シグナルハンドラから呼び出し可能）
+     */
+    void stop() { stopped_ = true; }
+
+    /**
+     * @brief 停止フラグをリセット
+     */
+    void reset_stop() { stopped_ = false; }
+
+    /**
+     * @brief 停止フラグを確認
+     */
+    bool is_stopped() const { return stopped_; }
+
+    /**
+     * @brief verbose モードを有効/無効にする
+     */
+    void set_verbose(bool enabled) { verbose_ = enabled; }
+
 private:
+    std::atomic<bool> stopped_{false};
+    bool verbose_ = false;
     // ===== 探索 =====
 
     /**

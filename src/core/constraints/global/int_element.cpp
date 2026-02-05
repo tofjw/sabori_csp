@@ -342,13 +342,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
         }
 
         if (result_var_->domain().contains(expected_result)) {
-            // モデル内の変数インデックスを特定して enqueue
-            for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                if (model.variable(model_idx) == result_var_) {
-                    model.enqueue_instantiate(model_idx, expected_result);
-                    break;
-                }
-            }
+            model.enqueue_instantiate(result_var_->id(), expected_result);
             return true;
         } else {
             return false;
@@ -385,12 +379,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
             return false;
         } else if (candidates.size() == 1) {
             // 候補が1つだけなら確定
-            for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                if (model.variable(model_idx) == index_var_) {
-                    model.enqueue_instantiate(model_idx, candidates[0]);
-                    break;
-                }
-            }
+            model.enqueue_instantiate(index_var_->id(), candidates[0]);
         }
         // 複数候補がある場合は選択を solver に任せる
     }

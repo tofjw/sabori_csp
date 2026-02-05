@@ -6,10 +6,39 @@
 #include <cstring>
 #include <optional>
 #include <limits>
+#include <csignal>
+#include <atomic>
+
+std::atomic<bool> g_timeout_flag{false};
+sabori_csp::Solver* g_current_solver = nullptr;
+
+void timeout_handler(int) {
+    g_timeout_flag = true;
+    if (g_current_solver) {
+        g_current_solver->stop();
+    }
+}
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] <file.fzn>\n";
-    std::cerr << "  -a    Find all solutions (or all improving solutions for optimization)\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-t SEC] <file.fzn>\n";
+    std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
+    std::cerr << "  -s      Print solver statistics to stderr\n";
+    std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
+    std::cerr << "  -t SEC  Timeout in seconds\n";
+}
+
+bool g_print_stats = false;
+bool g_verbose = false;
+
+void print_stats(const sabori_csp::Solver& solver) {
+    if (!g_print_stats) return;
+    const auto& s = solver.stats();
+    std::cerr << "% Stats: fails=" << s.fail_count
+              << " restarts=" << s.restart_count
+              << " max_depth=" << s.max_depth
+              << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
+              << " nogoods=" << s.nogoods_size
+              << "\n";
 }
 
 void print_value(int64_t value, bool is_bool) {
@@ -77,6 +106,8 @@ void print_solution(const sabori_csp::Solution& sol,
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model();
     sabori_csp::Solver solver;
+    solver.set_verbose(g_verbose);
+    g_current_solver = &solver;
 
     if (find_all) {
         size_t count = solver.solve_all(*model, [&fzn_model](const sabori_csp::Solution& sol) {
@@ -84,16 +115,24 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
             return true;
         });
 
+        print_stats(solver);
         if (count == 0) {
-            std::cout << "=====UNSATISFIABLE=====\n";
+            if (solver.is_stopped()) {
+                std::cout << "=====UNKNOWN=====\n";
+            } else {
+                std::cout << "=====UNSATISFIABLE=====\n";
+            }
         } else {
             std::cout << "==========\n";
         }
     } else {
         auto sol = solver.solve(*model);
+        print_stats(solver);
         if (sol) {
             print_solution(*sol, fzn_model);
             std::cout << "==========\n";
+        } else if (solver.is_stopped()) {
+            std::cout << "=====UNKNOWN=====\n";
         } else {
             std::cout << "=====UNSATISFIABLE=====\n";
         }
@@ -116,8 +155,12 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     constexpr size_t max_nogoods_to_inherit = 1000;  // 引き継ぐ NoGood の最大数
 
     while (true) {
+        if (g_timeout_flag) break;
+
         auto model = fzn_model.to_model();
         sabori_csp::Solver solver;
+        solver.set_verbose(g_verbose);
+        g_current_solver = &solver;
 
         // 前回の activity を引き継ぐ
         if (!activity_map.empty()) {
@@ -135,6 +178,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
         }
 
         auto sol = solver.solve(*model);
+        print_stats(solver);
 
         // 今回の activity を保存（次回に引き継ぐ）
         activity_map = solver.get_activity_map(*model);
@@ -192,7 +236,11 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     }
 
     if (!found_any) {
-        std::cout << "=====UNSATISFIABLE=====\n";
+        if (g_timeout_flag) {
+            std::cout << "=====UNKNOWN=====\n";
+        } else {
+            std::cout << "=====UNSATISFIABLE=====\n";
+        }
     } else {
         if (!find_all && best_solution) {
             print_solution(*best_solution, fzn_model);
@@ -204,11 +252,18 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
 int main(int argc, char* argv[]) {
     bool find_all = false;
     const char* filename = nullptr;
+    int timeout_sec = 0;
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-a") == 0) {
             find_all = true;
+        } else if (std::strcmp(argv[i], "-s") == 0) {
+            g_print_stats = true;
+        } else if (std::strcmp(argv[i], "-v") == 0) {
+            g_verbose = true;
+        } else if (std::strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -220,6 +275,12 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 1;
         }
+    }
+
+    // Setup timeout
+    if (timeout_sec > 0) {
+        std::signal(SIGALRM, timeout_handler);
+        alarm(timeout_sec);
     }
 
     if (!filename) {

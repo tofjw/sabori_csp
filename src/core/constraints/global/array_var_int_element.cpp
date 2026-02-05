@@ -522,12 +522,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
             // 既に1つしかないなら確定
             auto idx_opt = index_->domain().min();
             if (idx_opt) {
-                for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                    if (model.variable(model_idx) == index_) {
-                        model.enqueue_instantiate(model_idx, *idx_opt);
-                        break;
-                    }
-                }
+                model.enqueue_instantiate(index_->id(), *idx_opt);
             }
         }
     } else if (last_var.get() == result_.get()) {
@@ -542,12 +537,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
                     // array[index] が確定 → result も確定
                     auto expected = arr_var->assigned_value().value();
                     if (result_->domain().contains(expected)) {
-                        for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                            if (model.variable(model_idx) == result_) {
-                                model.enqueue_instantiate(model_idx, expected);
-                                break;
-                            }
-                        }
+                        model.enqueue_instantiate(result_->id(), expected);
                     } else {
                         return false;
                     }
@@ -566,12 +556,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
                     // この配列要素を result の値に確定
                     auto expected = result_->assigned_value().value();
                     if (arr_var->domain().contains(expected)) {
-                        for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                            if (model.variable(model_idx) == arr_var) {
-                                model.enqueue_instantiate(model_idx, expected);
-                                break;
-                            }
-                        }
+                        model.enqueue_instantiate(arr_var->id(), expected);
                     } else {
                         return false;
                     }

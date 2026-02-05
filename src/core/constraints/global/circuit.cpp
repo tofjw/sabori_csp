@@ -300,13 +300,7 @@ bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
     if (pool_n_ == 1) {
         // プールには内部インデックスが格納されているので、元の値に戻す
         Domain::value_type remaining_value = pool_[0] + base_offset_;
-        // モデル内の変数インデックスを特定
-        for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-            if (model.variable(model_idx) == last_var) {
-                model.enqueue_instantiate(model_idx, remaining_value);
-                break;
-            }
-        }
+        model.enqueue_instantiate(last_var->id(), remaining_value);
     }
     // 利用可能な値が0なら矛盾
     else if (pool_n_ == 0) {

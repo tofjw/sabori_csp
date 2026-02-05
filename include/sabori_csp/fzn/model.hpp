@@ -26,6 +26,7 @@ struct VarDecl {
     bool is_output = false;
     bool is_bool = false;   // true if declared as "var bool"
     std::optional<Domain::value_type> fixed_value;  // For par (constant) values
+    std::vector<Domain::value_type> domain_values;  // For set domain: var {1,3,5}: x
 };
 
 /**
@@ -40,13 +41,22 @@ struct ArrayDecl {
 };
 
 /**
+ * @brief FlatZinc範囲型 (lb..ub)
+ */
+struct IntRange {
+    Domain::value_type lb;
+    Domain::value_type ub;
+};
+
+/**
  * @brief FlatZinc制約引数
  */
 using ConstraintArg = std::variant<
     Domain::value_type,                 // Integer literal
     std::string,                        // Variable name
     std::vector<Domain::value_type>,    // Array of integers
-    std::vector<std::string>            // Array of variable names
+    std::vector<std::string>,           // Array of variable names
+    IntRange                            // Range: lb..ub
 >;
 
 /**

@@ -293,13 +293,7 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
         int64_t required_value = remaining / last_coeff;
 
         if (last_var->domain().contains(required_value)) {
-            // モデル内の変数インデックスを特定
-            for (size_t model_idx = 0; model_idx < model.variables().size(); ++model_idx) {
-                if (model.variable(model_idx) == last_var) {
-                    model.enqueue_instantiate(model_idx, required_value);
-                    break;
-                }
-            }
+            model.enqueue_instantiate(last_var->id(), required_value);
         } else {
             // 確定する値がドメインに含まれない
             return false;

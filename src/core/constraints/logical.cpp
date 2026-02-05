@@ -20,11 +20,13 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
-    // 変数ポインタ → 内部インデックスマップを構築
+    // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
+        var_id_to_idx_[vars_[i]->id()] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;  // r は index n
+    var_id_to_idx_[r_->id()] = n_;
 
     // 初期 watch を設定: 0 になりうる（= 未確定 or 0 を含む）変数を探す
     w1_ = SIZE_MAX;
@@ -218,18 +220,12 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // どの変数が確定したか特定
-    size_t internal_idx = SIZE_MAX;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (vars_[i]->id() == var_idx) {
-            internal_idx = i;
-            break;
-        }
-    }
-
-    if (internal_idx == SIZE_MAX) {
+    // O(1) で内部インデックスを取得
+    auto it = var_id_to_idx_.find(var_idx);
+    if (it == var_id_to_idx_.end()) {
         return true;  // この制約に関係ない変数
     }
+    size_t internal_idx = it->second;
 
     // r が確定した場合
     if (internal_idx == n_) {
@@ -450,10 +446,13 @@ ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, Vari
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
+    // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
+        var_id_to_idx_[vars_[i]->id()] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;
+    var_id_to_idx_[r_->id()] = n_;
 
     // 初期 watch: 1 になりうる変数を探す
     w1_ = SIZE_MAX;
@@ -578,15 +577,10 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    size_t internal_idx = SIZE_MAX;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (vars_[i]->id() == var_idx) {
-            internal_idx = i;
-            break;
-        }
-    }
-
-    if (internal_idx == SIZE_MAX) return true;
+    // O(1) で内部インデックスを取得
+    auto it = var_id_to_idx_.find(var_idx);
+    if (it == var_id_to_idx_.end()) return true;
+    size_t internal_idx = it->second;
 
     // r が確定した場合
     if (internal_idx == n_) {
@@ -791,17 +785,20 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     , w1_(SIZE_MAX)
     , w2_(SIZE_MAX) {
 
-    // 変数ポインタ → 内部インデックスマップを構築
+    // 変数ポインタ → リテラルインデックスマップを構築
+    // 変数ID → リテラルインデックスマップを構築
     // 0 <= idx < n_pos_: pos_[idx]
     // n_pos_ <= idx < n_pos_ + n_neg_: neg_[idx - n_pos_]
     for (size_t i = 0; i < n_pos_; ++i) {
         var_ptr_to_idx_[pos_[i].get()] = i;
+        var_id_to_lit_idx_[pos_[i]->id()] = i;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
         // neg の変数が pos にも含まれている場合は上書きしない
         // （同じ変数が両方に含まれるケースは稀だが対応）
         if (var_ptr_to_idx_.find(neg_[i].get()) == var_ptr_to_idx_.end()) {
             var_ptr_to_idx_[neg_[i].get()] = n_pos_ + i;
+            var_id_to_lit_idx_[neg_[i]->id()] = n_pos_ + i;
         }
     }
 
@@ -941,38 +938,20 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 既に節が充足されているかチェック
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (is_satisfied_by(i)) {
-            return true;  // 充足
-        }
-    }
-
-    // 確定した変数が watched かどうかチェック
-    size_t assigned_lit = SIZE_MAX;
-
-    // この変数に対応するリテラルを探す
-    for (size_t i = 0; i < n_pos_; ++i) {
-        if (pos_[i]->id() == var_idx) {
-            assigned_lit = i;
-            break;
-        }
-    }
-    if (assigned_lit == SIZE_MAX) {
-        for (size_t i = 0; i < n_neg_; ++i) {
-            if (neg_[i]->id() == var_idx) {
-                assigned_lit = n_pos_ + i;
-                break;
-            }
-        }
-    }
-
-    if (assigned_lit == SIZE_MAX) {
+    // O(1) でリテラルインデックスを取得
+    auto it = var_id_to_lit_idx_.find(var_idx);
+    if (it == var_id_to_lit_idx_.end()) {
         return true;  // この制約に関係ない変数
     }
+    size_t assigned_lit = it->second;
 
-    // このリテラルが節を充足したか
+    // このリテラルが節を充足したか（O(1)）
     if (is_satisfied_by(assigned_lit)) {
+        return true;
+    }
+
+    // watch が充足していれば節は充足（O(1)）
+    if (is_satisfied_by(w1_) || is_satisfied_by(w2_)) {
         return true;
     }
 

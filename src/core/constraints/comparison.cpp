@@ -1278,4 +1278,206 @@ void IntMaxConstraint::check_initial_consistency() {
     }
 }
 
+// ============================================================================
+// IntMinConstraint implementation
+// ============================================================================
+
+IntMinConstraint::IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m)
+    : Constraint({x, y, m})
+    , x_(std::move(x))
+    , y_(std::move(y))
+    , m_(std::move(m)) {
+    check_initial_consistency();
+}
+
+std::string IntMinConstraint::name() const {
+    return "int_min";
+}
+
+std::vector<VariablePtr> IntMinConstraint::variables() const {
+    return {x_, y_, m_};
+}
+
+std::optional<bool> IntMinConstraint::is_satisfied() const {
+    if (x_->is_assigned() && y_->is_assigned() && m_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        auto m_val = m_->assigned_value().value();
+        return m_val == std::min(x_val, y_val);
+    }
+    return std::nullopt;
+}
+
+bool IntMinConstraint::propagate(Model& /*model*/) {
+    // m = min(x, y) の bounds propagation
+    auto x_min = x_->domain().min();
+    auto x_max = x_->domain().max();
+    auto y_min = y_->domain().min();
+    auto y_max = y_->domain().max();
+
+    if (!x_min || !x_max || !y_min || !y_max) {
+        return false;
+    }
+
+    // m.min = min(x.min, y.min)
+    // m.max = min(x.max, y.max)
+    auto m_lower = std::min(*x_min, *y_min);
+    auto m_upper = std::min(*x_max, *y_max);
+
+    // m のドメインを絞る
+    auto m_values = m_->domain().values();
+    for (auto v : m_values) {
+        if (v < m_lower || v > m_upper) {
+            if (!m_->domain().remove(v)) {
+                return false;
+            }
+        }
+    }
+
+    // x.min >= m.min, y.min >= m.min
+    auto m_min_val = m_->domain().min().value();
+    auto x_values = x_->domain().values();
+    for (auto v : x_values) {
+        if (v < m_min_val) {
+            if (!x_->domain().remove(v)) {
+                return false;
+            }
+        }
+    }
+
+    auto y_values = y_->domain().values();
+    for (auto v : y_values) {
+        if (v < m_min_val) {
+            if (!y_->domain().remove(v)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntMinConstraint::on_instantiate(Model& model, int save_point,
+                                       size_t var_idx, Domain::value_type value,
+                                       Domain::value_type prev_min,
+                                       Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    // m が確定した場合
+    if (m_->is_assigned()) {
+        auto m_val = m_->assigned_value().value();
+
+        // x.min と y.min を m に制限
+        if (!x_->is_assigned()) {
+            auto x_min = x_->domain().min();
+            if (x_min && *x_min < m_val) {
+                model.enqueue_set_min(x_->id(), m_val);
+            }
+        }
+        if (!y_->is_assigned()) {
+            auto y_min = y_->domain().min();
+            if (y_min && *y_min < m_val) {
+                model.enqueue_set_min(y_->id(), m_val);
+            }
+        }
+
+        // x または y が確定していて m と等しい場合は OK
+        // 両方確定していて min != m なら矛盾
+        if (x_->is_assigned() && y_->is_assigned()) {
+            auto x_val = x_->assigned_value().value();
+            auto y_val = y_->assigned_value().value();
+            if (std::min(x_val, y_val) != m_val) {
+                return false;
+            }
+        }
+        // 片方だけ確定している場合
+        else if (x_->is_assigned()) {
+            auto x_val = x_->assigned_value().value();
+            if (x_val == m_val) {
+                // y >= m で OK
+            } else {
+                // y == m が必要
+                if (!y_->domain().contains(m_val)) {
+                    return false;
+                }
+            }
+        } else if (y_->is_assigned()) {
+            auto y_val = y_->assigned_value().value();
+            if (y_val == m_val) {
+                // x >= m で OK
+            } else {
+                // x == m が必要
+                if (!x_->domain().contains(m_val)) {
+                    return false;
+                }
+            }
+        } else {
+            // 両方未確定: 少なくとも一方が m になれる必要
+            if (!x_->domain().contains(m_val) && !y_->domain().contains(m_val)) {
+                return false;
+            }
+        }
+    }
+
+    // x と y が両方確定した場合、m を確定
+    if (x_->is_assigned() && y_->is_assigned() && !m_->is_assigned()) {
+        auto x_val = x_->assigned_value().value();
+        auto y_val = y_->assigned_value().value();
+        auto min_val = std::min(x_val, y_val);
+        model.enqueue_instantiate(m_->id(), min_val);
+    }
+
+    // x または y が確定した場合、m の上限を更新
+    if (x_->is_assigned() || y_->is_assigned()) {
+        auto x_max_val = x_->is_assigned() ? x_->assigned_value().value() : x_->domain().max().value();
+        auto y_max_val = y_->is_assigned() ? y_->assigned_value().value() : y_->domain().max().value();
+        auto new_m_max = std::min(x_max_val, y_max_val);
+
+        if (!m_->is_assigned()) {
+            auto m_max = m_->domain().max();
+            if (m_max && *m_max > new_m_max) {
+                model.enqueue_set_max(m_->id(), new_m_max);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntMinConstraint::on_final_instantiate() {
+    auto x_val = x_->assigned_value().value();
+    auto y_val = y_->assigned_value().value();
+    auto m_val = m_->assigned_value().value();
+    return m_val == std::min(x_val, y_val);
+}
+
+void IntMinConstraint::check_initial_consistency() {
+    auto x_min = x_->domain().min();
+    auto x_max = x_->domain().max();
+    auto y_min = y_->domain().min();
+    auto y_max = y_->domain().max();
+    auto m_min = m_->domain().min();
+    auto m_max = m_->domain().max();
+
+    if (!x_min || !x_max || !y_min || !y_max || !m_min || !m_max) {
+        set_initially_inconsistent(true);
+        return;
+    }
+
+    // m.max < min(x.min, y.min) なら矛盾
+    if (*m_max < std::min(*x_min, *y_min)) {
+        set_initially_inconsistent(true);
+        return;
+    }
+
+    // m.min > min(x.max, y.max) なら矛盾
+    if (*m_min > std::min(*x_max, *y_max)) {
+        set_initially_inconsistent(true);
+        return;
+    }
+}
+
 } // namespace sabori_csp

@@ -25,6 +25,7 @@ void yyerror(YYLTYPE* loc, yyscan_t scanner, ParserContext* ctx, const char* msg
 #include <string>
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include "sabori_csp/fzn/model.hpp"
 
 using namespace sabori_csp;
@@ -60,7 +61,7 @@ using namespace sabori_csp::fzn;
 
 %type <int_val> int_literal bool_literal
 %type <str_val> identifier
-%type <int_list> int_list int_list_inner bool_list bool_list_inner
+%type <int_list> int_list int_list_inner bool_list bool_list_inner int_set int_set_inner
 %type <str_list> id_list id_list_inner annotations annotation_list annotation
 %type <constraint_arg> constraint_arg
 %type <constraint_args> constraint_args
@@ -417,6 +418,105 @@ var_decl:
             ctx->model->add_var_decl(std::move(decl));
             delete $3;
         }
+    | VAR int_set ':' identifier annotations ';'
+        {
+            // var with set domain: var {1,3,5}: x;
+            VarDecl decl;
+            decl.name = *$4;
+            if ($2 && !$2->empty()) {
+                decl.lb = *std::min_element($2->begin(), $2->end());
+                decl.ub = *std::max_element($2->begin(), $2->end());
+                decl.domain_values = std::move(*$2);
+            }
+            if ($5) {
+                for (const auto& ann : *$5) {
+                    if (ann == "output_var") decl.is_output = true;
+                }
+                delete $5;
+            }
+            delete $2;
+            ctx->model->add_var_decl(std::move(decl));
+            delete $4;
+        }
+    | VAR int_set ':' identifier annotations '=' int_literal ';'
+        {
+            // var with set domain and assignment: var {1,3,5}: x = 3;
+            VarDecl decl;
+            decl.name = *$4;
+            if ($2 && !$2->empty()) {
+                decl.lb = *std::min_element($2->begin(), $2->end());
+                decl.ub = *std::max_element($2->begin(), $2->end());
+                decl.domain_values = std::move(*$2);
+            }
+            decl.fixed_value = $7;
+            if ($5) {
+                for (const auto& ann : *$5) {
+                    if (ann == "output_var") decl.is_output = true;
+                }
+                delete $5;
+            }
+            delete $2;
+            ctx->model->add_var_decl(std::move(decl));
+            delete $4;
+        }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF INT ':' identifier annotations '=' '[' int_list_inner ']' ';'
+        {
+            // Implicit par array: array [1..4] of int: X = [1,2,3,4];
+            ArrayDecl decl;
+            decl.name = *$10;
+            decl.size = $5 - $3 + 1;
+            if ($11) {
+                for (const auto& ann : *$11) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $11;
+            }
+            if ($14) {
+                for (size_t i = 0; i < $14->size(); ++i) {
+                    std::string elem_name = decl.name + "[" + std::to_string($3 + i) + "]";
+                    VarDecl vdecl;
+                    vdecl.name = elem_name;
+                    vdecl.lb = (*$14)[i];
+                    vdecl.ub = (*$14)[i];
+                    vdecl.fixed_value = (*$14)[i];
+                    ctx->model->add_var_decl(std::move(vdecl));
+                    decl.elements.push_back(elem_name);
+                }
+                delete $14;
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $10;
+        }
+    | ARRAY '[' int_literal DOTDOT int_literal ']' OF BOOL ':' identifier annotations '=' '[' bool_list_inner ']' ';'
+        {
+            // Implicit par bool array: array [1..4] of bool: X = [true,false,...];
+            ArrayDecl decl;
+            decl.name = *$10;
+            decl.size = $5 - $3 + 1;
+            decl.is_bool = true;
+            if ($11) {
+                for (const auto& ann : *$11) {
+                    if (ann == "output_array") decl.is_output = true;
+                }
+                delete $11;
+            }
+            if ($14) {
+                for (size_t i = 0; i < $14->size(); ++i) {
+                    std::string elem_name = decl.name + "[" + std::to_string($3 + i) + "]";
+                    VarDecl vdecl;
+                    vdecl.name = elem_name;
+                    vdecl.lb = (*$14)[i];
+                    vdecl.ub = (*$14)[i];
+                    vdecl.fixed_value = (*$14)[i];
+                    vdecl.is_bool = true;
+                    ctx->model->add_var_decl(std::move(vdecl));
+                    decl.elements.push_back(elem_name);
+                }
+                delete $14;
+            }
+            ctx->model->add_array_decl(std::move(decl));
+            delete $10;
+        }
     ;
 
 constraint_decl:
@@ -473,6 +573,12 @@ constraint_arg:
         }
     | '[' ']'
         { $$ = new ConstraintArg(std::vector<int64_t>()); }
+    | int_literal DOTDOT int_literal
+        {
+            // Range argument: lb..ub
+            IntRange range{$1, $3};
+            $$ = new ConstraintArg(range);
+        }
     ;
 
 solve_decl:
@@ -556,8 +662,17 @@ annotation_arg:
         { delete $2; }
     | '[' int_literal DOTDOT int_literal ']'
         { /* range like [1..4] - ignore */ }
+    | '[' annotation_arg_list ']'
+        { /* nested list of annotation args - ignore */ }
     | STRING_LITERAL
         { delete $1; }
+    | identifier '(' annotation_args ')'
+        { delete $1; /* nested function call like int_search(...) */ }
+    ;
+
+annotation_arg_list:
+    annotation_arg
+    | annotation_arg_list ',' annotation_arg
     ;
 
 type_inst:
@@ -609,6 +724,26 @@ bool_list_inner:
             $$->push_back($1);
         }
     | bool_list_inner ',' bool_literal
+        {
+            $$ = $1;
+            $$->push_back($3);
+        }
+    ;
+
+int_set:
+    '{' int_set_inner '}'
+        { $$ = $2; }
+    | '{' '}'
+        { $$ = new std::vector<int64_t>(); }
+    ;
+
+int_set_inner:
+    int_literal
+        {
+            $$ = new std::vector<int64_t>();
+            $$->push_back($1);
+        }
+    | int_set_inner ',' int_literal
         {
             $$ = $1;
             $$->push_back($3);

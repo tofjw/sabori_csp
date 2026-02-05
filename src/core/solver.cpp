@@ -1,6 +1,7 @@
 #include "sabori_csp/solver.hpp"
 #include <algorithm>
 #include <limits>
+#include <iostream>
 
 namespace sabori_csp {
 
@@ -25,21 +26,31 @@ std::optional<Solution> Solver::solve(Model& model) {
     stats_ = SolverStats{};
 
     // 事前解決: 各制約の内部状態を初期化
+    if (verbose_) {
+        std::cerr << "% [verbose] presolve start: " << model.constraints().size()
+                  << " constraints, " << variables.size() << " variables\n";
+    }
     if (!model.presolve()) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return std::nullopt;  // UNSAT
     }
+    if (verbose_) std::cerr << "% [verbose] presolve done\n";
 
     // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
     for (const auto& constraint : model.constraints()) {
         if (constraint->is_initially_inconsistent()) {
+            if (verbose_) std::cerr << "% [verbose] initial inconsistency detected\n";
             return std::nullopt;  // UNSAT
         }
     }
 
     // 初期伝播: 残り1変数の制約を処理
+    if (verbose_) std::cerr << "% [verbose] initial_propagate start\n";
     if (!initial_propagate(model)) {
+        if (verbose_) std::cerr << "% [verbose] initial_propagate failed\n";
         return std::nullopt;  // UNSAT
     }
+    if (verbose_) std::cerr << "% [verbose] initial_propagate done\n";
 
     // リスタート有効時は専用ループを使用
     if (restart_enabled_) {
@@ -112,9 +123,14 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
     double outer_limit = 10.0;
 
     int root_point = current_decision_;
+    size_t prev_fail_count = 0;
 
-    while (true) {
-        for (int outer = 0; outer < static_cast<int>(outer_limit); ++outer) {
+    if (verbose_) {
+        std::cerr << "% [verbose] search_with_restart start\n";
+    }
+
+    while (!stopped_) {
+        for (int outer = 0; outer < static_cast<int>(outer_limit) && !stopped_; ++outer) {
             int conflict_limit = static_cast<int>(inner_limit);
             std::optional<Solution> result;
 
@@ -141,21 +157,45 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
             // Activity 減衰
             decay_activities();
 
-            // コンフリクト制限を増加
-            inner_limit *= conflict_limit_multiplier_;
+            // fail が発生しなかった場合は inner, outer を +1
+            if (stats_.fail_count == prev_fail_count) {
+                inner_limit += 1.0;
+                outer_limit += 1.0;
+            } else {
+                // コンフリクト制限を増加
+                inner_limit *= conflict_limit_multiplier_;
 
-            if (inner_limit > outer_limit) {
-                outer_limit *= 1.001;
-                inner_limit = initial_conflict_limit_;
+                if (inner_limit > outer_limit) {
+                    outer_limit *= 1.001;
+                    inner_limit = initial_conflict_limit_;
+                }
+            }
+            prev_fail_count = stats_.fail_count;
+
+            if (verbose_) {
+                std::cerr << "% [verbose] restart #" << stats_.restart_count
+                          << " conflict_limit=" << conflict_limit
+                          << " fails=" << stats_.fail_count
+                          << " max_depth=" << stats_.max_depth
+                          << " nogoods=" << nogoods_.size() << "\n";
             }
         }
     }
 
+    if (verbose_) {
+        std::cerr << "% [verbose] search stopped (timeout)\n";
+    }
+    stats_.nogoods_size = nogoods_.size();
     return std::nullopt;
 }
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                                  SolutionCallback callback, bool find_all) {
+    // タイムアウトチェック
+    if (stopped_) {
+        return SearchResult::UNKNOWN;
+    }
+
     const auto& variables = model.variables();
 
     // 統計更新
