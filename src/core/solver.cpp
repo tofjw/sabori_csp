@@ -242,11 +242,6 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     size_t var_idx = select_variable(model);
     auto& var = variables[var_idx];
 
-    // 空ドメインのチェック
-    if (var->domain().empty()) {
-        return SearchResult::UNSAT;
-    }
-
     int save_point = current_decision_;
     auto prev_min = var->min();
     auto prev_max = var->max();
@@ -284,7 +279,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
         }
 
         // 伝播
-        bool propagate_ok = propagate(model, var_idx, prev_min, prev_max);
+        bool propagate_ok = propagate_instantiate(model, var_idx, prev_min, prev_max);
         bool queue_ok = false;
         if (propagate_ok) {
             // キュー処理
@@ -430,8 +425,8 @@ bool Solver::propagate_all(Model& model) {
     return true;
 }
 
-bool Solver::propagate(Model& model, size_t var_idx,
-                        Domain::value_type prev_min, Domain::value_type prev_max) {
+bool Solver::propagate_instantiate(Model& model, size_t var_idx,
+                                    Domain::value_type prev_min, Domain::value_type prev_max) {
     const auto& constraints = model.constraints();
     auto val = model.value(var_idx);
 
@@ -914,8 +909,6 @@ bool Solver::process_queue(Model& model) {
         size_t prev_size = model.var_size(var_idx);
         bool was_instantiated = var->is_assigned();
 
-        bool need_propagate = false;
-
         switch (update.type) {
         case PendingUpdate::Type::Instantiate: {
             if (var->is_assigned()) {
@@ -924,7 +917,7 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
-                // NOTE: この場合は propagate を呼ばない
+                // NOTE: この場合は propagate_instantiate を呼ばない
                 // 理由: on_instantiate は同じ変数に対して2回呼ばれると
                 // 内部カウンタが二重にデクリメントされてしまうため
                 // ドメイン削減で確定した変数は、sync_after_propagation で対応する
@@ -933,7 +926,9 @@ bool Solver::process_queue(Model& model) {
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return false;
             }
-            need_propagate = true;
+            if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
+                return false;
+            }
             break;
         }
         case PendingUpdate::Type::SetMin: {
@@ -944,7 +939,9 @@ bool Solver::process_queue(Model& model) {
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_min
             if (!was_instantiated && model.is_instantiated(var_idx)) {
-                need_propagate = true;
+                if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
+                    return false;
+                }
             } else if (!was_instantiated) {
                 // on_set_min を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
@@ -965,7 +962,9 @@ bool Solver::process_queue(Model& model) {
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_max
             if (!was_instantiated && model.is_instantiated(var_idx)) {
-                need_propagate = true;
+                if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
+                    return false;
+                }
             } else if (!was_instantiated) {
                 // on_set_max を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
@@ -986,7 +985,9 @@ bool Solver::process_queue(Model& model) {
             }
             // 確定した場合は on_instantiate、そうでなければ on_remove_value
             if (!was_instantiated && model.is_instantiated(var_idx)) {
-                need_propagate = true;
+                if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
+                    return false;
+                }
             } else if (!was_instantiated) {
                 // on_remove_value を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
@@ -999,12 +1000,6 @@ bool Solver::process_queue(Model& model) {
             }
             break;
         }
-        }
-
-        if (need_propagate) {
-            if (!propagate(model, var_idx, prev_min, prev_max)) {
-                return false;
-            }
         }
     }
 
