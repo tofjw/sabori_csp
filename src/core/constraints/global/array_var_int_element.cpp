@@ -488,7 +488,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
     if (last_var.get() == index_.get()) {
         // index が最後の未確定変数
         // result と array 要素の共通値を持つインデックスのみ有効
-        if (index_->domain().size() == 1) {
+        if (model.var_size(index_->id()) == 1) {
             // 既に1つしかないなら確定
             auto idx_val = model.var_min(index_->id());
             model.enqueue_instantiate(index_->id(), idx_val);
