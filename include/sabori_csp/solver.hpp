@@ -9,7 +9,6 @@
 #include <functional>
 #include <map>
 #include <unordered_map>
-#include <deque>
 #include <random>
 #include <atomic>
 
@@ -315,11 +314,6 @@ private:
     // ===== 伝播キュー =====
 
     /**
-     * @brief 確定操作を伝播キューに追加
-     */
-    void enqueue_instantiate(size_t var_idx, Domain::value_type value);
-
-    /**
      * @brief 伝播キューを処理
      */
     bool process_queue(Model& model);
@@ -336,7 +330,6 @@ private:
     int current_decision_ = 0;
     std::vector<double> activity_;
     std::vector<Literal> decision_trail_;
-    std::deque<PendingUpdate> propagation_queue_;
 
     // NoGood
     std::vector<std::unique_ptr<NoGood>> nogoods_;

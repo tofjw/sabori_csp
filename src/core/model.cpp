@@ -372,8 +372,14 @@ void Model::enqueue_remove_value(size_t var_idx, Domain::value_type value) {
     pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
 }
 
-const std::vector<PendingUpdate>& Model::pending_updates() const {
-    return pending_updates_;
+bool Model::has_pending_updates() const {
+    return !pending_updates_.empty();
+}
+
+PendingUpdate Model::pop_pending_update() {
+    auto update = pending_updates_.front();
+    pending_updates_.pop_front();
+    return update;
 }
 
 void Model::clear_pending_updates() {

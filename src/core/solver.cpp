@@ -162,7 +162,6 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
             }
 
             // UNKNOWN: リスタート
-            propagation_queue_.clear();
             model.clear_pending_updates();
             backtrack(model, root_point);
             stats_.restart_count++;
@@ -221,8 +220,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
     // 全変数が確定しているかチェック
     bool all_assigned = true;
-    for (const auto& var : variables) {
-        if (!var->is_assigned()) {
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (!model.is_instantiated(i)) {
             all_assigned = false;
             break;
         }
@@ -240,14 +239,13 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
     // 変数選択
     size_t var_idx = select_variable(model);
-    auto& var = variables[var_idx];
 
     int save_point = current_decision_;
-    auto prev_min = var->min();
-    auto prev_max = var->max();
+    auto prev_min = model.var_min(var_idx);
+    auto prev_max = model.var_max(var_idx);
 
     // 値を試行順序で取得
-    auto values = var->domain().values();
+    auto values = variables[var_idx]->domain().values();
 
     // ハッシュ順でソート（値の試行順序にばらつきを持たせる）
     uint64_t hash_seed = static_cast<uint64_t>(var_idx) ^ static_cast<uint64_t>(conflict_limit);
@@ -306,7 +304,6 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
         // 伝播失敗時はキューに残りがある可能性があるのでクリア
         if (!propagate_ok || !queue_ok) {
-            propagation_queue_.clear();
             model.clear_pending_updates();
         }
 
@@ -382,7 +379,7 @@ bool Solver::initial_propagate(Model& model) {
         }
 
         // pending があれば変更あり
-        if (!model.pending_updates().empty()) {
+        if (model.has_pending_updates()) {
             changed = true;
         }
     }
@@ -466,9 +463,10 @@ void Solver::backtrack(Model& model, int save_point) {
 
 Solution Solver::build_solution(const Model& model) const {
     Solution sol;
-    for (const auto& var : model.variables()) {
-        if (var->is_assigned()) {
-            sol[var->name()] = var->assigned_value().value();
+    const auto& variables = model.variables();
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_instantiated(i)) {
+            sol[variables[i]->name()] = model.value(i);
         }
     }
     return sol;
@@ -728,10 +726,9 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
             continue;
         }
         const auto& lit = lits[i];
-        auto& var = variables[lit.var_idx];
 
-        if (!var->is_assigned() ||
-            var->assigned_value().value() != lit.value) {
+        if (!model.is_instantiated(lit.var_idx) ||
+            model.value(lit.var_idx) != lit.value) {
             // 未成立 → watch をここに移す
             // 古い watch を削除
             auto& old_watches = ng_watches_[triggered.var_idx][triggered.value];
@@ -752,10 +749,9 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
 
     // 移せない → other の watched リテラルが唯一の未成立か確認
     const auto& other_lit = lits[other_idx];
-    auto& other_var = variables[other_lit.var_idx];
 
-    if (other_var->is_assigned() &&
-        other_var->assigned_value().value() == other_lit.value) {
+    if (model.is_instantiated(other_lit.var_idx) &&
+        model.value(other_lit.var_idx) == other_lit.value) {
         // 全リテラル成立 → 矛盾
         return false;
     }
@@ -769,7 +765,7 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
     // 残り1値になったら伝播キューに入れる
     if (model.is_instantiated(other_lit.var_idx)) {
         stats_.nogood_instantiate_count++;
-        enqueue_instantiate(other_lit.var_idx, model.value(other_lit.var_idx));
+        model.enqueue_instantiate(other_lit.var_idx, model.value(other_lit.var_idx));
     }
 
     return true;
@@ -872,48 +868,25 @@ std::unordered_map<size_t, Domain::value_type> Solver::select_best_assignment() 
     return child;
 }
 
-void Solver::enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-    // 同じ変数の Instantiate が既にあればスキップ
-    for (const auto& update : propagation_queue_) {
-        if (update.var_idx == var_idx && update.type == PendingUpdate::Type::Instantiate) {
-            return;
-        }
-    }
-    propagation_queue_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
-}
-
 bool Solver::process_queue(Model& model) {
-    const auto& variables = model.variables();
     const auto& constraints = model.constraints();
 
-    while (true) {
-        // Model の pending を取り込む
-        for (const auto& update : model.pending_updates()) {
-            propagation_queue_.push_back(update);
-        }
-        model.clear_pending_updates();
-
-        if (propagation_queue_.empty()) {
-            break;
-        }
-
-        auto update = propagation_queue_.front();
-        propagation_queue_.pop_front();
+    while (model.has_pending_updates()) {
+        auto update = model.pop_pending_update();
 
         size_t var_idx = update.var_idx;
-        auto& var = variables[var_idx];
 
         // 操作前の状態を保存
-        auto prev_min = var->min();
-        auto prev_max = var->max();
+        auto prev_min = model.var_min(var_idx);
+        auto prev_max = model.var_max(var_idx);
         size_t prev_size = model.var_size(var_idx);
-        bool was_instantiated = var->is_assigned();
+        bool was_instantiated = model.is_instantiated(var_idx);
 
         switch (update.type) {
         case PendingUpdate::Type::Instantiate: {
-            if (var->is_assigned()) {
+            if (was_instantiated) {
                 // 既に確定済みで異なる値が要求されている場合は矛盾
-                if (var->assigned_value().value() != update.value) {
+                if (model.value(var_idx) != update.value) {
                     return false;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
@@ -979,7 +952,7 @@ bool Solver::process_queue(Model& model) {
         }
         case PendingUpdate::Type::RemoveValue: {
             auto removed_value = update.value;
-            if (!var->domain().contains(removed_value)) continue;  // 既に存在しない
+            if (!model.contains(var_idx, removed_value)) continue;  // 既に存在しない
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return false;
             }

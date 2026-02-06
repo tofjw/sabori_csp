@@ -8,6 +8,7 @@
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/constraint.hpp"
 #include <vector>
+#include <deque>
 #include <map>
 #include <string>
 #include <variant>
@@ -281,9 +282,14 @@ public:
     void enqueue_remove_value(size_t var_idx, Domain::value_type value);
 
     /**
-     * @brief 保留中の更新操作を取得
+     * @brief 保留中の更新操作があるか
      */
-    const std::vector<PendingUpdate>& pending_updates() const;
+    bool has_pending_updates() const;
+
+    /**
+     * @brief 保留中の更新操作を1つ取り出す
+     */
+    PendingUpdate pop_pending_update();
 
     /**
      * @brief 保留中の更新操作をクリア
@@ -312,7 +318,7 @@ private:
     std::vector<int> last_saved_level_;
 
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
-    std::vector<PendingUpdate> pending_updates_;
+    std::deque<PendingUpdate> pending_updates_;
 
     // 制約ウォッチリスト: 各変数に関連する制約のリスト
     std::vector<std::vector<size_t>> var_to_constraint_indices_;
