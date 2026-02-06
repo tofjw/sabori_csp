@@ -346,6 +346,9 @@ private:
     // 統計
     SolverStats stats_;
 
+    // タイブレーク
+    std::vector<uint64_t> tiebreak_scores_;
+
     // 乱数
     std::mt19937 rng_;
 };
