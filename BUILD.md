@@ -38,6 +38,20 @@ rm -f DartConfiguration.tcl CMakeCache.txt cmake_install.cmake Makefile
 rm -rf CMakeFiles
 ```
 
+## プロファイルビルド（gprof）
+
+```bash
+cmake -B build_profile -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-pg"
+cmake --build build_profile
+```
+
+実行後にカレントディレクトリに `gmon.out` が生成される：
+
+```bash
+./build_profile/src/fzn/fzn_sabori problem.fzn
+gprof build_profile/src/fzn/fzn_sabori gmon.out
+```
+
 ## ビルド成果物
 
 | ファイル | 説明 |
