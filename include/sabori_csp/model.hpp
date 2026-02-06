@@ -159,6 +159,11 @@ public:
     Domain::value_type var_max(size_t var_idx) const { return maxs_[var_idx]; }
 
     /**
+     * @brief 変数のドメインサイズを取得
+     */
+    size_t var_size(size_t var_idx) const { return sizes_[var_idx]; }
+
+    /**
      * @brief 変数が単一値に固定されているか
      */
     bool is_instantiated(size_t var_idx) const;

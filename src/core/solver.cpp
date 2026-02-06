@@ -410,7 +410,7 @@ bool Solver::propagate_all(Model& model) {
         for (const auto& constraint : constraints) {
             size_t total_size_before = 0;
             for (const auto& var : constraint->variables()) {
-                total_size_before += var->domain().size();
+                total_size_before += model.var_size(var->id());
             }
 
             if (!constraint->propagate(model)) {
@@ -419,7 +419,7 @@ bool Solver::propagate_all(Model& model) {
 
             size_t total_size_after = 0;
             for (const auto& var : constraint->variables()) {
-                total_size_after += var->domain().size();
+                total_size_after += model.var_size(var->id());
             }
 
             if (total_size_after < total_size_before) {
@@ -509,12 +509,12 @@ size_t Solver::select_variable(const Model& model) {
     std::shuffle(candidates.begin(), candidates.end(), rng_);
 
     size_t best_idx = candidates[0];
-    size_t min_domain_size = variables[best_idx]->domain().size();
+    size_t min_domain_size = model.var_size(best_idx);
     double best_activity = activity_[best_idx];
 
     for (size_t j = 1; j < candidates.size(); ++j) {
         size_t i = candidates[j];
-        size_t domain_size = variables[i]->domain().size();
+        size_t domain_size = model.var_size(i);
         double act = activity_[i];
 
         bool better = false;
@@ -887,10 +887,6 @@ void Solver::enqueue_instantiate(size_t var_idx, Domain::value_type value) {
     propagation_queue_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
 }
 
-void Solver::enqueue_update(const PendingUpdate& update) {
-    propagation_queue_.push_back(update);
-}
-
 bool Solver::process_queue(Model& model) {
     const auto& variables = model.variables();
     const auto& constraints = model.constraints();
@@ -915,7 +911,7 @@ bool Solver::process_queue(Model& model) {
         // 操作前の状態を保存
         auto prev_min = var->min();
         auto prev_max = var->max();
-        size_t prev_size = var->domain().size();
+        size_t prev_size = model.var_size(var_idx);
         bool was_instantiated = var->is_assigned();
 
         bool need_propagate = false;

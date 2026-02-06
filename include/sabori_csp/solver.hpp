@@ -320,11 +320,6 @@ private:
     void enqueue_instantiate(size_t var_idx, Domain::value_type value);
 
     /**
-     * @brief 更新操作を伝播キューに追加
-     */
-    void enqueue_update(const PendingUpdate& update);
-
-    /**
      * @brief 伝播キューを処理
      */
     bool process_queue(Model& model);
