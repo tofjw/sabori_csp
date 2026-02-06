@@ -86,9 +86,25 @@ std::optional<bool> IntLinEqReifConstraint::is_satisfied() const {
     return eq == (b_->assigned_value().value() == 1);
 }
 
-bool IntLinEqReifConstraint::propagate(Model& model) {
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+bool IntLinEqReifConstraint::presolve(Model& model) {
+    // キャッシュ値ではなく変数ドメインから毎回計算
+    // （イベント処理が組み上がる前なのでキャッシュは信頼できない）
+    int64_t min_sum = 0;
+    int64_t max_sum = 0;
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        int64_t c = coeffs_[i];
+        if (vars_[i]->is_assigned()) {
+            int64_t v = vars_[i]->assigned_value().value();
+            min_sum += c * v;
+            max_sum += c * v;
+        } else if (c >= 0) {
+            min_sum += c * vars_[i]->min();
+            max_sum += c * vars_[i]->max();
+        } else {
+            min_sum += c * vars_[i]->max();
+            max_sum += c * vars_[i]->min();
+        }
+    }
 
     // b = 1 の場合、sum == target を強制
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
@@ -261,7 +277,7 @@ void IntLinEqReifConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinEqReifConstraint::presolve(Model& model) {
+bool IntLinEqReifConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合の特別処理
     if (coeffs_.empty()) {
         bool trivially_true = (target_ == 0);

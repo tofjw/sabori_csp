@@ -31,7 +31,7 @@ std::optional<bool> IntEqConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntEqConstraint::propagate(Model& model) {
+bool IntEqConstraint::presolve(Model& model) {
     // Intersect domains
     auto x_vals = x_->domain().values();
     auto y_vals = y_->domain().values();
@@ -140,7 +140,7 @@ std::optional<bool> IntEqReifConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntEqReifConstraint::presolve(Model& model) {
+bool IntEqReifConstraint::prepare_propagation(Model& model) {
     // 2WL を初期化
     init_watches();
 
@@ -176,7 +176,7 @@ bool IntEqReifConstraint::presolve(Model& model) {
     return true;
 }
 
-bool IntEqReifConstraint::propagate(Model& model) {
+bool IntEqReifConstraint::presolve(Model& model) {
     // If b is fixed to 1, enforce x == y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         auto x_vals = x_->domain().values();
@@ -386,7 +386,7 @@ std::optional<bool> IntNeConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntNeConstraint::propagate(Model& model) {
+bool IntNeConstraint::presolve(Model& model) {
     // If one is singleton, remove that value from the other
     if (x_->is_assigned()) {
         if (!y_->remove(x_->assigned_value().value())) {
@@ -462,7 +462,7 @@ std::optional<bool> IntNeReifConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntNeReifConstraint::presolve(Model& model) {
+bool IntNeReifConstraint::prepare_propagation(Model& model) {
     // 2WL を初期化
     init_watches();
 
@@ -497,7 +497,7 @@ bool IntNeReifConstraint::presolve(Model& model) {
     return true;
 }
 
-bool IntNeReifConstraint::propagate(Model& model) {
+bool IntNeReifConstraint::presolve(Model& model) {
     // If b is fixed to 1, enforce x != y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         if (x_->is_assigned()) {
@@ -705,7 +705,7 @@ std::optional<bool> IntLtConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLtConstraint::propagate(Model& model) {
+bool IntLtConstraint::presolve(Model& model) {
     // x < y means x.max < y and y > x.min
 
     // Remove values from x that are >= y.max
@@ -798,7 +798,7 @@ std::optional<bool> IntLeConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLeConstraint::propagate(Model& model) {
+bool IntLeConstraint::presolve(Model& model) {
     // x <= y
     auto y_max = model.var_max(y_->id());
     for (auto v : x_->domain().values()) {
@@ -890,7 +890,7 @@ std::optional<bool> IntLeReifConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntLeReifConstraint::propagate(Model& model) {
+bool IntLeReifConstraint::presolve(Model& model) {
     // If b is fixed to 1, enforce x <= y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         // x <= y: x の上限を y.max に、y の下限を x.min に
@@ -1084,7 +1084,7 @@ std::optional<bool> IntMaxConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntMaxConstraint::propagate(Model& model) {
+bool IntMaxConstraint::presolve(Model& model) {
     // m = max(x, y) の bounds propagation
     auto x_min = model.var_min(x_->id());
     auto x_max = model.var_max(x_->id());
@@ -1277,7 +1277,7 @@ std::optional<bool> IntMinConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntMinConstraint::propagate(Model& model) {
+bool IntMinConstraint::presolve(Model& model) {
     // m = min(x, y) の bounds propagation
     auto x_min = model.var_min(x_->id());
     auto x_max = model.var_max(x_->id());

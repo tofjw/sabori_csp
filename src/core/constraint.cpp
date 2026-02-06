@@ -144,7 +144,7 @@ bool Constraint::on_final_instantiate() {
     return result.value_or(true);
 }
 
-bool Constraint::presolve(Model& /*model*/) {
+bool Constraint::prepare_propagation(Model& /*model*/) {
     // デフォルトでは何もしない
     // サブクラスでオーバーライドして内部状態を初期化する
     return true;

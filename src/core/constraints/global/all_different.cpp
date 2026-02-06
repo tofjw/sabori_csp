@@ -81,7 +81,7 @@ std::optional<bool> AllDifferentConstraint::is_satisfied() const {
     return true;
 }
 
-bool AllDifferentConstraint::propagate(Model& model) {
+bool AllDifferentConstraint::presolve(Model& model) {
     // 確定した変数の値を他の変数から削除
     for (const auto& var : vars_) {
         if (var->is_assigned()) {

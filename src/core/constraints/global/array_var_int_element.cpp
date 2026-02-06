@@ -292,7 +292,7 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point
     return true;
 }
 
-bool ArrayVarIntElementConstraint::presolve(Model& model) {
+bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     // bounds support を計算
     recompute_bounds_support(model);
 
@@ -325,7 +325,7 @@ bool ArrayVarIntElementConstraint::presolve(Model& model) {
     return true;
 }
 
-bool ArrayVarIntElementConstraint::propagate(Model& model) {
+bool ArrayVarIntElementConstraint::presolve(Model& model) {
     return propagate_bounds(model);
 }
 

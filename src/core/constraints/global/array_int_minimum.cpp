@@ -52,7 +52,7 @@ std::optional<bool> ArrayIntMinimumConstraint::is_satisfied() const {
     return m_val == min_val;
 }
 
-bool ArrayIntMinimumConstraint::propagate(Model& model) {
+bool ArrayIntMinimumConstraint::presolve(Model& model) {
     if (n_ == 0) {
         return false;
     }

@@ -235,19 +235,16 @@ private:
                             SolutionCallback callback, bool find_all);
 
     /**
-     * @brief 初期伝播を実行（探索開始前）
+     * @brief presolve（探索前の初期伝播）
      *
-     * 残り1変数の制約に対して on_last_uninstantiated() を呼び出し、
-     * 固定点に達するまで繰り返す。
+     * Phase 1: 各制約の presolve() を固定点まで繰り返す。
+     * Phase 1 後に model.prepare_propagation() で内部構造を再構築。
+     * Phase 2: 残り1変数の制約に対して on_last_uninstantiated() を呼び出し、
+     * キューを処理して固定点に達するまで繰り返す。
      *
      * @return 伝播成功ならtrue、矛盾が検出されたらfalse
      */
-    bool initial_propagate(Model& model);
-
-    /**
-     * @brief 全ての制約を伝播
-     */
-    bool propagate_all(Model& model);
+    bool presolve(Model& model);
 
     /**
      * @brief 変数確定時の伝播

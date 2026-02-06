@@ -85,7 +85,7 @@ std::optional<bool> IntElementConstraint::is_satisfied() const {
     return array_[static_cast<size_t>(idx_0based)] == result_var_->assigned_value().value();
 }
 
-bool IntElementConstraint::propagate(Model& model) {
+bool IntElementConstraint::presolve(Model& model) {
     // Bounds propagation: index のドメインから result のドメインを絞る
 
     // index が確定している場合

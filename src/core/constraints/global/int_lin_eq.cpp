@@ -74,7 +74,7 @@ std::optional<bool> IntLinEqConstraint::is_satisfied() const {
     return sum == target_sum_;
 }
 
-bool IntLinEqConstraint::propagate(Model& model) {
+bool IntLinEqConstraint::presolve(Model& model) {
     // Bounds propagation: 各変数の上下限を直接絞り込む（従来の方式）
 
     // 全体の min/max potential を計算
@@ -82,8 +82,8 @@ bool IntLinEqConstraint::propagate(Model& model) {
     int64_t total_max = 0;
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
-        auto min_val = model.var_min(vars_[i]->id());
-        auto max_val = model.var_max(vars_[i]->id());
+        auto min_val = vars_[i]->min();
+        auto max_val = vars_[i]->max();
         if (c >= 0) {
             total_min += c * min_val;
             total_max += c * max_val;
@@ -109,8 +109,8 @@ bool IntLinEqConstraint::propagate(Model& model) {
             int64_t c = coeffs_[j];
             if (c == 0) continue;
 
-            auto cur_min = model.var_min(vars_[j]->id());
-            auto cur_max = model.var_max(vars_[j]->id());
+            auto cur_min = vars_[j]->min();
+            auto cur_max = vars_[j]->max();
             // rest の min/max を計算
             int64_t rest_min = total_min;
             int64_t rest_max = total_max;
@@ -158,7 +158,7 @@ bool IntLinEqConstraint::propagate(Model& model) {
                         }
                     }
                 }
-                auto new_cur_min = model.var_min(vars_[j]->id());
+                auto new_cur_min = vars_[j]->min();
                 if (c >= 0) {
                     total_min += c * (new_cur_min - cur_min);
                 } else {
@@ -167,7 +167,7 @@ bool IntLinEqConstraint::propagate(Model& model) {
                 changed = true;
             }
             if (new_max < cur_max) {
-                auto cur_min_after = model.var_min(vars_[j]->id());
+                auto cur_min_after = vars_[j]->min();
                 if (new_max < cur_min_after) return false;
                 auto vals = vars_[j]->domain().values();
                 for (auto v : vals) {
@@ -177,7 +177,7 @@ bool IntLinEqConstraint::propagate(Model& model) {
                         }
                     }
                 }
-                auto new_cur_max = model.var_max(vars_[j]->id());
+                auto new_cur_max = vars_[j]->max();
                 if (c >= 0) {
                     total_max += c * (new_cur_max - cur_max);
                 } else {
@@ -349,7 +349,7 @@ bool IntLinEqConstraint::on_set_max(Model& model, int /*save_point*/,
     return true;
 }
 
-bool IntLinEqConstraint::presolve(Model& model) {
+bool IntLinEqConstraint::prepare_propagation(Model& model) {
     // 変数の現在状態に基づいて内部状態を初期化
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;

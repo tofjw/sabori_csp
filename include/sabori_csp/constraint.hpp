@@ -64,7 +64,7 @@ public:
     virtual std::optional<bool> is_satisfied() const = 0;
 
     /**
-     * @brief 制約の事前解決（初期化）を実行
+     * @brief イベント伝播の準備（内部構造の初期化）
      *
      * 全制約が Model に追加された後、探索開始前に呼び出される。
      * 変数の現在状態に基づいて内部状態を初期化し、
@@ -76,10 +76,10 @@ public:
      * @param model モデルへの参照
      * @return 初期化が成功すればtrue、矛盾検出時はfalse
      */
-    virtual bool presolve(Model& model);
+    virtual bool prepare_propagation(Model& model);
 
     /**
-     * @brief 初期制約伝播を実行
+     * @brief 探索前の初期伝播（presolve）
      *
      * 探索開始前に呼び出され、変数の bounds を絞り込む。
      * Model を通じて enqueue_set_min/enqueue_set_max を使用可能。
@@ -87,7 +87,7 @@ public:
      * @param model モデルへの参照
      * @return 伝播が成功すればtrue、失敗（矛盾検出）すればfalse
      */
-    virtual bool propagate(Model& model) = 0;
+    virtual bool presolve(Model& model) = 0;
 
     // ===== 2-Watched Literal (2WL) インターフェース =====
 

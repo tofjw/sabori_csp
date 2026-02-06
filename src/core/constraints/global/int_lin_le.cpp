@@ -68,7 +68,7 @@ std::optional<bool> IntLinLeConstraint::is_satisfied() const {
     return sum <= bound_;
 }
 
-bool IntLinLeConstraint::propagate(Model& model) {
+bool IntLinLeConstraint::presolve(Model& model) {
     return true;
 }
 
@@ -133,7 +133,7 @@ void IntLinLeConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinLeConstraint::presolve(Model& model) {
+bool IntLinLeConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合: 0 <= bound
     if (vars_.empty()) {
         return bound_ >= 0;

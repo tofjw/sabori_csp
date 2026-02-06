@@ -85,30 +85,49 @@ std::optional<bool> IntLinLeReifConstraint::is_satisfied() const {
     return le == (b_->assigned_value().value() == 1);
 }
 
-bool IntLinLeReifConstraint::propagate(Model& model) {
+bool IntLinLeReifConstraint::presolve(Model& model) {
+    // キャッシュ値ではなく変数ドメインから毎回計算
+    // （イベント処理が組み上がる前なのでキャッシュは信頼できない）
+    int64_t min_sum = 0;
+    int64_t max_sum = 0;
+    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+        int64_t c = coeffs_[i];
+        if (vars_[i]->is_assigned()) {
+            int64_t v = vars_[i]->assigned_value().value();
+            min_sum += c * v;
+            max_sum += c * v;
+        } else if (c >= 0) {
+            min_sum += c * vars_[i]->min();
+            max_sum += c * vars_[i]->max();
+        } else {
+            min_sum += c * vars_[i]->max();
+            max_sum += c * vars_[i]->min();
+        }
+    }
+
     // b = 1 の場合、sum <= bound を強制
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
-        if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+        if (min_sum > bound_) {
             return false;
         }
     }
 
     // b = 0 の場合、sum > bound を強制
     if (b_->is_assigned() && b_->assigned_value().value() == 0) {
-        if (current_fixed_sum_ + max_rem_potential_ <= bound_) {
+        if (max_sum <= bound_) {
             return false;
         }
     }
 
     // bounds から b を推論
     if (!b_->is_assigned()) {
-        if (current_fixed_sum_ + max_rem_potential_ <= bound_) {
+        if (max_sum <= bound_) {
             // sum <= bound が常に真 → b = 1
             if (!b_->domain().contains(1)) {
                 return false;
             }
             b_->assign(1);
-        } else if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+        } else if (min_sum > bound_) {
             // sum <= bound が常に偽 → b = 0
             if (!b_->domain().contains(0)) {
                 return false;
@@ -229,7 +248,7 @@ void IntLinLeReifConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinLeReifConstraint::presolve(Model& model) {
+bool IntLinLeReifConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合の特別処理
     if (coeffs_.empty()) {
         bool trivially_true = (bound_ >= 0);

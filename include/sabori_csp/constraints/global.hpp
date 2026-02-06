@@ -28,7 +28,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate(Model& model) override;
+    bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -104,8 +104,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -203,8 +203,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -262,7 +262,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate(Model& model) override;
+    bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -361,8 +361,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -442,7 +442,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate(Model& model) override;
+    bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -517,7 +517,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate(Model& model) override;
+    bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -556,7 +556,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
-    bool propagate(Model& model) override;
+    bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -603,8 +603,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -662,8 +662,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -719,8 +719,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -779,8 +779,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,
@@ -843,8 +843,8 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
-    bool propagate(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, Domain::value_type value,

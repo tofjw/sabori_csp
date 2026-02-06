@@ -37,32 +37,16 @@ std::optional<Solution> Solver::solve(Model& model) {
     current_decision_ = 0;
     stats_ = SolverStats{};
 
-    // 事前解決: 各制約の内部状態を初期化
+    // presolve: 初期伝播 + 内部構造の構築
     if (verbose_) {
         std::cerr << "% [verbose] presolve start: " << model.constraints().size()
                   << " constraints, " << variables.size() << " variables\n";
     }
-    if (!model.presolve()) {
+    if (!presolve(model)) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return std::nullopt;  // UNSAT
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
-
-    // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
-    for (const auto& constraint : model.constraints()) {
-        if (constraint->is_initially_inconsistent()) {
-            if (verbose_) std::cerr << "% [verbose] initial inconsistency detected\n";
-            return std::nullopt;  // UNSAT
-        }
-    }
-
-    // 初期伝播: 残り1変数の制約を処理
-    if (verbose_) std::cerr << "% [verbose] initial_propagate start\n";
-    if (!initial_propagate(model)) {
-        if (verbose_) std::cerr << "% [verbose] initial_propagate failed\n";
-        return std::nullopt;  // UNSAT
-    }
-    if (verbose_) std::cerr << "% [verbose] initial_propagate done\n";
 
     // リスタート有効時は専用ループを使用
     if (restart_enabled_) {
@@ -97,22 +81,8 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     current_decision_ = 0;
     stats_ = SolverStats{};
 
-    // 事前解決: 各制約の内部状態を初期化
-    if (!model.presolve()) {
-        restart_enabled_ = old_restart;
-        return 0;  // UNSAT
-    }
-
-    // 初期矛盾チェック: 1つでも矛盾している制約があれば探索を打ち切る
-    for (const auto& constraint : model.constraints()) {
-        if (constraint->is_initially_inconsistent()) {
-            restart_enabled_ = old_restart;
-            return 0;  // UNSAT
-        }
-    }
-
-    // 初期伝播: 残り1変数の制約を処理
-    if (!initial_propagate(model)) {
+    // presolve: 初期伝播 + 内部構造の構築
+    if (!presolve(model)) {
         restart_enabled_ = old_restart;
         return 0;  // UNSAT
     }
@@ -335,15 +305,43 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     return SearchResult::UNSAT;
 }
 
-bool Solver::initial_propagate(Model& model) {
+bool Solver::presolve(Model& model) {
     const auto& constraints = model.constraints();
 
-    // まず全制約の propagate() を実行（bounds propagation など）
-    if (!propagate_all(model)) {
-        return false;  // 矛盾
+    // Phase 1: 全制約の presolve() を固定点まで繰り返す
+    // 制約は変数のドメインを直接変更するため、変化の検出は
+    // SoA (model.var_size) ではなく変数のドメインを直接参照する。
+    {
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& constraint : constraints) {
+                size_t total_size_before = 0;
+                for (const auto& var : constraint->variables()) {
+                    total_size_before += var->domain().size();
+                }
+
+                if (!constraint->presolve(model)) {
+                    return false;
+                }
+
+                size_t total_size_after = 0;
+                for (const auto& var : constraint->variables()) {
+                    total_size_after += var->domain().size();
+                }
+
+                if (total_size_after < total_size_before) {
+                    changed = true;
+                }
+            }
+        }
+        // Phase 1 後: 内部構造を再構築（ドメイン変更に対する整合性保証）
+        if (!model.prepare_propagation()) {
+            return false;
+        }
     }
 
-    // 固定点に達するまで繰り返す
+    // Phase 2: 固定点に達するまで繰り返す
     bool changed = true;
     while (changed) {
         changed = false;
@@ -392,35 +390,6 @@ bool Solver::initial_propagate(Model& model) {
     return true;
 }
 
-bool Solver::propagate_all(Model& model) {
-    const auto& constraints = model.constraints();
-
-    // 固定点に達するまで繰り返す
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (const auto& constraint : constraints) {
-            size_t total_size_before = 0;
-            for (const auto& var : constraint->variables()) {
-                total_size_before += model.var_size(var->id());
-            }
-
-            if (!constraint->propagate(model)) {
-                return false;
-            }
-
-            size_t total_size_after = 0;
-            for (const auto& var : constraint->variables()) {
-                total_size_after += model.var_size(var->id());
-            }
-
-            if (total_size_after < total_size_before) {
-                changed = true;
-            }
-        }
-    }
-    return true;
-}
 
 bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                                     Domain::value_type prev_min, Domain::value_type prev_max) {

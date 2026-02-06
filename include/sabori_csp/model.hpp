@@ -341,14 +341,15 @@ public:
     void build_constraint_watch_list();
 
     /**
-     * @brief 全制約の事前解決を実行
+     * @brief 伝播準備: 各制約の内部状態を初期化
      *
      * 全制約が追加された後、探索開始前に呼び出す。
-     * 各制約の presolve() を順番に呼び出し、内部状態を初期化する。
+     * 各制約の prepare_propagation() を順番に呼び出し、内部状態を初期化する。
+     * その後 SoA データを同期する。
      *
-     * @return 全制約の presolve が成功すれば true、矛盾検出時は false
+     * @return 全制約の prepare_propagation が成功すれば true、矛盾検出時は false
      */
-    bool presolve();
+    bool prepare_propagation();
 };
 
 // テンプレート実装

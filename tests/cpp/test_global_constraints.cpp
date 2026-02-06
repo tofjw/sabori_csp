@@ -73,7 +73,7 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
         auto z = std::make_shared<Variable>("z", Domain(1, 3));
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE_FALSE(y->domain().contains(2));
         REQUIRE_FALSE(z->domain().contains(2));
     }

@@ -81,7 +81,7 @@ std::optional<bool> ArrayBoolAndConstraint::is_satisfied() const {
     return and_result == (r_->assigned_value().value() == 1);
 }
 
-bool ArrayBoolAndConstraint::presolve(Model& model) {
+bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
     // watch を再初期化: 0 になりうる変数を探す
     w1_ = SIZE_MAX;
     w2_ = SIZE_MAX;
@@ -130,7 +130,7 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
     return true;
 }
 
-bool ArrayBoolAndConstraint::propagate(Model& model) {
+bool ArrayBoolAndConstraint::presolve(Model& model) {
     // 1. bi の中に 0 が確定しているものがあれば r = 0
     for (const auto& var : vars_) {
         if (var->is_assigned() && var->assigned_value().value() == 0) {
@@ -484,7 +484,7 @@ std::optional<bool> ArrayBoolOrConstraint::is_satisfied() const {
     return or_result == (r_->assigned_value().value() == 1);
 }
 
-bool ArrayBoolOrConstraint::propagate(Model& model) {
+bool ArrayBoolOrConstraint::presolve(Model& model) {
     // 1. bi の中に 1 が確定しているものがあれば r = 1
     for (const auto& var : vars_) {
         if (var->is_assigned() && var->assigned_value().value() == 1) {
@@ -819,7 +819,7 @@ std::optional<bool> BoolClauseConstraint::is_satisfied() const {
     return false;
 }
 
-bool BoolClauseConstraint::presolve(Model& model) {
+bool BoolClauseConstraint::prepare_propagation(Model& model) {
     // watch を再初期化: 節を充足しうるリテラルを2つ探す
     w1_ = SIZE_MAX;
     w2_ = SIZE_MAX;
@@ -858,7 +858,7 @@ bool BoolClauseConstraint::presolve(Model& model) {
     return true;
 }
 
-bool BoolClauseConstraint::propagate(Model& model) {
+bool BoolClauseConstraint::presolve(Model& model) {
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_; ++i) {
         if (pos_[i]->is_assigned() && pos_[i]->assigned_value().value() == 1) {
@@ -1101,7 +1101,7 @@ std::optional<bool> BoolNotConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool BoolNotConstraint::propagate(Model& model) {
+bool BoolNotConstraint::presolve(Model& model) {
     // a が確定したら b を決定
     if (a_->is_assigned() && !b_->is_assigned()) {
         auto val = 1 - a_->assigned_value().value();

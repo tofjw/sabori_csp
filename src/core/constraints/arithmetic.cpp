@@ -39,7 +39,7 @@ std::optional<bool> IntTimesConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntTimesConstraint::propagate(Model& model) {
+bool IntTimesConstraint::presolve(Model& model) {
     return propagate_bounds(model);
 }
 
@@ -354,7 +354,7 @@ std::optional<bool> IntAbsConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool IntAbsConstraint::propagate(Model& model) {
+bool IntAbsConstraint::presolve(Model& model) {
     return propagate_bounds(model);
 }
 

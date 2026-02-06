@@ -75,7 +75,7 @@ TEST_CASE("IntEqConstraint propagate", "[constraint][int_eq]") {
         auto y = make_var("y", 3, 7);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->min() == 3);
         REQUIRE(x->max() == 5);
         REQUIRE(y->min() == 3);
@@ -87,7 +87,7 @@ TEST_CASE("IntEqConstraint propagate", "[constraint][int_eq]") {
         auto y = make_var("y", 5, 6);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == false);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 
     SECTION("one value in common") {
@@ -95,7 +95,7 @@ TEST_CASE("IntEqConstraint propagate", "[constraint][int_eq]") {
         auto y = make_var("y", 3, 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->domain().size() == 1);
         REQUIRE(y->domain().size() == 1);
         REQUIRE(x->assigned_value() == 3);
@@ -149,7 +149,7 @@ TEST_CASE("IntNeConstraint propagate", "[constraint][int_ne]") {
         auto y = make_var("y", 1, 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE_FALSE(y->domain().contains(3));
         REQUIRE(y->domain().size() == 4);
     }
@@ -159,7 +159,7 @@ TEST_CASE("IntNeConstraint propagate", "[constraint][int_ne]") {
         auto y = make_var("y", 3);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE_FALSE(x->domain().contains(3));
         REQUIRE(x->domain().size() == 4);
     }
@@ -169,7 +169,7 @@ TEST_CASE("IntNeConstraint propagate", "[constraint][int_ne]") {
         auto y = make_var("y", 3);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == false);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 
     SECTION("both singletons with different values - success") {
@@ -177,7 +177,7 @@ TEST_CASE("IntNeConstraint propagate", "[constraint][int_ne]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
     }
 
     SECTION("neither assigned - no change") {
@@ -185,7 +185,7 @@ TEST_CASE("IntNeConstraint propagate", "[constraint][int_ne]") {
         auto y = make_var("y", 1, 3);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->domain().size() == 3);
         REQUIRE(y->domain().size() == 3);
     }
@@ -246,7 +246,7 @@ TEST_CASE("IntLtConstraint propagate", "[constraint][int_lt]") {
         auto y = make_var("y", 1, 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         // x < y means x.max < y.max, y.min > x.min
         REQUIRE(x->max() == 4);  // x < 5
         REQUIRE(y->min() == 2);  // y > 1
@@ -257,7 +257,7 @@ TEST_CASE("IntLtConstraint propagate", "[constraint][int_lt]") {
         auto y = make_var("y", 1, 3);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == false);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 
     SECTION("tight domains") {
@@ -265,7 +265,7 @@ TEST_CASE("IntLtConstraint propagate", "[constraint][int_lt]") {
         auto y = make_var("y", 2, 3);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         // x must be < y.max (3), so x can be 1 or 2
         // y must be > x.min (1), so y can be 2 or 3
         REQUIRE(x->domain().contains(1));
@@ -330,7 +330,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         auto y = make_var("y", 1, 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         // x <= y means x.max <= y.max, y.min >= x.min
         REQUIRE(x->max() == 5);
         REQUIRE(y->min() == 1);
@@ -341,7 +341,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         auto y = make_var("y", 1, 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->max() == 5);  // x <= y.max
     }
 
@@ -350,7 +350,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         auto y = make_var("y", 1, 10);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(y->min() == 3);  // y >= x.min
     }
 
@@ -359,7 +359,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         auto y = make_var("y", 1, 3);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == false);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 
     SECTION("equal singleton values - success") {
@@ -367,7 +367,7 @@ TEST_CASE("IntLeConstraint propagate", "[constraint][int_le]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
     }
 }
 
@@ -455,7 +455,7 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->min() == 3);
         REQUIRE(x->max() == 5);
         REQUIRE(y->min() == 3);
@@ -468,7 +468,7 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE_FALSE(y->domain().contains(3));
     }
 
@@ -478,7 +478,7 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0, 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(b->is_assigned());
         REQUIRE(b->assigned_value() == 1);
     }
@@ -489,7 +489,7 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0, 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(b->is_assigned());
         REQUIRE(b->assigned_value() == 0);
     }
@@ -500,7 +500,7 @@ TEST_CASE("IntEqReifConstraint propagate", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == false);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 }
 
@@ -713,7 +713,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->max() == 5);  // x <= y.max
     }
 
@@ -723,7 +723,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(x->min() == 4);  // x > y.min (3)
         REQUIRE(y->max() == 8);  // y < x.max would be 9, but y.max is 8
     }
@@ -734,7 +734,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0, 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(b->is_assigned());
         REQUIRE(b->assigned_value().value() == 1);
     }
@@ -745,7 +745,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0, 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.propagate(dummy_model) == true);
+        REQUIRE(c.presolve(dummy_model) == true);
         REQUIRE(b->is_assigned());
         REQUIRE(b->assigned_value().value() == 0);
     }

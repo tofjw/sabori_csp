@@ -55,7 +55,7 @@ std::optional<bool> ArrayIntMaximumConstraint::is_satisfied() const {
     return m_val == max_val;
 }
 
-bool ArrayIntMaximumConstraint::propagate(Model& model) {
+bool ArrayIntMaximumConstraint::presolve(Model& model) {
     if (n_ == 0) {
         return false;  // 空配列は不正
     }
