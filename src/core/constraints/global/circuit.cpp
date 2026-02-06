@@ -141,7 +141,7 @@ std::optional<bool> CircuitConstraint::is_satisfied() const {
     return current == 0 && visited.size() == n_;
 }
 
-bool CircuitConstraint::propagate(Model& /*model*/) {
+bool CircuitConstraint::propagate(Model& model) {
     // 初期伝播: 特に何もしない（on_instantiate で処理）
     return true;
 }

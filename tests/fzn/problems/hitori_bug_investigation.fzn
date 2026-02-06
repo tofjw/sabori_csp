@@ -1,0 +1,57 @@
+% Minimal reproduction of hitori bug - exact structure
+
+% Variables
+var bool: x35;
+var bool: x197;
+var bool: x653;
+var bool: x658;
+var bool: x786;
+var bool: x787;
+var bool: x795;
+var 1..25: idx576;
+var 1..25: idx627;
+var 1..25: idx632;
+
+% Arrays
+% arr573: bool array - position 7,17 are false, position 19 is x197
+array [1..25] of var bool: arr573 = [true,true,true,true,true,true,false,true,true,true,true,true,true,true,true,true,false,true,x197,true,true,true,true,true,true];
+
+% arr581: int array - position 7=7, position 17=17, position 19=idx627, position 24=idx632
+array [1..25] of var int: arr581 = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,idx627,20,21,22,23,idx632,25];
+
+% Constraints from hitori
+
+% x197 = NOT(x35)
+constraint bool_not(x35, x197);
+
+% x786 = arr573[idx627]
+constraint array_var_bool_element(idx627, arr573, x786);
+
+% x795 = arr573[idx632]
+constraint array_var_bool_element(idx632, arr573, x795);
+
+% x653 = (idx627 == 19)
+constraint int_eq_reif(idx627, 19, x653);
+
+% x658 = (idx632 == 24)
+constraint int_eq_reif(idx632, 24, x658);
+
+% x787 = x786 AND x197
+constraint array_bool_and([x786, x197], x787);
+
+% x787 OR x653 must be true
+constraint bool_clause([x787, x653], []);
+
+% x795 OR x658 must be true
+constraint bool_clause([x795, x658], []);
+
+% x653 OR NOT(x35) - if x35=true, x653 must be true (idx627=19)
+constraint bool_clause([x653], [x35]);
+
+% Self-referential constraint: arr573[idx576] must be true
+constraint array_var_bool_element(idx576, arr573, true);
+
+% Self-referential constraint: arr581[idx576] = idx576
+constraint array_var_int_element(idx576, arr581, idx576);
+
+solve satisfy;

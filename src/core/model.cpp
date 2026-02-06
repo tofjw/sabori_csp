@@ -12,9 +12,22 @@ VariablePtr Model::create_variable(std::string name, Domain domain) {
     return var;
 }
 
+VariablePtr Model::create_variable(std::string name, Domain::value_type value) {
+    return create_variable(std::move(name), Domain(value, value));
+}
+
+VariablePtr Model::create_variable(std::string name, Domain::value_type min, Domain::value_type max) {
+    return create_variable(std::move(name), Domain(min, max));
+}
+
+VariablePtr Model::create_variable(std::string name, std::vector<Domain::value_type> values) {
+    return create_variable(std::move(name), Domain(std::move(values)));
+}
+
 size_t Model::add_variable(VariablePtr var) {
     size_t id = next_var_id_++;
     var->set_id(id);
+    var->set_model(this);
     name_to_id_[var->name()] = id;
     variables_.push_back(var);
 

@@ -1,0 +1,3 @@
+% Test: satisfy single solution - no ==========
+var 1..3: x :: output_var;
+solve satisfy;

@@ -135,11 +135,11 @@ TEST_CASE("Domain Sparse Set internals", "[domain]") {
 
 TEST_CASE("Model basic operations", "[model]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 5));
-    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    auto x = model.create_variable("x", 1, 5);
+    auto y = model.create_variable("y", 1, 3);
 
-    size_t x_idx = model.add_variable(x);
-    size_t y_idx = model.add_variable(y);
+    size_t x_idx = x->id();
+    size_t y_idx = y->id();
 
     SECTION("variable indices") {
         REQUIRE(x_idx == 0);
@@ -164,8 +164,8 @@ TEST_CASE("Model basic operations", "[model]") {
 
 TEST_CASE("Model instantiate with trail", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 5));
-    size_t x_idx = model.add_variable(x);
+    auto x = model.create_variable("x", 1, 5);
+    size_t x_idx = x->id();
 
     SECTION("instantiate") {
         REQUIRE(model.instantiate(1, x_idx, 3));
@@ -184,10 +184,10 @@ TEST_CASE("Model instantiate with trail", "[model][trail]") {
 
 TEST_CASE("Model rewind_to", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 5));
-    auto y = std::make_shared<Variable>("y", Domain(1, 3));
-    size_t x_idx = model.add_variable(x);
-    size_t y_idx = model.add_variable(y);
+    auto x = model.create_variable("x", 1, 5);
+    auto y = model.create_variable("y", 1, 3);
+    size_t x_idx = x->id();
+    size_t y_idx = y->id();
 
     // Save initial state
     int level_0 = 0;
@@ -234,8 +234,8 @@ TEST_CASE("Model rewind_to", "[model][trail]") {
 
 TEST_CASE("Model set_min with trail", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 10));
-    size_t x_idx = model.add_variable(x);
+    auto x = model.create_variable("x", 1, 10);
+    size_t x_idx = x->id();
 
     REQUIRE(model.set_min(1, x_idx, 5));
     REQUIRE(model.mins()[x_idx] == 5);
@@ -252,8 +252,8 @@ TEST_CASE("Model set_min with trail", "[model][trail]") {
 
 TEST_CASE("Model set_max with trail", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 10));
-    size_t x_idx = model.add_variable(x);
+    auto x = model.create_variable("x", 1, 10);
+    size_t x_idx = x->id();
 
     REQUIRE(model.set_max(1, x_idx, 5));
     REQUIRE(model.maxs()[x_idx] == 5);
@@ -270,8 +270,8 @@ TEST_CASE("Model set_max with trail", "[model][trail]") {
 
 TEST_CASE("Model remove_value with trail", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 5));
-    size_t x_idx = model.add_variable(x);
+    auto x = model.create_variable("x", 1, 5);
+    size_t x_idx = x->id();
 
     REQUIRE(model.remove_value(1, x_idx, 3));
     REQUIRE(model.sizes()[x_idx] == 4);
@@ -295,8 +295,8 @@ TEST_CASE("Model remove_value with trail", "[model][trail]") {
 
 TEST_CASE("Model no duplicate trail save at same level", "[model][trail]") {
     Model model;
-    auto x = std::make_shared<Variable>("x", Domain(1, 10));
-    size_t x_idx = model.add_variable(x);
+    auto x = model.create_variable("x", 1, 10);
+    size_t x_idx = x->id();
 
     // Multiple operations at same level should only save once
     REQUIRE(model.remove_value(1, x_idx, 5));

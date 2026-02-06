@@ -68,7 +68,7 @@ std::optional<bool> IntLinLeConstraint::is_satisfied() const {
     return sum <= bound_;
 }
 
-bool IntLinLeConstraint::propagate(Model& /*model*/) {
+bool IntLinLeConstraint::propagate(Model& model) {
     return true;
 }
 
@@ -133,7 +133,7 @@ void IntLinLeConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinLeConstraint::presolve(Model& /*model*/) {
+bool IntLinLeConstraint::presolve(Model& model) {
     // 全ての係数が0の場合: 0 <= bound
     if (vars_.empty()) {
         return bound_ >= 0;
@@ -149,8 +149,8 @@ bool IntLinLeConstraint::presolve(Model& /*model*/) {
         if (vars_[i]->is_assigned()) {
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
-            auto min_val = vars_[i]->min();
-            auto max_val = vars_[i]->max();
+            auto min_val = model.var_min(vars_[i]->id());
+            auto max_val = model.var_max(vars_[i]->id());
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

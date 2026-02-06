@@ -71,6 +71,31 @@ public:
     VariablePtr create_variable(std::string name, Domain domain);
 
     /**
+     * @brief 単一値（定数）変数を作成して登録
+     * @param name 変数名
+     * @param value 固定値
+     * @return 作成された変数へのポインタ
+     */
+    VariablePtr create_variable(std::string name, Domain::value_type value);
+
+    /**
+     * @brief 区間ドメインの変数を作成して登録
+     * @param name 変数名
+     * @param min 下限
+     * @param max 上限
+     * @return 作成された変数へのポインタ
+     */
+    VariablePtr create_variable(std::string name, Domain::value_type min, Domain::value_type max);
+
+    /**
+     * @brief 値リストドメインの変数を作成して登録
+     * @param name 変数名
+     * @param values ドメイン値のリスト
+     * @return 作成された変数へのポインタ
+     */
+    VariablePtr create_variable(std::string name, std::vector<Domain::value_type> values);
+
+    /**
      * @brief 変数を追加（既存の変数を登録する場合）
      * @param var 追加する変数
      * @return 変数のID（インデックス）
@@ -122,6 +147,16 @@ public:
      */
     const std::vector<size_t>& sizes() const;
     std::vector<size_t>& sizes();
+
+    /**
+     * @brief 変数の最小値を取得
+     */
+    Domain::value_type var_min(size_t var_idx) const { return mins_[var_idx]; }
+
+    /**
+     * @brief 変数の最大値を取得
+     */
+    Domain::value_type var_max(size_t var_idx) const { return maxs_[var_idx]; }
 
     /**
      * @brief 変数が単一値に固定されているか

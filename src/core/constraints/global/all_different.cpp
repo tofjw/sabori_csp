@@ -81,14 +81,14 @@ std::optional<bool> AllDifferentConstraint::is_satisfied() const {
     return true;
 }
 
-bool AllDifferentConstraint::propagate(Model& /*model*/) {
+bool AllDifferentConstraint::propagate(Model& model) {
     // 確定した変数の値を他の変数から削除
     for (const auto& var : vars_) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             for (const auto& other : vars_) {
                 if (other != var && !other->is_assigned()) {
-                    other->domain().remove(val);
+                    other->remove(val);
                     if (other->domain().empty()) {
                         return false;
                     }

@@ -20,13 +20,11 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
-    // 変数ポインタ/ID → 内部インデックスマップを構築
+    // 変数ポインタ → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
-        var_id_to_idx_[vars_[i]->id()] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;  // r は index n
-    var_id_to_idx_[r_->id()] = n_;
 
     // 初期 watch を設定: 0 になりうる（= 未確定 or 0 を含む）変数を探す
     w1_ = SIZE_MAX;
@@ -45,7 +43,7 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
     if (w1_ == SIZE_MAX) w1_ = 0;
     if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
 
-    // 注意: 内部状態は presolve() で初期化
+    check_initial_consistency();
 }
 
 std::string ArrayBoolAndConstraint::name() const {
@@ -81,56 +79,7 @@ std::optional<bool> ArrayBoolAndConstraint::is_satisfied() const {
     return and_result == (r_->assigned_value().value() == 1);
 }
 
-bool ArrayBoolAndConstraint::presolve(Model& model) {
-    // watch を再初期化: 0 になりうる変数を探す
-    w1_ = SIZE_MAX;
-    w2_ = SIZE_MAX;
-    for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned() || vars_[i]->assigned_value().value() == 0) {
-            if (w1_ == SIZE_MAX) {
-                w1_ = i;
-            } else if (w2_ == SIZE_MAX) {
-                w2_ = i;
-                break;
-            }
-        }
-    }
-    // watch が2つ見つからなかった場合のフォールバック
-    if (w1_ == SIZE_MAX) w1_ = 0;
-    if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
-
-    // 2WL を初期化
-    init_watches();
-
-
-    // 初期整合性チェック
-    // r = 1 だが bi = 0 が存在する場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
-        for (const auto& var : vars_) {
-            if (var->is_assigned() && var->assigned_value().value() == 0) {
-                return false;
-            }
-        }
-    }
-
-    // r = 0 だが全ての bi = 1 の場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
-        bool all_one = true;
-        for (const auto& var : vars_) {
-            if (!var->is_assigned() || var->assigned_value().value() != 1) {
-                all_one = false;
-                break;
-            }
-        }
-        if (all_one) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool ArrayBoolAndConstraint::propagate(Model& model) {
+bool ArrayBoolAndConstraint::propagate(Model& /*model*/) {
     // 1. bi の中に 0 が確定しているものがあれば r = 0
     for (const auto& var : vars_) {
         if (var->is_assigned() && var->assigned_value().value() == 0) {
@@ -140,7 +89,7 @@ bool ArrayBoolAndConstraint::propagate(Model& model) {
             if (!r_->domain().contains(0)) {
                 return false;
             }
-            r_->assign(0);
+            r_->domain().assign(0);
             return true;
         }
     }
@@ -160,7 +109,7 @@ bool ArrayBoolAndConstraint::propagate(Model& model) {
         if (!r_->domain().contains(1)) {
             return false;
         }
-        r_->assign(1);
+        r_->domain().assign(1);
         return true;
     }
 
@@ -171,7 +120,7 @@ bool ArrayBoolAndConstraint::propagate(Model& model) {
                 if (!var->domain().contains(1)) {
                     return false;
                 }
-                var->assign(1);
+                var->domain().assign(1);
             } else if (var->assigned_value().value() != 1) {
                 return false;
             }
@@ -201,7 +150,7 @@ bool ArrayBoolAndConstraint::propagate(Model& model) {
             if (!vars_[last_unassigned]->domain().contains(0)) {
                 return false;
             }
-            vars_[last_unassigned]->assign(0);
+            vars_[last_unassigned]->domain().assign(0);
         }
     }
 
@@ -218,12 +167,18 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // O(1) で内部インデックスを取得
-    auto it = var_id_to_idx_.find(var_idx);
-    if (it == var_id_to_idx_.end()) {
+    // どの変数が確定したか特定
+    size_t internal_idx = SIZE_MAX;
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (vars_[i]->id() == var_idx) {
+            internal_idx = i;
+            break;
+        }
+    }
+
+    if (internal_idx == SIZE_MAX) {
         return true;  // この制約に関係ない変数
     }
-    size_t internal_idx = it->second;
 
     // r が確定した場合
     if (internal_idx == n_) {
@@ -280,7 +235,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
 
             if (new_watch != SIZE_MAX) {
                 // 移動可能
-                move_watch(model, save_point, watched_idx, new_watch);
+                move_watch(save_point, watched_idx, new_watch);
             } else {
                 // 移動先がない: もう一方の watched 変数をチェック
                 if (vars_[other_watch]->is_assigned()) {
@@ -353,6 +308,15 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
     return true;
 }
 
+void ArrayBoolAndConstraint::rewind_to(int save_point) {
+    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
+        auto& [level, old_w1, old_w2] = watch_trail_.back();
+        w1_ = old_w1;
+        w2_ = old_w2;
+        watch_trail_.pop_back();
+    }
+}
+
 void ArrayBoolAndConstraint::check_initial_consistency() {
     // r = 1 だが bi = 0 が存在する場合は矛盾
     if (r_->is_assigned() && r_->assigned_value().value() == 1) {
@@ -406,8 +370,12 @@ size_t ArrayBoolAndConstraint::find_unwatched_candidate(size_t exclude1, size_t 
     return SIZE_MAX;
 }
 
-void ArrayBoolAndConstraint::move_watch(Model& model, int /*save_point*/, int which_watch, size_t new_idx) {
-    // 2WL はバックトラック時に復元不要
+void ArrayBoolAndConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
+    // Trail に保存
+    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
+        watch_trail_.push_back({save_point, w1_, w2_});
+    }
+
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {
@@ -431,13 +399,10 @@ ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, Vari
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
-    // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
-        var_id_to_idx_[vars_[i]->id()] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;
-    var_id_to_idx_[r_->id()] = n_;
 
     // 初期 watch: 1 になりうる変数を探す
     w1_ = SIZE_MAX;
@@ -484,7 +449,7 @@ std::optional<bool> ArrayBoolOrConstraint::is_satisfied() const {
     return or_result == (r_->assigned_value().value() == 1);
 }
 
-bool ArrayBoolOrConstraint::propagate(Model& model) {
+bool ArrayBoolOrConstraint::propagate(Model& /*model*/) {
     // 1. bi の中に 1 が確定しているものがあれば r = 1
     for (const auto& var : vars_) {
         if (var->is_assigned() && var->assigned_value().value() == 1) {
@@ -492,7 +457,7 @@ bool ArrayBoolOrConstraint::propagate(Model& model) {
                 return r_->assigned_value().value() == 1;
             }
             if (!r_->domain().contains(1)) return false;
-            r_->assign(1);
+            r_->domain().assign(1);
             return true;
         }
     }
@@ -510,7 +475,7 @@ bool ArrayBoolOrConstraint::propagate(Model& model) {
             return r_->assigned_value().value() == 0;
         }
         if (!r_->domain().contains(0)) return false;
-        r_->assign(0);
+        r_->domain().assign(0);
         return true;
     }
 
@@ -519,7 +484,7 @@ bool ArrayBoolOrConstraint::propagate(Model& model) {
         for (const auto& var : vars_) {
             if (!var->is_assigned()) {
                 if (!var->domain().contains(0)) return false;
-                var->assign(0);
+                var->domain().assign(0);
             } else if (var->assigned_value().value() != 0) {
                 return false;
             }
@@ -546,7 +511,7 @@ bool ArrayBoolOrConstraint::propagate(Model& model) {
 
         if (!has_one && unassigned_count == 1) {
             if (!vars_[last_unassigned]->domain().contains(1)) return false;
-            vars_[last_unassigned]->assign(1);
+            vars_[last_unassigned]->domain().assign(1);
         }
     }
 
@@ -562,10 +527,15 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // O(1) で内部インデックスを取得
-    auto it = var_id_to_idx_.find(var_idx);
-    if (it == var_id_to_idx_.end()) return true;
-    size_t internal_idx = it->second;
+    size_t internal_idx = SIZE_MAX;
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (vars_[i]->id() == var_idx) {
+            internal_idx = i;
+            break;
+        }
+    }
+
+    if (internal_idx == SIZE_MAX) return true;
 
     // r が確定した場合
     if (internal_idx == n_) {
@@ -618,7 +588,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
             size_t new_watch = find_unwatched_candidate(w1_, w2_);
 
             if (new_watch != SIZE_MAX) {
-                move_watch(model, save_point, watched_idx, new_watch);
+                move_watch(save_point, watched_idx, new_watch);
             } else {
                 if (vars_[other_watch]->is_assigned()) {
                     if (vars_[other_watch]->assigned_value().value() == 0) {
@@ -683,6 +653,15 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
     return true;
 }
 
+void ArrayBoolOrConstraint::rewind_to(int save_point) {
+    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
+        auto& [level, old_w1, old_w2] = watch_trail_.back();
+        w1_ = old_w1;
+        w2_ = old_w2;
+        watch_trail_.pop_back();
+    }
+}
+
 void ArrayBoolOrConstraint::check_initial_consistency() {
     if (r_->is_assigned() && r_->assigned_value().value() == 0) {
         for (const auto& var : vars_) {
@@ -732,8 +711,11 @@ size_t ArrayBoolOrConstraint::find_unwatched_candidate(size_t exclude1, size_t e
     return SIZE_MAX;
 }
 
-void ArrayBoolOrConstraint::move_watch(Model& model, int /*save_point*/, int which_watch, size_t new_idx) {
-    // 2WL はバックトラック時に復元不要
+void ArrayBoolOrConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
+    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
+        watch_trail_.push_back({save_point, w1_, w2_});
+    }
+
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {
@@ -758,20 +740,17 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     , w1_(SIZE_MAX)
     , w2_(SIZE_MAX) {
 
-    // 変数ポインタ → リテラルインデックスマップを構築
-    // 変数ID → リテラルインデックスマップを構築
+    // 変数ポインタ → 内部インデックスマップを構築
     // 0 <= idx < n_pos_: pos_[idx]
     // n_pos_ <= idx < n_pos_ + n_neg_: neg_[idx - n_pos_]
     for (size_t i = 0; i < n_pos_; ++i) {
         var_ptr_to_idx_[pos_[i].get()] = i;
-        var_id_to_lit_idx_[pos_[i]->id()] = i;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
         // neg の変数が pos にも含まれている場合は上書きしない
         // （同じ変数が両方に含まれるケースは稀だが対応）
         if (var_ptr_to_idx_.find(neg_[i].get()) == var_ptr_to_idx_.end()) {
             var_ptr_to_idx_[neg_[i].get()] = n_pos_ + i;
-            var_id_to_lit_idx_[neg_[i]->id()] = n_pos_ + i;
         }
     }
 
@@ -792,7 +771,7 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     if (w2_ == SIZE_MAX && n_pos_ + n_neg_ > 1) w2_ = 1;
     if (w2_ == SIZE_MAX) w2_ = w1_;
 
-    // 注意: 内部状態は presolve() で初期化
+    check_initial_consistency();
 }
 
 std::string BoolClauseConstraint::name() const {
@@ -819,46 +798,7 @@ std::optional<bool> BoolClauseConstraint::is_satisfied() const {
     return false;
 }
 
-bool BoolClauseConstraint::presolve(Model& model) {
-    // watch を再初期化: 節を充足しうるリテラルを2つ探す
-    w1_ = SIZE_MAX;
-    w2_ = SIZE_MAX;
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
-            if (w1_ == SIZE_MAX) {
-                w1_ = i;
-            } else if (w2_ == SIZE_MAX) {
-                w2_ = i;
-                break;
-            }
-        }
-    }
-
-    // watch が見つからなかった場合のフォールバック
-    if (w1_ == SIZE_MAX && n_pos_ + n_neg_ > 0) w1_ = 0;
-    if (w2_ == SIZE_MAX && n_pos_ + n_neg_ > 1) w2_ = 1;
-    if (w2_ == SIZE_MAX) w2_ = w1_;
-
-    // 2WL を初期化
-    init_watches();
-
-
-    // 初期整合性チェック: 全てのリテラルが充足不可能なら矛盾
-    bool has_satisfiable = false;
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
-            has_satisfiable = true;
-            break;
-        }
-    }
-    if (!has_satisfiable) {
-        return false;
-    }
-
-    return true;
-}
-
-bool BoolClauseConstraint::propagate(Model& model) {
+bool BoolClauseConstraint::propagate(Model& /*model*/) {
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_; ++i) {
         if (pos_[i]->is_assigned() && pos_[i]->assigned_value().value() == 1) {
@@ -892,11 +832,10 @@ bool BoolClauseConstraint::propagate(Model& model) {
         Domain::value_type val = satisfying_value(last_satisfiable);
         if (!var->is_assigned()) {
             if (!var->domain().contains(val)) return false;
-            var->assign(val);
+            var->domain().assign(val);
         }
     }
 
-      
     return true;
 }
 
@@ -909,20 +848,38 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // O(1) でリテラルインデックスを取得
-    auto it = var_id_to_lit_idx_.find(var_idx);
-    if (it == var_id_to_lit_idx_.end()) {
+    // 既に節が充足されているかチェック
+    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
+        if (is_satisfied_by(i)) {
+            return true;  // 充足
+        }
+    }
+
+    // 確定した変数が watched かどうかチェック
+    size_t assigned_lit = SIZE_MAX;
+
+    // この変数に対応するリテラルを探す
+    for (size_t i = 0; i < n_pos_; ++i) {
+        if (pos_[i]->id() == var_idx) {
+            assigned_lit = i;
+            break;
+        }
+    }
+    if (assigned_lit == SIZE_MAX) {
+        for (size_t i = 0; i < n_neg_; ++i) {
+            if (neg_[i]->id() == var_idx) {
+                assigned_lit = n_pos_ + i;
+                break;
+            }
+        }
+    }
+
+    if (assigned_lit == SIZE_MAX) {
         return true;  // この制約に関係ない変数
     }
-    size_t assigned_lit = it->second;
 
-    // このリテラルが節を充足したか（O(1)）
+    // このリテラルが節を充足したか
     if (is_satisfied_by(assigned_lit)) {
-        return true;
-    }
-
-    // watch が充足していれば節は充足（O(1)）
-    if (is_satisfied_by(w1_) || is_satisfied_by(w2_)) {
         return true;
     }
 
@@ -935,7 +892,7 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         size_t new_watch = find_unwatched_candidate(w1_, w2_);
 
         if (new_watch != SIZE_MAX) {
-            move_watch(model, save_point, watched_idx, new_watch);
+            move_watch(save_point, watched_idx, new_watch);
         } else {
             // 移動先がない
             if (!can_satisfy(other_watch)) {
@@ -1005,6 +962,15 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
     return true;
 }
 
+void BoolClauseConstraint::rewind_to(int save_point) {
+    while (!watch_trail_.empty() && std::get<0>(watch_trail_.back()) > save_point) {
+        auto& [level, old_w1, old_w2] = watch_trail_.back();
+        w1_ = old_w1;
+        w2_ = old_w2;
+        watch_trail_.pop_back();
+    }
+}
+
 void BoolClauseConstraint::check_initial_consistency() {
     // 全てのリテラルが充足不可能なら矛盾
     bool has_satisfiable = false;
@@ -1065,8 +1031,11 @@ size_t BoolClauseConstraint::find_unwatched_candidate(size_t exclude1, size_t ex
     return SIZE_MAX;
 }
 
-void BoolClauseConstraint::move_watch(Model& model, int /*save_point*/, int which_watch, size_t new_idx) {
-    // 2WL はバックトラック時に復元不要
+void BoolClauseConstraint::move_watch(int save_point, int which_watch, size_t new_idx) {
+    if (watch_trail_.empty() || std::get<0>(watch_trail_.back()) != save_point) {
+        watch_trail_.push_back({save_point, w1_, w2_});
+    }
+
     if (which_watch == 1) {
         w1_ = new_idx;
     } else {
@@ -1101,14 +1070,14 @@ std::optional<bool> BoolNotConstraint::is_satisfied() const {
     return std::nullopt;
 }
 
-bool BoolNotConstraint::propagate(Model& model) {
+bool BoolNotConstraint::propagate(Model& /*model*/) {
     // a が確定したら b を決定
     if (a_->is_assigned() && !b_->is_assigned()) {
         auto val = 1 - a_->assigned_value().value();
         if (!b_->domain().contains(val)) {
             return false;
         }
-        b_->assign(val);
+        b_->domain().assign(val);
     }
 
     // b が確定したら a を決定
@@ -1117,7 +1086,7 @@ bool BoolNotConstraint::propagate(Model& model) {
         if (!a_->domain().contains(val)) {
             return false;
         }
-        a_->assign(val);
+        a_->domain().assign(val);
     }
 
     return !a_->domain().empty() && !b_->domain().empty();

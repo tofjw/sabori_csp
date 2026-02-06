@@ -69,7 +69,7 @@ private:
      * @brief bounds propagation を実行
      * @return 矛盾がなければ true
      */
-    bool propagate_bounds();
+    bool propagate_bounds(Model& model);
 };
 
 /**
@@ -114,7 +114,7 @@ private:
      * @brief bounds propagation を実行
      * @return 矛盾がなければ true
      */
-    bool propagate_bounds();
+    bool propagate_bounds(Model& model);
 };
 
 } // namespace sabori_csp

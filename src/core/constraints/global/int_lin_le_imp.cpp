@@ -87,7 +87,7 @@ std::optional<bool> IntLinLeImpConstraint::is_satisfied() const {
     return sum <= bound_;
 }
 
-bool IntLinLeImpConstraint::propagate(Model& /*model*/) {
+bool IntLinLeImpConstraint::propagate(Model& model) {
     // b = 1 の場合のみ伝播
     if (!b_->is_assigned() || b_->assigned_value().value() == 0) {
         return true;  // b が未確定または 0 なら何もしない
@@ -185,7 +185,7 @@ void IntLinLeImpConstraint::check_initial_consistency() {
     // b が未確定または b = 0 の場合は矛盾なし
 }
 
-bool IntLinLeImpConstraint::presolve(Model& /*model*/) {
+bool IntLinLeImpConstraint::presolve(Model& model) {
     // 全ての係数が0の場合: b -> (0 <= bound)
     if (coeffs_.empty()) {
         // b = 1 で bound < 0 なら矛盾
@@ -205,8 +205,8 @@ bool IntLinLeImpConstraint::presolve(Model& /*model*/) {
         if (vars_[i]->is_assigned()) {
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
-            auto min_val = vars_[i]->min();
-            auto max_val = vars_[i]->max();
+            auto min_val = model.var_min(vars_[i]->id());
+            auto max_val = model.var_max(vars_[i]->id());
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

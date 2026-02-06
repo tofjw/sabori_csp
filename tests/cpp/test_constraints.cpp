@@ -6,17 +6,17 @@
 
 using namespace sabori_csp;
 
-// Helper to create a variable
+// Shared model for tests (variables are registered here for SoA access)
+static Model dummy_model;
+
+// Helper to create a variable (registered in dummy_model)
 VariablePtr make_var(const std::string& name, Domain::value_type min, Domain::value_type max) {
-    return std::make_shared<Variable>(name, Domain(min, max));
+    return dummy_model.create_variable(name, min, max);
 }
 
 VariablePtr make_var(const std::string& name, Domain::value_type value) {
-    return std::make_shared<Variable>(name, Domain(value, value));
+    return dummy_model.create_variable(name, value);
 }
-
-// Dummy model for propagate() calls (most constraints don't use it)
-static Model dummy_model;
 
 // ============================================================================
 // IntEqConstraint tests

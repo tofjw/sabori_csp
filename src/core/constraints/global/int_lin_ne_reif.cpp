@@ -85,7 +85,7 @@ std::optional<bool> IntLinNeReifConstraint::is_satisfied() const {
     return ne == (b_->assigned_value().value() == 1);
 }
 
-bool IntLinNeReifConstraint::propagate(Model& /*model*/) {
+bool IntLinNeReifConstraint::propagate(Model& model) {
     int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
@@ -112,13 +112,13 @@ bool IntLinNeReifConstraint::propagate(Model& /*model*/) {
             if (!b_->domain().contains(1)) {
                 return false;
             }
-            b_->domain().assign(1);
+            b_->assign(1);
         } else if (min_sum == target_ && max_sum == target_) {
             // sum == target が常に真 → sum != target は常に偽 → b = 0
             if (!b_->domain().contains(0)) {
                 return false;
             }
-            b_->domain().assign(0);
+            b_->assign(0);
         }
     }
 
@@ -245,7 +245,7 @@ void IntLinNeReifConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinNeReifConstraint::presolve(Model& /*model*/) {
+bool IntLinNeReifConstraint::presolve(Model& model) {
     // 全ての係数が0の場合の特別処理
     if (coeffs_.empty()) {
         bool trivially_true = (target_ != 0);
@@ -255,7 +255,7 @@ bool IntLinNeReifConstraint::presolve(Model& /*model*/) {
                 return false;  // 矛盾
             }
         } else {
-            b_->domain().assign(trivially_true ? 1 : 0);
+            b_->assign(trivially_true ? 1 : 0);
         }
         return true;
     }
@@ -273,8 +273,8 @@ bool IntLinNeReifConstraint::presolve(Model& /*model*/) {
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
             ++unfixed_count_;
-            auto min_val = vars_[i]->min();
-            auto max_val = vars_[i]->max();
+            auto min_val = model.var_min(vars_[i]->id());
+            auto max_val = model.var_max(vars_[i]->id());
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

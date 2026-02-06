@@ -10,15 +10,6 @@
 
 using namespace sabori_csp;
 
-// Helper to create a variable
-static VariablePtr make_var(const std::string& name, Domain::value_type min, Domain::value_type max) {
-    return std::make_shared<Variable>(name, Domain(min, max));
-}
-
-static VariablePtr make_var(const std::string& name, Domain::value_type value) {
-    return std::make_shared<Variable>(name, Domain(value, value));
-}
-
 // Dummy model for propagate() calls
 static Model dummy_model;
 
@@ -27,17 +18,17 @@ static Model dummy_model;
 // ============================================================================
 
 TEST_CASE("AllDifferentConstraint name", "[constraint][all_different]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
-    auto z = make_var("z", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    auto z = std::make_shared<Variable>("z", Domain(1, 3));
     AllDifferentConstraint c({x, y, z});
 
     REQUIRE(c.name() == "all_different");
 }
 
 TEST_CASE("AllDifferentConstraint variables", "[constraint][all_different]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
     AllDifferentConstraint c({x, y});
 
     auto vars = c.variables();
@@ -46,9 +37,9 @@ TEST_CASE("AllDifferentConstraint variables", "[constraint][all_different]") {
 
 TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") {
     SECTION("all different values - satisfied") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 2);
-        auto z = make_var("z", 3);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        auto z = std::make_shared<Variable>("z", Domain(3, 3));
         AllDifferentConstraint c({x, y, z});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -56,9 +47,9 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
     }
 
     SECTION("duplicate values - violated") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 2);
-        auto z = make_var("z", 1);  // same as x
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        auto z = std::make_shared<Variable>("z", Domain(1, 1));  // same as x
         AllDifferentConstraint c({x, y, z});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -66,9 +57,9 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
     }
 
     SECTION("not fully assigned") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 1, 3);
-        auto z = make_var("z", 3);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(1, 3));
+        auto z = std::make_shared<Variable>("z", Domain(3, 3));
         AllDifferentConstraint c({x, y, z});
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -77,9 +68,9 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
 
 TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
     SECTION("remove assigned values from others") {
-        auto x = make_var("x", 2);  // assigned
-        auto y = make_var("y", 1, 3);
-        auto z = make_var("z", 1, 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));  // assigned
+        auto y = std::make_shared<Variable>("y", Domain(1, 3));
+        auto z = std::make_shared<Variable>("z", Domain(1, 3));
         AllDifferentConstraint c({x, y, z});
 
         REQUIRE(c.propagate(dummy_model) == true);
@@ -88,8 +79,8 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
     }
 
     SECTION("infeasible - domain becomes empty") {
-        auto x = make_var("x", 1);  // assigned to 1
-        auto y = make_var("y", 1, 1);  // domain {1}, unassigned for propagation check
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));  // assigned to 1
+        auto y = std::make_shared<Variable>("y", Domain(1, 1));  // domain {1}, unassigned for propagation check
         // Note: make_var with single value creates a singleton which is considered assigned
         // So we need a different approach to test infeasibility
 
@@ -103,9 +94,9 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
     }
 
     SECTION("infeasible via propagation") {
-        auto x = make_var("x", 2);  // assigned to 2
-        auto y = make_var("y", 2, 2);  // domain {2}
-        auto z = make_var("z", 2, 3);  // domain {2, 3}
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));  // assigned to 2
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));  // domain {2}
+        auto z = std::make_shared<Variable>("z", Domain(2, 3));  // domain {2, 3}
         AllDifferentConstraint c({x, y, z});
 
         // y only has value 2, which x already uses
@@ -117,9 +108,9 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
 }
 
 TEST_CASE("AllDifferentConstraint pool management", "[constraint][all_different]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
-    auto z = make_var("z", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    auto z = std::make_shared<Variable>("z", Domain(1, 3));
     AllDifferentConstraint c({x, y, z});
 
     SECTION("initial pool size") {
@@ -129,17 +120,17 @@ TEST_CASE("AllDifferentConstraint pool management", "[constraint][all_different]
 
 TEST_CASE("AllDifferentConstraint on_final_instantiate", "[constraint][all_different]") {
     SECTION("satisfied") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 2);
-        auto z = make_var("z", 3);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        auto z = std::make_shared<Variable>("z", Domain(3, 3));
         AllDifferentConstraint c({x, y, z});
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("violated") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 1);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(1, 1));
         AllDifferentConstraint c({x, y});
 
         REQUIRE(c.on_final_instantiate() == false);
@@ -147,14 +138,11 @@ TEST_CASE("AllDifferentConstraint on_final_instantiate", "[constraint][all_diffe
 }
 
 TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
-    auto z = make_var("z", 1, 3);
-    AllDifferentConstraint c({x, y, z});
     Model model;
-    model.add_variable(x);
-    model.add_variable(y);
-    model.add_variable(z);
+    auto x = model.create_variable("x", 1, 3);
+    auto y = model.create_variable("y", 1, 3);
+    auto z = model.create_variable("z", 1, 3);
+    AllDifferentConstraint c({x, y, z});
 
     REQUIRE(c.pool_size() == 3);
 
@@ -182,8 +170,8 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
 // ============================================================================
 
 TEST_CASE("IntLinEqConstraint name", "[constraint][int_lin_eq]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
     IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
     REQUIRE(c.name() == "int_lin_eq");
@@ -191,8 +179,8 @@ TEST_CASE("IntLinEqConstraint name", "[constraint][int_lin_eq]") {
 
 TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
     SECTION("satisfied: 1*2 + 1*3 = 5") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -200,8 +188,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
     }
 
     SECTION("satisfied: 2*1 + 3*2 = 8") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 2);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
         IntLinEqConstraint c({2, 3}, {x, y}, 8);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -209,8 +197,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
     }
 
     SECTION("violated: 1*2 + 1*3 != 6") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 6);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -218,8 +206,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
     }
 
     SECTION("not fully assigned") {
-        auto x = make_var("x", 1, 3);
-        auto y = make_var("y", 2);
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -228,16 +216,16 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
 
 TEST_CASE("IntLinEqConstraint on_final_instantiate", "[constraint][int_lin_eq]") {
     SECTION("satisfied") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("violated") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 6);
 
         REQUIRE(c.on_final_instantiate() == false);
@@ -246,8 +234,8 @@ TEST_CASE("IntLinEqConstraint on_final_instantiate", "[constraint][int_lin_eq]")
 
 TEST_CASE("IntLinEqConstraint with negative coefficients", "[constraint][int_lin_eq]") {
     SECTION("satisfied: 2*3 + (-1)*1 = 5") {
-        auto x = make_var("x", 3);
-        auto y = make_var("y", 1);
+        auto x = std::make_shared<Variable>("x", Domain(3, 3));
+        auto y = std::make_shared<Variable>("y", Domain(1, 1));
         IntLinEqConstraint c({2, -1}, {x, y}, 5);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -255,8 +243,8 @@ TEST_CASE("IntLinEqConstraint with negative coefficients", "[constraint][int_lin
     }
 
     SECTION("satisfied: (-1)*2 + 1*7 = 5") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 7);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(7, 7));
         IntLinEqConstraint c({-1, 1}, {x, y}, 5);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -265,12 +253,10 @@ TEST_CASE("IntLinEqConstraint with negative coefficients", "[constraint][int_lin
 }
 
 TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
-    auto x = make_var("x", 1, 5);
-    auto y = make_var("y", 1, 5);
-    IntLinEqConstraint c({1, 1}, {x, y}, 6);
     Model model;
-    model.add_variable(x);
-    model.add_variable(y);
+    auto x = model.create_variable("x", 1, 5);
+    auto y = model.create_variable("y", 1, 5);
+    IntLinEqConstraint c({1, 1}, {x, y}, 6);
 
     // Initial state
     int64_t initial_sum = c.target_sum();
@@ -297,8 +283,8 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
 // ============================================================================
 
 TEST_CASE("IntLinLeConstraint name", "[constraint][int_lin_le]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
     IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
     REQUIRE(c.name() == "int_lin_le");
@@ -306,8 +292,8 @@ TEST_CASE("IntLinLeConstraint name", "[constraint][int_lin_le]") {
 
 TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
     SECTION("satisfied: 1*2 + 1*3 <= 5") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -315,8 +301,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
     }
 
     SECTION("satisfied: 1*2 + 1*3 <= 6") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 6);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -324,8 +310,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
     }
 
     SECTION("violated: 1*2 + 1*3 > 4") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 4);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -333,8 +319,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
     }
 
     SECTION("not fully assigned") {
-        auto x = make_var("x", 1, 3);
-        auto y = make_var("y", 2);
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -343,24 +329,24 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
 
 TEST_CASE("IntLinLeConstraint on_final_instantiate", "[constraint][int_lin_le]") {
     SECTION("satisfied - equal") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("satisfied - less than") {
-        auto x = make_var("x", 1);
-        auto y = make_var("y", 2);
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("violated") {
-        auto x = make_var("x", 3);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(3, 3));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == false);
@@ -372,8 +358,8 @@ TEST_CASE("IntLinLeConstraint on_final_instantiate", "[constraint][int_lin_le]")
 // ============================================================================
 
 TEST_CASE("IntLinNeConstraint name", "[constraint][int_lin_ne]") {
-    auto x = make_var("x", 1, 3);
-    auto y = make_var("y", 1, 3);
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
     IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
     REQUIRE(c.name() == "int_lin_ne");
@@ -381,8 +367,8 @@ TEST_CASE("IntLinNeConstraint name", "[constraint][int_lin_ne]") {
 
 TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
     SECTION("satisfied: 1*2 + 1*3 != 4") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 4);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -390,8 +376,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
     }
 
     SECTION("satisfied: 1*2 + 1*3 != 6") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 6);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -399,8 +385,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
     }
 
     SECTION("violated: 1*2 + 1*3 == 5") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -408,8 +394,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
     }
 
     SECTION("not fully assigned") {
-        auto x = make_var("x", 1, 3);
-        auto y = make_var("y", 2);
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -418,16 +404,16 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
 
 TEST_CASE("IntLinNeConstraint on_final_instantiate", "[constraint][int_lin_ne]") {
     SECTION("satisfied - not equal") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 4);
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("violated - equal") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
         REQUIRE(c.on_final_instantiate() == false);
@@ -440,10 +426,8 @@ TEST_CASE("IntLinNeConstraint with Solver", "[constraint][int_lin_ne][solver]") 
         // Valid combinations: (1,1)=2, (1,2)=3, (1,3)=4, (2,1)=3, (2,2)=4, (3,1)=4, (3,3)=6
         // Invalid: (2,3)=5, (3,2)=5
         Model model;
-        auto x = std::make_shared<Variable>("x", Domain(1, 3));
-        auto y = std::make_shared<Variable>("y", Domain(1, 3));
-        model.add_variable(x);
-        model.add_variable(y);
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
         model.add_constraint(std::make_shared<IntLinNeConstraint>(
             std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{x, y}, 5));
 
@@ -472,10 +456,8 @@ TEST_CASE("IntLinNeConstraint with Solver", "[constraint][int_lin_ne][solver]") 
         // 2*3 - y != 3 => y != 3
         // Invalid: (2,1)=3, (3,3)=3
         Model model;
-        auto x = std::make_shared<Variable>("x", Domain(1, 3));
-        auto y = std::make_shared<Variable>("y", Domain(1, 3));
-        model.add_variable(x);
-        model.add_variable(y);
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
         model.add_constraint(std::make_shared<IntLinNeConstraint>(
             std::vector<int64_t>{2, -1}, std::vector<VariablePtr>{x, y}, 3));
 
@@ -519,9 +501,8 @@ TEST_CASE("Magic Square 3x3", "[solver][magic_square]") {
     // Create 9 variables for the 3x3 grid
     std::vector<VariablePtr> cells;
     for (int i = 0; i < 9; ++i) {
-        auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(1, 9));
+        auto var = model.create_variable("x" + std::to_string(i), 1, 9);
         cells.push_back(var);
-        model.add_variable(var);
     }
 
     // AllDifferent constraint: all cells must have different values
@@ -671,9 +652,8 @@ static Model create_magic_square_model(
     // Create 9 variables for the 3x3 grid
     std::vector<VariablePtr> cells;
     for (int i = 0; i < 9; ++i) {
-        auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(1, 9));
+        auto var = model.create_variable("x" + std::to_string(i), 1, 9);
         cells.push_back(var);
-        model.add_variable(var);
     }
 
     // Fix specified cells via Model API
@@ -849,18 +829,18 @@ TEST_CASE("Magic Square 3x3 - three rows fixed (inconsistent)", "[solver][magic_
 // ============================================================================
 
 TEST_CASE("CircuitConstraint name", "[constraint][circuit]") {
-    auto x0 = make_var("x0", 0, 2);
-    auto x1 = make_var("x1", 0, 2);
-    auto x2 = make_var("x2", 0, 2);
+    auto x0 = std::make_shared<Variable>("x0", Domain(0, 2));
+    auto x1 = std::make_shared<Variable>("x1", Domain(0, 2));
+    auto x2 = std::make_shared<Variable>("x2", Domain(0, 2));
     CircuitConstraint c({x0, x1, x2});
 
     REQUIRE(c.name() == "circuit");
 }
 
 TEST_CASE("CircuitConstraint variables", "[constraint][circuit]") {
-    auto x0 = make_var("x0", 0, 2);
-    auto x1 = make_var("x1", 0, 2);
-    auto x2 = make_var("x2", 0, 2);
+    auto x0 = std::make_shared<Variable>("x0", Domain(0, 2));
+    auto x1 = std::make_shared<Variable>("x1", Domain(0, 2));
+    auto x2 = std::make_shared<Variable>("x2", Domain(0, 2));
     CircuitConstraint c({x0, x1, x2});
 
     auto vars = c.variables();
@@ -870,9 +850,9 @@ TEST_CASE("CircuitConstraint variables", "[constraint][circuit]") {
 TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
     SECTION("valid circuit - satisfied") {
         // Circuit: 0 -> 1 -> 2 -> 0
-        auto x0 = make_var("x0", 1);  // x[0] = 1
-        auto x1 = make_var("x1", 2);  // x[1] = 2
-        auto x2 = make_var("x2", 0);  // x[2] = 0
+        auto x0 = std::make_shared<Variable>("x0", Domain(1, 1));  // x[0] = 1
+        auto x1 = std::make_shared<Variable>("x1", Domain(2, 2));  // x[1] = 2
+        auto x2 = std::make_shared<Variable>("x2", Domain(0, 0));  // x[2] = 0
         CircuitConstraint c({x0, x1, x2});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -881,9 +861,9 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
 
     SECTION("subcircuit - violated") {
         // Subcircuit: 0 -> 1 -> 0 (x[2] is not part of circuit)
-        auto x0 = make_var("x0", 1);  // x[0] = 1
-        auto x1 = make_var("x1", 0);  // x[1] = 0
-        auto x2 = make_var("x2", 2);  // x[2] = 2 (self-loop)
+        auto x0 = std::make_shared<Variable>("x0", Domain(1, 1));  // x[0] = 1
+        auto x1 = std::make_shared<Variable>("x1", Domain(0, 0));  // x[1] = 0
+        auto x2 = std::make_shared<Variable>("x2", Domain(2, 2));  // x[2] = 2 (self-loop)
         CircuitConstraint c({x0, x1, x2});
 
         // This should be marked as initially inconsistent or is_satisfied returns false
@@ -892,9 +872,9 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
     }
 
     SECTION("duplicate values - violated") {
-        auto x0 = make_var("x0", 1);  // x[0] = 1
-        auto x1 = make_var("x1", 1);  // x[1] = 1 (duplicate)
-        auto x2 = make_var("x2", 0);  // x[2] = 0
+        auto x0 = std::make_shared<Variable>("x0", Domain(1, 1));  // x[0] = 1
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 1));  // x[1] = 1 (duplicate)
+        auto x2 = std::make_shared<Variable>("x2", Domain(0, 0));  // x[2] = 0
         CircuitConstraint c({x0, x1, x2});
 
         // Duplicate value - should be initially inconsistent
@@ -902,9 +882,9 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
     }
 
     SECTION("not fully assigned") {
-        auto x0 = make_var("x0", 1);
-        auto x1 = make_var("x1", 0, 2);
-        auto x2 = make_var("x2", 0);
+        auto x0 = std::make_shared<Variable>("x0", Domain(1, 1));
+        auto x1 = std::make_shared<Variable>("x1", Domain(0, 2));
+        auto x2 = std::make_shared<Variable>("x2", Domain(0, 0));
         CircuitConstraint c({x0, x1, x2});
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -912,9 +892,9 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
 }
 
 TEST_CASE("CircuitConstraint pool management", "[constraint][circuit]") {
-    auto x0 = make_var("x0", 0, 2);
-    auto x1 = make_var("x1", 0, 2);
-    auto x2 = make_var("x2", 0, 2);
+    auto x0 = std::make_shared<Variable>("x0", Domain(0, 2));
+    auto x1 = std::make_shared<Variable>("x1", Domain(0, 2));
+    auto x2 = std::make_shared<Variable>("x2", Domain(0, 2));
     CircuitConstraint c({x0, x1, x2});
 
     SECTION("initial pool size") {
@@ -925,9 +905,9 @@ TEST_CASE("CircuitConstraint pool management", "[constraint][circuit]") {
 TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
     SECTION("valid circuit") {
         // Circuit: 0 -> 1 -> 2 -> 0
-        auto x0 = make_var("x0", 1);
-        auto x1 = make_var("x1", 2);
-        auto x2 = make_var("x2", 0);
+        auto x0 = std::make_shared<Variable>("x0", Domain(1, 1));
+        auto x1 = std::make_shared<Variable>("x1", Domain(2, 2));
+        auto x2 = std::make_shared<Variable>("x2", Domain(0, 0));
         CircuitConstraint c({x0, x1, x2});
 
         REQUIRE(c.on_final_instantiate() == true);
@@ -935,9 +915,9 @@ TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
 
     SECTION("valid circuit reversed") {
         // Circuit: 0 -> 2 -> 1 -> 0
-        auto x0 = make_var("x0", 2);
-        auto x1 = make_var("x1", 0);
-        auto x2 = make_var("x2", 1);
+        auto x0 = std::make_shared<Variable>("x0", Domain(2, 2));
+        auto x1 = std::make_shared<Variable>("x1", Domain(0, 0));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 1));
         CircuitConstraint c({x0, x1, x2});
 
         REQUIRE(c.on_final_instantiate() == true);
@@ -945,14 +925,11 @@ TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
 }
 
 TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
-    auto x0 = make_var("x0", 0, 2);
-    auto x1 = make_var("x1", 0, 2);
-    auto x2 = make_var("x2", 0, 2);
-    CircuitConstraint c({x0, x1, x2});
     Model model;
-    model.add_variable(x0);
-    model.add_variable(x1);
-    model.add_variable(x2);
+    auto x0 = model.create_variable("x0", 0, 2);
+    auto x1 = model.create_variable("x1", 0, 2);
+    auto x2 = model.create_variable("x2", 0, 2);
+    CircuitConstraint c({x0, x1, x2});
 
     REQUIRE(c.pool_size() == 3);
 
@@ -977,14 +954,11 @@ TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
 
 TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
     SECTION("subcircuit detected during instantiation") {
-        auto x0 = make_var("x0", 0, 2);
-        auto x1 = make_var("x1", 0, 2);
-        auto x2 = make_var("x2", 0, 2);
-        CircuitConstraint c({x0, x1, x2});
         Model model;
-        model.add_variable(x0);
-        model.add_variable(x1);
-        model.add_variable(x2);
+        auto x0 = model.create_variable("x0", 0, 2);
+        auto x1 = model.create_variable("x1", 0, 2);
+        auto x2 = model.create_variable("x2", 0, 2);
+        CircuitConstraint c({x0, x1, x2});
 
         // x[0] = 1: 0 -> 1
         model.instantiate(1, x0->id(), 1);
@@ -996,14 +970,11 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
     }
 
     SECTION("self-loop is subcircuit") {
-        auto x0 = make_var("x0", 0, 2);
-        auto x1 = make_var("x1", 0, 2);
-        auto x2 = make_var("x2", 0, 2);
-        CircuitConstraint c({x0, x1, x2});
         Model model;
-        model.add_variable(x0);
-        model.add_variable(x1);
-        model.add_variable(x2);
+        auto x0 = model.create_variable("x0", 0, 2);
+        auto x1 = model.create_variable("x1", 0, 2);
+        auto x2 = model.create_variable("x2", 0, 2);
+        CircuitConstraint c({x0, x1, x2});
 
         // x[0] = 0: self-loop, forms subcircuit of size 1
         model.instantiate(1, x0->id(), 0);
@@ -1016,9 +987,8 @@ TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 3; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 2);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         model.add_constraint(std::make_shared<CircuitConstraint>(vars));
@@ -1053,9 +1023,8 @@ TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 3; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 2);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         model.add_constraint(std::make_shared<CircuitConstraint>(vars));
@@ -1101,9 +1070,8 @@ TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 4; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 3));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 3);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         model.add_constraint(std::make_shared<CircuitConstraint>(vars));
@@ -1143,8 +1111,8 @@ TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
 // ============================================================================
 
 TEST_CASE("IntElementConstraint name", "[constraint][int_element]") {
-    auto index = make_var("index", 1, 3);
-    auto result = make_var("result", 10, 30);
+    auto index = std::make_shared<Variable>("index", Domain(1, 3));
+    auto result = std::make_shared<Variable>("result", Domain(10, 30));
     std::vector<Domain::value_type> array = {10, 20, 30};
     IntElementConstraint c(index, array, result);
 
@@ -1152,8 +1120,8 @@ TEST_CASE("IntElementConstraint name", "[constraint][int_element]") {
 }
 
 TEST_CASE("IntElementConstraint variables", "[constraint][int_element]") {
-    auto index = make_var("index", 1, 3);
-    auto result = make_var("result", 10, 30);
+    auto index = std::make_shared<Variable>("index", Domain(1, 3));
+    auto result = std::make_shared<Variable>("result", Domain(10, 30));
     std::vector<Domain::value_type> array = {10, 20, 30};
     IntElementConstraint c(index, array, result);
 
@@ -1166,8 +1134,8 @@ TEST_CASE("IntElementConstraint variables", "[constraint][int_element]") {
 TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
     SECTION("satisfied - 1-based index") {
         // array[1] = 10, array[2] = 20, array[3] = 30 (1-based)
-        auto index = make_var("index", 2);  // index = 2
-        auto result = make_var("result", 20);  // result = 20
+        auto index = std::make_shared<Variable>("index", Domain(2, 2));  // index = 2
+        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // result = 20
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1177,8 +1145,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
 
     SECTION("satisfied - 0-based index") {
         // array[0] = 10, array[1] = 20, array[2] = 30 (0-based)
-        auto index = make_var("index", 1);  // index = 1
-        auto result = make_var("result", 20);  // result = 20
+        auto index = std::make_shared<Variable>("index", Domain(1, 1));  // index = 1
+        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // result = 20
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result, true);  // zero_based = true
 
@@ -1187,8 +1155,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
     }
 
     SECTION("violated - value mismatch") {
-        auto index = make_var("index", 2);  // index = 2 -> array[1] = 20
-        auto result = make_var("result", 30);  // result = 30 (wrong)
+        auto index = std::make_shared<Variable>("index", Domain(2, 2));  // index = 2 -> array[1] = 20
+        auto result = std::make_shared<Variable>("result", Domain(30, 30));  // result = 30 (wrong)
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1197,8 +1165,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
     }
 
     SECTION("not fully assigned") {
-        auto index = make_var("index", 1, 3);
-        auto result = make_var("result", 20);
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(20, 20));
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1208,8 +1176,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
 
 TEST_CASE("IntElementConstraint on_final_instantiate", "[constraint][int_element]") {
     SECTION("satisfied") {
-        auto index = make_var("index", 1);  // index = 1 -> array[0] = 10
-        auto result = make_var("result", 10);
+        auto index = std::make_shared<Variable>("index", Domain(1, 1));  // index = 1 -> array[0] = 10
+        auto result = std::make_shared<Variable>("result", Domain(10, 10));
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1217,8 +1185,8 @@ TEST_CASE("IntElementConstraint on_final_instantiate", "[constraint][int_element
     }
 
     SECTION("violated") {
-        auto index = make_var("index", 1);  // index = 1 -> array[0] = 10
-        auto result = make_var("result", 20);  // wrong
+        auto index = std::make_shared<Variable>("index", Domain(1, 1));  // index = 1 -> array[0] = 10
+        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // wrong
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1228,8 +1196,8 @@ TEST_CASE("IntElementConstraint on_final_instantiate", "[constraint][int_element
 
 TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]") {
     SECTION("index out of range - too small") {
-        auto index = make_var("index", 0);  // 0 is out of range for 1-based
-        auto result = make_var("result", 10, 30);
+        auto index = std::make_shared<Variable>("index", Domain(0, 0));  // 0 is out of range for 1-based
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1237,8 +1205,8 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
     }
 
     SECTION("index out of range - too large") {
-        auto index = make_var("index", 4);  // 4 is out of range for array of size 3 (1-based)
-        auto result = make_var("result", 10, 30);
+        auto index = std::make_shared<Variable>("index", Domain(4, 4));  // 4 is out of range for array of size 3 (1-based)
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1246,8 +1214,8 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
     }
 
     SECTION("result value not in array") {
-        auto index = make_var("index", 1, 3);
-        auto result = make_var("result", 99);  // 99 is not in array
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(99, 99));  // 99 is not in array
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1255,8 +1223,8 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
     }
 
     SECTION("consistent initial state") {
-        auto index = make_var("index", 1, 3);
-        auto result = make_var("result", 10, 30);
+        auto index = std::make_shared<Variable>("index", Domain(1, 3));
+        auto result = std::make_shared<Variable>("result", Domain(10, 30));
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
@@ -1266,8 +1234,8 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
 
 TEST_CASE("IntElementConstraint rewind_to", "[constraint][int_element][trail]") {
     // IntElementConstraint has no state, so rewind_to is a no-op
-    auto index = make_var("index", 1, 3);
-    auto result = make_var("result", 10, 30);
+    auto index = std::make_shared<Variable>("index", Domain(1, 3));
+    auto result = std::make_shared<Variable>("result", Domain(10, 30));
     std::vector<Domain::value_type> array = {10, 20, 30};
     IntElementConstraint c(index, array, result);
 
@@ -1282,8 +1250,8 @@ TEST_CASE("IntElementConstraint rewind_to", "[constraint][int_element][trail]") 
 
 TEST_CASE("IntElementConstraint with duplicate values in array", "[constraint][int_element]") {
     // array = {10, 20, 10} - value 10 appears at indices 1 and 3 (1-based)
-    auto index = make_var("index", 1, 3);
-    auto result = make_var("result", 10);  // fixed to 10
+    auto index = std::make_shared<Variable>("index", Domain(1, 3));
+    auto result = std::make_shared<Variable>("result", Domain(10, 10));  // fixed to 10
     std::vector<Domain::value_type> array = {10, 20, 10};
     IntElementConstraint c(index, array, result);
 
@@ -1296,11 +1264,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 30} (1-based: array[1]=10, array[2]=20, array[3]=30)
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 10, 30);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1322,11 +1288,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 30}
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 10, 30);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1352,11 +1316,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 10} - value 10 appears twice
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(10, 20));
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 10, 20);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 10};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1382,11 +1344,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 30}, but result domain is {40, 50}
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(40, 50));
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 40, 50);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1401,11 +1361,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 30}, index fixed to 2
-        auto index = std::make_shared<Variable>("index", Domain(2, 2));  // fixed to 2
-        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+        auto index = model.create_variable("index", 2);  // fixed to 2
+        auto result = model.create_variable("result", 10, 30);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1422,11 +1380,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
         Model model;
 
         // array = {10, 20, 30}, result fixed to 20
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // fixed to 20
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 20);  // fixed to 20
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1444,11 +1400,9 @@ TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
 
         // array = {10, 20, 30}
         // index + result = 22 (only solution: index=2, result=20)
-        auto index = std::make_shared<Variable>("index", Domain(1, 3));
-        auto result = std::make_shared<Variable>("result", Domain(10, 30));
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 10, 30);
 
-        model.add_variable(index);
-        model.add_variable(result);
 
         std::vector<Domain::value_type> array = {10, 20, 30};
         model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
@@ -1471,11 +1425,9 @@ TEST_CASE("IntElementConstraint 0-based index", "[solver][int_element]") {
     Model model;
 
     // array = {10, 20, 30} (0-based: array[0]=10, array[1]=20, array[2]=30)
-    auto index = std::make_shared<Variable>("index", Domain(0, 2));
-    auto result = std::make_shared<Variable>("result", Domain(10, 30));
+    auto index = model.create_variable("index", 0, 2);
+    auto result = model.create_variable("result", 10, 30);
 
-    model.add_variable(index);
-    model.add_variable(result);
 
     std::vector<Domain::value_type> array = {10, 20, 30};
     model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result, true));  // zero_based = true
@@ -1502,9 +1454,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 3; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 2);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         // Fix x[0] = 1
@@ -1539,9 +1490,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 3; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 2);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         // Fix x[0] = 1, x[1] = 2 (forces x[2] = 0 for valid circuit)
@@ -1563,9 +1513,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         Model model;
         std::vector<VariablePtr> vars;
         for (int i = 0; i < 3; ++i) {
-            auto var = std::make_shared<Variable>("x" + std::to_string(i), Domain(0, 2));
+            auto var = model.create_variable("x" + std::to_string(i), 0, 2);
             vars.push_back(var);
-            model.add_variable(var);
         }
 
         // Fix x[0] = 1, x[1] = 0 (creates subcircuit 0 -> 1 -> 0)
@@ -1585,18 +1534,18 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
 // ============================================================================
 
 TEST_CASE("ArrayBoolAndConstraint name", "[constraint][array_bool_and]") {
-    auto b1 = make_var("b1", 0, 1);
-    auto b2 = make_var("b2", 0, 1);
-    auto r = make_var("r", 0, 1);
+    auto b1 = std::make_shared<Variable>("b1", Domain(0, 1));
+    auto b2 = std::make_shared<Variable>("b2", Domain(0, 1));
+    auto r = std::make_shared<Variable>("r", Domain(0, 1));
     ArrayBoolAndConstraint c({b1, b2}, r);
 
     REQUIRE(c.name() == "array_bool_and");
 }
 
 TEST_CASE("ArrayBoolAndConstraint variables", "[constraint][array_bool_and]") {
-    auto b1 = make_var("b1", 0, 1);
-    auto b2 = make_var("b2", 0, 1);
-    auto r = make_var("r", 0, 1);
+    auto b1 = std::make_shared<Variable>("b1", Domain(0, 1));
+    auto b2 = std::make_shared<Variable>("b2", Domain(0, 1));
+    auto r = std::make_shared<Variable>("r", Domain(0, 1));
     ArrayBoolAndConstraint c({b1, b2}, r);
 
     auto vars = c.variables();
@@ -1605,9 +1554,9 @@ TEST_CASE("ArrayBoolAndConstraint variables", "[constraint][array_bool_and]") {
 
 TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]") {
     SECTION("all true - r=1 satisfied") {
-        auto b1 = make_var("b1", 1);
-        auto b2 = make_var("b2", 1);
-        auto r = make_var("r", 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(1, 1));
+        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
+        auto r = std::make_shared<Variable>("r", Domain(1, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1615,9 +1564,9 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
     }
 
     SECTION("one false - r=0 satisfied") {
-        auto b1 = make_var("b1", 1);
-        auto b2 = make_var("b2", 0);
-        auto r = make_var("r", 0);
+        auto b1 = std::make_shared<Variable>("b1", Domain(1, 1));
+        auto b2 = std::make_shared<Variable>("b2", Domain(0, 0));
+        auto r = std::make_shared<Variable>("r", Domain(0, 0));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1625,9 +1574,9 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
     }
 
     SECTION("one false - r=1 not satisfied") {
-        auto b1 = make_var("b1", 1);
-        auto b2 = make_var("b2", 0);
-        auto r = make_var("r", 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(1, 1));
+        auto b2 = std::make_shared<Variable>("b2", Domain(0, 0));
+        auto r = std::make_shared<Variable>("r", Domain(1, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1635,9 +1584,9 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
     }
 
     SECTION("not all assigned - unknown") {
-        auto b1 = make_var("b1", 0, 1);
-        auto b2 = make_var("b2", 1);
-        auto r = make_var("r", 0, 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(0, 1));
+        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
+        auto r = std::make_shared<Variable>("r", Domain(0, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -1646,18 +1595,18 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
 
 TEST_CASE("ArrayBoolAndConstraint on_final_instantiate", "[constraint][array_bool_and]") {
     SECTION("all true - r=1") {
-        auto b1 = make_var("b1", 1);
-        auto b2 = make_var("b2", 1);
-        auto r = make_var("r", 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(1, 1));
+        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
+        auto r = std::make_shared<Variable>("r", Domain(1, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE(c.on_final_instantiate() == true);
     }
 
     SECTION("one false - r=0") {
-        auto b1 = make_var("b1", 0);
-        auto b2 = make_var("b2", 1);
-        auto r = make_var("r", 0);
+        auto b1 = std::make_shared<Variable>("b1", Domain(0, 0));
+        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
+        auto r = std::make_shared<Variable>("r", Domain(0, 0));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
         REQUIRE(c.on_final_instantiate() == true);
@@ -1667,15 +1616,11 @@ TEST_CASE("ArrayBoolAndConstraint on_final_instantiate", "[constraint][array_boo
 TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_and]") {
     SECTION("r=1 forces all bi=1") {
         Model model;
-        auto b1 = make_var("b1", 0, 1);
-        auto b2 = make_var("b2", 0, 1);
-        auto b3 = make_var("b3", 0, 1);
-        auto r = make_var("r", 1);  // r = 1 fixed
+        auto b1 = model.create_variable("b1", 0, 1);
+        auto b2 = model.create_variable("b2", 0, 1);
+        auto b3 = model.create_variable("b3", 0, 1);
+        auto r = model.create_variable("r", 1);  // r = 1 fixed
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(b3);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
             std::vector<VariablePtr>{b1, b2, b3}, r));
 
@@ -1691,15 +1636,11 @@ TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_
 
     SECTION("r=0, b1=b2=1 forces b3=0") {
         Model model;
-        auto b1 = make_var("b1", 1);  // fixed
-        auto b2 = make_var("b2", 1);  // fixed
-        auto b3 = make_var("b3", 0, 1);
-        auto r = make_var("r", 0);  // r = 0 fixed
+        auto b1 = model.create_variable("b1", 1);  // fixed
+        auto b2 = model.create_variable("b2", 1);  // fixed
+        auto b3 = model.create_variable("b3", 0, 1);
+        auto r = model.create_variable("r", 0);  // r = 0 fixed
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(b3);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
             std::vector<VariablePtr>{b1, b2, b3}, r));
 
@@ -1712,13 +1653,10 @@ TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_
 
     SECTION("all solutions enumeration") {
         Model model;
-        auto b1 = make_var("b1", 0, 1);
-        auto b2 = make_var("b2", 0, 1);
-        auto r = make_var("r", 0, 1);
+        auto b1 = model.create_variable("b1", 0, 1);
+        auto b2 = model.create_variable("b2", 0, 1);
+        auto r = model.create_variable("r", 0, 1);
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
             std::vector<VariablePtr>{b1, b2}, r));
 
@@ -1734,9 +1672,9 @@ TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_
 // ============================================================================
 
 TEST_CASE("ArrayBoolOrConstraint name", "[constraint][array_bool_or]") {
-    auto b1 = make_var("b1", 0, 1);
-    auto b2 = make_var("b2", 0, 1);
-    auto r = make_var("r", 0, 1);
+    auto b1 = std::make_shared<Variable>("b1", Domain(0, 1));
+    auto b2 = std::make_shared<Variable>("b2", Domain(0, 1));
+    auto r = std::make_shared<Variable>("r", Domain(0, 1));
     ArrayBoolOrConstraint c({b1, b2}, r);
 
     REQUIRE(c.name() == "array_bool_or");
@@ -1744,9 +1682,9 @@ TEST_CASE("ArrayBoolOrConstraint name", "[constraint][array_bool_or]") {
 
 TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
     SECTION("one true - r=1 satisfied") {
-        auto b1 = make_var("b1", 0);
-        auto b2 = make_var("b2", 1);
-        auto r = make_var("r", 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(0, 0));
+        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
+        auto r = std::make_shared<Variable>("r", Domain(1, 1));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1754,9 +1692,9 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
     }
 
     SECTION("all false - r=0 satisfied") {
-        auto b1 = make_var("b1", 0);
-        auto b2 = make_var("b2", 0);
-        auto r = make_var("r", 0);
+        auto b1 = std::make_shared<Variable>("b1", Domain(0, 0));
+        auto b2 = std::make_shared<Variable>("b2", Domain(0, 0));
+        auto r = std::make_shared<Variable>("r", Domain(0, 0));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1764,9 +1702,9 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
     }
 
     SECTION("all false - r=1 not satisfied") {
-        auto b1 = make_var("b1", 0);
-        auto b2 = make_var("b2", 0);
-        auto r = make_var("r", 1);
+        auto b1 = std::make_shared<Variable>("b1", Domain(0, 0));
+        auto b2 = std::make_shared<Variable>("b2", Domain(0, 0));
+        auto r = std::make_shared<Variable>("r", Domain(1, 1));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1777,13 +1715,10 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
 TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_or]") {
     SECTION("r=0 forces all bi=0") {
         Model model;
-        auto b1 = make_var("b1", 0, 1);
-        auto b2 = make_var("b2", 0, 1);
-        auto r = make_var("r", 0);  // r = 0 fixed
+        auto b1 = model.create_variable("b1", 0, 1);
+        auto b2 = model.create_variable("b2", 0, 1);
+        auto r = model.create_variable("r", 0);  // r = 0 fixed
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
             std::vector<VariablePtr>{b1, b2}, r));
 
@@ -1797,13 +1732,10 @@ TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_o
 
     SECTION("r=1, b1=0 forces b2=1 (2WL propagation)") {
         Model model;
-        auto b1 = make_var("b1", 0);  // fixed to 0
-        auto b2 = make_var("b2", 0, 1);
-        auto r = make_var("r", 1);  // r = 1 fixed
+        auto b1 = model.create_variable("b1", 0);  // fixed to 0
+        auto b2 = model.create_variable("b2", 0, 1);
+        auto r = model.create_variable("r", 1);  // r = 1 fixed
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
             std::vector<VariablePtr>{b1, b2}, r));
 
@@ -1816,13 +1748,10 @@ TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_o
 
     SECTION("all solutions enumeration") {
         Model model;
-        auto b1 = make_var("b1", 0, 1);
-        auto b2 = make_var("b2", 0, 1);
-        auto r = make_var("r", 0, 1);
+        auto b1 = model.create_variable("b1", 0, 1);
+        auto b2 = model.create_variable("b2", 0, 1);
+        auto r = model.create_variable("r", 0, 1);
 
-        model.add_variable(b1);
-        model.add_variable(b2);
-        model.add_variable(r);
         model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
             std::vector<VariablePtr>{b1, b2}, r));
 
@@ -1838,8 +1767,8 @@ TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_o
 // ============================================================================
 
 TEST_CASE("BoolClauseConstraint name", "[constraint][bool_clause]") {
-    auto p1 = make_var("p1", 0, 1);
-    auto n1 = make_var("n1", 0, 1);
+    auto p1 = std::make_shared<Variable>("p1", Domain(0, 1));
+    auto n1 = std::make_shared<Variable>("n1", Domain(0, 1));
     BoolClauseConstraint c({p1}, {n1});
 
     REQUIRE(c.name() == "bool_clause");
@@ -1848,8 +1777,8 @@ TEST_CASE("BoolClauseConstraint name", "[constraint][bool_clause]") {
 TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
     SECTION("positive literal true - satisfied") {
         // p1 ∨ ¬n1, p1=1 → satisfied
-        auto p1 = make_var("p1", 1);
-        auto n1 = make_var("n1", 1);
+        auto p1 = std::make_shared<Variable>("p1", Domain(1, 1));
+        auto n1 = std::make_shared<Variable>("n1", Domain(1, 1));
         BoolClauseConstraint c({p1}, {n1});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1858,8 +1787,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
 
     SECTION("negative literal false - satisfied") {
         // p1 ∨ ¬n1, p1=0, n1=0 → satisfied (because ¬n1 = true)
-        auto p1 = make_var("p1", 0);
-        auto n1 = make_var("n1", 0);
+        auto p1 = std::make_shared<Variable>("p1", Domain(0, 0));
+        auto n1 = std::make_shared<Variable>("n1", Domain(0, 0));
         BoolClauseConstraint c({p1}, {n1});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1868,8 +1797,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
 
     SECTION("all falsified - not satisfied") {
         // p1 ∨ ¬n1, p1=0, n1=1 → not satisfied
-        auto p1 = make_var("p1", 0);
-        auto n1 = make_var("n1", 1);
+        auto p1 = std::make_shared<Variable>("p1", Domain(0, 0));
+        auto n1 = std::make_shared<Variable>("n1", Domain(1, 1));
         BoolClauseConstraint c({p1}, {n1});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -1877,8 +1806,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
     }
 
     SECTION("undetermined") {
-        auto p1 = make_var("p1", 0, 1);
-        auto n1 = make_var("n1", 0, 1);
+        auto p1 = std::make_shared<Variable>("p1", Domain(0, 1));
+        auto n1 = std::make_shared<Variable>("n1", Domain(0, 1));
         BoolClauseConstraint c({p1}, {n1});
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -1889,9 +1818,8 @@ TEST_CASE("BoolClauseConstraint unit propagation", "[constraint][bool_clause]") 
     SECTION("single positive literal - forces true") {
         // p1 (clause with only positive), p1 must be 1
         Model model;
-        auto p1 = make_var("p1", 0, 1);
+        auto p1 = model.create_variable("p1", 0, 1);
 
-        model.add_variable(p1);
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{}));
 
@@ -1905,9 +1833,8 @@ TEST_CASE("BoolClauseConstraint unit propagation", "[constraint][bool_clause]") 
     SECTION("single negative literal - forces false") {
         // ¬n1 (clause with only negative), n1 must be 0
         Model model;
-        auto n1 = make_var("n1", 0, 1);
+        auto n1 = model.create_variable("n1", 0, 1);
 
-        model.add_variable(n1);
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{}, std::vector<VariablePtr>{n1}));
 
@@ -1921,13 +1848,10 @@ TEST_CASE("BoolClauseConstraint unit propagation", "[constraint][bool_clause]") 
     SECTION("2WL propagation - last unset literal") {
         // p1 ∨ p2 ∨ p3, p1=0, p2=0 → p3 must be 1
         Model model;
-        auto p1 = make_var("p1", 0);  // fixed to 0
-        auto p2 = make_var("p2", 0);  // fixed to 0
-        auto p3 = make_var("p3", 0, 1);
+        auto p1 = model.create_variable("p1", 0);  // fixed to 0
+        auto p2 = model.create_variable("p2", 0);  // fixed to 0
+        auto p3 = model.create_variable("p3", 0, 1);
 
-        model.add_variable(p1);
-        model.add_variable(p2);
-        model.add_variable(p3);
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{p1, p2, p3}, std::vector<VariablePtr>{}));
 
@@ -1941,13 +1865,10 @@ TEST_CASE("BoolClauseConstraint unit propagation", "[constraint][bool_clause]") 
     SECTION("mixed clause propagation") {
         // p1 ∨ ¬n1 ∨ ¬n2, p1=0, n1=1 → n2 must be 0
         Model model;
-        auto p1 = make_var("p1", 0);  // fixed to 0
-        auto n1 = make_var("n1", 1);  // fixed to 1 (so ¬n1=0)
-        auto n2 = make_var("n2", 0, 1);
+        auto p1 = model.create_variable("p1", 0);  // fixed to 0
+        auto n1 = model.create_variable("n1", 1);  // fixed to 1 (so ¬n1=0)
+        auto n2 = model.create_variable("n2", 0, 1);
 
-        model.add_variable(p1);
-        model.add_variable(n1);
-        model.add_variable(n2);
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{n1, n2}));
 
@@ -1974,9 +1895,8 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
     SECTION("conflicting clauses") {
         // p1 AND ¬p1 is unsatisfiable
         Model model;
-        auto p1 = make_var("p1", 0, 1);
+        auto p1 = model.create_variable("p1", 0, 1);
 
-        model.add_variable(p1);
         // clause 1: p1 (p1 must be true)
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{p1}, std::vector<VariablePtr>{}));
@@ -1993,11 +1913,9 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
     SECTION("all solutions for simple clause") {
         // p1 ∨ p2 has 3 solutions: (0,1), (1,0), (1,1)
         Model model;
-        auto p1 = make_var("p1", 0, 1);
-        auto p2 = make_var("p2", 0, 1);
+        auto p1 = model.create_variable("p1", 0, 1);
+        auto p2 = model.create_variable("p2", 0, 1);
 
-        model.add_variable(p1);
-        model.add_variable(p2);
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
             std::vector<VariablePtr>{p1, p2}, std::vector<VariablePtr>{}));
 
@@ -2011,13 +1929,10 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
         // (p1 ∨ p2) ∧ (¬p1 ∨ p3) ∧ (¬p2 ∨ ¬p3)
         // Solutions: (0,1,0), (1,0,1) = 2 solutions
         Model model;
-        auto p1 = make_var("p1", 0, 1);
-        auto p2 = make_var("p2", 0, 1);
-        auto p3 = make_var("p3", 0, 1);
+        auto p1 = model.create_variable("p1", 0, 1);
+        auto p2 = model.create_variable("p2", 0, 1);
+        auto p3 = model.create_variable("p3", 0, 1);
 
-        model.add_variable(p1);
-        model.add_variable(p2);
-        model.add_variable(p3);
 
         // p1 ∨ p2
         model.add_constraint(std::make_shared<BoolClauseConstraint>(
@@ -2041,9 +1956,9 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
 // ============================================================================
 
 TEST_CASE("ArrayIntMaximumConstraint name", "[constraint][array_int_maximum]") {
-    auto m = make_var("m", 1, 5);
-    auto x1 = make_var("x1", 1, 5);
-    auto x2 = make_var("x2", 1, 5);
+    auto m = std::make_shared<Variable>("m", Domain(1, 5));
+    auto x1 = std::make_shared<Variable>("x1", Domain(1, 5));
+    auto x2 = std::make_shared<Variable>("x2", Domain(1, 5));
     ArrayIntMaximumConstraint c(m, {x1, x2});
 
     REQUIRE(c.name() == "array_int_maximum");
@@ -2051,10 +1966,10 @@ TEST_CASE("ArrayIntMaximumConstraint name", "[constraint][array_int_maximum]") {
 
 TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maximum]") {
     SECTION("satisfied when m equals max") {
-        auto m = make_var("m", 3);
-        auto x1 = make_var("x1", 1);
-        auto x2 = make_var("x2", 3);
-        auto x3 = make_var("x3", 2);
+        auto m = std::make_shared<Variable>("m", Domain(3, 3));
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 1));
+        auto x2 = std::make_shared<Variable>("x2", Domain(3, 3));
+        auto x3 = std::make_shared<Variable>("x3", Domain(2, 2));
         ArrayIntMaximumConstraint c(m, {x1, x2, x3});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -2062,9 +1977,9 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
     }
 
     SECTION("not satisfied when m differs from max") {
-        auto m = make_var("m", 2);
-        auto x1 = make_var("x1", 1);
-        auto x2 = make_var("x2", 3);
+        auto m = std::make_shared<Variable>("m", Domain(2, 2));
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 1));
+        auto x2 = std::make_shared<Variable>("x2", Domain(3, 3));
         ArrayIntMaximumConstraint c(m, {x1, x2});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -2072,9 +1987,9 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
     }
 
     SECTION("undetermined when variables unassigned") {
-        auto m = make_var("m", 1, 5);
-        auto x1 = make_var("x1", 1, 5);
-        auto x2 = make_var("x2", 1, 5);
+        auto m = std::make_shared<Variable>("m", Domain(1, 5));
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 5));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 5));
         ArrayIntMaximumConstraint c(m, {x1, x2});
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -2084,15 +1999,11 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
 TEST_CASE("ArrayIntMaximumConstraint solver integration", "[constraint][array_int_maximum]") {
     SECTION("finds maximum value") {
         Model model;
-        auto m = make_var("m", 1, 10);
-        auto x1 = make_var("x1", 3);  // fixed
-        auto x2 = make_var("x2", 7);  // fixed
-        auto x3 = make_var("x3", 5);  // fixed
+        auto m = model.create_variable("m", 1, 10);
+        auto x1 = model.create_variable("x1", 3);  // fixed
+        auto x2 = model.create_variable("x2", 7);  // fixed
+        auto x3 = model.create_variable("x3", 5);  // fixed
 
-        model.add_variable(m);
-        model.add_variable(x1);
-        model.add_variable(x2);
-        model.add_variable(x3);
         model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2, x3}));
 
         Solver solver;
@@ -2104,13 +2015,10 @@ TEST_CASE("ArrayIntMaximumConstraint solver integration", "[constraint][array_in
 
     SECTION("propagates constraints correctly") {
         Model model;
-        auto m = make_var("m", 5);  // m fixed to 5
-        auto x1 = make_var("x1", 1, 10);
-        auto x2 = make_var("x2", 1, 10);
+        auto m = model.create_variable("m", 5);  // m fixed to 5
+        auto x1 = model.create_variable("x1", 1, 10);
+        auto x2 = model.create_variable("x2", 1, 10);
 
-        model.add_variable(m);
-        model.add_variable(x1);
-        model.add_variable(x2);
         model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
 
         Solver solver;
@@ -2127,13 +2035,10 @@ TEST_CASE("ArrayIntMaximumConstraint solver integration", "[constraint][array_in
 
     SECTION("detects unsatisfiable") {
         Model model;
-        auto m = make_var("m", 3);  // m fixed to 3
-        auto x1 = make_var("x1", 5, 10);  // x1 >= 5 > m
-        auto x2 = make_var("x2", 1, 2);
+        auto m = model.create_variable("m", 3);  // m fixed to 3
+        auto x1 = model.create_variable("x1", 5, 10);  // x1 >= 5 > m
+        auto x2 = model.create_variable("x2", 1, 2);
 
-        model.add_variable(m);
-        model.add_variable(x1);
-        model.add_variable(x2);
         model.add_constraint(std::make_shared<ArrayIntMaximumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
 
         Solver solver;
@@ -2148,9 +2053,9 @@ TEST_CASE("ArrayIntMaximumConstraint solver integration", "[constraint][array_in
 // ============================================================================
 
 TEST_CASE("ArrayIntMinimumConstraint name", "[constraint][array_int_minimum]") {
-    auto m = make_var("m", 1, 5);
-    auto x1 = make_var("x1", 1, 5);
-    auto x2 = make_var("x2", 1, 5);
+    auto m = std::make_shared<Variable>("m", Domain(1, 5));
+    auto x1 = std::make_shared<Variable>("x1", Domain(1, 5));
+    auto x2 = std::make_shared<Variable>("x2", Domain(1, 5));
     ArrayIntMinimumConstraint c(m, {x1, x2});
 
     REQUIRE(c.name() == "array_int_minimum");
@@ -2158,10 +2063,10 @@ TEST_CASE("ArrayIntMinimumConstraint name", "[constraint][array_int_minimum]") {
 
 TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_minimum]") {
     SECTION("satisfied when m equals min") {
-        auto m = make_var("m", 1);
-        auto x1 = make_var("x1", 1);
-        auto x2 = make_var("x2", 3);
-        auto x3 = make_var("x3", 2);
+        auto m = std::make_shared<Variable>("m", Domain(1, 1));
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 1));
+        auto x2 = std::make_shared<Variable>("x2", Domain(3, 3));
+        auto x3 = std::make_shared<Variable>("x3", Domain(2, 2));
         ArrayIntMinimumConstraint c(m, {x1, x2, x3});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -2169,9 +2074,9 @@ TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_mini
     }
 
     SECTION("not satisfied when m differs from min") {
-        auto m = make_var("m", 2);
-        auto x1 = make_var("x1", 1);
-        auto x2 = make_var("x2", 3);
+        auto m = std::make_shared<Variable>("m", Domain(2, 2));
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 1));
+        auto x2 = std::make_shared<Variable>("x2", Domain(3, 3));
         ArrayIntMinimumConstraint c(m, {x1, x2});
 
         REQUIRE(c.is_satisfied().has_value());
@@ -2182,15 +2087,11 @@ TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_mini
 TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_int_minimum]") {
     SECTION("finds minimum value") {
         Model model;
-        auto m = make_var("m", 1, 10);
-        auto x1 = make_var("x1", 3);  // fixed
-        auto x2 = make_var("x2", 7);  // fixed
-        auto x3 = make_var("x3", 5);  // fixed
+        auto m = model.create_variable("m", 1, 10);
+        auto x1 = model.create_variable("x1", 3);  // fixed
+        auto x2 = model.create_variable("x2", 7);  // fixed
+        auto x3 = model.create_variable("x3", 5);  // fixed
 
-        model.add_variable(m);
-        model.add_variable(x1);
-        model.add_variable(x2);
-        model.add_variable(x3);
         model.add_constraint(std::make_shared<ArrayIntMinimumConstraint>(m, std::vector<VariablePtr>{x1, x2, x3}));
 
         Solver solver;
@@ -2202,13 +2103,10 @@ TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_in
 
     SECTION("propagates constraints correctly") {
         Model model;
-        auto m = make_var("m", 5);  // m fixed to 5
-        auto x1 = make_var("x1", 1, 10);
-        auto x2 = make_var("x2", 1, 10);
+        auto m = model.create_variable("m", 5);  // m fixed to 5
+        auto x1 = model.create_variable("x1", 1, 10);
+        auto x2 = model.create_variable("x2", 1, 10);
 
-        model.add_variable(m);
-        model.add_variable(x1);
-        model.add_variable(x2);
         model.add_constraint(std::make_shared<ArrayIntMinimumConstraint>(m, std::vector<VariablePtr>{x1, x2}));
 
         Solver solver;
@@ -2229,9 +2127,9 @@ TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_in
 // ============================================================================
 
 TEST_CASE("IntTimesConstraint name", "[constraint][int_times]") {
-    auto x = make_var("x", 1, 5);
-    auto y = make_var("y", 1, 5);
-    auto z = make_var("z", 1, 25);
+    auto x = std::make_shared<Variable>("x", Domain(1, 5));
+    auto y = std::make_shared<Variable>("y", Domain(1, 5));
+    auto z = std::make_shared<Variable>("z", Domain(1, 25));
     IntTimesConstraint c(x, y, z);
 
     REQUIRE(c.name() == "int_times");
@@ -2239,9 +2137,9 @@ TEST_CASE("IntTimesConstraint name", "[constraint][int_times]") {
 
 TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
     SECTION("satisfied: 2 * 3 = 6") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
-        auto z = make_var("z", 6);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        auto z = std::make_shared<Variable>("z", Domain(6, 6));
         IntTimesConstraint c(x, y, z);
 
         auto satisfied = c.is_satisfied();
@@ -2250,9 +2148,9 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
     }
 
     SECTION("not satisfied: 2 * 3 != 5") {
-        auto x = make_var("x", 2);
-        auto y = make_var("y", 3);
-        auto z = make_var("z", 5);
+        auto x = std::make_shared<Variable>("x", Domain(2, 2));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        auto z = std::make_shared<Variable>("z", Domain(5, 5));
         IntTimesConstraint c(x, y, z);
 
         auto satisfied = c.is_satisfied();
@@ -2261,9 +2159,9 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
     }
 
     SECTION("unassigned") {
-        auto x = make_var("x", 1, 5);
-        auto y = make_var("y", 1, 5);
-        auto z = make_var("z", 1, 25);
+        auto x = std::make_shared<Variable>("x", Domain(1, 5));
+        auto y = std::make_shared<Variable>("y", Domain(1, 5));
+        auto z = std::make_shared<Variable>("z", Domain(1, 25));
         IntTimesConstraint c(x, y, z);
 
         REQUIRE_FALSE(c.is_satisfied().has_value());
@@ -2273,13 +2171,10 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
 TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
     SECTION("basic multiplication") {
         Model model;
-        auto x = make_var("x", 3);  // x = 3
-        auto y = make_var("y", 4);  // y = 4
-        auto z = make_var("z", 1, 20);  // z to be determined
+        auto x = model.create_variable("x", 3);  // x = 3
+        auto y = model.create_variable("y", 4);  // y = 4
+        auto z = model.create_variable("z", 1, 20);  // z to be determined
 
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2293,13 +2188,10 @@ TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
 
     SECTION("find factors") {
         Model model;
-        auto x = make_var("x", 1, 10);
-        auto y = make_var("y", 1, 10);
-        auto z = make_var("z", 12);  // z = 12
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto z = model.create_variable("z", 12);  // z = 12
 
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2315,13 +2207,10 @@ TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
 
     SECTION("multiplication by zero") {
         Model model;
-        auto x = make_var("x", 0);  // x = 0
-        auto y = make_var("y", 1, 5);
-        auto z = make_var("z", 0, 10);
+        auto x = model.create_variable("x", 0);  // x = 0
+        auto y = model.create_variable("y", 1, 5);
+        auto z = model.create_variable("z", 0, 10);
 
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2333,13 +2222,10 @@ TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
 
     SECTION("unsatisfiable") {
         Model model;
-        auto x = make_var("x", 2);  // x = 2
-        auto y = make_var("y", 3);  // y = 3
-        auto z = make_var("z", 5);  // z = 5, but 2 * 3 = 6
+        auto x = model.create_variable("x", 2);  // x = 2
+        auto y = model.create_variable("y", 3);  // y = 3
+        auto z = model.create_variable("z", 5);  // z = 5, but 2 * 3 = 6
 
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2350,13 +2236,10 @@ TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
 
     SECTION("negative numbers") {
         Model model;
-        auto x = make_var("x", -3);  // x = -3
-        auto y = make_var("y", 4);   // y = 4
-        auto z = make_var("z", -20, 20);
+        auto x = model.create_variable("x", -3);  // x = -3
+        auto y = model.create_variable("y", 4);   // y = 4
+        auto z = model.create_variable("z", -20, 20);
 
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2370,12 +2253,9 @@ TEST_CASE("IntTimesConstraint solver integration", "[constraint][int_times]") {
 TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
     SECTION("(+) * (+) = (+)") {
         Model model;
-        auto x = make_var("x", 3);
-        auto y = make_var("y", 4);
-        auto z = make_var("z", -100, 100);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", 3);
+        auto y = model.create_variable("y", 4);
+        auto z = model.create_variable("z", -100, 100);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2386,12 +2266,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("(+) * (-) = (-)") {
         Model model;
-        auto x = make_var("x", 3);
-        auto y = make_var("y", -4);
-        auto z = make_var("z", -100, 100);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", 3);
+        auto y = model.create_variable("y", -4);
+        auto z = model.create_variable("z", -100, 100);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2402,12 +2279,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("(-) * (+) = (-)") {
         Model model;
-        auto x = make_var("x", -3);
-        auto y = make_var("y", 4);
-        auto z = make_var("z", -100, 100);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", -3);
+        auto y = model.create_variable("y", 4);
+        auto z = model.create_variable("z", -100, 100);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2418,12 +2292,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("(-) * (-) = (+)") {
         Model model;
-        auto x = make_var("x", -3);
-        auto y = make_var("y", -4);
-        auto z = make_var("z", -100, 100);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", -3);
+        auto y = model.create_variable("y", -4);
+        auto z = model.create_variable("z", -100, 100);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2434,12 +2305,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("find factors of positive with negative range") {
         Model model;
-        auto x = make_var("x", -6, 6);
-        auto y = make_var("y", -6, 6);
-        auto z = make_var("z", 12);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", -6, 6);
+        auto y = model.create_variable("y", -6, 6);
+        auto z = model.create_variable("z", 12);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2453,12 +2321,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("find factors of negative with mixed range") {
         Model model;
-        auto x = make_var("x", -6, 6);
-        auto y = make_var("y", -6, 6);
-        auto z = make_var("z", -12);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", -6, 6);
+        auto y = model.create_variable("y", -6, 6);
+        auto z = model.create_variable("z", -12);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;
@@ -2472,12 +2337,9 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
 
     SECTION("zero with mixed range") {
         Model model;
-        auto x = make_var("x", -2, 2);
-        auto y = make_var("y", -2, 2);
-        auto z = make_var("z", 0);
-        model.add_variable(x);
-        model.add_variable(y);
-        model.add_variable(z);
+        auto x = model.create_variable("x", -2, 2);
+        auto y = model.create_variable("y", -2, 2);
+        auto z = model.create_variable("z", 0);
         model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
 
         Solver solver;

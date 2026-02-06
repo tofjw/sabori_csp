@@ -68,7 +68,7 @@ std::optional<bool> IntLinNeConstraint::is_satisfied() const {
     return sum != target_;
 }
 
-bool IntLinNeConstraint::propagate(Model& /*model*/) {
+bool IntLinNeConstraint::propagate(Model& model) {
     // int_lin_ne は bounds propagation が難しいため、
     // 特にアクティブな伝播は行わない
     return true;
@@ -168,7 +168,7 @@ void IntLinNeConstraint::rewind_to(int save_point) {
     }
 }
 
-bool IntLinNeConstraint::presolve(Model& /*model*/) {
+bool IntLinNeConstraint::presolve(Model& model) {
     // 全ての係数が0の場合: 0 != target
     if (vars_.empty()) {
         return target_ != 0;

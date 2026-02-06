@@ -1,0 +1,29 @@
+% Minimal reproduction of hitori bug
+% sabori_csp returns UNSAT, fzn-gecode finds a solution
+%
+% Bug: When X_INTRODUCED_576_ and X_INTRODUCED_614_ are not fixed,
+% the constraint propagation leads to an inconsistent state.
+%
+% Root cause: Interaction between array_var_int_element, int_lin_eq_reif,
+% and bool_clause constraints.
+%
+% To reproduce: Run both solvers on this file
+%   ./build/src/fzn/fzn_sabori tests/fzn/problems/hitori_bug_minimal.fzn
+%   fzn-gecode tests/fzn/problems/hitori_bug_minimal.fzn
+%
+% For now, this is the original hitori.fzn with solution constraints
+% for all variables EXCEPT X_INTRODUCED_576_ and X_INTRODUCED_614_.
+% A simpler reproduction is still being developed.
+
+% This file references the original hitori.fzn with specific constraints.
+% See docs-dev/work-log/2026-02-05.md for full investigation details.
+
+% Key finding:
+% - Excluding X_INTRODUCED_576_ and X_INTRODUCED_614_ from fixed solution → UNSAT
+% - Excluding either one alone → SAT
+% - The problem is in the interaction of these two index variables
+%   with the array_var_int_element self-referential constraint:
+%   array_var_int_element(X_INTRODUCED_576_, X_INTRODUCED_581_, X_INTRODUCED_576_)
+%   where X_INTRODUCED_581_[6] = X_INTRODUCED_614_
+
+solve satisfy;

@@ -55,21 +55,21 @@ std::optional<bool> ArrayIntMaximumConstraint::is_satisfied() const {
     return m_val == max_val;
 }
 
-bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
+bool ArrayIntMaximumConstraint::propagate(Model& model) {
     if (n_ == 0) {
         return false;  // 空配列は不正
     }
 
     // 1. 全 x[i] の最大値の最大値を計算 -> m.max
-    Domain::value_type max_of_max = x_[0]->max();
+    Domain::value_type max_of_max = model.var_max(x_[0]->id());
     for (size_t i = 1; i < n_; ++i) {
-        max_of_max = std::max(max_of_max, x_[i]->max());
+        max_of_max = std::max(max_of_max, model.var_max(x_[i]->id()));
     }
 
     // 2. 全 x[i] の最小値の最大値を計算 -> m.min
-    Domain::value_type max_of_min = x_[0]->min();
+    Domain::value_type max_of_min = model.var_min(x_[0]->id());
     for (size_t i = 1; i < n_; ++i) {
-        max_of_min = std::max(max_of_min, x_[i]->min());
+        max_of_min = std::max(max_of_min, model.var_min(x_[i]->id()));
     }
 
     // 3. m のドメインを絞る: max_of_min <= m <= max_of_max
@@ -84,12 +84,12 @@ bool ArrayIntMaximumConstraint::propagate(Model& /*model*/) {
     }
 
     // 4. 各 x[i].max を m.max 以下に絞る
-    auto m_max = m_->max();
+    auto m_max = model.var_max(m_->id());
     for (auto& var : x_) {
         auto x_values = var->domain().values();
         for (auto v : x_values) {
             if (v > m_max) {
-                if (!var->domain().remove(v)) {
+                if (!var->remove(v)) {
                     return false;
                 }
             }
@@ -131,7 +131,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
         for (auto& var : x_) {
             if (!var->is_assigned()) {
                 // x[i].max を m 以下に
-                auto var_max = var->max();
+                auto var_max = model.var_max(var->id());
                 if (var_max > value) {
                     model.enqueue_set_max(var->id(), value);
                 }
@@ -160,7 +160,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
             }
         } else {
             // m.min を更新
-            auto m_min = m_->min();
+            auto m_min = model.var_min(m_->id());
             if (m_min < value) {
                 model.enqueue_set_min(m_->id(), value);
             }
@@ -235,7 +235,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
             return false;
         } else if (other_max == m_val) {
             // last_var <= m_val であれば OK
-            auto var_max = last_var->max();
+            auto var_max = model.var_max(last_var->id());
             if (var_max > m_val) {
                 model.enqueue_set_max(last_var->id(), m_val);
             }

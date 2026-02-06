@@ -11,6 +11,8 @@
 
 namespace sabori_csp {
 
+class Model;  // forward declaration
+
 /**
  * @brief CSP変数を表すクラス
  */
@@ -38,6 +40,11 @@ public:
     void set_id(size_t id) { id_ = id; }
 
     /**
+     * @brief 所属Modelを設定（Modelから呼び出される）
+     */
+    void set_model(Model* model) { model_ = model; }
+
+    /**
      * @brief 変数名を取得
      */
     const std::string& name() const;
@@ -61,6 +68,18 @@ public:
     Domain::value_type max() const { return domain_.max().value(); }
 
     /**
+     * @brief 指定値に固定（Domain + SoA を更新）
+     * @return 成功したらtrue（値がドメインに存在する場合）
+     */
+    bool assign(Domain::value_type value);
+
+    /**
+     * @brief 値を除去（Domain + SoA を更新）
+     * @return 成功したらtrue（ドメインが空にならない場合）
+     */
+    bool remove(Domain::value_type value);
+
+    /**
      * @brief 値が割り当てられているか
      */
     bool is_assigned() const;
@@ -71,6 +90,9 @@ public:
     std::optional<Domain::value_type> assigned_value() const;
 
 private:
+    void sync_soa();  ///< Domain の状態を SoA に反映
+
+    Model* model_ = nullptr;
     size_t id_ = SIZE_MAX;
     std::string name_;
     Domain domain_;

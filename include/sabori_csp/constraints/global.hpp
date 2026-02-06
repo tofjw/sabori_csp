@@ -921,7 +921,7 @@ private:
     /**
      * @brief result の bounds support を再計算
      */
-    void recompute_bounds_support();
+    void recompute_bounds_support(Model& model);
 };
 
 } // namespace sabori_csp
