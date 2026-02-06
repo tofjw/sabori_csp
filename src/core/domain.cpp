@@ -5,26 +5,33 @@
 namespace sabori_csp {
 
 Domain::Domain()
-    : n_(0)
+    : offset_(0)
+    , n_(0)
     , min_(std::numeric_limits<value_type>::max())
     , max_(std::numeric_limits<value_type>::min()) {}
 
 Domain::Domain(value_type min, value_type max)
-    : n_(0)
+    : offset_(min)
+    , n_(0)
     , min_(min)
     , max_(max) {
     if (min > max) {
+        offset_ = 0;
         return;
     }
+    size_t range = static_cast<size_t>(max - min + 1);
+    sparse_.assign(range, SIZE_MAX);
+    values_.reserve(range);
     for (value_type v = min; v <= max; ++v) {
-        sparse_[v] = values_.size();
+        sparse_[static_cast<size_t>(v - offset_)] = values_.size();
         values_.push_back(v);
     }
     n_ = values_.size();
 }
 
 Domain::Domain(std::vector<value_type> values)
-    : n_(0)
+    : offset_(0)
+    , n_(0)
     , min_(std::numeric_limits<value_type>::max())
     , max_(std::numeric_limits<value_type>::min()) {
     if (values.empty()) {
@@ -36,46 +43,28 @@ Domain::Domain(std::vector<value_type> values)
 
     values_ = std::move(values);
     n_ = values_.size();
-    for (size_t i = 0; i < n_; ++i) {
-        sparse_[values_[i]] = i;
-    }
     min_ = values_.front();
     max_ = values_.back();
-}
+    offset_ = min_;
 
-bool Domain::empty() const {
-    return n_ == 0;
-}
-
-size_t Domain::size() const {
-    return n_;
-}
-
-std::optional<Domain::value_type> Domain::min() const {
-    if (n_ == 0) {
-        return std::nullopt;
+    size_t range = static_cast<size_t>(max_ - offset_ + 1);
+    sparse_.assign(range, SIZE_MAX);
+    for (size_t i = 0; i < n_; ++i) {
+        sparse_[static_cast<size_t>(values_[i] - offset_)] = i;
     }
-    return min_;
-}
-
-std::optional<Domain::value_type> Domain::max() const {
-    if (n_ == 0) {
-        return std::nullopt;
-    }
-    return max_;
 }
 
 bool Domain::contains(value_type value) const {
-    auto it = sparse_.find(value);
-    if (it == sparse_.end()) {
+    auto idx_val = static_cast<size_t>(value - offset_);
+    if (value < offset_ || idx_val >= sparse_.size()) {
         return false;
     }
-    return it->second < n_;
+    return sparse_[idx_val] < n_;
 }
 
 bool Domain::remove(value_type value) {
-    auto it = sparse_.find(value);
-    if (it == sparse_.end() || it->second >= n_) {
+    auto idx_val = static_cast<size_t>(value - offset_);
+    if (value < offset_ || idx_val >= sparse_.size() || sparse_[idx_val] >= n_) {
         return true;  // 元々存在しない → 成功（変更なし）
     }
 
@@ -84,7 +73,7 @@ bool Domain::remove(value_type value) {
         return false;
     }
 
-    size_t idx = it->second;
+    size_t idx = sparse_[idx_val];
     swap_at(idx, n_ - 1);
     --n_;
 
@@ -96,12 +85,12 @@ bool Domain::remove(value_type value) {
 }
 
 bool Domain::assign(value_type value) {
-    auto it = sparse_.find(value);
-    if (it == sparse_.end() || it->second >= n_) {
+    auto idx_val = static_cast<size_t>(value - offset_);
+    if (value < offset_ || idx_val >= sparse_.size() || sparse_[idx_val] >= n_) {
         return false;
     }
 
-    size_t idx = it->second;
+    size_t idx = sparse_[idx_val];
     swap_at(idx, 0);
     n_ = 1;
     min_ = value;
@@ -113,10 +102,6 @@ std::vector<Domain::value_type> Domain::values() const {
     return std::vector<value_type>(values_.begin(), values_.begin() + n_);
 }
 
-bool Domain::is_singleton() const {
-    return n_ == 1;
-}
-
 std::vector<Domain::value_type>& Domain::values_ref() {
     return values_;
 }
@@ -125,16 +110,16 @@ const std::vector<Domain::value_type>& Domain::values_ref() const {
     return values_;
 }
 
-std::unordered_map<Domain::value_type, size_t>& Domain::sparse_ref() {
-    return sparse_;
-}
-
-const std::unordered_map<Domain::value_type, size_t>& Domain::sparse_ref() const {
-    return sparse_;
-}
-
-size_t Domain::n() const {
-    return n_;
+size_t Domain::index_of(value_type val) const {
+    auto idx_val = static_cast<size_t>(val - offset_);
+    if (val < offset_ || idx_val >= sparse_.size()) {
+        return SIZE_MAX;
+    }
+    size_t idx = sparse_[idx_val];
+    if (idx >= n_) {
+        return SIZE_MAX;
+    }
+    return idx;
 }
 
 void Domain::set_n(size_t n) {
@@ -155,8 +140,8 @@ void Domain::swap_at(size_t i, size_t j) {
     value_type vj = values_[j];
     values_[i] = vj;
     values_[j] = vi;
-    sparse_[vi] = j;
-    sparse_[vj] = i;
+    sparse_[static_cast<size_t>(vi - offset_)] = j;
+    sparse_[static_cast<size_t>(vj - offset_)] = i;
 }
 
 void Domain::update_bounds() {
@@ -166,11 +151,20 @@ void Domain::update_bounds() {
         return;
     }
 
-    min_ = values_[0];
-    max_ = values_[0];
-    for (size_t i = 1; i < n_; ++i) {
-        if (values_[i] < min_) min_ = values_[i];
-        if (values_[i] > max_) max_ = values_[i];
+    // Forward scan from offset to find new min
+    for (size_t i = 0; i < sparse_.size(); ++i) {
+        if (sparse_[i] < n_) {
+            min_ = static_cast<value_type>(i) + offset_;
+            break;
+        }
+    }
+
+    // Backward scan from end to find new max
+    for (size_t i = sparse_.size(); i > 0; --i) {
+        if (sparse_[i - 1] < n_) {
+            max_ = static_cast<value_type>(i - 1) + offset_;
+            break;
+        }
     }
 }
 

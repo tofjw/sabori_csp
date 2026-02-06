@@ -6,10 +6,10 @@
 #define SABORI_CSP_DOMAIN_HPP
 
 #include <vector>
-#include <unordered_map>
 #include <optional>
 #include <cstdint>
 #include <algorithm>
+#include <limits>
 
 namespace sabori_csp {
 
@@ -18,6 +18,7 @@ namespace sabori_csp {
  *
  * Sparse Set を使用し、O(1) での値の存在確認と削除を実現する。
  * バックトラック時の復元は size (n_) のリセットのみで O(1)。
+ * Sparse 配列はフラット vector（offset ベース）で高速ルックアップ。
  */
 class Domain {
 public:
@@ -44,22 +45,22 @@ public:
     /**
      * @brief 定義域が空かどうか
      */
-    bool empty() const;
+    bool empty() const { return n_ == 0; }
 
     /**
      * @brief 定義域のサイズを取得
      */
-    size_t size() const;
+    size_t size() const { return n_; }
 
     /**
      * @brief 最小値を取得
      */
-    std::optional<value_type> min() const;
+    std::optional<value_type> min() const { return n_ == 0 ? std::nullopt : std::optional<value_type>(min_); }
 
     /**
      * @brief 最大値を取得
      */
-    std::optional<value_type> max() const;
+    std::optional<value_type> max() const { return n_ == 0 ? std::nullopt : std::optional<value_type>(max_); }
 
     /**
      * @brief 値が定義域に含まれるか
@@ -86,7 +87,7 @@ public:
     /**
      * @brief 単一値に固定されているか
      */
-    bool is_singleton() const;
+    bool is_singleton() const { return n_ == 1; }
 
     // ===== Sparse Set 内部アクセス（Model からの操作用） =====
 
@@ -97,15 +98,24 @@ public:
     const std::vector<value_type>& values_ref() const;
 
     /**
-     * @brief Sparse マップへの参照を取得
+     * @brief 値のインデックスを返す（無ければ SIZE_MAX）
      */
-    std::unordered_map<value_type, size_t>& sparse_ref();
-    const std::unordered_map<value_type, size_t>& sparse_ref() const;
+    size_t index_of(value_type val) const;
+
+    /**
+     * @brief Dense 配列の有効範囲の先頭ポインタ
+     */
+    const value_type* begin() const { return values_.data(); }
+
+    /**
+     * @brief Dense 配列の有効範囲の末尾ポインタ
+     */
+    const value_type* end() const { return values_.data() + n_; }
 
     /**
      * @brief 有効サイズ (n_) を取得
      */
-    size_t n() const;
+    size_t n() const { return n_; }
 
     /**
      * @brief 有効サイズを設定（バックトラック用）
@@ -134,10 +144,11 @@ public:
 
 private:
     std::vector<value_type> values_;  // Dense 配列
-    std::unordered_map<value_type, size_t> sparse_;  // 値 → インデックス
-    size_t n_;  // 有効な値の数
-    value_type min_;  // キャッシュ
-    value_type max_;  // キャッシュ
+    std::vector<size_t> sparse_;      // フラット sparse 配列（sparse_[val - offset_] = index）
+    value_type offset_;               // = 初期 min 値
+    size_t n_;                        // 有効な値の数
+    value_type min_;                  // キャッシュ
+    value_type max_;                  // キャッシュ
 };
 
 } // namespace sabori_csp

@@ -8,7 +8,6 @@
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/constraint.hpp"
 #include <vector>
-#include <deque>
 #include <map>
 #include <string>
 #include <variant>
@@ -167,12 +166,12 @@ public:
     /**
      * @brief 変数が単一値に固定されているか
      */
-    bool is_instantiated(size_t var_idx) const;
+    bool is_instantiated(size_t var_idx) const { return sizes_[var_idx] == 1; }
 
     /**
      * @brief 変数の値を取得（固定されている場合）
      */
-    Domain::value_type value(size_t var_idx) const;
+    Domain::value_type value(size_t var_idx) const { return mins_[var_idx]; }
 
     /**
      * @brief 変数のドメインに値が含まれるか
@@ -284,12 +283,12 @@ public:
     /**
      * @brief 保留中の更新操作があるか
      */
-    bool has_pending_updates() const;
+    bool has_pending_updates() const { return pending_read_idx_ < pending_updates_.size(); }
 
     /**
      * @brief 保留中の更新操作を1つ取り出す
      */
-    PendingUpdate pop_pending_update();
+    PendingUpdate pop_pending_update() { return pending_updates_[pending_read_idx_++]; }
 
     /**
      * @brief 保留中の更新操作をクリア
@@ -318,7 +317,11 @@ private:
     std::vector<int> last_saved_level_;
 
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
-    std::deque<PendingUpdate> pending_updates_;
+    std::vector<PendingUpdate> pending_updates_;
+    size_t pending_read_idx_ = 0;
+
+    // 制約 raw ポインタ配列（shared_ptr デリファレンス回避）
+    std::vector<Constraint*> constraint_ptrs_;
 
     // 制約ウォッチリスト: 各変数に関連する制約のリスト
     std::vector<std::vector<size_t>> var_to_constraint_indices_;

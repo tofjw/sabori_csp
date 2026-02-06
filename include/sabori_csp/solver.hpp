@@ -79,14 +79,6 @@ struct NoGood {
 };
 
 /**
- * @brief 部分解（良い割り当て）
- */
-struct PartialAssignment {
-    size_t num_instantiated;
-    std::unordered_map<size_t, Domain::value_type> assignments;  // var_idx -> value
-};
-
-/**
  * @brief ソルバー統計情報
  */
 struct SolverStats {
@@ -333,10 +325,10 @@ private:
     std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_watches_;
     static constexpr size_t max_nogoods_ = 100000;
 
-    // 部分解
-    std::vector<PartialAssignment> best_assignments_;
+    // 部分解（最良の1つだけ保持）
+    size_t best_num_instantiated_ = 0;
+    std::unordered_map<size_t, Domain::value_type> best_assignment_;
     std::unordered_map<size_t, Domain::value_type> current_best_assignment_;
-    static constexpr size_t max_best_assignments_ = 100;
 
     // リスタート
     double initial_conflict_limit_ = 5.0;

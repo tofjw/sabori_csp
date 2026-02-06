@@ -82,12 +82,17 @@ public:
     /**
      * @brief 値が割り当てられているか
      */
-    bool is_assigned() const;
+    bool is_assigned() const { return domain_.is_singleton(); }
 
     /**
      * @brief 割り当てられた値を取得
      */
-    std::optional<Domain::value_type> assigned_value() const;
+    std::optional<Domain::value_type> assigned_value() const {
+        if (domain_.is_singleton()) {
+            return domain_.min();
+        }
+        return std::nullopt;
+    }
 
 private:
     void sync_soa();  ///< Domain の状態を SoA に反映

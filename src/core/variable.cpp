@@ -40,15 +40,4 @@ void Variable::sync_soa() {
     sizes[id_] = domain_.size();
 }
 
-bool Variable::is_assigned() const {
-    return domain_.is_singleton();
-}
-
-std::optional<Domain::value_type> Variable::assigned_value() const {
-    if (is_assigned()) {
-        return min();
-    }
-    return std::nullopt;
-}
-
 } // namespace sabori_csp

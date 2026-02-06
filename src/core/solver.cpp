@@ -32,7 +32,8 @@ std::optional<Solution> Solver::solve(Model& model) {
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
-    best_assignments_.clear();
+    best_num_instantiated_ = 0;
+    best_assignment_.clear();
     current_best_assignment_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
@@ -146,10 +147,11 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
                 outer_limit += 1.0;
             } else {
                 // コンフリクト制限を増加
-                inner_limit *= conflict_limit_multiplier_;
+	        // inner_limit *= conflict_limit_multiplier_;
+	        inner_limit *= 1.01;
 
                 if (inner_limit > outer_limit) {
-                    outer_limit *= 1.001;
+                    outer_limit *= 1.01;
                     inner_limit = initial_conflict_limit_;
                 }
             }
@@ -214,8 +216,9 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     auto prev_min = model.var_min(var_idx);
     auto prev_max = model.var_max(var_idx);
 
-    // 値を試行順序で取得
-    auto values = variables[var_idx]->domain().values();
+    // 値を試行順序で取得（begin/end でコピーコスト削減）
+    auto& domain = variables[var_idx]->domain();
+    std::vector<Domain::value_type> values(domain.begin(), domain.end());
 
     // ハッシュ順でソート（値の試行順序にばらつきを持たせる）
     uint64_t hash_seed = static_cast<uint64_t>(var_idx) ^ static_cast<uint64_t>(conflict_limit);
@@ -225,13 +228,12 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
         return ha < hb;
     });
 
-    // 保存された値がある場合は優先
+    // 保存された値がある場合は優先（先頭と swap で O(1)）
     if (current_best_assignment_.count(var_idx)) {
         auto best_val = current_best_assignment_[var_idx];
         auto it = std::find(values.begin(), values.end(), best_val);
-        if (it != values.end()) {
-            values.erase(it);
-            values.insert(values.begin(), best_val);
+        if (it != values.end() && it != values.begin()) {
+            std::swap(*it, values[0]);
         }
     }
 
@@ -295,7 +297,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 
     // NoGood 記録
-    if (nogood_learning_ && decision_trail_.size() >= 2) {
+    if (nogood_learning_ && decision_trail_.size() >= 2 && decision_trail_.size() < 50) {
         add_nogood(decision_trail_);
         for (const auto& lit : decision_trail_) {
             activity_[lit.var_idx] += 1.0 / decision_trail_.size();
@@ -458,7 +460,7 @@ size_t Solver::select_variable(const Model& model) {
     std::vector<size_t> candidates;
     candidates.reserve(variables.size());
     for (size_t i = 0; i < variables.size(); ++i) {
-        if (!variables[i]->is_assigned()) {
+        if (!model.is_instantiated(i)) {
             candidates.push_back(i);
         }
     }
@@ -480,7 +482,7 @@ size_t Solver::select_variable(const Model& model) {
         double act = activity_[i];
 
         bool better = false;
-        if (activity_first_) {
+        if (1 || activity_first_) {
             // Activity 優先: Activity が高いものを優先、同じなら MRV
             if (act > best_activity) {
                 better = true;
@@ -741,100 +743,33 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
 }
 
 void Solver::save_partial_assignment(const Model& model) {
-    const auto& variables = model.variables();
+    size_t n_vars = model.variables().size();
 
-    std::unordered_map<size_t, Domain::value_type> assignment;
-    for (size_t i = 0; i < variables.size(); ++i) {
-        if (variables[i]->is_assigned()) {
-            assignment[i] = variables[i]->assigned_value().value();
+    // カウントのみで判定（map 構築不要なケースを高速スキップ）
+    size_t num_instantiated = 0;
+    for (size_t i = 0; i < n_vars; ++i) {
+        if (model.is_instantiated(i)) {
+            ++num_instantiated;
         }
     }
 
-    size_t num_instantiated = assignment.size();
-
-    // 閾値チェック
-    if (!best_assignments_.empty()) {
-        size_t max_num = 0;
-        for (const auto& pa : best_assignments_) {
-            max_num = std::max(max_num, pa.num_instantiated);
-        }
-        if (num_instantiated < max_num * 0.9) {
-            return;
-        }
+    if (num_instantiated <= best_num_instantiated_) {
+        return;
     }
 
-    // 同じ割り当てがあるかチェック
-    for (auto& pa : best_assignments_) {
-        if (pa.assignments == assignment) {
-            if (num_instantiated > pa.num_instantiated) {
-                pa.num_instantiated = num_instantiated;
-            }
-            return;
+    // 前回より多い → 置き換え（未 instantiate の変数は前回の値を引き継ぐ）
+    best_num_instantiated_ = num_instantiated;
+    for (size_t i = 0; i < n_vars; ++i) {
+        if (model.is_instantiated(i)) {
+            best_assignment_[i] = model.value(i);
+        } else {
+            // 前回の保存値がなければ何もしない（エントリを追加しない）
         }
-    }
-
-    best_assignments_.push_back({num_instantiated, assignment});
-
-    // 上限管理
-    if (best_assignments_.size() > max_best_assignments_) {
-        // Activity 合計が最小のものを削除
-        auto worst = std::min_element(best_assignments_.begin(), best_assignments_.end(),
-                                       [this](const auto& a, const auto& b) {
-                                           double sum_a = 0, sum_b = 0;
-                                           for (const auto& [idx, _] : a.assignments) {
-                                               if (idx < activity_.size()) {
-                                                   sum_a += activity_[idx];
-                                               }
-                                           }
-                                           for (const auto& [idx, _] : b.assignments) {
-                                               if (idx < activity_.size()) {
-                                                   sum_b += activity_[idx];
-                                               }
-                                           }
-                                           return sum_a < sum_b;
-                                       });
-        best_assignments_.erase(worst);
     }
 }
 
 std::unordered_map<size_t, Domain::value_type> Solver::select_best_assignment() {
-    if (best_assignments_.empty()) {
-        return {};
-    }
-
-    if (best_assignments_.size() < 2) {
-        return best_assignments_[0].assignments;
-    }
-
-    // Activity 合計で上位2つを選択
-    std::vector<std::pair<size_t, double>> scored;
-    for (size_t i = 0; i < best_assignments_.size(); ++i) {
-        double sum = 0;
-        for (const auto& [idx, _] : best_assignments_[i].assignments) {
-            if (idx < activity_.size()) {
-                sum += activity_[idx];
-            }
-        }
-        scored.emplace_back(i, sum);
-    }
-    std::sort(scored.begin(), scored.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
-
-    size_t idx1 = scored[0].first;
-    size_t idx2 = scored.size() > 1 ? scored[1].first : idx1;
-
-    const auto& parent1 = best_assignments_[idx1].assignments;
-    const auto& parent2 = best_assignments_[idx2].assignments;
-
-    // GA風クロスオーバー: parent1 をベースに parent2 から補完
-    std::unordered_map<size_t, Domain::value_type> child = parent1;
-    for (const auto& [idx, val] : parent2) {
-        if (child.find(idx) == child.end()) {
-            child[idx] = val;
-        }
-    }
-
-    return child;
+    return best_assignment_;
 }
 
 bool Solver::process_queue(Model& model) {

@@ -44,6 +44,7 @@ size_t Model::add_variable(VariablePtr var) {
 
 void Model::add_constraint(ConstraintPtr constraint) {
     constraint->set_model_index(constraints_.size());
+    constraint_ptrs_.push_back(constraint.get());
     constraints_.push_back(std::move(constraint));
 }
 
@@ -92,17 +93,6 @@ const std::vector<size_t>& Model::sizes() const {
 
 std::vector<size_t>& Model::sizes() {
     return sizes_;
-}
-
-bool Model::is_instantiated(size_t var_idx) const {
-    return sizes_[var_idx] == 1;
-}
-
-Domain::value_type Model::value(size_t var_idx) const {
-    if (!is_instantiated(var_idx)) {
-        throw std::runtime_error("Variable is not instantiated");
-    }
-    return mins_[var_idx];
 }
 
 bool Model::contains(size_t var_idx, Domain::value_type val) const {
@@ -206,18 +196,14 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
 bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val) {
     auto& domain = variables_[var_idx]->domain();
-    auto& sparse = domain.sparse_ref();
-    auto it = sparse.find(val);
+    size_t idx = domain.index_of(val);
 
-    if (it == sparse.end() || it->second >= domain.n()) {
+    if (idx == SIZE_MAX) {
         return true;  // 既に無い
     }
 
-    bool was_singleton = (domain.n() == 1);
-
     save_var_state(save_point, var_idx);
 
-    size_t idx = it->second;
     domain.swap_at(idx, domain.n() - 1);
     size_t new_n = domain.n() - 1;
     domain.set_n(new_n);
@@ -230,8 +216,8 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
     // min/max の更新が必要な場合
     if (val == mins_[var_idx] || val == maxs_[var_idx]) {
         domain.update_bounds();
-        mins_[var_idx] = variables_[var_idx]->min();
-        maxs_[var_idx] = variables_[var_idx]->max();
+        mins_[var_idx] = domain.min().value();
+        maxs_[var_idx] = domain.max().value();
     }
     sizes_[var_idx] = new_n;
 
@@ -240,18 +226,14 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
 
 bool Model::instantiate(int save_point, size_t var_idx, Domain::value_type val) {
     auto& domain = variables_[var_idx]->domain();
-    auto& sparse = domain.sparse_ref();
-    auto it = sparse.find(val);
+    size_t idx = domain.index_of(val);
 
-    // TODO: min <= val && val <= min であることを先に確認する
-
-    if (it == sparse.end() || it->second >= domain.n()) {
+    if (idx == SIZE_MAX) {
         return false;  // ドメインに無い
     }
 
     save_var_state(save_point, var_idx);
 
-    size_t idx = it->second;
     domain.swap_at(idx, 0);
     domain.set_n(1);
     domain.set_min_cache(val);
@@ -302,7 +284,7 @@ void Model::rewind_dirty_constraints(int save_point) {
     while (!dirty_constraint_trail_.empty() &&
            dirty_constraint_trail_.back().first > save_point) {
         size_t c_idx = dirty_constraint_trail_.back().second;
-        constraints_[c_idx]->rewind_to(save_point);
+        constraint_ptrs_[c_idx]->rewind_to(save_point);
         dirty_constraint_trail_.pop_back();
     }
 }
@@ -344,18 +326,9 @@ void Model::enqueue_remove_value(size_t var_idx, Domain::value_type value) {
     pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
 }
 
-bool Model::has_pending_updates() const {
-    return !pending_updates_.empty();
-}
-
-PendingUpdate Model::pop_pending_update() {
-    auto update = pending_updates_.front();
-    pending_updates_.pop_front();
-    return update;
-}
-
 void Model::clear_pending_updates() {
     pending_updates_.clear();
+    pending_read_idx_ = 0;
 }
 
 void Model::build_constraint_watch_list() {
