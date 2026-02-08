@@ -147,17 +147,10 @@ bool IntLinEqConstraint::presolve(Model& model) {
                 }
             }
 
-            // 直接ドメインを修正
+            // 一括除去で高速にドメインを修正
             if (new_min > cur_min) {
                 if (new_min > cur_max) return false;
-                auto vals = vars_[j]->domain().values();
-                for (auto v : vals) {
-                    if (v < new_min) {
-                        if (!vars_[j]->remove(v)) {
-                            return false;
-                        }
-                    }
-                }
+                if (!vars_[j]->remove_below(new_min)) return false;
                 auto new_cur_min = vars_[j]->min();
                 if (c >= 0) {
                     total_min += c * (new_cur_min - cur_min);
@@ -169,14 +162,7 @@ bool IntLinEqConstraint::presolve(Model& model) {
             if (new_max < cur_max) {
                 auto cur_min_after = vars_[j]->min();
                 if (new_max < cur_min_after) return false;
-                auto vals = vars_[j]->domain().values();
-                for (auto v : vals) {
-                    if (v > new_max) {
-                        if (!vars_[j]->remove(v)) {
-                            return false;
-                        }
-                    }
-                }
+                if (!vars_[j]->remove_above(new_max)) return false;
                 auto new_cur_max = vars_[j]->max();
                 if (c >= 0) {
                     total_max += c * (new_cur_max - cur_max);

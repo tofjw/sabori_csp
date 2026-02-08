@@ -70,27 +70,13 @@ bool ArrayIntMinimumConstraint::presolve(Model& model) {
     }
 
     // 3. m のドメインを絞る: min_of_min <= m <= min_of_max
-    auto& m_domain = m_->domain();
-    auto m_values = m_domain.values();
-    for (auto v : m_values) {
-        if (v < min_of_min || v > min_of_max) {
-            if (!m_domain.remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!m_->remove_below(min_of_min)) return false;
+    if (!m_->remove_above(min_of_max)) return false;
 
     // 4. 各 x[i].min を m.min 以上に絞る
     auto m_min = model.var_min(m_->id());
     for (auto& var : x_) {
-        auto x_values = var->domain().values();
-        for (auto v : x_values) {
-            if (v < m_min) {
-                if (!var->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!var->remove_below(m_min)) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある

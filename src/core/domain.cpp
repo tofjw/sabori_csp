@@ -55,8 +55,9 @@ Domain::Domain(std::vector<value_type> values)
 }
 
 bool Domain::contains(value_type value) const {
+    if (value < min_ || value > max_) return false;
     auto idx_val = static_cast<size_t>(value - offset_);
-    if (value < offset_ || idx_val >= sparse_.size()) {
+    if (idx_val >= sparse_.size()) {
         return false;
     }
     return sparse_[idx_val] < n_;
@@ -84,6 +85,43 @@ bool Domain::remove(value_type value) {
     return true;
 }
 
+bool Domain::remove_below(value_type threshold) {
+    if (threshold <= min_) return true;   // 除去不要
+    if (threshold > max_) return false;   // 全除去→空
+
+    size_t i = 0;
+    while (i < n_) {
+        if (values_[i] < threshold) {
+            swap_at(i, n_ - 1);
+            --n_;
+            // swap先を再チェックするので i は進めない
+        } else {
+            ++i;
+        }
+    }
+    if (n_ == 0) return false;
+    update_bounds();
+    return true;
+}
+
+bool Domain::remove_above(value_type threshold) {
+    if (threshold >= max_) return true;   // 除去不要
+    if (threshold < min_) return false;   // 全除去→空
+
+    size_t i = 0;
+    while (i < n_) {
+        if (values_[i] > threshold) {
+            swap_at(i, n_ - 1);
+            --n_;
+        } else {
+            ++i;
+        }
+    }
+    if (n_ == 0) return false;
+    update_bounds();
+    return true;
+}
+
 bool Domain::assign(value_type value) {
     auto idx_val = static_cast<size_t>(value - offset_);
     if (value < offset_ || idx_val >= sparse_.size() || sparse_[idx_val] >= n_) {
@@ -99,7 +137,13 @@ bool Domain::assign(value_type value) {
 }
 
 std::vector<Domain::value_type> Domain::values() const {
-    return std::vector<value_type>(values_.begin(), values_.begin() + n_);
+    std::vector<value_type> result;
+    for (size_t i = 0; i < n_; ++i) {
+        if (values_[i] >= min_ && values_[i] <= max_) {
+            result.push_back(values_[i]);
+        }
+    }
+    return result;
 }
 
 std::vector<Domain::value_type>& Domain::values_ref() {
@@ -111,8 +155,9 @@ const std::vector<Domain::value_type>& Domain::values_ref() const {
 }
 
 size_t Domain::index_of(value_type val) const {
+    if (val < min_ || val > max_) return SIZE_MAX;
     auto idx_val = static_cast<size_t>(val - offset_);
-    if (val < offset_ || idx_val >= sparse_.size()) {
+    if (idx_val >= sparse_.size()) {
         return SIZE_MAX;
     }
     size_t idx = sparse_[idx_val];
@@ -151,21 +196,17 @@ void Domain::update_bounds() {
         return;
     }
 
-    // Forward scan from offset to find new min
-    for (size_t i = 0; i < sparse_.size(); ++i) {
-        if (sparse_[i] < n_) {
-            min_ = static_cast<value_type>(i) + offset_;
-            break;
-        }
+    // Dense 配列の有効部分 [0, n_) をスキャンして min/max を求める
+    // O(n_) で sparse 配列サイズに依存しない
+    value_type lo = values_[0];
+    value_type hi = values_[0];
+    for (size_t i = 1; i < n_; ++i) {
+        value_type v = values_[i];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
     }
-
-    // Backward scan from end to find new max
-    for (size_t i = sparse_.size(); i > 0; --i) {
-        if (sparse_[i - 1] < n_) {
-            max_ = static_cast<value_type>(i - 1) + offset_;
-            break;
-        }
-    }
+    min_ = lo;
+    max_ = hi;
 }
 
 } // namespace sabori_csp

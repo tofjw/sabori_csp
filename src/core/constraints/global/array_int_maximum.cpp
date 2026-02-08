@@ -73,27 +73,13 @@ bool ArrayIntMaximumConstraint::presolve(Model& model) {
     }
 
     // 3. m のドメインを絞る: max_of_min <= m <= max_of_max
-    auto& m_domain = m_->domain();
-    auto m_values = m_domain.values();
-    for (auto v : m_values) {
-        if (v < max_of_min || v > max_of_max) {
-            if (!m_domain.remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!m_->remove_below(max_of_min)) return false;
+    if (!m_->remove_above(max_of_max)) return false;
 
     // 4. 各 x[i].max を m.max 以下に絞る
     auto m_max = model.var_max(m_->id());
     for (auto& var : x_) {
-        auto x_values = var->domain().values();
-        for (auto v : x_values) {
-            if (v > m_max) {
-                if (!var->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!var->remove_above(m_max)) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある

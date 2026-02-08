@@ -35,6 +35,7 @@ size_t Model::add_variable(VariablePtr var) {
     mins_.push_back(var->min());
     maxs_.push_back(var->max());
     sizes_.push_back(var->domain().size());
+    initial_ranges_.push_back(var->domain().initial_range());
 
     // 重複保存防止用
     last_saved_level_.push_back(-1);
@@ -96,8 +97,8 @@ std::vector<size_t>& Model::sizes() {
 }
 
 bool Model::contains(size_t var_idx, Domain::value_type val) const {
-    // TODO: min <= val && val <= max であることを先に確認する
-    return variables_[var_idx]->domain().contains(val);
+    if (val < mins_[var_idx] || val > maxs_[var_idx]) return false;
+    return variables_[var_idx]->domain().sparse_contains(val);
 }
 
 void Model::save_var_state(int save_point, size_t var_idx) {
@@ -126,32 +127,20 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
 
     save_var_state(save_point, var_idx);
 
-    // Sparse Set から new_min 未満の値を除外
-    // TODO: 毎回真面目にメンテすると遅いので、飛ばす
+    // Sparse 配列で actual min を O(gap) スキャン（sparse set は変更しない）
     auto& domain = variables_[var_idx]->domain();
-    auto& vals = domain.values_ref();
-    size_t n = domain.n();
-    size_t i = 0;
-    Domain::value_type current_min = std::numeric_limits<Domain::value_type>::max();
-
-    while (i < n) {
-        if (vals[i] < new_min) {
-            domain.swap_at(i, n - 1);
-            --n;
-        } else {
-            current_min = std::min(current_min, vals[i]);
-            ++i;
-        }
+    Domain::value_type actual_min = new_min;
+    while (actual_min <= maxs_[var_idx] && !domain.sparse_contains(actual_min)) {
+        actual_min++;
     }
-
-    if (n == 0) {
+    if (actual_min > maxs_[var_idx]) {
+        sizes_[var_idx] = 0;
         return false;
     }
 
-    domain.set_n(n);
-    domain.set_min_cache(current_min);
-    mins_[var_idx] = current_min;
-    sizes_[var_idx] = n;
+    domain.set_min_cache(actual_min);
+    mins_[var_idx] = actual_min;
+    // n_ と sizes_ は変更しない
     return true;
 }
 
@@ -165,32 +154,20 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
     save_var_state(save_point, var_idx);
 
-    // Sparse Set から new_max より大きい値を除外
-    // TODO: 毎回真面目にメンテすると遅いので、飛ばす
+    // Sparse 配列で actual max を O(gap) スキャン（sparse set は変更しない）
     auto& domain = variables_[var_idx]->domain();
-    auto& vals = domain.values_ref();
-    size_t n = domain.n();
-    size_t i = 0;
-    Domain::value_type current_max = std::numeric_limits<Domain::value_type>::min();
-
-    while (i < n) {
-        if (vals[i] > new_max) {
-            domain.swap_at(i, n - 1);
-            --n;
-        } else {
-            current_max = std::max(current_max, vals[i]);
-            ++i;
-        }
+    Domain::value_type actual_max = new_max;
+    while (actual_max >= mins_[var_idx] && !domain.sparse_contains(actual_max)) {
+        actual_max--;
     }
-
-    if (n == 0) {
+    if (actual_max < mins_[var_idx]) {
+        sizes_[var_idx] = 0;
         return false;
     }
 
-    domain.set_n(n);
-    domain.set_max_cache(current_max);
-    maxs_[var_idx] = current_max;
-    sizes_[var_idx] = n;
+    domain.set_max_cache(actual_max);
+    maxs_[var_idx] = actual_max;
+    // n_ と sizes_ は変更しない
     return true;
 }
 
@@ -213,11 +190,20 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         return false;
     }
 
-    // min/max の更新が必要な場合
-    if (val == mins_[var_idx] || val == maxs_[var_idx]) {
-        domain.update_bounds();
-        mins_[var_idx] = domain.min().value();
-        maxs_[var_idx] = domain.max().value();
+    // 境界値の場合、sparse 配列で O(gap) スキャン
+    if (val == mins_[var_idx]) {
+        Domain::value_type new_min = val + 1;
+        while (new_min <= maxs_[var_idx] && !domain.sparse_contains(new_min)) new_min++;
+        if (new_min > maxs_[var_idx]) { sizes_[var_idx] = 0; return false; }
+        mins_[var_idx] = new_min;
+        domain.set_min_cache(new_min);
+    }
+    if (val == maxs_[var_idx]) {
+        Domain::value_type new_max = val - 1;
+        while (new_max >= mins_[var_idx] && !domain.sparse_contains(new_max)) new_max--;
+        if (new_max < mins_[var_idx]) { sizes_[var_idx] = 0; return false; }
+        maxs_[var_idx] = new_max;
+        domain.set_max_cache(new_max);
     }
     sizes_[var_idx] = new_n;
 

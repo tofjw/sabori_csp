@@ -30,6 +30,18 @@ bool Variable::remove(Domain::value_type value) {
     return ok;
 }
 
+bool Variable::remove_below(Domain::value_type threshold) {
+    bool ok = domain_.remove_below(threshold);
+    if (ok) sync_soa();
+    return ok;
+}
+
+bool Variable::remove_above(Domain::value_type threshold) {
+    bool ok = domain_.remove_above(threshold);
+    if (ok) sync_soa();
+    return ok;
+}
+
 void Variable::sync_soa() {
     if (!model_) return;
     auto& mins = model_->mins();

@@ -80,6 +80,18 @@ public:
     bool remove(Domain::value_type value);
 
     /**
+     * @brief threshold 未満の値を一括除去（Domain + SoA を更新）
+     * @return 成功したらtrue（ドメインが空にならない場合）
+     */
+    bool remove_below(Domain::value_type threshold);
+
+    /**
+     * @brief threshold 超の値を一括除去（Domain + SoA を更新）
+     * @return 成功したらtrue（ドメインが空にならない場合）
+     */
+    bool remove_above(Domain::value_type threshold);
+
+    /**
      * @brief 値が割り当てられているか
      */
     bool is_assigned() const { return domain_.is_singleton(); }

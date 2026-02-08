@@ -239,7 +239,7 @@ TEST_CASE("Model set_min with trail", "[model][trail]") {
 
     REQUIRE(model.set_min(1, x_idx, 5));
     REQUIRE(model.mins()[x_idx] == 5);
-    REQUIRE(model.sizes()[x_idx] == 6);  // 5,6,7,8,9,10
+    REQUIRE(model.sizes()[x_idx] == 10);  // sparse set は変更しない（lazy bounds）
     REQUIRE(!model.contains(x_idx, 4));
     REQUIRE(model.contains(x_idx, 5));
 
@@ -257,7 +257,7 @@ TEST_CASE("Model set_max with trail", "[model][trail]") {
 
     REQUIRE(model.set_max(1, x_idx, 5));
     REQUIRE(model.maxs()[x_idx] == 5);
-    REQUIRE(model.sizes()[x_idx] == 5);  // 1,2,3,4,5
+    REQUIRE(model.sizes()[x_idx] == 10);  // sparse set は変更しない（lazy bounds）
     REQUIRE(!model.contains(x_idx, 6));
     REQUIRE(model.contains(x_idx, 5));
 

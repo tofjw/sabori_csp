@@ -64,42 +64,20 @@ bool IntTimesConstraint::propagate_bounds(Model& model) {
     auto [prod_min, prod_max] = std::minmax_element(products.begin(), products.end());
 
     // z のドメインから範囲外の値を削除
-    auto z_vals = z_->domain().values();
-    for (auto v : z_vals) {
-        if (v < *prod_min || v > *prod_max) {
-            if (!z_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!z_->remove_below(*prod_min)) return false;
+    if (!z_->remove_above(*prod_max)) return false;
 
     // x が 0 のみを含む場合、z = 0
     if (x_min == 0 && x_max == 0) {
-        if (!z_->domain().contains(0)) {
+        if (!z_->assign(0)) {
             return false;
-        }
-        z_vals = z_->domain().values();
-        for (auto v : z_vals) {
-            if (v != 0) {
-                if (!z_->remove(v)) {
-                    return false;
-                }
-            }
         }
     }
 
     // y が 0 のみを含む場合、z = 0
     if (y_min == 0 && y_max == 0) {
-        if (!z_->domain().contains(0)) {
+        if (!z_->assign(0)) {
             return false;
-        }
-        z_vals = z_->domain().values();
-        for (auto v : z_vals) {
-            if (v != 0) {
-                if (!z_->remove(v)) {
-                    return false;
-                }
-            }
         }
     }
 
@@ -368,14 +346,7 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
 
     // y >= 0 を強制
     if (y_min < 0) {
-        auto y_vals = y_->domain().values();
-        for (auto v : y_vals) {
-            if (v < 0) {
-                if (!y_->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!y_->remove_below(0)) return false;
         y_min = model.var_min(y_->id());
         y_max = model.var_max(y_->id());
     }
@@ -396,32 +367,18 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
     abs_x_max = std::max(abs_x_min_val, abs_x_max_val);
 
     // y のドメインから範囲外の値を削除
-    auto y_vals = y_->domain().values();
-    for (auto v : y_vals) {
-        if (v < abs_x_min || v > abs_x_max) {
-            if (!y_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!y_->remove_below(abs_x_min)) return false;
+    if (!y_->remove_above(abs_x_max)) return false;
 
     // x の範囲を y の範囲から制限
     // |x| <= y_max → -y_max <= x <= y_max
     y_max = model.var_max(y_->id());
-    {
-        auto x_vals = x_->domain().values();
-        for (auto v : x_vals) {
-            if (v < -y_max || v > y_max) {
-                if (!x_->remove(v)) {
-                    return false;
-                }
-            }
-        }
-    }
+    if (!x_->remove_below(-y_max)) return false;
+    if (!x_->remove_above(y_max)) return false;
 
     // x のドメインから、対応する |x| が y のドメインにない値を削除
     auto x_vals = x_->domain().values();
-    y_vals = y_->domain().values();
+    auto y_vals = y_->domain().values();
     std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
     for (auto v : x_vals) {
         auto abs_v = (v >= 0) ? v : -v;
@@ -435,8 +392,8 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
     // y のドメインから、対応する x が x のドメインにない値を削除
     x_vals = x_->domain().values();
     std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
-    y_vals = y_->domain().values();
-    for (auto v : y_vals) {
+    auto y_vals2 = y_->domain().values();
+    for (auto v : y_vals2) {
         // v = |x| となる x は v または -v
         if (x_set.count(v) == 0 && x_set.count(-v) == 0) {
             if (!y_->remove(v)) {

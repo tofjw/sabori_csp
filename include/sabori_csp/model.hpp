@@ -159,14 +159,19 @@ public:
     Domain::value_type var_max(size_t var_idx) const { return maxs_[var_idx]; }
 
     /**
-     * @brief 変数のドメインサイズを取得
+     * @brief 変数のドメインサイズを取得（sparse set の物理サイズ）
      */
     size_t var_size(size_t var_idx) const { return sizes_[var_idx]; }
 
     /**
+     * @brief 変数の初期レンジを取得
+     */
+    size_t initial_range(size_t var_idx) const { return initial_ranges_[var_idx]; }
+
+    /**
      * @brief 変数が単一値に固定されているか
      */
-    bool is_instantiated(size_t var_idx) const { return sizes_[var_idx] == 1; }
+    bool is_instantiated(size_t var_idx) const { return mins_[var_idx] == maxs_[var_idx]; }
 
     /**
      * @brief 変数の値を取得（固定されている場合）
@@ -307,6 +312,7 @@ private:
     std::vector<Domain::value_type> mins_;
     std::vector<Domain::value_type> maxs_;
     std::vector<size_t> sizes_;
+    std::vector<size_t> initial_ranges_;  // domain.initial_range() のキャッシュ
 
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;

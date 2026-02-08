@@ -710,23 +710,11 @@ bool IntLtConstraint::presolve(Model& model) {
 
     // Remove values from x that are >= y.max
     auto y_max = model.var_max(y_->id());
-    for (auto v : x_->domain().values()) {
-        if (v >= y_max) {
-            if (!x_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!x_->remove_above(y_max - 1)) return false;
 
     // Remove values from y that are <= x.min
     auto x_min = model.var_min(x_->id());
-    for (auto v : y_->domain().values()) {
-        if (v <= x_min) {
-            if (!y_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!y_->remove_below(x_min + 1)) return false;
 
     return true;
 }
@@ -801,22 +789,10 @@ std::optional<bool> IntLeConstraint::is_satisfied() const {
 bool IntLeConstraint::presolve(Model& model) {
     // x <= y
     auto y_max = model.var_max(y_->id());
-    for (auto v : x_->domain().values()) {
-        if (v > y_max) {
-            if (!x_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!x_->remove_above(y_max)) return false;
 
     auto x_min = model.var_min(x_->id());
-    for (auto v : y_->domain().values()) {
-        if (v < x_min) {
-            if (!y_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!y_->remove_below(x_min)) return false;
 
     return true;
 }
@@ -895,44 +871,20 @@ bool IntLeReifConstraint::presolve(Model& model) {
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
         // x <= y: x の上限を y.max に、y の下限を x.min に
         auto y_max = model.var_max(y_->id());
-        for (auto v : x_->domain().values()) {
-            if (v > y_max) {
-                if (!x_->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!x_->remove_above(y_max)) return false;
 
         auto x_min = model.var_min(x_->id());
-        for (auto v : y_->domain().values()) {
-            if (v < x_min) {
-                if (!y_->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!y_->remove_below(x_min)) return false;
     }
 
     // If b is fixed to 0, enforce x > y
     if (b_->is_assigned() && b_->assigned_value().value() == 0) {
         // x > y: x の下限を y.min + 1 に、y の上限を x.max - 1 に
         auto y_min = model.var_min(y_->id());
-        for (auto v : x_->domain().values()) {
-            if (v <= y_min) {
-                if (!x_->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!x_->remove_below(y_min + 1)) return false;
 
         auto x_max = model.var_max(x_->id());
-        for (auto v : y_->domain().values()) {
-            if (v >= x_max) {
-                if (!y_->remove(v)) {
-                    return false;
-                }
-            }
-        }
+        if (!y_->remove_above(x_max - 1)) return false;
     }
 
     // If x and y bounds determine the relation, fix b
@@ -1097,34 +1049,13 @@ bool IntMaxConstraint::presolve(Model& model) {
     auto m_upper = std::max(x_max, y_max);
 
     // m のドメインを絞る
-    auto m_values = m_->domain().values();
-    for (auto v : m_values) {
-        if (v < m_lower || v > m_upper) {
-            if (!m_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!m_->remove_below(m_lower)) return false;
+    if (!m_->remove_above(m_upper)) return false;
 
     // x.max <= m.max, y.max <= m.max
     auto m_max = model.var_max(m_->id());
-    auto x_values = x_->domain().values();
-    for (auto v : x_values) {
-        if (v > m_max) {
-            if (!x_->remove(v)) {
-                return false;
-            }
-        }
-    }
-
-    auto y_values = y_->domain().values();
-    for (auto v : y_values) {
-        if (v > m_max) {
-            if (!y_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!x_->remove_above(m_max)) return false;
+    if (!y_->remove_above(m_max)) return false;
 
     return true;
 }
@@ -1290,34 +1221,13 @@ bool IntMinConstraint::presolve(Model& model) {
     auto m_upper = std::min(x_max, y_max);
 
     // m のドメインを絞る
-    auto m_values = m_->domain().values();
-    for (auto v : m_values) {
-        if (v < m_lower || v > m_upper) {
-            if (!m_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!m_->remove_below(m_lower)) return false;
+    if (!m_->remove_above(m_upper)) return false;
 
     // x.min >= m.min, y.min >= m.min
     auto m_min_val = model.var_min(m_->id());
-    auto x_values = x_->domain().values();
-    for (auto v : x_values) {
-        if (v < m_min_val) {
-            if (!x_->remove(v)) {
-                return false;
-            }
-        }
-    }
-
-    auto y_values = y_->domain().values();
-    for (auto v : y_values) {
-        if (v < m_min_val) {
-            if (!y_->remove(v)) {
-                return false;
-            }
-        }
-    }
+    if (!x_->remove_below(m_min_val)) return false;
+    if (!y_->remove_below(m_min_val)) return false;
 
     return true;
 }

@@ -147,11 +147,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
                 outer_limit += 1.0;
             } else {
                 // コンフリクト制限を増加
-	        // inner_limit *= conflict_limit_multiplier_;
-	        inner_limit *= 1.01;
+                inner_limit *= conflict_limit_multiplier_;
 
                 if (inner_limit > outer_limit) {
-                    outer_limit *= 1.01;
+                    outer_limit *= conflict_limit_multiplier_;
                     inner_limit = initial_conflict_limit_;
                 }
             }
@@ -216,9 +215,9 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     auto prev_min = model.var_min(var_idx);
     auto prev_max = model.var_max(var_idx);
 
-    // 値を試行順序で取得（begin/end でコピーコスト削減）
+    // 値を試行順序で取得（bounds フィルタ済み）
     auto& domain = variables[var_idx]->domain();
-    std::vector<Domain::value_type> values(domain.begin(), domain.end());
+    auto values = domain.values();
 
     // ハッシュ順でソート（値の試行順序にばらつきを持たせる）
     uint64_t hash_seed = static_cast<uint64_t>(var_idx) ^ static_cast<uint64_t>(conflict_limit);
@@ -319,8 +318,10 @@ bool Solver::presolve(Model& model) {
             changed = false;
             for (const auto& constraint : constraints) {
                 size_t total_size_before = 0;
+                int64_t total_range_before = 0;
                 for (const auto& var : constraint->variables()) {
                     total_size_before += var->domain().size();
+                    total_range_before += var->max() - var->min();
                 }
 
                 if (!constraint->presolve(model)) {
@@ -328,11 +329,13 @@ bool Solver::presolve(Model& model) {
                 }
 
                 size_t total_size_after = 0;
+                int64_t total_range_after = 0;
                 for (const auto& var : constraint->variables()) {
                     total_size_after += var->domain().size();
+                    total_range_after += var->max() - var->min();
                 }
 
-                if (total_size_after < total_size_before) {
+                if (total_size_after < total_size_before || total_range_after < total_range_before) {
                     changed = true;
                 }
             }
@@ -472,17 +475,27 @@ size_t Solver::select_variable(const Model& model) {
     // シャッフルしてタイブレークをランダム化
     std::shuffle(candidates.begin(), candidates.end(), rng_);
 
+    // 近似 domain size を計算するラムダ
+    auto approx_domain_size = [&model](size_t idx) -> size_t {
+        size_t raw_n = model.var_size(idx);
+        size_t init_range = model.initial_range(idx);
+        if (init_range == 0) return raw_n;
+        size_t bounds_range = static_cast<size_t>(model.var_max(idx) - model.var_min(idx) + 1);
+        return std::max<size_t>(1, static_cast<size_t>(
+            static_cast<double>(bounds_range) / init_range * raw_n));
+    };
+
     size_t best_idx = candidates[0];
-    size_t min_domain_size = model.var_size(best_idx);
+    size_t min_domain_size = approx_domain_size(best_idx);
     double best_activity = activity_[best_idx];
 
     for (size_t j = 1; j < candidates.size(); ++j) {
         size_t i = candidates[j];
-        size_t domain_size = model.var_size(i);
+        size_t domain_size = approx_domain_size(i);
         double act = activity_[i];
 
         bool better = false;
-        if (1 || activity_first_) {
+        if (activity_first_) {
             // Activity 優先: Activity が高いものを優先、同じなら MRV
             if (act > best_activity) {
                 better = true;
@@ -776,6 +789,7 @@ bool Solver::process_queue(Model& model) {
     const auto& constraints = model.constraints();
 
     while (model.has_pending_updates()) {
+        if (stopped_) return false;
         auto update = model.pop_pending_update();
 
         size_t var_idx = update.var_idx;
@@ -783,7 +797,6 @@ bool Solver::process_queue(Model& model) {
         // 操作前の状態を保存
         auto prev_min = model.var_min(var_idx);
         auto prev_max = model.var_max(var_idx);
-        size_t prev_size = model.var_size(var_idx);
         bool was_instantiated = model.is_instantiated(var_idx);
 
         switch (update.type) {

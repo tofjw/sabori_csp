@@ -74,6 +74,18 @@ public:
     bool remove(value_type value);
 
     /**
+     * @brief threshold 未満の値を一括削除
+     * @return ドメインが空にならなければ true
+     */
+    bool remove_below(value_type threshold);
+
+    /**
+     * @brief threshold 超の値を一括削除
+     * @return ドメインが空にならなければ true
+     */
+    bool remove_above(value_type threshold);
+
+    /**
      * @brief 指定値に固定
      * @return 成功したらtrue
      */
@@ -87,7 +99,23 @@ public:
     /**
      * @brief 単一値に固定されているか
      */
-    bool is_singleton() const { return n_ == 1; }
+    bool is_singleton() const { return n_ > 0 && min_ == max_; }
+
+    /**
+     * @brief Sparse Set のみで値の存在を確認（bounds チェックなし）
+     *
+     * Model の O(gap) スキャンで使用。
+     */
+    bool sparse_contains(value_type value) const {
+        auto idx_val = static_cast<size_t>(value - offset_);
+        if (value < offset_ || idx_val >= sparse_.size()) return false;
+        return sparse_[idx_val] < n_;
+    }
+
+    /**
+     * @brief 初期レンジ（= sparse 配列サイズ = initial_max - initial_min + 1）
+     */
+    size_t initial_range() const { return sparse_.size(); }
 
     // ===== Sparse Set 内部アクセス（Model からの操作用） =====
 
