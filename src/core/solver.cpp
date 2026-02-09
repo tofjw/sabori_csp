@@ -490,7 +490,8 @@ bool Solver::verify_solution(const Model& model) const {
     for (const auto& constraint : model.constraints()) {
         auto satisfied = constraint->is_satisfied();
         if (satisfied.has_value() && !satisfied.value()) {
-	    // ここにきたらおかしくないですか?
+	    std::cerr << "% [debug] verify error: " << constraint->name() << "\n";
+	    // ここにきたらおかしい
             return false;
         }
     }
