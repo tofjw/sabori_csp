@@ -823,34 +823,6 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             } else {
                 throw std::runtime_error("set_in requires range argument (lb..ub)");
             }
-        } else if (decl.name == "table_int" || decl.name == "sabori_table_int") {
-            if (decl.args.size() != 2) {
-                throw std::runtime_error("table_int requires 2 arguments (vars, tuples)");
-            }
-            const auto var_names = resolve_var_array(decl.args[0]);
-            const auto flat_table = resolve_int_array(decl.args[1]);
-            size_t n_vars = var_names.size();
-            if (n_vars == 0) {
-                throw std::runtime_error("table_int: empty variable array");
-            }
-            if (flat_table.size() % n_vars != 0) {
-                throw std::runtime_error("table_int: tuple array size must be a multiple of variable count");
-            }
-            size_t n_tuples = flat_table.size() / n_vars;
-
-            std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
-                vars.push_back(get_var_by_name(name));
-            }
-
-            std::vector<std::vector<Domain::value_type>> tuples(n_tuples);
-            for (size_t t = 0; t < n_tuples; ++t) {
-                tuples[t].resize(n_vars);
-                for (size_t v = 0; v < n_vars; ++v) {
-                    tuples[t][v] = flat_table[t * n_vars + v];
-                }
-            }
-            constraint = std::make_shared<TableConstraint>(vars, tuples);
         } else if (decl.name == "set_in_reif") {
             // set_in_reif(x, lb..ub, b) - reified version, skip for now
             // This is complex to implement properly, so we'll skip it
