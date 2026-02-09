@@ -172,6 +172,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `array_var_bool_element` | `ArrayVarIntElementConstraint` | bool配列版（int版を流用） |
 | `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |
 | `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
+| `table_int` | `TableConstraint` | 変数の値の組み合わせがタプル集合に含まれる |
 
 #### circuit 制約
 
