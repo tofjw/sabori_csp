@@ -132,9 +132,7 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
         // 禁止値がドメインに含まれている場合は除外
         // Model 経由で Trail に記録し、バックトラック時に復元可能にする
         if (last_var->domain().contains(forbidden_value)) {
-            if (!model.remove_value(save_point, last_var->id(), forbidden_value)) {
-                return false;
-            }
+	    model.enqueue_remove_value(last_var->id(), forbidden_value);
         }
     }
     // 割り切れない場合は自動的に制約を満たす

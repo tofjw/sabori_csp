@@ -766,15 +766,7 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
 
     // other_var のドメインから other_val を除去
     stats_.nogood_domain_count++;
-    if (!model.remove_value(current_decision_, other_lit.var_idx, other_lit.value)) {
-        return false;
-    }
-
-    // 残り1値になったら伝播キューに入れる
-    if (model.is_instantiated(other_lit.var_idx)) {
-        stats_.nogood_instantiate_count++;
-        model.enqueue_instantiate(other_lit.var_idx, model.value(other_lit.var_idx));
-    }
+    model.enqueue_remove_value(other_lit.var_idx, other_lit.value);
 
     return true;
 }
