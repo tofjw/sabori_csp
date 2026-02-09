@@ -126,6 +126,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             int conflict_limit = static_cast<int>(inner_limit);
             std::optional<Solution> result;
 
+            size_t nogoods_before = nogoods_.size();
             auto res = run_search(model, conflict_limit, 0,
                                   [&result](const Solution& sol) {
                                       result = sol;
@@ -165,6 +166,16 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                     return a->last_active > b->last_active;
                 });
 
+
+            // NG が増えなかった場合は inner_limit を増加
+	    // (fail が発生しなかったケースを含む)
+	    bool limit_changed = false;
+            if (nogoods_.size() <= nogoods_before) {
+	        inner_limit ++;
+	        outer_limit ++;
+		limit_changed = true;
+            }
+
             // 容量管理: 末尾（冷たい NG）を削除（permanent は保護）
             while (nogoods_.size() > max_nogoods_) {
                 if (nogoods_.back()->permanent) break;
@@ -175,11 +186,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Activity 減衰
             decay_activities();
 
-            // fail が発生しなかった場合は inner, outer を +1
-            if (stats_.fail_count == prev_fail_count) {
-                inner_limit += 1.0;
-                outer_limit += 1.0;
-            } else {
+            if (!limit_changed) {
                 // コンフリクト制限を増加
                 inner_limit *= conflict_limit_multiplier_;
 
@@ -342,7 +349,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 
     // NoGood 記録
-    if (nogood_learning_ && decision_trail_.size() >= 2 && decision_trail_.size() < 50) {
+    if (nogood_learning_ && decision_trail_.size() >= 2) {
         add_nogood(decision_trail_);
         for (const auto& lit : decision_trail_) {
             activity_[lit.var_idx] += 1.0 / decision_trail_.size();
@@ -488,6 +495,12 @@ Solution Solver::build_solution(const Model& model) const {
     for (size_t i = 0; i < variables.size(); ++i) {
         if (model.is_instantiated(i)) {
             sol[variables[i]->name()] = model.value(i);
+        }
+    }
+    // エイリアスも解に含める
+    for (const auto& [alias_name, var_id] : model.variable_aliases()) {
+        if (model.is_instantiated(var_id)) {
+            sol[alias_name] = model.value(var_id);
         }
     }
     return sol;

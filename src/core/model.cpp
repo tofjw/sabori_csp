@@ -43,6 +43,14 @@ size_t Model::add_variable(VariablePtr var) {
     return id;
 }
 
+void Model::add_variable_alias(const std::string& alias_name, size_t var_id) {
+    variable_aliases_[alias_name] = var_id;
+}
+
+const std::map<std::string, size_t>& Model::variable_aliases() const {
+    return variable_aliases_;
+}
+
 void Model::add_constraint(ConstraintPtr constraint) {
     constraint->set_model_index(constraints_.size());
     constraint_ptrs_.push_back(constraint.get());

@@ -109,6 +109,18 @@ public:
     void add_constraint(ConstraintPtr constraint);
 
     /**
+     * @brief 変数エイリアスを追加（bool2int等で使用）
+     * @param alias_name エイリアス名
+     * @param var_id エイリアス先の変数ID
+     */
+    void add_variable_alias(const std::string& alias_name, size_t var_id);
+
+    /**
+     * @brief 変数エイリアスマップを取得
+     */
+    const std::map<std::string, size_t>& variable_aliases() const;
+
+    /**
      * @brief 変数リストを取得
      */
     const std::vector<VariablePtr>& variables() const;
@@ -304,6 +316,7 @@ private:
     std::vector<VariablePtr> variables_;
     std::vector<ConstraintPtr> constraints_;
     std::map<std::string, size_t> name_to_id_;
+    std::map<std::string, size_t> variable_aliases_;  // alias_name -> var_id
 
     // 変数IDカウンタ
     size_t next_var_id_ = 0;

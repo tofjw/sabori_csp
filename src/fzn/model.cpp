@@ -68,8 +68,33 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
     auto model = std::make_unique<sabori_csp::Model>();
     std::map<std::string, VariablePtr> var_map;
 
+    // Phase 0: bool2int をスキャンしてエイリアスマップを構築
+    // alias_map: int変数名 → bool変数名（正規変数）
+    std::map<std::string, std::string> alias_map;
+    for (const auto& decl : constraint_decls_) {
+        if (decl.name == "bool2int" && decl.args.size() == 2) {
+            // bool2int(b, i): b が正規変数、i がエイリアス
+            if (std::holds_alternative<std::string>(decl.args[0]) &&
+                std::holds_alternative<std::string>(decl.args[1])) {
+                const auto& b_name = std::get<std::string>(decl.args[0]);
+                const auto& i_name = std::get<std::string>(decl.args[1]);
+                // 両方が固定値でない場合のみエイリアス化
+                auto b_it = var_decls_.find(b_name);
+                auto i_it = var_decls_.find(i_name);
+                if (b_it != var_decls_.end() && i_it != var_decls_.end() &&
+                    !b_it->second.fixed_value && !i_it->second.fixed_value) {
+                    alias_map[i_name] = b_name;
+                }
+            }
+        }
+    }
+
     // Create variables
     for (const auto& [name, decl] : var_decls_) {
+        // エイリアス対象の変数はスキップ
+        if (alias_map.count(name)) {
+            continue;
+        }
         VariablePtr var;
         if (decl.fixed_value) {
             var = model->create_variable(name, *decl.fixed_value);
@@ -80,6 +105,15 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             var = model->create_variable(name, decl.lb, decl.ub);
         }
         var_map[name] = var;
+    }
+
+    // エイリアスを var_map に登録
+    for (const auto& [alias_name, canonical_name] : alias_map) {
+        auto it = var_map.find(canonical_name);
+        if (it != var_map.end()) {
+            var_map[alias_name] = it->second;
+            model->add_variable_alias(alias_name, it->second->id());
+        }
     }
 
     // Build a map of constant arrays (arrays of par int)
@@ -416,16 +450,19 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         // Bool constraints (aliases for int constraints with 0-1 variables)
         // ========================================
         } else if (decl.name == "bool2int") {
-#if 1
-            // bool2int(b, i) means b <-> i, where b is bool and i is int
-            // Since both are 0-1 integer variables internally, this is just int_eq
             if (decl.args.size() != 2) {
                 throw std::runtime_error("bool2int requires 2 arguments");
             }
-            auto b = get_var(decl.args[0]);
-            auto i = get_var(decl.args[1]);
-            constraint = std::make_shared<IntEqConstraint>(b, i);
-#endif
+            // エイリアス化済みの場合は制約不要
+            if (std::holds_alternative<std::string>(decl.args[1]) &&
+                alias_map.count(std::get<std::string>(decl.args[1]))) {
+                constraint = nullptr;
+            } else {
+                // 定数ケース等: 従来通り IntEqConstraint
+                auto b = get_var(decl.args[0]);
+                auto i = get_var(decl.args[1]);
+                constraint = std::make_shared<IntEqConstraint>(b, i);
+            }
         } else if (decl.name == "bool_eq") {
             // bool_eq(a, b) is equivalent to int_eq(a, b) for 0-1 variables
             if (decl.args.size() != 2) {
