@@ -51,7 +51,7 @@ std::optional<Solution> Solver::solve(Model& model) {
 
     // リスタート有効時は専用ループを使用
     if (restart_enabled_) {
-        return search_with_restart(model);
+        return search_with_restart(model, nullptr, false);
     }
 
     // リスタート無効時は単純探索
@@ -69,39 +69,47 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 制約ウォッチリストを構築
     model.build_constraint_watch_list();
 
-    // 全解探索ではリスタートを無効化
-    bool old_restart = restart_enabled_;
-    restart_enabled_ = false;
-
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
+    best_num_instantiated_ = 0;
+    best_assignment_.clear();
+    current_best_assignment_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
 
     // presolve: 初期伝播 + 内部構造の構築
     if (!presolve(model)) {
-        restart_enabled_ = old_restart;
         return 0;  // UNSAT
     }
 
     size_t count = 0;
-    int conflict_limit = std::numeric_limits<int>::max();
 
-    run_search(model, conflict_limit, 0,
-               [&count, &callback](const Solution& sol) {
-                   count++;
-                   return callback(sol);  // trueなら継続
-               }, true);
+    if (restart_enabled_) {
+        // リスタート有効: search_with_restart で全解探索
+        search_with_restart(model, [&](const Solution& sol) {
+            count++;
+            return callback(sol);
+        }, true);
+    } else {
+        // リスタート無効: 従来の単純DFS全探索
+        int conflict_limit = std::numeric_limits<int>::max();
+        run_search(model, conflict_limit, 0,
+                   [&count, &callback](const Solution& sol) {
+                       count++;
+                       return callback(sol);
+                   }, true);
+    }
 
-    restart_enabled_ = old_restart;
     return count;
 }
 
-std::optional<Solution> Solver::search_with_restart(Model& model) {
+std::optional<Solution> Solver::search_with_restart(Model& model,
+                                                      SolutionCallback callback,
+                                                      bool find_all) {
     double inner_limit = initial_conflict_limit_;
     double outer_limit = 10.0;
 
@@ -109,7 +117,8 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
     size_t prev_fail_count = 0;
 
     if (verbose_) {
-        std::cerr << "% [verbose] search_with_restart start\n";
+        std::cerr << "% [verbose] search_with_restart start"
+                  << (find_all ? " (find_all)" : "") << "\n";
     }
 
     while (!stopped_) {
@@ -124,6 +133,17 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
                                   }, false);
 
             if (res == SearchResult::SAT) {
+                if (find_all) {
+                    // 全解探索: コールバックに報告し、解をNGとして追加して続行
+                    if (!callback(*result)) {
+                        stats_.nogoods_size = nogoods_.size();
+                        return std::nullopt;  // コールバックが停止を要求
+                    }
+                    model.clear_pending_updates();
+                    add_solution_nogood(model);
+                    backtrack(model, root_point);
+                    continue;
+                }
                 stats_.nogoods_size = nogoods_.size();
                 return result;
             }
@@ -138,14 +158,16 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
 
-            // NG を有用度順にソート: last_active が大きい（最近 prune した）NG を先頭へ
+            // NG を有用度順にソート: permanent を先頭、次に last_active が大きいものを優先
             std::stable_sort(nogoods_.begin(), nogoods_.end(),
                 [](const auto& a, const auto& b) {
+                    if (a->permanent != b->permanent) return a->permanent > b->permanent;
                     return a->last_active > b->last_active;
                 });
 
-            // 容量管理: 末尾（冷たい NG）を削除
+            // 容量管理: 末尾（冷たい NG）を削除（permanent は保護）
             while (nogoods_.size() > max_nogoods_) {
+                if (nogoods_.back()->permanent) break;
                 remove_nogood(nogoods_.back().get());
                 nogoods_.pop_back();
             }
@@ -183,6 +205,18 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
     }
     stats_.nogoods_size = nogoods_.size();
     return std::nullopt;
+}
+
+void Solver::add_solution_nogood(const Model& model) {
+    std::vector<Literal> lits;
+    const auto& variables = model.variables();
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_instantiated(i)) {
+            lits.push_back({i, model.value(i)});
+        }
+    }
+    add_nogood(lits);
+    nogoods_.back()->permanent = true;
 }
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,

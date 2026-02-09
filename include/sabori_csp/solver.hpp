@@ -72,6 +72,7 @@ struct NoGood {
     size_t w1 = 0;  // 監視リテラル1
     size_t w2 = 0;  // 監視リテラル2
     size_t last_active = 0;  // 最後に prune を起こした時点のカウンタ値
+    bool permanent = false;  // trueならメンテナンスで削除しない（解NG用）
 
     NoGood(std::vector<Literal> lits)
         : literals(std::move(lits))
@@ -218,8 +219,17 @@ private:
 
     /**
      * @brief メイン探索ループ（リスタート付き）
+     * @param callback 全解探索時のコールバック（find_all=falseなら無視）
+     * @param find_all trueなら全解探索モード
      */
-    std::optional<Solution> search_with_restart(Model& model);
+    std::optional<Solution> search_with_restart(Model& model,
+                                                 SolutionCallback callback = nullptr,
+                                                 bool find_all = false);
+
+    /**
+     * @brief 現在の完全割当を永続NoGoodとして追加
+     */
+    void add_solution_nogood(const Model& model);
 
     /**
      * @brief 単一の探索（コンフリクト制限付き）
