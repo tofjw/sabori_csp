@@ -542,7 +542,7 @@ size_t Solver::select_variable(const Model& model) {
         double act = activity_[i];
 
         bool better = false;
-        if (activity_first_) {
+        if (stats_.restart_count % 2 || activity_first_) {
             // Activity 優先: Activity が高いものを優先、同じなら MRV
             if (act > best_activity) {
                 better = true;
