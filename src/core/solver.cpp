@@ -6,14 +6,11 @@
 namespace sabori_csp {
 
 namespace {
-// MurmurHash3 64-bit finalizer
-inline uint64_t fmix64(uint64_t k) {
-    k ^= k >> 33;
-    k *= 0xff51afd7ed558ccdULL;
-    k ^= k >> 33;
-    k *= 0xc4ceb9fe1a85ec53ULL;
-    k ^= k >> 33;
-    return k;
+inline uint64_t xorshift64(uint64_t& state) {
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    return state;
 }
 }  // namespace
 
@@ -242,16 +239,10 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
         stats_.max_depth = depth;
     }
 
-    // 全変数が確定しているかチェック
-    bool all_assigned = true;
-    for (size_t i = 0; i < variables.size(); ++i) {
-        if (!model.is_instantiated(i)) {
-            all_assigned = false;
-            break;
-        }
-    }
+    // 変数選択（全変数確定なら SIZE_MAX）
+    size_t var_idx = select_variable(model);
 
-    if (all_assigned) {
+    if (var_idx == SIZE_MAX) {
         if (verify_solution(model)) {
             if (!callback(build_solution(model))) {
                 return SearchResult::SAT;
@@ -261,24 +252,13 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
         return SearchResult::UNSAT;
     }
 
-    // 変数選択
-    size_t var_idx = select_variable(model);
-
     int save_point = current_decision_;
     auto prev_min = model.var_min(var_idx);
     auto prev_max = model.var_max(var_idx);
 
-    // 値を試行順序で取得（bounds フィルタ済み）
+    // 値を取得（ソートなし、オリジナル domain.values() を使用）
     auto& domain = variables[var_idx]->domain();
     auto values = domain.values();
-
-    // ハッシュ順でソート（値の試行順序にばらつきを持たせる）
-    uint64_t hash_seed = static_cast<uint64_t>(var_idx) ^ static_cast<uint64_t>(conflict_limit);
-    std::sort(values.begin(), values.end(), [hash_seed](auto a, auto b) {
-        uint64_t ha = fmix64(static_cast<uint64_t>(a) ^ hash_seed);
-        uint64_t hb = fmix64(static_cast<uint64_t>(b) ^ hash_seed);
-        return ha < hb;
-    });
 
     // 保存された値がある場合は優先（先頭と swap で O(1)）
     if (current_best_assignment_.count(var_idx)) {
@@ -510,6 +490,7 @@ bool Solver::verify_solution(const Model& model) const {
     for (const auto& constraint : model.constraints()) {
         auto satisfied = constraint->is_satisfied();
         if (satisfied.has_value() && !satisfied.value()) {
+	    // ここにきたらおかしくないですか?
             return false;
         }
     }
@@ -518,22 +499,8 @@ bool Solver::verify_solution(const Model& model) const {
 
 size_t Solver::select_variable(const Model& model) {
     const auto& variables = model.variables();
-
-    // 未確定変数のインデックスを収集
-    std::vector<size_t> candidates;
-    candidates.reserve(variables.size());
-    for (size_t i = 0; i < variables.size(); ++i) {
-        if (!model.is_instantiated(i)) {
-            candidates.push_back(i);
-        }
-    }
-
-    if (candidates.empty()) {
-        return 0;
-    }
-
-    // シャッフルしてタイブレークをランダム化
-    std::shuffle(candidates.begin(), candidates.end(), rng_);
+    size_t n = variables.size();
+    if (n == 0) return 0;
 
     // 近似 domain size を計算するラムダ
     auto approx_domain_size = [&model](size_t idx) -> size_t {
@@ -545,32 +512,40 @@ size_t Solver::select_variable(const Model& model) {
             static_cast<double>(bounds_range) / init_range * raw_n));
     };
 
-    size_t best_idx = candidates[0];
-    size_t min_domain_size = approx_domain_size(best_idx);
-    double best_activity = activity_[best_idx];
+    // ランダムオフセット（変数配列全体に対して）
+    size_t offset = rng_() % n;
 
-    for (size_t j = 1; j < candidates.size(); ++j) {
-        size_t i = candidates[j];
+    size_t best_idx = 0;
+    size_t min_domain_size = 0;
+    double best_activity = 0.0;
+    bool found = false;
+
+    for (size_t j = 0; j < n; ++j) {
+        size_t i = (offset + j) % n;
+        if (model.is_instantiated(i)) continue;
+
+        if (!found) {
+            // 最初の未確定変数
+            best_idx = i;
+            min_domain_size = approx_domain_size(i);
+            best_activity = activity_[i];
+            found = true;
+            continue;
+        }
+
+        // MRV/Activity 比較
         size_t domain_size = approx_domain_size(i);
         double act = activity_[i];
-
         bool better = false;
         if (stats_.restart_count % 2 || activity_first_) {
             // Activity 優先: Activity が高いものを優先、同じなら MRV
-            if (act > best_activity) {
-                better = true;
-            } else if (act == best_activity && domain_size < min_domain_size) {
-                better = true;
-            }
+            if (act > best_activity) better = true;
+            else if (act == best_activity && domain_size < min_domain_size) better = true;
         } else {
             // MRV 優先（デフォルト）: ドメインサイズが小さいものを優先、同じなら Activity
-            if (domain_size < min_domain_size) {
-                better = true;
-            } else if (domain_size == min_domain_size && act > best_activity) {
-                better = true;
-            }
+            if (domain_size < min_domain_size) better = true;
+            else if (domain_size == min_domain_size && act > best_activity) better = true;
         }
-
         if (better) {
             min_domain_size = domain_size;
             best_activity = act;
@@ -578,6 +553,7 @@ size_t Solver::select_variable(const Model& model) {
         }
     }
 
+    if (!found) return SIZE_MAX;
     return best_idx;
 }
 
