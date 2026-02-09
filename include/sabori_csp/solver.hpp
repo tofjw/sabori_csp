@@ -71,6 +71,7 @@ struct NoGood {
     std::vector<Literal> literals;
     size_t w1 = 0;  // 監視リテラル1
     size_t w2 = 0;  // 監視リテラル2
+    size_t last_active = 0;  // 最後に prune を起こした時点のカウンタ値
 
     NoGood(std::vector<Literal> lits)
         : literals(std::move(lits))
@@ -324,6 +325,7 @@ private:
     std::vector<std::unique_ptr<NoGood>> nogoods_;
     std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_watches_;
     static constexpr size_t max_nogoods_ = 100000;
+    size_t ng_use_counter_ = 0;  // prune 発生ごとにインクリメント
 
     // 部分解（最良の1つだけ保持）
     size_t best_num_instantiated_ = 0;

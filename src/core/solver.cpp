@@ -138,6 +138,18 @@ std::optional<Solution> Solver::search_with_restart(Model& model) {
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
 
+            // NG を有用度順にソート: last_active が大きい（最近 prune した）NG を先頭へ
+            std::stable_sort(nogoods_.begin(), nogoods_.end(),
+                [](const auto& a, const auto& b) {
+                    return a->last_active > b->last_active;
+                });
+
+            // 容量管理: 末尾（冷たい NG）を削除
+            while (nogoods_.size() > max_nogoods_) {
+                remove_nogood(nogoods_.back().get());
+                nogoods_.pop_back();
+            }
+
             // Activity 減衰
             decay_activities();
 
@@ -419,6 +431,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                 for (auto* ng : std::vector<NoGood*>(it2->second)) {
                     stats_.nogood_check_count++;
                     if (!propagate_nogood(model, ng, {var_idx, val})) {
+                        ng->last_active = ++ng_use_counter_;
                         stats_.nogood_prune_count++;
                         return false;
                     }
@@ -661,19 +674,7 @@ void Solver::add_nogood(const std::vector<Literal>& literals) {
     }
 
     nogoods_.push_back(std::move(ng));
-
-    // 上限管理
-    while (nogoods_.size() > max_nogoods_) {
-        // 最も長い NoGood を削除
-        auto worst = std::max_element(nogoods_.begin(), nogoods_.end(),
-                                       [](const auto& a, const auto& b) {
-                                           return a->literals.size() < b->literals.size();
-                                       });
-        if (worst != nogoods_.end()) {
-            remove_nogood(worst->get());
-            nogoods_.erase(worst);
-        }
-    }
+    // 容量管理はリスタート時に行う
 }
 
 void Solver::remove_nogood(NoGood* ng) {
