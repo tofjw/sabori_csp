@@ -1042,6 +1042,17 @@ private:
     bool propagate_bounds(Model& model, int save_point = -1);
 
     /**
+     * @brief キュー経由で bounds 伝播（探索中に使用）
+     *
+     * propagate_bounds と同じロジックだが、model.enqueue_* を使って
+     * 他の制約にも通知が届くようにする。
+     *
+     * @param model モデル参照
+     * @return 矛盾がなければ true
+     */
+    bool propagate_via_queue(Model& model);
+
+    /**
      * @brief result の bounds support を再計算
      */
     void recompute_bounds_support(Model& model);

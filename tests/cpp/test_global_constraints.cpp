@@ -1666,6 +1666,39 @@ TEST_CASE("ArrayBoolAndConstraint solver integration", "[constraint][array_bool_
 
         REQUIRE(count == 4);  // (0,0,0), (0,1,0), (1,0,0), (1,1,1)
     }
+
+    SECTION("all bi=1, r=0 is UNSAT (propagation bug regression)") {
+        Model model;
+        auto b1 = model.create_variable("b1", 1);  // fixed to 1
+        auto b2 = model.create_variable("b2", 1);  // fixed to 1
+        auto b3 = model.create_variable("b3", 1);  // fixed to 1
+        auto r = model.create_variable("r", 0);     // fixed to 0
+
+        model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());  // UNSAT
+    }
+
+    SECTION("all bi=1 forces r=1 even when r is free") {
+        Model model;
+        auto b1 = model.create_variable("b1", 1);  // fixed to 1
+        auto b2 = model.create_variable("b2", 1);  // fixed to 1
+        auto b3 = model.create_variable("b3", 1);  // fixed to 1
+        auto r = model.create_variable("r", 0, 1);
+
+        model.add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("r") == 1);
+    }
 }
 
 // ============================================================================
@@ -1760,6 +1793,39 @@ TEST_CASE("ArrayBoolOrConstraint solver integration", "[constraint][array_bool_o
         size_t count = solver.solve_all(model, [](const Solution&) { return true; });
 
         REQUIRE(count == 4);  // (0,0,0), (0,1,1), (1,0,1), (1,1,1)
+    }
+
+    SECTION("all bi=0, r=1 is UNSAT (propagation bug regression)") {
+        Model model;
+        auto b1 = model.create_variable("b1", 0);  // fixed to 0
+        auto b2 = model.create_variable("b2", 0);  // fixed to 0
+        auto b3 = model.create_variable("b3", 0);  // fixed to 0
+        auto r = model.create_variable("r", 1);     // fixed to 1
+
+        model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE_FALSE(solution.has_value());  // UNSAT
+    }
+
+    SECTION("r=1, b1=b2=0 forces b3=1") {
+        Model model;
+        auto b1 = model.create_variable("b1", 0);  // fixed to 0
+        auto b2 = model.create_variable("b2", 0);  // fixed to 0
+        auto b3 = model.create_variable("b3", 0, 1);
+        auto r = model.create_variable("r", 1);     // fixed to 1
+
+        model.add_constraint(std::make_shared<ArrayBoolOrConstraint>(
+            std::vector<VariablePtr>{b1, b2, b3}, r));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("b3") == 1);
     }
 }
 

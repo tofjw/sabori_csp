@@ -236,8 +236,41 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                     return false;  // 既に 0 が確定している bi がある
                 }
             }
+            return true;
         }
-        // r = 0 の場合は 2WL で処理
+        // r = 0: 0 になりうる bi をスキャンし、watch を再初期化
+        size_t candidate_count = 0;
+        size_t first_candidate = SIZE_MAX;
+        size_t second_candidate = SIZE_MAX;
+        size_t last_unassigned = SIZE_MAX;
+        size_t unassigned_count = 0;
+
+        for (size_t i = 0; i < n_; ++i) {
+            if (!vars_[i]->is_assigned()) {
+                candidate_count++;
+                unassigned_count++;
+                last_unassigned = i;
+                if (first_candidate == SIZE_MAX) first_candidate = i;
+                else if (second_candidate == SIZE_MAX) second_candidate = i;
+            } else if (vars_[i]->assigned_value().value() == 0) {
+                // 既に 0 の bi がある → r = 0 は既に充足
+                return true;
+            }
+        }
+
+        if (candidate_count == 0) {
+            // 全 bi = 1 なので AND=1 ≠ r=0 → 矛盾
+            return false;
+        }
+
+        if (unassigned_count == 1) {
+            // 未確定が1つだけ → それを 0 に強制
+            model.enqueue_instantiate(vars_[last_unassigned]->id(), 0);
+        }
+
+        // watch を有効な候補に更新
+        w1_ = first_candidate;
+        w2_ = (second_candidate != SIZE_MAX) ? second_candidate : first_candidate;
         return true;
     }
 
@@ -264,8 +297,12 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
             break;
         }
     }
-    if (all_one && !r_->is_assigned()) {
-        model.enqueue_instantiate(r_->id(), 1);
+    if (all_one) {
+        if (!r_->is_assigned()) {
+            model.enqueue_instantiate(r_->id(), 1);
+        } else if (r_->assigned_value().value() != 1) {
+            return false;  // 全 bi=1 だが r=0 → 矛盾
+        }
     }
 
     // r = 0 で bi = 1 が確定した場合: 2WL 処理
@@ -578,6 +615,40 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
                     return false;
                 }
             }
+        } else {
+            // r = 1: 1 になりうる bi をスキャンし、watch を再初期化
+            size_t candidate_count = 0;
+            size_t first_candidate = SIZE_MAX;
+            size_t second_candidate = SIZE_MAX;
+            size_t last_unassigned = SIZE_MAX;
+            size_t unassigned_count = 0;
+
+            for (size_t i = 0; i < n_; ++i) {
+                if (!vars_[i]->is_assigned()) {
+                    candidate_count++;
+                    unassigned_count++;
+                    last_unassigned = i;
+                    if (first_candidate == SIZE_MAX) first_candidate = i;
+                    else if (second_candidate == SIZE_MAX) second_candidate = i;
+                } else if (vars_[i]->assigned_value().value() == 1) {
+                    // 既に 1 の bi がある → r = 1 は既に充足
+                    return true;
+                }
+            }
+
+            if (candidate_count == 0) {
+                // 全 bi = 0 なので OR=0 ≠ r=1 → 矛盾
+                return false;
+            }
+
+            if (unassigned_count == 1) {
+                // 未確定が1つだけ → それを 1 に強制
+                model.enqueue_instantiate(vars_[last_unassigned]->id(), 1);
+            }
+
+            // watch を有効な候補に更新
+            w1_ = first_candidate;
+            w2_ = (second_candidate != SIZE_MAX) ? second_candidate : first_candidate;
         }
         return true;
     }
@@ -605,8 +676,12 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
             break;
         }
     }
-    if (all_zero && !r_->is_assigned()) {
-        model.enqueue_instantiate(r_->id(), 0);
+    if (all_zero) {
+        if (!r_->is_assigned()) {
+            model.enqueue_instantiate(r_->id(), 0);
+        } else if (r_->assigned_value().value() != 0) {
+            return false;  // 全 bi=0 だが r=1 → 矛盾
+        }
     }
 
     // r = 1 で bi = 0 が確定した場合: 2WL 処理

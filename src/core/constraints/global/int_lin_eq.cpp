@@ -284,7 +284,7 @@ void IntLinEqConstraint::rewind_to(int save_point) {
     }
 }
 
-void IntLinEqConstraint::osave_trail_if_needed(Model& model, int save_point) {
+void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
     if (trail_.empty() || trail_.back().first != save_point) {
         trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_}});
         model.mark_constraint_dirty(model_index(), save_point);

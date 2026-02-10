@@ -1,0 +1,10 @@
+% array_bool_and: r=0, b1=1 -> b2=0
+var bool: b1 :: output_var;
+var bool: b2 :: output_var;
+var bool: r :: output_var;
+
+constraint array_bool_and([b1, b2], r);
+constraint int_eq(r, 0);
+constraint int_eq(b1, 1);
+
+solve satisfy;

@@ -339,6 +339,10 @@ void Model::build_constraint_watch_list() {
             size_t v_idx = var->id();
             if (v_idx < var_to_constraint_indices_.size()) {
                 var_to_constraint_indices_[v_idx].push_back(c_idx);
+            } else {
+                std::cerr << "% [watchlist] WARNING: var " << var->name()
+                          << " id=" << v_idx << " >= variables_.size()=" << variables_.size()
+                          << " in constraint #" << c_idx << " (" << constraint->name() << ")\n";
             }
         }
     }
