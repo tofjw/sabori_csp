@@ -1,5 +1,9 @@
 # Project: sabori_csp
 
+
+## Project Overview
+This is a C++ constraint solver (CSP/FlatZinc). Key architecture: Model holds variables (SoA arrays for min/max), Domain manages value sets, Solver runs search with backtracking. Constraints implement propagate/presolve methods. Read docs/constraint_implementation_guide.md before implementing new constraints.
+
 FlatZinc対応のCSPソルバー。C++コアライブラリ、FlatZincソルバー、Pythonバインディングを持つ。
 
 ## ディレクトリ構成
@@ -105,3 +109,12 @@ cd benchmarks/minizinc_challenge_2025
 **理由**: `redefinitions.mzn` により未サポート制約（gecode固有、set制約等）が標準分解に置き換えられる。直接 `fzn_sabori` を実行すると未サポート制約エラーになる。
 
 詳細は [benchmarks/minizinc_challenge_2025/README.md](benchmarks/minizinc_challenge_2025/README.md) を参照。
+
+## Profiling
+When profiling C++ code, use gprof (not perf) as perf is unavailable in WSL2. Always do a clean rebuild (`make clean && make`) before profiling to avoid stale binary/gmon.out issues. Use the solver's built-in timeout flag instead of SIGTERM to ensure gmon.out is written.
+
+## Code Modification Rules section
+After bulk sed/replacement operations across C++ files, always do a full build before moving on. Bulk replacements frequently break code in constructors and methods that lack the expected context (e.g., missing Model& parameter). Prefer incremental file-by-file changes over big-bang refactors.
+
+## Testing section
+Always run all tests (`make test` or equivalent) after any code change and report the result. Never consider a task complete until tests pass.
