@@ -284,7 +284,7 @@ void IntLinEqConstraint::rewind_to(int save_point) {
     }
 }
 
-void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
+void IntLinEqConstraint::osave_trail_if_needed(Model& model, int save_point) {
     if (trail_.empty() || trail_.back().first != save_point) {
         trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_}});
         model.mark_constraint_dirty(model_index(), save_point);
@@ -386,6 +386,11 @@ bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
 }
 
 bool IntLinEqConstraint::prepare_propagation(Model& model) {
+    // 全ての係数が0の場合: 0
+    if (vars_.empty()) {
+        return target_sum_ == 0;
+    }
+
     // 変数の現在状態に基づいて内部状態を初期化
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;

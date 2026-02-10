@@ -257,6 +257,7 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
     auto x = model.create_variable("x", 1, 5);
     auto y = model.create_variable("y", 1, 5);
     IntLinEqConstraint c({1, 1}, {x, y}, 6);
+    c.prepare_propagation(model);
 
     // Initial state
     int64_t initial_sum = c.target_sum();
