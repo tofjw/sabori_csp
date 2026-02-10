@@ -89,6 +89,30 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
+bool IntEqConstraint::on_set_min(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_min,
+                                  Domain::value_type /*old_min*/) {
+    // x == y: bounds を相互伝播
+    if (var_idx == x_->id()) {
+        model.enqueue_set_min(y_->id(), new_min);
+    } else if (var_idx == y_->id()) {
+        model.enqueue_set_min(x_->id(), new_min);
+    }
+    return true;
+}
+
+bool IntEqConstraint::on_set_max(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_max,
+                                  Domain::value_type /*old_max*/) {
+    // x == y: bounds を相互伝播
+    if (var_idx == x_->id()) {
+        model.enqueue_set_max(y_->id(), new_max);
+    } else if (var_idx == y_->id()) {
+        model.enqueue_set_max(x_->id(), new_max);
+    }
+    return true;
+}
+
 bool IntEqConstraint::on_final_instantiate() {
     return x_->assigned_value() == y_->assigned_value();
 }
@@ -295,6 +319,55 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_instantiate(b_->id(), eq ? 1 : 0);
     }
 
+    return true;
+}
+
+bool IntEqReifConstraint::on_set_min(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type new_min,
+                                      Domain::value_type /*old_min*/) {
+    // (x == y) <-> b
+    if (!b_->is_assigned()) {
+        // bounds で x == y が不可能かチェック
+        auto x_min = model.var_min(x_->id());
+        auto x_max = model.var_max(x_->id());
+        auto y_min = model.var_min(y_->id());
+        auto y_max = model.var_max(y_->id());
+        if (x_min > y_max || x_max < y_min) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    } else if (b_->assigned_value().value() == 1) {
+        // x == y: bounds を相互伝播
+        if (var_idx == x_->id()) {
+            model.enqueue_set_min(y_->id(), new_min);
+        } else if (var_idx == y_->id()) {
+            model.enqueue_set_min(x_->id(), new_min);
+        }
+    }
+    // b = 0: bounds だけでは伝播不可
+    return true;
+}
+
+bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type new_max,
+                                      Domain::value_type /*old_max*/) {
+    // (x == y) <-> b
+    if (!b_->is_assigned()) {
+        auto x_min = model.var_min(x_->id());
+        auto x_max = model.var_max(x_->id());
+        auto y_min = model.var_min(y_->id());
+        auto y_max = model.var_max(y_->id());
+        if (x_min > y_max || x_max < y_min) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    } else if (b_->assigned_value().value() == 1) {
+        // x == y: bounds を相互伝播
+        if (var_idx == x_->id()) {
+            model.enqueue_set_max(y_->id(), new_max);
+        } else if (var_idx == y_->id()) {
+            model.enqueue_set_max(x_->id(), new_max);
+        }
+    }
+    // b = 0: bounds だけでは伝播不可
     return true;
 }
 
@@ -623,6 +696,55 @@ bool IntNeReifConstraint::on_final_instantiate() {
     return ne == (b_->assigned_value().value() == 1);
 }
 
+bool IntNeReifConstraint::on_set_min(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type new_min,
+                                      Domain::value_type /*old_min*/) {
+    // (x != y) <-> b
+    if (!b_->is_assigned()) {
+        // bounds で x == y が不可能かチェック → b = 1
+        auto x_min = model.var_min(x_->id());
+        auto x_max = model.var_max(x_->id());
+        auto y_min = model.var_min(y_->id());
+        auto y_max = model.var_max(y_->id());
+        if (x_min > y_max || x_max < y_min) {
+            model.enqueue_instantiate(b_->id(), 1);
+        }
+    } else if (b_->assigned_value().value() == 0) {
+        // b = 0 → x == y: bounds を相互伝播
+        if (var_idx == x_->id()) {
+            model.enqueue_set_min(y_->id(), new_min);
+        } else if (var_idx == y_->id()) {
+            model.enqueue_set_min(x_->id(), new_min);
+        }
+    }
+    // b = 1: bounds だけでは伝播不可
+    return true;
+}
+
+bool IntNeReifConstraint::on_set_max(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type new_max,
+                                      Domain::value_type /*old_max*/) {
+    // (x != y) <-> b
+    if (!b_->is_assigned()) {
+        auto x_min = model.var_min(x_->id());
+        auto x_max = model.var_max(x_->id());
+        auto y_min = model.var_min(y_->id());
+        auto y_max = model.var_max(y_->id());
+        if (x_min > y_max || x_max < y_min) {
+            model.enqueue_instantiate(b_->id(), 1);
+        }
+    } else if (b_->assigned_value().value() == 0) {
+        // b = 0 → x == y: bounds を相互伝播
+        if (var_idx == x_->id()) {
+            model.enqueue_set_max(y_->id(), new_max);
+        } else if (var_idx == y_->id()) {
+            model.enqueue_set_max(x_->id(), new_max);
+        }
+    }
+    // b = 1: bounds だけでは伝播不可
+    return true;
+}
+
 bool IntNeReifConstraint::on_remove_value(Model& model, int /*save_point*/,
                                            size_t var_idx, Domain::value_type removed_value) {
     (void)removed_value;
@@ -746,6 +868,30 @@ bool IntLtConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
+bool IntLtConstraint::on_set_min(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_min,
+                                  Domain::value_type /*old_min*/) {
+    // x < y
+    // x.min が上がった → y.min >= x.min + 1
+    if (var_idx == x_->id()) {
+        model.enqueue_set_min(y_->id(), new_min + 1);
+    }
+    // y.min が上がっても x への制約は変わらない
+    return true;
+}
+
+bool IntLtConstraint::on_set_max(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_max,
+                                  Domain::value_type /*old_max*/) {
+    // x < y
+    // y.max が下がった → x.max <= y.max - 1
+    if (var_idx == y_->id()) {
+        model.enqueue_set_max(x_->id(), new_max - 1);
+    }
+    // x.max が下がっても y への制約は変わらない
+    return true;
+}
+
 bool IntLtConstraint::on_final_instantiate() {
     return x_->assigned_value() < y_->assigned_value();
 }
@@ -821,6 +967,28 @@ bool IntLeConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_set_max(x_->id(), y_val);
     }
 
+    return true;
+}
+
+bool IntLeConstraint::on_set_min(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_min,
+                                  Domain::value_type /*old_min*/) {
+    // x <= y
+    // x.min が上がった → y.min >= x.min
+    if (var_idx == x_->id()) {
+        model.enqueue_set_min(y_->id(), new_min);
+    }
+    return true;
+}
+
+bool IntLeConstraint::on_set_max(Model& model, int /*save_point*/,
+                                  size_t var_idx, Domain::value_type new_max,
+                                  Domain::value_type /*old_max*/) {
+    // x <= y
+    // y.max が下がった → x.max <= y.max
+    if (var_idx == y_->id()) {
+        model.enqueue_set_max(x_->id(), new_max);
+    }
     return true;
 }
 
@@ -977,6 +1145,64 @@ bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_instantiate(b_->id(), le ? 1 : 0);
     }
 
+    return true;
+}
+
+bool IntLeReifConstraint::on_set_min(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type /*new_min*/,
+                                      Domain::value_type /*old_min*/) {
+    // (x <= y) <-> b
+    auto x_max = model.var_max(x_->id());
+    auto y_min = model.var_min(y_->id());
+    auto x_min = model.var_min(x_->id());
+    auto y_max = model.var_max(y_->id());
+
+    if (!b_->is_assigned()) {
+        if (x_max <= y_min) {
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (x_min > y_max) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    } else if (b_->assigned_value().value() == 1) {
+        // x <= y: x.min が上がったら y.min も上がる
+        if (var_idx == x_->id()) {
+            model.enqueue_set_min(y_->id(), x_min);
+        }
+    } else {
+        // b = 0 → x > y: y.min が上がったら x.min も上がる (x >= y.min + 1)
+        if (var_idx == y_->id()) {
+            model.enqueue_set_min(x_->id(), y_min + 1);
+        }
+    }
+    return true;
+}
+
+bool IntLeReifConstraint::on_set_max(Model& model, int /*save_point*/,
+                                      size_t var_idx, Domain::value_type /*new_max*/,
+                                      Domain::value_type /*old_max*/) {
+    // (x <= y) <-> b
+    auto x_max = model.var_max(x_->id());
+    auto y_min = model.var_min(y_->id());
+    auto x_min = model.var_min(x_->id());
+    auto y_max = model.var_max(y_->id());
+
+    if (!b_->is_assigned()) {
+        if (x_max <= y_min) {
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (x_min > y_max) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    } else if (b_->assigned_value().value() == 1) {
+        // x <= y: y.max が下がったら x.max も下がる
+        if (var_idx == y_->id()) {
+            model.enqueue_set_max(x_->id(), y_max);
+        }
+    } else {
+        // b = 0 → x > y: x.max が下がったら y.max も下がる (y <= x.max - 1)
+        if (var_idx == x_->id()) {
+            model.enqueue_set_max(y_->id(), x_max - 1);
+        }
+    }
     return true;
 }
 
@@ -1150,6 +1376,37 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
+bool IntMaxConstraint::on_set_min(Model& model, int /*save_point*/,
+                                   size_t var_idx, Domain::value_type new_min,
+                                   Domain::value_type /*old_min*/) {
+    // m = max(x, y)
+    // x.min or y.min が上がった → m.min >= max(x.min, y.min)
+    if (var_idx == x_->id() || var_idx == y_->id()) {
+        auto x_min = model.var_min(x_->id());
+        auto y_min = model.var_min(y_->id());
+        model.enqueue_set_min(m_->id(), std::max(x_min, y_min));
+    }
+    // m.min が上がっても x, y には影響しない
+    return true;
+}
+
+bool IntMaxConstraint::on_set_max(Model& model, int /*save_point*/,
+                                   size_t var_idx, Domain::value_type new_max,
+                                   Domain::value_type /*old_max*/) {
+    // m = max(x, y)
+    if (var_idx == x_->id() || var_idx == y_->id()) {
+        // x.max or y.max が下がった → m.max <= max(x.max, y.max)
+        auto x_max = model.var_max(x_->id());
+        auto y_max = model.var_max(y_->id());
+        model.enqueue_set_max(m_->id(), std::max(x_max, y_max));
+    } else if (var_idx == m_->id()) {
+        // m.max が下がった → x.max <= m.max, y.max <= m.max
+        model.enqueue_set_max(x_->id(), new_max);
+        model.enqueue_set_max(y_->id(), new_max);
+    }
+    return true;
+}
+
 bool IntMaxConstraint::on_final_instantiate() {
     auto x_val = x_->assigned_value().value();
     auto y_val = y_->assigned_value().value();
@@ -1319,6 +1576,37 @@ bool IntMinConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
+    return true;
+}
+
+bool IntMinConstraint::on_set_min(Model& model, int /*save_point*/,
+                                   size_t var_idx, Domain::value_type new_min,
+                                   Domain::value_type /*old_min*/) {
+    // m = min(x, y)
+    if (var_idx == m_->id()) {
+        // m.min が上がった → x.min >= m.min, y.min >= m.min
+        model.enqueue_set_min(x_->id(), new_min);
+        model.enqueue_set_min(y_->id(), new_min);
+    } else if (var_idx == x_->id() || var_idx == y_->id()) {
+        // x.min or y.min が上がった → m.min >= min(x.min, y.min)
+        auto x_min = model.var_min(x_->id());
+        auto y_min = model.var_min(y_->id());
+        model.enqueue_set_min(m_->id(), std::min(x_min, y_min));
+    }
+    return true;
+}
+
+bool IntMinConstraint::on_set_max(Model& model, int /*save_point*/,
+                                   size_t var_idx, Domain::value_type new_max,
+                                   Domain::value_type /*old_max*/) {
+    // m = min(x, y)
+    // x.max or y.max が下がった → m.max <= min(x.max, y.max)
+    if (var_idx == x_->id() || var_idx == y_->id()) {
+        auto x_max = model.var_max(x_->id());
+        auto y_max = model.var_max(y_->id());
+        model.enqueue_set_max(m_->id(), std::min(x_max, y_max));
+    }
+    // m.max が下がっても x, y には影響しない
     return true;
 }
 

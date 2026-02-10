@@ -3,6 +3,7 @@
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/domain.hpp"
 #include "sabori_csp/model.hpp"
+#include "sabori_csp/solver.hpp"
 
 using namespace sabori_csp;
 
@@ -799,5 +800,778 @@ TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]
         IntLeReifConstraint c(x, y, b);
 
         REQUIRE(c.on_final_instantiate() == false);
+    }
+}
+
+// ============================================================================
+// on_set_min / on_set_max unit tests
+// ============================================================================
+
+TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]") {
+    SECTION("on_set_min(x) enqueues set_min(y, new_min+1)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLtConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // x.min が 3 に上がった → y.min >= 4
+        REQUIRE(c->on_set_min(model, 0, x->id(), 3, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 4) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_max(y) enqueues set_max(x, new_max-1)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLtConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // y.max が 7 に下がった → x.max <= 6
+        REQUIRE(c->on_set_max(model, 0, y->id(), 7, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == x->id() && upd.value == 6) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_min(y) does nothing") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLtConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, y->id(), 3, 1) == true);
+        REQUIRE_FALSE(model.has_pending_updates());
+    }
+
+    SECTION("on_set_max(x) does nothing") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLtConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, x->id(), 8, 10) == true);
+        REQUIRE_FALSE(model.has_pending_updates());
+    }
+}
+
+TEST_CASE("IntLeConstraint on_set_min/on_set_max", "[constraint][int_le][bounds]") {
+    SECTION("on_set_min(x) enqueues set_min(y, new_min)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLeConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 5, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 5) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_max(y) enqueues set_max(x, new_max)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntLeConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, y->id(), 7, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == x->id() && upd.value == 7) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]") {
+    SECTION("on_set_min(x) enqueues set_min(y)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntEqConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 4, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 4) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_max(y) enqueues set_max(x)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntEqConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, y->id(), 6, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == x->id() && upd.value == 6) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_min(y) enqueues set_min(x)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto c = std::make_shared<IntEqConstraint>(x, y);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, y->id(), 3, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == x->id() && upd.value == 3) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bounds]") {
+    SECTION("on_set_min(x) enqueues set_min(m, max(x.min, y.min))") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 3, 10);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // x.min 5 に上がった → m.min >= max(5, 3) = 5
+        // model.var_min(x) はまだ 1 だが、on_set_min に渡された new_min は 5
+        // ただし実装では model.var_min を使っているので、実際に set_min を適用する必要がある
+        model.set_min(0, x->id(), 5);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 5, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == m->id() && upd.value == 5) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_max(m) enqueues set_max(x) and set_max(y)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, m->id(), 7, 10) == true);
+
+        bool found_x = false, found_y = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax && upd.var_idx == x->id() && upd.value == 7) {
+                found_x = true;
+            }
+            if (upd.type == PendingUpdate::Type::SetMax && upd.var_idx == y->id() && upd.value == 7) {
+                found_y = true;
+            }
+        }
+        REQUIRE(found_x);
+        REQUIRE(found_y);
+    }
+
+    SECTION("on_set_max(x) enqueues set_max(m, max(x.max, y.max))") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 8);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // x.max が 6 に下がった → m.max <= max(6, 8) = 8
+        model.set_max(0, x->id(), 6);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, x->id(), 6, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == m->id() && upd.value == 8) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_min(m) does nothing") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, m->id(), 3, 1) == true);
+        REQUIRE_FALSE(model.has_pending_updates());
+    }
+}
+
+TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bounds]") {
+    SECTION("on_set_min(m) enqueues set_min(x) and set_min(y)") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMinConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, m->id(), 4, 1) == true);
+
+        bool found_x = false, found_y = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin && upd.var_idx == x->id() && upd.value == 4) {
+                found_x = true;
+            }
+            if (upd.type == PendingUpdate::Type::SetMin && upd.var_idx == y->id() && upd.value == 4) {
+                found_y = true;
+            }
+        }
+        REQUIRE(found_x);
+        REQUIRE(found_y);
+    }
+
+    SECTION("on_set_max(x) enqueues set_max(m, min(x.max, y.max))") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 8);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMinConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // x.max が 6 に下がった → m.max <= min(6, 8) = 6
+        model.set_max(0, x->id(), 6);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, x->id(), 6, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == m->id() && upd.value == 6) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("on_set_max(m) does nothing") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto m = model.create_variable("m", 1, 10);
+        auto c = std::make_shared<IntMinConstraint>(x, y, m);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, m->id(), 7, 10) == true);
+        REQUIRE_FALSE(model.has_pending_updates());
+    }
+}
+
+TEST_CASE("IntEqReifConstraint on_set_min/on_set_max", "[constraint][int_eq_reif][bounds]") {
+    SECTION("b undecided, disjoint bounds → enqueue b=0") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 5, 8);
+        auto b = model.create_variable("b", 0, 1);
+        auto c = std::make_shared<IntEqReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        // x.max=3 < y.min=5 なので b=0
+        REQUIRE(c->on_set_max(model, 0, x->id(), 3, 5) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::Instantiate &&
+                upd.var_idx == b->id() && upd.value == 0) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=1, on_set_min(x) propagates to y") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 1);
+        auto c = std::make_shared<IntEqReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_min(0, x->id(), 4);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 4, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 4) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+TEST_CASE("IntNeReifConstraint on_set_min/on_set_max", "[constraint][int_ne_reif][bounds]") {
+    SECTION("b undecided, disjoint bounds → enqueue b=1") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 5, 8);
+        auto b = model.create_variable("b", 0, 1);
+        auto c = std::make_shared<IntNeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, x->id(), 3, 5) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::Instantiate &&
+                upd.var_idx == b->id() && upd.value == 1) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=0, on_set_min(x) propagates to y") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 0);
+        auto c = std::make_shared<IntNeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_min(0, x->id(), 4);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 4, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 4) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif][bounds]") {
+    SECTION("b undecided, x.max <= y.min → enqueue b=1") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 5, 8);
+        auto b = model.create_variable("b", 0, 1);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, y->id(), 5, 3) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::Instantiate &&
+                upd.var_idx == b->id() && upd.value == 1) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b undecided, x.min > y.max → enqueue b=0") {
+        Model model;
+        auto x = model.create_variable("x", 6, 10);
+        auto y = model.create_variable("y", 1, 5);
+        auto b = model.create_variable("b", 0, 1);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 6, 4) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::Instantiate &&
+                upd.var_idx == b->id() && upd.value == 0) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=1, on_set_min(x) propagates to y") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 1);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_min(0, x->id(), 5);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, x->id(), 5, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == y->id() && upd.value == 5) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=1, on_set_max(y) propagates to x") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 1);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_max(0, y->id(), 7);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, y->id(), 7, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == x->id() && upd.value == 7) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=0, on_set_min(y) propagates x >= y.min+1") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 0);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_min(0, y->id(), 4);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_min(model, 0, y->id(), 4, 1) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMin &&
+                upd.var_idx == x->id() && upd.value == 5) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+
+    SECTION("b=0, on_set_max(x) propagates y <= x.max-1") {
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+        auto b = model.create_variable("b", 0);
+        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
+        model.add_constraint(c);
+        model.clear_pending_updates();
+
+        model.set_max(0, x->id(), 8);
+        model.clear_pending_updates();
+
+        REQUIRE(c->on_set_max(model, 0, x->id(), 8, 10) == true);
+
+        bool found = false;
+        while (model.has_pending_updates()) {
+            auto upd = model.pop_pending_update();
+            if (upd.type == PendingUpdate::Type::SetMax &&
+                upd.var_idx == y->id() && upd.value == 7) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+// ============================================================================
+// Solver integration tests for bounds propagation
+// ============================================================================
+
+TEST_CASE("IntLtConstraint solver with bounds propagation", "[constraint][int_lt][solver]") {
+    SECTION("x < y with x,y in [1,4] - all solutions correct") {
+        Model model;
+        auto x = model.create_variable("x", 1, 4);
+        auto y = model.create_variable("y", 1, 4);
+        model.add_constraint(std::make_shared<IntLtConstraint>(x, y));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // (1,2),(1,3),(1,4),(2,3),(2,4),(3,4) = 6
+        REQUIRE(solutions.size() == 6);
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("x") < sol.at("y"));
+        }
+    }
+}
+
+TEST_CASE("IntLeConstraint solver with bounds propagation", "[constraint][int_le][solver]") {
+    SECTION("x <= y with x,y in [1,4] - all solutions correct") {
+        Model model;
+        auto x = model.create_variable("x", 1, 4);
+        auto y = model.create_variable("y", 1, 4);
+        model.add_constraint(std::make_shared<IntLeConstraint>(x, y));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // 6 (x<y) + 4 (x==y) = 10
+        REQUIRE(solutions.size() == 10);
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("x") <= sol.at("y"));
+        }
+    }
+}
+
+TEST_CASE("IntEqConstraint solver with bounds propagation", "[constraint][int_eq][solver]") {
+    SECTION("x == y with x in [1,5], y in [3,7]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 5);
+        auto y = model.create_variable("y", 3, 7);
+        model.add_constraint(std::make_shared<IntEqConstraint>(x, y));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // x==y: {3,4,5} = 3 solutions
+        REQUIRE(solutions.size() == 3);
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("x") == sol.at("y"));
+        }
+    }
+}
+
+TEST_CASE("IntMaxConstraint solver with bounds propagation", "[constraint][int_max][solver]") {
+    SECTION("m = max(x, y) with x,y in [1,3], m in [1,3]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto m = model.create_variable("m", 1, 3);
+        model.add_constraint(std::make_shared<IntMaxConstraint>(x, y, m));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("m") == std::max(sol.at("x"), sol.at("y")));
+        }
+        // (1,1,1),(1,2,2),(1,3,3),(2,1,2),(2,2,2),(2,3,3),(3,1,3),(3,2,3),(3,3,3) = 9
+        REQUIRE(solutions.size() == 9);
+    }
+}
+
+TEST_CASE("IntMinConstraint solver with bounds propagation", "[constraint][int_min][solver]") {
+    SECTION("m = min(x, y) with x,y in [1,3], m in [1,3]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto m = model.create_variable("m", 1, 3);
+        model.add_constraint(std::make_shared<IntMinConstraint>(x, y, m));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("m") == std::min(sol.at("x"), sol.at("y")));
+        }
+        REQUIRE(solutions.size() == 9);
+    }
+}
+
+TEST_CASE("IntLeReifConstraint solver with bounds propagation", "[constraint][int_le_reif][solver]") {
+    SECTION("(x <= y) <-> b with x,y in [1,3]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto b = model.create_variable("b", 0, 1);
+        model.add_constraint(std::make_shared<IntLeReifConstraint>(x, y, b));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // 9 combinations * 1 b value each = 9
+        REQUIRE(solutions.size() == 9);
+        for (const auto& sol : solutions) {
+            bool le = (sol.at("x") <= sol.at("y"));
+            REQUIRE(le == (sol.at("b") == 1));
+        }
+    }
+}
+
+TEST_CASE("IntEqReifConstraint solver with bounds propagation", "[constraint][int_eq_reif][solver]") {
+    SECTION("(x == y) <-> b with x,y in [1,3]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto b = model.create_variable("b", 0, 1);
+        model.add_constraint(std::make_shared<IntEqReifConstraint>(x, y, b));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(solutions.size() == 9);
+        for (const auto& sol : solutions) {
+            bool eq = (sol.at("x") == sol.at("y"));
+            REQUIRE(eq == (sol.at("b") == 1));
+        }
+    }
+}
+
+TEST_CASE("IntNeReifConstraint solver with bounds propagation", "[constraint][int_ne_reif][solver]") {
+    SECTION("(x != y) <-> b with x,y in [1,3]") {
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto b = model.create_variable("b", 0, 1);
+        model.add_constraint(std::make_shared<IntNeReifConstraint>(x, y, b));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(solutions.size() == 9);
+        for (const auto& sol : solutions) {
+            bool ne = (sol.at("x") != sol.at("y"));
+            REQUIRE(ne == (sol.at("b") == 1));
+        }
     }
 }
