@@ -101,7 +101,7 @@ void print_solution(const sabori_csp::Solution& sol,
 }
 
 /**
- * @brief 満足可能性問題を解く
+ * @brief 充足可能性問題を解く
  */
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model();
@@ -245,7 +245,12 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
         if (!find_all && best_solution) {
             print_solution(*best_solution, fzn_model);
         }
-        std::cout << "==========\n";
+	if (g_timeout_flag) {
+            std::cout << "=====TIMEOUT=====\n";
+	}
+	else {
+	    std::cout << "==========\n";
+	}
     }
 }
 
