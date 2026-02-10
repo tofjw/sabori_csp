@@ -1,0 +1,6 @@
+var 1..2: x :: output_var;
+var 1..2: y :: output_var;
+array [1..4] of int: t = [1,1, 2,2];
+constraint table_int([x, y], t);
+constraint int_ne(x, y);
+solve satisfy;

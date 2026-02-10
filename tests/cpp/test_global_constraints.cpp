@@ -2420,3 +2420,174 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
         REQUIRE(count == 9);
     }
 }
+
+// ============================================================================
+// TableConstraint tests
+// ============================================================================
+
+TEST_CASE("TableConstraint name", "[constraint][table]") {
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    // table: (1,2), (2,3), (3,1)
+    TableConstraint c({x, y}, {1,2, 2,3, 3,1});
+    REQUIRE(c.name() == "table_int");
+}
+
+TEST_CASE("TableConstraint variables", "[constraint][table]") {
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    TableConstraint c({x, y}, {1,2, 2,3, 3,1});
+    auto vars = c.variables();
+    REQUIRE(vars.size() == 2);
+}
+
+TEST_CASE("TableConstraint is_satisfied", "[constraint][table]") {
+    SECTION("satisfied - tuple in table") {
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        TableConstraint c({x, y}, {1,2, 2,3, 3,1});
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == true);
+    }
+
+    SECTION("violated - tuple not in table") {
+        auto x = std::make_shared<Variable>("x", Domain(1, 1));
+        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        TableConstraint c({x, y}, {1,2, 2,3, 3,1});
+        REQUIRE(c.is_satisfied().has_value());
+        REQUIRE(c.is_satisfied().value() == false);
+    }
+
+    SECTION("unknown - not fully assigned") {
+        auto x = std::make_shared<Variable>("x", Domain(1, 3));
+        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        TableConstraint c({x, y}, {1,2, 2,3, 3,1});
+        REQUIRE_FALSE(c.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("TableConstraint presolve", "[constraint][table]") {
+    SECTION("removes values not in any tuple") {
+        auto x = std::make_shared<Variable>("x", Domain(1, 5));
+        auto y = std::make_shared<Variable>("y", Domain(1, 5));
+        // table: (1,2), (2,3)
+        TableConstraint c({x, y}, {1,2, 2,3});
+        REQUIRE(c.presolve(dummy_model) == true);
+
+        // x should only have {1,2}, y should only have {2,3}
+        REQUIRE(x->domain().contains(1));
+        REQUIRE(x->domain().contains(2));
+        REQUIRE_FALSE(x->domain().contains(3));
+        REQUIRE_FALSE(x->domain().contains(4));
+        REQUIRE_FALSE(x->domain().contains(5));
+
+        REQUIRE(y->domain().contains(2));
+        REQUIRE(y->domain().contains(3));
+        REQUIRE_FALSE(y->domain().contains(1));
+        REQUIRE_FALSE(y->domain().contains(4));
+    }
+}
+
+TEST_CASE("TableConstraint empty table", "[constraint][table]") {
+    auto x = std::make_shared<Variable>("x", Domain(1, 3));
+    auto y = std::make_shared<Variable>("y", Domain(1, 3));
+    TableConstraint c({x, y}, {});
+    REQUIRE(c.is_initially_inconsistent() == true);
+}
+
+TEST_CASE("TableConstraint with Solver", "[constraint][table][solver]") {
+    SECTION("find all solutions for 2-var table") {
+        // table: (1,2), (2,3), (3,1)
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        model.add_constraint(std::make_shared<TableConstraint>(
+            std::vector<VariablePtr>{x, y},
+            std::vector<Domain::value_type>{1,2, 2,3, 3,1}));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 3);
+        // Verify each solution is a valid tuple
+        for (const auto& sol : solutions) {
+            auto sx = sol.at("x");
+            auto sy = sol.at("y");
+            bool valid = (sx == 1 && sy == 2) ||
+                         (sx == 2 && sy == 3) ||
+                         (sx == 3 && sy == 1);
+            REQUIRE(valid);
+        }
+    }
+
+    SECTION("3-var table") {
+        // table: (1,2,3), (3,1,2), (2,3,1)
+        Model model;
+        auto x = model.create_variable("x", 1, 3);
+        auto y = model.create_variable("y", 1, 3);
+        auto z = model.create_variable("z", 1, 3);
+        model.add_constraint(std::make_shared<TableConstraint>(
+            std::vector<VariablePtr>{x, y, z},
+            std::vector<Domain::value_type>{1,2,3, 3,1,2, 2,3,1}));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 3);
+    }
+
+    SECTION("UNSAT: table + conflicting constraint") {
+        // table: (1,1), (2,2) but x != y
+        Model model;
+        auto x = model.create_variable("x", 1, 2);
+        auto y = model.create_variable("y", 1, 2);
+        model.add_constraint(std::make_shared<TableConstraint>(
+            std::vector<VariablePtr>{x, y},
+            std::vector<Domain::value_type>{1,1, 2,2}));
+        model.add_constraint(std::make_shared<IntNeConstraint>(x, y));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) {
+            return true;
+        });
+
+        REQUIRE(count == 0);
+    }
+
+    SECTION("large table (>64 tuples)") {
+        // Create a table with all pairs (i,j) where i+j is even, i,j in [1,10]
+        Model model;
+        auto x = model.create_variable("x", 1, 10);
+        auto y = model.create_variable("y", 1, 10);
+
+        std::vector<Domain::value_type> tuples;
+        int expected_count = 0;
+        for (int i = 1; i <= 10; ++i) {
+            for (int j = 1; j <= 10; ++j) {
+                if ((i + j) % 2 == 0) {
+                    tuples.push_back(i);
+                    tuples.push_back(j);
+                    ++expected_count;
+                }
+            }
+        }
+
+        model.add_constraint(std::make_shared<TableConstraint>(
+            std::vector<VariablePtr>{x, y}, tuples));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) {
+            return true;
+        });
+
+        REQUIRE(count == static_cast<size_t>(expected_count));
+    }
+}

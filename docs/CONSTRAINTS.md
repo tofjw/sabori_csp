@@ -174,6 +174,29 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
 | `table_int` | `TableConstraint` | 変数の値の組み合わせがタプル集合に含まれる |
 
+#### table_int 制約
+
+変数の値の組み合わせが許可されたタプル集合に含まれることを要求する制約。
+Compact Table (CT) アルゴリズムで実装。
+
+**引数:**
+- `vars`: 制約に関与する変数のリスト（arity = vars.size()）
+- `flat_tuples`: タプルをフラットに並べた配列（arity × num_tuples 要素）
+
+**特徴:**
+- ビットセットで有効タプルを管理し、O(num_words) で更新
+- 各変数×値の組み合わせに対する supports ビットセットを事前構築
+- on_instantiate, on_remove_value, on_set_min, on_set_max でインクリメンタル伝播
+- filter_domains でサポートのない値を除去
+
+**例:**
+```fzn
+var 1..3: x;
+var 1..3: y;
+% タプル: (1,2), (2,3), (3,1)
+constraint table_int([x, y], [1,2, 2,3, 3,1]);
+```
+
 #### circuit 制約
 
 変数 `x[0], x[1], ..., x[n-1]` がハミルトン閉路を形成する制約。

@@ -215,12 +215,16 @@ void Solver::add_solution_nogood(const Model& model) {
     std::vector<Literal> lits;
     const auto& variables = model.variables();
     for (size_t i = 0; i < variables.size(); ++i) {
-        if (model.is_instantiated(i)) {
+        // 定数変数（initial_range == 1）を除外: 全解で同じ値なので情報がなく、
+        // NoGood の watched literal が定数に設定されると機能しなくなる
+        if (model.is_instantiated(i) && model.initial_range(i) > 1) {
             lits.push_back({i, model.value(i)});
         }
     }
-    add_nogood(lits);
-    nogoods_.back()->permanent = true;
+    if (!lits.empty()) {
+        add_nogood(lits);
+        nogoods_.back()->permanent = true;
+    }
 }
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,

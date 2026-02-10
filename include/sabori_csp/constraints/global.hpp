@@ -1058,6 +1058,112 @@ private:
     void recompute_bounds_support(Model& model);
 };
 
+/**
+ * @brief table_int制約: 変数の値の組み合わせがタプル集合に含まれる
+ *
+ * Compact Table (CT) アルゴリズムで実装。
+ * ビットセットで有効タプルを管理し、ドメインフィルタリングを行う。
+ */
+class TableConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param vars 制約に関与する変数リスト
+     * @param flat_tuples タプルをフラットに並べた配列（arity * num_tuples 要素）
+     */
+    TableConstraint(std::vector<VariablePtr> vars,
+                    std::vector<Domain::value_type> flat_tuples);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    /**
+     * @brief 残り1変数になった時の伝播
+     */
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す
+     */
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    size_t arity_;
+    size_t num_tuples_;
+    size_t num_words_;
+
+    std::vector<Domain::value_type> flat_tuples_;  ///< is_satisfied 用コピー
+
+    /// フラットビットセット: supports_data_[supports_offsets_[var][val] + w]
+    std::vector<uint64_t> supports_data_;
+    /// 各変数の値→supports_data_内オフセット
+    std::vector<std::unordered_map<Domain::value_type, size_t>> supports_offsets_;
+    /// 有効タプルのビットマスク
+    std::vector<uint64_t> current_table_;
+
+    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    struct TrailEntry {
+        std::vector<uint64_t> old_table;
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    /**
+     * @brief trail に保存（同一レベルでの重複保存を防止）
+     */
+    void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief 各変数のドメインからサポートのない値を除去
+     * @param model モデル参照
+     * @param skip_var_idx スキップする変数の内部インデックス（-1 でスキップなし）
+     * @return 矛盾がなければ true
+     */
+    bool filter_domains(Model& model, int skip_var_idx);
+
+    /**
+     * @brief 指定変数の指定値にサポートがあるか
+     */
+    bool has_support(size_t var_idx, Domain::value_type value) const;
+
+    /**
+     * @brief テーブルが空かチェック
+     */
+    bool table_is_empty() const;
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

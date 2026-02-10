@@ -803,6 +803,17 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto y = get_var(decl.args[1]);
             auto m = get_var(decl.args[2]);
             constraint = std::make_shared<IntMaxConstraint>(x, y, m);
+        } else if (decl.name == "table_int" || decl.name == "sabori_table_int") {
+            if (decl.args.size() != 2) {
+                throw std::runtime_error("table_int requires 2 arguments (vars, tuples)");
+            }
+            const auto var_names = resolve_var_array(decl.args[0]);
+            const auto tuples = resolve_int_array(decl.args[1]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                vars.push_back(get_var_by_name(name));
+            }
+            constraint = std::make_shared<TableConstraint>(vars, tuples);
         } else if (decl.name == "set_in") {
             // set_in(x, lb..ub) means x must be in range [lb, ub]
             if (decl.args.size() != 2) {
