@@ -253,7 +253,7 @@ private:
      * @brief 変数確定時の伝播
      */
     bool propagate_instantiate(Model& model, size_t var_idx,
-                               Domain::value_type prev_min, Domain::value_type prev_max);
+                                Domain::value_type prev_min, Domain::value_type prev_max);
 
     /**
      * @brief バックトラック

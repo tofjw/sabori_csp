@@ -135,14 +135,15 @@ public:
                     Domain::value_type old_max) override;
 
     /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
-
-    /**
-     * @brief 初期伝播後に内部状態を同期する
-     */
-    void sync_after_propagation() override;
 
     /**
      * @brief 目標値を取得
@@ -185,10 +186,9 @@ private:
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
-     * @brief 値を割り当て可能か O(1) で判定 (Look-ahead)
+     * @brief trail 保存ヘルパー
      */
-    bool can_assign(size_t internal_idx, Domain::value_type value,
-                    Domain::value_type prev_min, Domain::value_type prev_max) const;
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**
@@ -211,6 +211,26 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
     void rewind_to(int save_point);
 
 protected:
@@ -231,6 +251,11 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**
@@ -611,9 +636,27 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
-    void rewind_to(int save_point);
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
 
-    void sync_after_propagation() override;
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
+    void rewind_to(int save_point);
 
 protected:
     void check_initial_consistency() override;
@@ -635,6 +678,11 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**
@@ -670,6 +718,26 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
     void rewind_to(int save_point);
 
 protected:
@@ -692,6 +760,11 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**
@@ -727,6 +800,26 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 
+    /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
     void rewind_to(int save_point);
 
 protected:
@@ -749,6 +842,11 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**
@@ -788,6 +886,26 @@ public:
     bool on_final_instantiate() override;
 
     /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
+     * @brief 値削除時のインクリメンタル伝播
+     */
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
@@ -808,6 +926,11 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
 };
 
 /**

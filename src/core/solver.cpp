@@ -379,52 +379,6 @@ bool Solver::presolve(Model& model) {
         }
     }
 
-    // Phase 2: 固定点に達するまで繰り返す
-    bool changed = true;
-    while (changed) {
-        changed = false;
-
-        // 各ループの先頭で内部状態を同期
-        // propagate() や on_last_uninstantiated() が変数を直接確定させた場合に対応
-        for (const auto& constraint : constraints) {
-            constraint->sync_after_propagation();
-        }
-
-        for (const auto& constraint : constraints) {
-            // 残り1変数の制約を検出
-            size_t uninstantiated_count = constraint->count_uninstantiated();
-
-            if (uninstantiated_count == 1) {
-                size_t last_idx = constraint->find_last_uninstantiated();
-                if (last_idx != SIZE_MAX) {
-                    if (!constraint->on_last_uninstantiated(model, current_decision_, last_idx)) {
-                        return false;  // 矛盾
-                    }
-                }
-            } else if (uninstantiated_count == 0) {
-                // 全変数確定済み → 最終チェック
-                if (!constraint->on_final_instantiate()) {
-                    return false;  // 矛盾
-                }
-            }
-        }
-
-        // キューを処理
-        if (!process_queue(model)) {
-            return false;  // 矛盾
-        }
-
-        // pending があれば変更あり
-        if (model.has_pending_updates()) {
-            changed = true;
-        }
-    }
-
-    // 最終的な内部状態を同期（探索フェーズに向けて）
-    for (const auto& constraint : constraints) {
-        constraint->sync_after_propagation();
-    }
-
     return true;
 }
 
@@ -434,11 +388,10 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     const auto& constraints = model.constraints();
     auto val = model.value(var_idx);
 
-    // ウォッチリストを使った高速制約伝播
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (size_t c_idx : constraint_indices) {
         if (!constraints[c_idx]->on_instantiate(model, current_decision_,
-                                                 var_idx, val, prev_min, prev_max)) {
+						    var_idx, val, prev_min, prev_max)) {
             return false;
         }
     }
@@ -492,6 +445,7 @@ bool Solver::verify_solution(const Model& model) const {
         if (satisfied.has_value() && !satisfied.value()) {
 	    std::cerr << "% [debug] verify error: " << constraint->name() << "\n";
 	    // ここにきたらおかしい
+	    abort();
             return false;
         }
     }
@@ -807,13 +761,18 @@ bool Solver::process_queue(Model& model) {
 
     while (model.has_pending_updates()) {
         if (stopped_) return false;
-        auto update = model.pop_pending_update();
 
+        // ここの update の内容は、まだ変数に反映されていないことに注意
+        auto update = model.pop_pending_update();
         size_t var_idx = update.var_idx;
 
         // 操作前の状態を保存
         auto prev_min = model.var_min(var_idx);
         auto prev_max = model.var_max(var_idx);
+
+        // instantiated なら以下のいずれか
+        // * 最初から定数か
+        // * 過去に instantiate で処理された
         bool was_instantiated = model.is_instantiated(var_idx);
 
         switch (update.type) {
@@ -824,10 +783,7 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
-                // NOTE: この場合は propagate_instantiate を呼ばない
-                // 理由: on_instantiate は同じ変数に対して2回呼ばれると
-                // 内部カウンタが二重にデクリメントされてしまうため
-                // ドメイン削減で確定した変数は、sync_after_propagation で対応する
+                // 二重に同じイベントを呼ばない
                 continue;
             }
             if (!model.instantiate(current_decision_, var_idx, update.value)) {

@@ -306,16 +306,16 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
         // index が未確定の場合は on_last_uninstantiated で処理
     }
 
-    // 残り1変数チェック（2WL）
-    size_t uninstantiated_count = count_uninstantiated();
-    if (uninstantiated_count == 1) {
+    // 残り変数が 1 or 0 の時
+    if (has_uninstantiated()) {
         size_t last_idx = find_last_uninstantiated();
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
             }
         }
-    } else if (uninstantiated_count == 0) {
+    }
+    else {
         return on_final_instantiate();
     }
 

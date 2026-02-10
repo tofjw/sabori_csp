@@ -530,7 +530,6 @@ TEST_CASE("Constraint watches initialization", "[constraint][2wl]") {
         // 両方未確定なら w1=0, w2=1 を監視
         REQUIRE(c.watch1() == 0);
         REQUIRE(c.watch2() == 1);
-        REQUIRE(!c.can_be_finalized());
     }
 
     SECTION("one assigned variable") {
@@ -540,16 +539,12 @@ TEST_CASE("Constraint watches initialization", "[constraint][2wl]") {
 
         // x は確定済みなので y を監視
         REQUIRE(c.watch1() == 1);
-        REQUIRE(!c.can_be_finalized());
     }
 
     SECTION("both assigned variables") {
         auto x = make_var("x", 5);
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
-
-        // 両方確定済み
-        REQUIRE(c.can_be_finalized());
     }
 }
 

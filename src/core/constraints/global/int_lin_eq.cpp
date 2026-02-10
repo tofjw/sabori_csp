@@ -17,8 +17,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     , target_sum_(target_sum)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
-    , max_rem_potential_(0)
-    , unfixed_count_(0) {
+    , max_rem_potential_(0) {
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -51,7 +50,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
         var_ptr_to_idx_[vars_[i].get()] = i;
     }
 
-    // 注意: 内部状態（current_fixed_sum_, unfixed_count_ 等）は presolve() で初期化
+    // 注意: 内部状態（current_fixed_sum_ 等）は presolve() で初期化
     // コンストラクタでは変数の状態を参照しない
 }
 
@@ -147,7 +146,7 @@ bool IntLinEqConstraint::presolve(Model& model) {
                 }
             }
 
-            // 一括除去で高速にドメインを修正
+            // ドメインの範囲を変更
             if (new_min > cur_min) {
                 if (new_min > cur_max) return false;
                 if (!vars_[j]->remove_below(new_min)) return false;
@@ -177,40 +176,14 @@ bool IntLinEqConstraint::presolve(Model& model) {
     return true;
 }
 
-bool IntLinEqConstraint::can_assign(size_t internal_idx, Domain::value_type value,
-                                     Domain::value_type prev_min,
-                                     Domain::value_type prev_max) const {
-    int64_t c = coeffs_[internal_idx];
-
-    // 1. 自分が value を取った時、他が「最小」でも target を超えないか？
-    int64_t potential_min;
-    if (c >= 0) {
-        potential_min = current_fixed_sum_ + (min_rem_potential_ - c * prev_min) + c * value;
-    } else {
-        potential_min = current_fixed_sum_ + (min_rem_potential_ - c * prev_max) + c * value;
-    }
-    if (potential_min > target_sum_) {
-        return false;
-    }
-
-    // 2. 自分が value を取った時、他が「最大」でも target に届くか？
-    int64_t potential_max;
-    if (c >= 0) {
-        potential_max = current_fixed_sum_ + (max_rem_potential_ - c * prev_max) + c * value;
-    } else {
-        potential_max = current_fixed_sum_ + (max_rem_potential_ - c * prev_min) + c * value;
-    }
-    if (potential_max < target_sum_) {
-        return false;
-    }
-
-    return true;
-}
-
 bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
                                           size_t var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+        return false;
+    }
+
     // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
     Variable* var_ptr = model.variable(var_idx).get();
     auto it = var_ptr_to_idx_.find(var_ptr);
@@ -221,16 +194,8 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
     }
     size_t internal_idx = it->second;
 
-    // Look-ahead チェック
-    if (!can_assign(internal_idx, value, prev_min, prev_max)) {
-        return false;
-    }
-
     // Trail に保存
-    if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_}});
-        model.mark_constraint_dirty(model_index(), save_point);
-    }
+    save_trail_if_needed(model, save_point);
 
     // 差分更新
     int64_t c = coeffs_[internal_idx];
@@ -243,16 +208,16 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
         max_rem_potential_ -= c * prev_min;
     }
 
-    // 未確定カウントをデクリメント（O(1)）
-    --unfixed_count_;
-
-    // 残り1変数になったら on_last_uninstantiated を呼び出す
-    if (unfixed_count_ == 1) {
+    // 残り変数が 1 or 0 の時
+    if (has_uninstantiated()) {
         size_t last_idx = find_last_uninstantiated();
         if (last_idx != SIZE_MAX) {
-            return on_last_uninstantiated(model, save_point, last_idx);
+            if (!on_last_uninstantiated(model, save_point, last_idx)) {
+                return false;
+            }
         }
-    } else if (unfixed_count_ == 0) {
+    }
+    else {
         return on_final_instantiate();
     }
 
@@ -285,7 +250,7 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
         // 割り切れなければ制約は満たせない
         return false;
     }
-
+    
     return true;
 }
 
@@ -300,6 +265,7 @@ void IntLinEqConstraint::check_initial_consistency() {
     }
 }
 
+// constraint の親クラスからは呼ばない場合も、verify で使うので実装
 bool IntLinEqConstraint::on_final_instantiate() {
     int64_t sum = 0;
     for (size_t i = 0; i < vars_.size(); ++i) {
@@ -314,24 +280,108 @@ void IntLinEqConstraint::rewind_to(int save_point) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
         max_rem_potential_ = entry.max_pot;
-        unfixed_count_ = entry.unfixed_count;
         trail_.pop_back();
     }
 }
 
-bool IntLinEqConstraint::on_set_min(Model& model, int /*save_point*/,
-                                     size_t /*var_idx*/, Domain::value_type /*new_min*/,
-                                     Domain::value_type /*old_min*/) {
-    // 初期伝播は propagate() で、探索中は on_instantiate で処理
-    // on_set_min/on_set_max は今のところ使用しない
+void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
+    if (trail_.empty() || trail_.back().first != save_point) {
+        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_}});
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+}
+
+bool IntLinEqConstraint::on_set_min(Model& model, int save_point,
+                                     size_t var_idx, Domain::value_type new_min,
+                                     Domain::value_type old_min) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        // min_rem_potential_ は c * min で寄与
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_min - old_min);
+    } else {
+        // max_rem_potential_ は c * min で寄与
+        save_trail_if_needed(model, save_point);
+        max_rem_potential_ += c * (new_min - old_min);
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+    if (min_sum > target_sum_ || max_sum < target_sum_) {
+        return false;
+    }
     return true;
 }
 
-bool IntLinEqConstraint::on_set_max(Model& model, int /*save_point*/,
-                                     size_t /*var_idx*/, Domain::value_type /*new_max*/,
-                                     Domain::value_type /*old_max*/) {
-    // 初期伝播は propagate() で、探索中は on_instantiate で処理
-    // on_set_min/on_set_max は今のところ使用しない
+bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
+                                     size_t var_idx, Domain::value_type new_max,
+                                     Domain::value_type old_max) {
+  Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        // max_rem_potential_ は c * max で寄与
+        save_trail_if_needed(model, save_point);
+        max_rem_potential_ += c * (new_max - old_max);
+    } else {
+        // min_rem_potential_ は c * max で寄与
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_max - old_max);
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+    if (min_sum > target_sum_ || max_sum < target_sum_) {
+        return false;
+    }
+    return true;
+}
+
+bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
+                                          size_t var_idx, Domain::value_type removed_value) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        auto current_min = model.var_min(var_idx);
+        if (current_min > removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_min - removed_value);
+        }
+        auto current_max = model.var_max(var_idx);
+        if (current_max < removed_value) {
+            save_trail_if_needed(model, save_point);
+            max_rem_potential_ += c * (current_max - removed_value);
+        }
+    } else {
+        auto current_min = model.var_min(var_idx);
+        if (current_min > removed_value) {
+            save_trail_if_needed(model, save_point);
+            max_rem_potential_ += c * (current_min - removed_value);
+        }
+        auto current_max = model.var_max(var_idx);
+        if (current_max < removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_max - removed_value);
+        }
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+    if (min_sum > target_sum_ || max_sum < target_sum_) {
+        return false;
+    }
     return true;
 }
 
@@ -340,7 +390,6 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
     max_rem_potential_ = 0;
-    unfixed_count_ = 0;
 
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -350,7 +399,6 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
             current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
             // 未確定の変数
-            ++unfixed_count_;
             auto min_val = model.var_min(vars_[i]->id());
             auto max_val = model.var_max(vars_[i]->id());
 
@@ -378,11 +426,6 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     }
 
     return true;
-}
-
-void IntLinEqConstraint::sync_after_propagation() {
-    // presolve() に統合されたため、空実装
-    // 後方互換性のために残す
 }
 
 

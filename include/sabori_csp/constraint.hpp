@@ -187,11 +187,6 @@ public:
                                   size_t var_idx, Domain::value_type removed_value);
 
     /**
-     * @brief 制約設定直後に全変数が確定しているかどうか
-     */
-    bool can_be_finalized() const;
-
-    /**
      * @brief 初期状態で矛盾しているかどうか
      *
      * 制約設定時点で明らかに満たせない場合にtrueを返す。
@@ -220,24 +215,15 @@ public:
     void init_watches();
 
     /**
-     * @brief 未確定変数の数を取得
+     * @brief 未確定変数があるかどうか
      */
-    size_t count_uninstantiated() const;
+    bool has_uninstantiated() const;
 
     /**
      * @brief 唯一の未確定変数の内部インデックスを取得
      * @return 未確定変数が1つだけならそのインデックス、それ以外はSIZE_MAX
      */
     size_t find_last_uninstantiated() const;
-
-    /**
-     * @brief 初期伝播後に内部状態を同期する
-     *
-     * 初期伝播中に他の制約によって変数が確定した場合、
-     * 内部状態（unfixed_count_ など）と実際の変数状態が
-     * 一致しなくなる可能性がある。このメソッドで再同期する。
-     */
-    virtual void sync_after_propagation() {}
 
     /**
      * @brief バックトラック時に内部状態を復元する

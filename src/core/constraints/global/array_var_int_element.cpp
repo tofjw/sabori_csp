@@ -378,26 +378,17 @@ bool ArrayVarIntElementConstraint::on_instantiate(
     // bounds support を更新
     recompute_bounds_support(model);
 
-    // 残り1変数チェック
-    size_t uninstantiated_count = count_uninstantiated();
-    if (uninstantiated_count == 1) {
+    // 残り変数が 1 or 0 の時
+    if (has_uninstantiated()) {
         size_t last_idx = find_last_uninstantiated();
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
-#if 0
-                std::cerr << "[DEBUG] on_instantiate FAIL: on_last_uninstantiated" << std::endl;
-#endif
                 return false;
             }
         }
-    } else if (uninstantiated_count == 0) {
-        bool ok = on_final_instantiate();
-#if 0
-        if (!ok) {
-            std::cerr << "[DEBUG] on_instantiate FAIL: on_final_instantiate" << std::endl;
-        }
-#endif
-        return ok;
+    }
+    else {
+        return on_final_instantiate();
     }
 
     return true;

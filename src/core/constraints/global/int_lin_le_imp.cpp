@@ -128,10 +128,7 @@ bool IntLinLeImpConstraint::on_instantiate(Model& model, int save_point,
     // b = 0 の場合も状態を更新（b が後で 1 になる可能性があるため）
 
     // Trail に保存
-    if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_}});
-        model.mark_constraint_dirty(model_index(), save_point);
-    }
+    save_trail_if_needed(model, save_point);
 
     // 差分更新
     int64_t c = coeffs_[internal_idx];
@@ -229,6 +226,92 @@ bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
         }
     }
 
+    return true;
+}
+
+void IntLinLeImpConstraint::save_trail_if_needed(Model& model, int save_point) {
+    if (trail_.empty() || trail_.back().first != save_point) {
+        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_}});
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+}
+
+bool IntLinLeImpConstraint::on_set_min(Model& model, int save_point,
+                                        size_t var_idx, Domain::value_type new_min,
+                                        Domain::value_type old_min) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    // c >= 0 の変数のみ影響: min_rem_potential_ は c * min で寄与
+    if (c >= 0) {
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_min - old_min);
+
+        if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+            if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool IntLinLeImpConstraint::on_set_max(Model& model, int save_point,
+                                        size_t var_idx, Domain::value_type new_max,
+                                        Domain::value_type old_max) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    // c < 0 の変数のみ影響: min_rem_potential_ は c * max で寄与
+    if (c < 0) {
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_max - old_max);
+
+        if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+            if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool IntLinLeImpConstraint::on_remove_value(Model& model, int save_point,
+                                             size_t var_idx, Domain::value_type removed_value) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        auto current_min = model.var_min(var_idx);
+        if (current_min > removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_min - removed_value);
+        }
+    } else {
+        auto current_max = model.var_max(var_idx);
+        if (current_max < removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_max - removed_value);
+        }
+    }
+
+    if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+        if (current_fixed_sum_ + min_rem_potential_ > bound_) {
+            return false;
+        }
+    }
     return true;
 }
 

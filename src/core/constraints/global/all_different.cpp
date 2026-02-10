@@ -125,10 +125,12 @@ bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type
 }
 
 bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
-                                             size_t /*var_idx*/, Domain::value_type value,
-                                             Domain::value_type /*prev_min*/,
-                                             Domain::value_type /*prev_max*/) {
-    // 基底クラスの 2WL 処理は省略（AllDifferent は全変数を監視）
+					    size_t var_idx, Domain::value_type value,
+					    Domain::value_type prev_min,
+					    Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+      return false;
+    }
 
     // プールから値を削除
     auto it = pool_sparse_.find(value);
@@ -162,21 +164,29 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // 残り1変数になったら on_last_uninstantiated を呼び出す
-    if (unfixed_count_ == 1) {
-        size_t last_idx = find_last_uninstantiated();
-        if (last_idx != SIZE_MAX) {
-            return on_last_uninstantiated(model, save_point, last_idx);
-        }
-    } else if (unfixed_count_ == 0) {
+    if (unfixed_count_ <= 1) {
+      size_t last_idx = SIZE_MAX;
+      if (!vars_[watch1()]->is_assigned()) {
+	last_idx = watch1();
+      }
+      if (!vars_[watch2()]->is_assigned()) {
+	last_idx = watch2();
+      }
+
+      if (last_idx == SIZE_MAX) {
         return on_final_instantiate();
+      }
+      else {
+	// 残り1変数になったら on_last_uninstantiated を呼び出す
+	return on_last_uninstantiated(model, save_point, last_idx);
+      }
     }
 
     return true;
 }
 
 bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
-                                                      size_t last_var_internal_idx) {
+						    size_t last_var_internal_idx) {
     auto& last_var = vars_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ

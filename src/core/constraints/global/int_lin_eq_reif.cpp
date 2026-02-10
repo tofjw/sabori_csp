@@ -146,6 +146,10 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
                                               size_t var_idx, Domain::value_type value,
                                               Domain::value_type prev_min,
                                               Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+        return false;
+    }
+
     Variable* var_ptr = model.variable(var_idx).get();
     auto it = var_ptr_to_idx_.find(var_ptr);
     if (it == var_ptr_to_idx_.end()) {
@@ -180,10 +184,7 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
 
     // 線形変数が確定した場合
     // Trail に保存
-    if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_}});
-        model.mark_constraint_dirty(model_index(), save_point);
-    }
+    save_trail_if_needed(model, save_point);
 
     // 差分更新
     int64_t c = coeffs_[internal_idx];
@@ -346,8 +347,128 @@ bool IntLinEqReifConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-void IntLinEqReifConstraint::sync_after_propagation() {
-    // presolve() に統合されたため、空実装
+void IntLinEqReifConstraint::save_trail_if_needed(Model& model, int save_point) {
+    if (trail_.empty() || trail_.back().first != save_point) {
+        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_}});
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+}
+
+bool IntLinEqReifConstraint::on_set_min(Model& model, int save_point,
+                                         size_t var_idx, Domain::value_type new_min,
+                                         Domain::value_type old_min) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_min - old_min);
+    } else {
+        save_trail_if_needed(model, save_point);
+        max_rem_potential_ += c * (new_min - old_min);
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1 && (target_ < min_sum || target_ > max_sum)) return false;
+        if (b_->assigned_value().value() == 0 && min_sum == target_ && max_sum == target_) return false;
+    } else {
+        if (min_sum == target_ && max_sum == target_) {
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (target_ < min_sum || target_ > max_sum) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    }
+    return true;
+}
+
+bool IntLinEqReifConstraint::on_set_max(Model& model, int save_point,
+                                         size_t var_idx, Domain::value_type new_max,
+                                         Domain::value_type old_max) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        save_trail_if_needed(model, save_point);
+        max_rem_potential_ += c * (new_max - old_max);
+    } else {
+        save_trail_if_needed(model, save_point);
+        min_rem_potential_ += c * (new_max - old_max);
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1 && (target_ < min_sum || target_ > max_sum)) return false;
+        if (b_->assigned_value().value() == 0 && min_sum == target_ && max_sum == target_) return false;
+    } else {
+        if (min_sum == target_ && max_sum == target_) {
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (target_ < min_sum || target_ > max_sum) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    }
+    return true;
+}
+
+bool IntLinEqReifConstraint::on_remove_value(Model& model, int save_point,
+                                              size_t var_idx, Domain::value_type removed_value) {
+    Variable* var_ptr = model.variable(var_idx).get();
+    auto it = var_ptr_to_idx_.find(var_ptr);
+    if (it == var_ptr_to_idx_.end()) return true;
+    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
+
+    int64_t c = coeffs_[it->second];
+
+    if (c >= 0) {
+        auto current_min = model.var_min(var_idx);
+        if (current_min > removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_min - removed_value);
+        }
+        auto current_max = model.var_max(var_idx);
+        if (current_max < removed_value) {
+            save_trail_if_needed(model, save_point);
+            max_rem_potential_ += c * (current_max - removed_value);
+        }
+    } else {
+        auto current_min = model.var_min(var_idx);
+        if (current_min > removed_value) {
+            save_trail_if_needed(model, save_point);
+            max_rem_potential_ += c * (current_min - removed_value);
+        }
+        auto current_max = model.var_max(var_idx);
+        if (current_max < removed_value) {
+            save_trail_if_needed(model, save_point);
+            min_rem_potential_ += c * (current_max - removed_value);
+        }
+    }
+
+    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
+    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
+
+    if (b_->is_assigned()) {
+        if (b_->assigned_value().value() == 1 && (target_ < min_sum || target_ > max_sum)) return false;
+        if (b_->assigned_value().value() == 0 && min_sum == target_ && max_sum == target_) return false;
+    } else {
+        if (min_sum == target_ && max_sum == target_) {
+            model.enqueue_instantiate(b_->id(), 1);
+        } else if (target_ < min_sum || target_ > max_sum) {
+            model.enqueue_instantiate(b_->id(), 0);
+        }
+    }
+    return true;
 }
 
 // ============================================================================
