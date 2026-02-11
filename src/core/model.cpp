@@ -37,6 +37,11 @@ size_t Model::add_variable(VariablePtr var) {
     sizes_.push_back(var->domain().size());
     initial_ranges_.push_back(var->domain().initial_range());
 
+    // support_value を初期化（dense 配列の中央値）
+    const auto& vals = var->domain().values_ref();
+    size_t n = var->domain().n();
+    support_values_.push_back(vals[n / 2]);
+
     // 重複保存防止用
     last_saved_level_.push_back(-1);
 
@@ -135,7 +140,13 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
 
     save_var_state(save_point, var_idx);
 
-    // Sparse 配列で actual min を O(gap) スキャン（sparse set は変更しない）
+    if (new_min <= support_values_[var_idx]) {
+        // Lazy: support がまだ有効なのでスキャン不要
+        mins_[var_idx] = new_min;
+        return true;
+    }
+
+    // Sync: support を超えたので O(gap) スキャンで actual min を求める
     auto& domain = variables_[var_idx]->domain();
     Domain::value_type actual_min = new_min;
     while (actual_min <= maxs_[var_idx] && !domain.sparse_contains(actual_min)) {
@@ -146,9 +157,52 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
         return false;
     }
 
-    domain.set_min_cache(actual_min);
-    mins_[var_idx] = actual_min;
-    // n_ と sizes_ は変更しない
+    // actual_min == maxs_ → 確実に1値
+    if (actual_min == maxs_[var_idx]) {
+        domain.swap_at(domain.index_of(actual_min), 0);
+        domain.set_n(1);
+        domain.set_min_cache(actual_min);
+        domain.set_max_cache(actual_min);
+        mins_[var_idx] = actual_min;
+        maxs_[var_idx] = actual_min;
+        sizes_[var_idx] = 1;
+        support_values_[var_idx] = actual_min;
+        return true;
+    }
+
+    // maxs_ が sparse set に存在するか O(1) チェック
+    if (domain.sparse_contains(maxs_[var_idx])) {
+        // 2値以上確定 → 通常パス
+        domain.set_min_cache(actual_min);
+        mins_[var_idx] = actual_min;
+        support_values_[var_idx] = actual_min;
+        return true;
+    }
+
+    // maxs_ が stale → 逆方向スキャンで actual_max を探す
+    Domain::value_type actual_max = maxs_[var_idx] - 1;
+    while (actual_max > actual_min && !domain.sparse_contains(actual_max)) {
+        actual_max--;
+    }
+
+    if (actual_max == actual_min) {
+        // 1値 → instantiate
+        domain.swap_at(domain.index_of(actual_min), 0);
+        domain.set_n(1);
+        domain.set_min_cache(actual_min);
+        domain.set_max_cache(actual_min);
+        mins_[var_idx] = actual_min;
+        maxs_[var_idx] = actual_min;
+        sizes_[var_idx] = 1;
+        support_values_[var_idx] = actual_min;
+    } else {
+        // 2値以上。bounds を両方タイトにする
+        domain.set_min_cache(actual_min);
+        domain.set_max_cache(actual_max);
+        mins_[var_idx] = actual_min;
+        maxs_[var_idx] = actual_max;
+        support_values_[var_idx] = actual_min;
+    }
     return true;
 }
 
@@ -162,7 +216,13 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
     save_var_state(save_point, var_idx);
 
-    // Sparse 配列で actual max を O(gap) スキャン（sparse set は変更しない）
+    if (new_max >= support_values_[var_idx]) {
+        // Lazy: support がまだ有効なのでスキャン不要
+        maxs_[var_idx] = new_max;
+        return true;
+    }
+
+    // Sync: support を下回ったので O(gap) スキャンで actual max を求める
     auto& domain = variables_[var_idx]->domain();
     Domain::value_type actual_max = new_max;
     while (actual_max >= mins_[var_idx] && !domain.sparse_contains(actual_max)) {
@@ -173,9 +233,52 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
         return false;
     }
 
-    domain.set_max_cache(actual_max);
-    maxs_[var_idx] = actual_max;
-    // n_ と sizes_ は変更しない
+    // actual_max == mins_ → 確実に1値
+    if (actual_max == mins_[var_idx]) {
+        domain.swap_at(domain.index_of(actual_max), 0);
+        domain.set_n(1);
+        domain.set_min_cache(actual_max);
+        domain.set_max_cache(actual_max);
+        mins_[var_idx] = actual_max;
+        maxs_[var_idx] = actual_max;
+        sizes_[var_idx] = 1;
+        support_values_[var_idx] = actual_max;
+        return true;
+    }
+
+    // mins_ が sparse set に存在するか O(1) チェック
+    if (domain.sparse_contains(mins_[var_idx])) {
+        // 2値以上確定 → 通常パス
+        domain.set_max_cache(actual_max);
+        maxs_[var_idx] = actual_max;
+        support_values_[var_idx] = actual_max;
+        return true;
+    }
+
+    // mins_ が stale → 順方向スキャンで actual_min を探す
+    Domain::value_type actual_min = mins_[var_idx] + 1;
+    while (actual_min < actual_max && !domain.sparse_contains(actual_min)) {
+        actual_min++;
+    }
+
+    if (actual_min == actual_max) {
+        // 1値 → instantiate
+        domain.swap_at(domain.index_of(actual_max), 0);
+        domain.set_n(1);
+        domain.set_min_cache(actual_max);
+        domain.set_max_cache(actual_max);
+        mins_[var_idx] = actual_max;
+        maxs_[var_idx] = actual_max;
+        sizes_[var_idx] = 1;
+        support_values_[var_idx] = actual_max;
+    } else {
+        // 2値以上。bounds を両方タイトにする
+        domain.set_min_cache(actual_min);
+        domain.set_max_cache(actual_max);
+        mins_[var_idx] = actual_min;
+        maxs_[var_idx] = actual_max;
+        support_values_[var_idx] = actual_max;
+    }
     return true;
 }
 
@@ -196,6 +299,11 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
     if (new_n == 0) {
         sizes_[var_idx] = 0;
         return false;
+    }
+
+    // support が削除された場合、dense[0] を新 support に（O(1)、必ず domain 内）
+    if (val == support_values_[var_idx]) {
+        support_values_[var_idx] = domain.values_ref()[0];
     }
 
     // 境界値の場合、sparse 配列で O(gap) スキャン
@@ -236,6 +344,7 @@ bool Model::instantiate(int save_point, size_t var_idx, Domain::value_type val) 
     mins_[var_idx] = val;
     maxs_[var_idx] = val;
     sizes_[var_idx] = 1;
+    support_values_[var_idx] = val;
     return true;
 }
 
@@ -296,6 +405,9 @@ void Model::sync_from_domains() {
         mins_[i] = variables_[i]->min();
         maxs_[i] = variables_[i]->max();
         sizes_[i] = variables_[i]->domain().size();
+        const auto& vals = variables_[i]->domain().values_ref();
+        size_t n = variables_[i]->domain().n();
+        support_values_[i] = vals[n / 2];
     }
 }
 

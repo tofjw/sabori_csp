@@ -326,6 +326,7 @@ private:
     std::vector<Domain::value_type> maxs_;
     std::vector<size_t> sizes_;
     std::vector<size_t> initial_ranges_;  // domain.initial_range() のキャッシュ
+    std::vector<Domain::value_type> support_values_;  // ドメイン内の証人値（lazy bounds 用）
 
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;
