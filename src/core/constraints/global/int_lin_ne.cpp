@@ -41,10 +41,8 @@ IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
         return;
     }
 
-    // 変数ポインタ → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
+    // 変数IDキャッシュを構築
+    update_var_ids();
 
     // 注意: 内部状態は presolve() で初期化
 }
@@ -78,14 +76,7 @@ bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,
                                           size_t var_idx, Domain::value_type value,
                                           Domain::value_type /*prev_min*/,
                                           Domain::value_type /*prev_max*/) {
-    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        // この制約に関係ない変数
-        return true;
-    }
-    size_t internal_idx = it->second;
+    size_t internal_idx = find_internal_idx(var_idx);
 
     // Trail に保存
     if (trail_.empty() || trail_.back().first != save_point) {

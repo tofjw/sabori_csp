@@ -76,9 +76,6 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> pool_trail_;
 
-    // 変数ポインタ → 内部インデックスへのマップ
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
-
     /**
      * @brief プールから値を削除
      */
@@ -171,20 +168,23 @@ private:
     int64_t min_rem_potential_;   // 未確定変数の最小ポテンシャル
     int64_t max_rem_potential_;   // 未確定変数の最大ポテンシャル
 
+    // 前回伝播時のスラック値（変化なしならスキップ）
+    int64_t last_propagated_slack_upper_;
+    int64_t last_propagated_slack_lower_;
+
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
-    // Trail: (save_point, (fixed_sum, min_pot, max_pot, unfixed_count))
+    // Trail: (save_point, (fixed_sum, min_pot, max_pot, unfixed_count, slack_upper, slack_lower))
     struct TrailEntry {
         int64_t fixed_sum;
         int64_t min_pot;
         int64_t max_pot;
         size_t unfixed_count;
+        int64_t slack_upper;
+        int64_t slack_lower;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-
-    // 変数ポインタ → 内部インデックスへのマップ
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -268,7 +268,6 @@ private:
         int64_t min_pot;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -370,9 +369,6 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
-    // 変数ポインタ → インデックス
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
-
     /**
      * @brief ノード i を含むパスの root を探す
      */
@@ -456,8 +452,6 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
-    // 変数ポインタ → 内部インデックスへのマップ
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
 /**
@@ -696,7 +690,7 @@ private:
         size_t unfixed_count;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+    size_t b_id_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -778,7 +772,7 @@ private:
         size_t unfixed_count;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+    size_t b_id_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -860,7 +854,7 @@ private:
         size_t unfixed_count;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+    size_t b_id_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -944,7 +938,7 @@ private:
         int64_t min_pot;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
+    size_t b_id_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -1024,10 +1018,6 @@ private:
     VariablePtr result_;
     size_t n_;  // array size
     bool zero_based_;
-
-    // 変数ポインタ → 内部インデックス
-    // 0: index, 1: result, 2..n+1: array[0]..array[n-1]
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     // Bounds support tracking
     // result の下限をサポートするインデックス（array[i].min が最小のもの）
@@ -1151,8 +1141,6 @@ private:
     std::vector<std::unordered_map<Domain::value_type, size_t>> supports_offsets_;
     /// 有効タプルのビットマスク
     std::vector<uint64_t> current_table_;
-
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     struct TrailEntry {
         std::vector<uint64_t> old_table;

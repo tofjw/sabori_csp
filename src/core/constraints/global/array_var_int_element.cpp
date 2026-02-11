@@ -31,12 +31,8 @@ ArrayVarIntElementConstraint::ArrayVarIntElementConstraint(
         vars_.push_back(v);
     }
 
-    // var_ptr_to_idx 構築
-    var_ptr_to_idx_[index_.get()] = 0;
-    var_ptr_to_idx_[result_.get()] = 1;
-    for (size_t i = 0; i < n_; ++i) {
-        var_ptr_to_idx_[array_[i].get()] = 2 + i;
-    }
+    // 変数IDキャッシュを構築
+    update_var_ids();
 
     // 注意: 内部状態は presolve() で初期化
 }
@@ -462,13 +458,6 @@ bool ArrayVarIntElementConstraint::on_set_min(
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
     model.mark_constraint_dirty(model_index(), save_point);
 
-    // 変更された変数を特定
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        return true;
-    }
-
     // キュー経由で伝播
     if (!propagate_via_queue(model)) {
         return false;
@@ -488,12 +477,6 @@ bool ArrayVarIntElementConstraint::on_set_max(
     // Trail に状態を保存
     trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_}});
     model.mark_constraint_dirty(model_index(), save_point);
-
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        return true;
-    }
 
     // キュー経由で伝播
     if (!propagate_via_queue(model)) {

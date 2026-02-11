@@ -302,6 +302,18 @@ protected:
         }
     }
 
+    /**
+     * @brief モデル変数IDから制約内インデックスを検索
+     * @param model_var_idx モデル内の変数ID
+     * @return 制約内インデックス。見つからなければ SIZE_MAX
+     */
+    size_t find_internal_idx(size_t model_var_idx) const {
+        for (size_t i = 0; i < var_ids_.size(); ++i) {
+            if (var_ids_[i] == model_var_idx) return i;
+        }
+        return SIZE_MAX;
+    }
+
 private:
     static size_t next_id_;
     size_t id_;

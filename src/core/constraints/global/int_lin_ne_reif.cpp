@@ -44,18 +44,17 @@ IntLinNeReifConstraint::IntLinNeReifConstraint(std::vector<int64_t> coeffs,
     if (coeffs_.empty()) {
         // vars_ には b だけを含める
         vars_.push_back(b_);
-        var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+        update_var_ids();
+        b_id_ = b_->id();
         return;
     }
 
     // b を末尾に追加
     vars_.push_back(b_);
 
-    // 変数ポインタ → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size() - 1; ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
-    var_ptr_to_idx_[b_.get()] = SIZE_MAX;
+    // 変数IDキャッシュを構築
+    update_var_ids();
+    b_id_ = b_->id();
 
     // 注意: 内部状態は presolve() で初期化
 }
@@ -145,16 +144,8 @@ bool IntLinNeReifConstraint::on_instantiate(Model& model, int save_point,
                                               size_t var_idx, Domain::value_type value,
                                               Domain::value_type prev_min,
                                               Domain::value_type prev_max) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        return true;
-    }
-
-    size_t internal_idx = it->second;
-
     // b が確定した場合
-    if (internal_idx == SIZE_MAX) {
+    if (var_idx == b_id_) {
         int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
         int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
@@ -173,6 +164,8 @@ bool IntLinNeReifConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // 線形変数が確定した場合
+    size_t internal_idx = find_internal_idx(var_idx);
+
     // Trail に保存
     save_trail_if_needed(model, save_point);
 
@@ -336,12 +329,9 @@ void IntLinNeReifConstraint::save_trail_if_needed(Model& model, int save_point) 
 bool IntLinNeReifConstraint::on_set_min(Model& model, int save_point,
                                          size_t var_idx, Domain::value_type new_min,
                                          Domain::value_type old_min) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
-
-    int64_t c = coeffs_[it->second];
+    if (var_idx == b_id_) return true;  // b_ の変更は無視
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     if (c >= 0) {
         save_trail_if_needed(model, save_point);
@@ -370,12 +360,9 @@ bool IntLinNeReifConstraint::on_set_min(Model& model, int save_point,
 bool IntLinNeReifConstraint::on_set_max(Model& model, int save_point,
                                          size_t var_idx, Domain::value_type new_max,
                                          Domain::value_type old_max) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
-
-    int64_t c = coeffs_[it->second];
+    if (var_idx == b_id_) return true;  // b_ の変更は無視
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     if (c >= 0) {
         save_trail_if_needed(model, save_point);
@@ -403,12 +390,9 @@ bool IntLinNeReifConstraint::on_set_max(Model& model, int save_point,
 
 bool IntLinNeReifConstraint::on_remove_value(Model& model, int save_point,
                                               size_t var_idx, Domain::value_type removed_value) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-    if (it->second == SIZE_MAX) return true;  // b_ の変更は無視
-
-    int64_t c = coeffs_[it->second];
+    if (var_idx == b_id_) return true;  // b_ の変更は無視
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     if (c >= 0) {
         auto current_min = model.var_min(var_idx);

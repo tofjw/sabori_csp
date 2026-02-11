@@ -13,11 +13,6 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     : Constraint(vars)
     , pool_n_(0)
     , unfixed_count_(0) {
-    // 変数ポインタ → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
-
     // 全変数の値の和集合をプールとして構築
     std::set<Domain::value_type> all_values;
     for (const auto& var : vars) {

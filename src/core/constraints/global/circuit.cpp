@@ -47,11 +47,6 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
         pool_idx_[static_cast<Domain::value_type>(i)] = i;
     }
 
-    // 変数ポインタ → インデックス マップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
-
     // 既に確定している変数のパス結合と入次数を設定 + 未確定カウント
     for (size_t i = 0; i < n_; ++i) {
         if (vars_[i]->is_assigned()) {
@@ -221,16 +216,7 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
                                         size_t var_idx, Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
-    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        // この制約に関係ない変数
-        return true;
-    }
-    size_t internal_idx = it->second;
-
-    size_t i = internal_idx;
+    size_t i = find_internal_idx(var_idx);
     // 値を内部インデックス（0-based）に変換
     size_t j = static_cast<size_t>(value - base_offset_);
 

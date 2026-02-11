@@ -29,11 +29,6 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
 
     num_words_ = (num_tuples_ + 63) / 64;
 
-    // var_ptr_to_idx_ 構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
-
     // supports_offsets_ と supports_data_ の構築
     supports_offsets_.resize(arity_);
 
@@ -159,11 +154,7 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    size_t internal_idx = it->second;
+    size_t internal_idx = find_internal_idx(var_idx);
 
     // supports に値があるか確認
     auto sit = supports_offsets_[internal_idx].find(value);
@@ -207,11 +198,7 @@ bool TableConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 
 bool TableConstraint::on_remove_value(Model& model, int save_point,
                                        size_t var_idx, Domain::value_type removed_value) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    size_t internal_idx = it->second;
+    size_t internal_idx = find_internal_idx(var_idx);
 
     // supports にその値がなければ何もしない
     auto sit = supports_offsets_[internal_idx].find(removed_value);
@@ -233,11 +220,7 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
 bool TableConstraint::on_set_min(Model& model, int save_point,
                                   size_t var_idx, Domain::value_type new_min,
                                   Domain::value_type old_min) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    size_t internal_idx = it->second;
+    size_t internal_idx = find_internal_idx(var_idx);
     bool changed = false;
 
     // 範囲外の値（old_min から new_min-1）の supports を NOT して AND
@@ -263,11 +246,7 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
 bool TableConstraint::on_set_max(Model& model, int save_point,
                                   size_t var_idx, Domain::value_type new_max,
                                   Domain::value_type old_max) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    size_t internal_idx = it->second;
+    size_t internal_idx = find_internal_idx(var_idx);
     bool changed = false;
 
     // 範囲外の値（new_max+1 から old_max）の supports を NOT して AND

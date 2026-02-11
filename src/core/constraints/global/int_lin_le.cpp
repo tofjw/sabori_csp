@@ -41,10 +41,8 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
         return;
     }
 
-    // 変数ポインタ → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
-    }
+    // 変数IDキャッシュを構築
+    update_var_ids();
 
     // 注意: 内部状態は presolve() で初期化
 }
@@ -76,15 +74,7 @@ bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
                                           size_t var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
-    // モデルから変数ポインタを取得し、O(1) で内部インデックスを特定
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) {
-        // この制約に関係ない変数
-        return true;
-    }
-    size_t internal_idx = it->second;
-
+    size_t internal_idx = find_internal_idx(var_idx);
     int64_t c = coeffs_[internal_idx];
 
     // Trail に保存
@@ -181,11 +171,8 @@ void IntLinLeConstraint::save_trail_if_needed(Model& model, int save_point) {
 bool IntLinLeConstraint::on_set_min(Model& model, int save_point,
                                      size_t var_idx, Domain::value_type new_min,
                                      Domain::value_type old_min) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    int64_t c = coeffs_[it->second];
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     // c >= 0 の変数のみ影響: min_rem_potential_ は c * min で寄与
     if (c >= 0) {
@@ -202,11 +189,8 @@ bool IntLinLeConstraint::on_set_min(Model& model, int save_point,
 bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
                                      size_t var_idx, Domain::value_type new_max,
                                      Domain::value_type old_max) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    int64_t c = coeffs_[it->second];
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     // c < 0 の変数のみ影響: min_rem_potential_ は c * max で寄与
     if (c < 0) {
@@ -222,11 +206,8 @@ bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
 
 bool IntLinLeConstraint::on_remove_value(Model& model, int save_point,
                                           size_t var_idx, Domain::value_type removed_value) {
-    Variable* var_ptr = model.variable(var_idx).get();
-    auto it = var_ptr_to_idx_.find(var_ptr);
-    if (it == var_ptr_to_idx_.end()) return true;
-
-    int64_t c = coeffs_[it->second];
+    size_t idx = find_internal_idx(var_idx);
+    int64_t c = coeffs_[idx];
 
     if (c >= 0) {
         // min が変わった場合のみ更新
