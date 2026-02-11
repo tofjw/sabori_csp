@@ -186,6 +186,11 @@ public:
     bool is_instantiated(size_t var_idx) const { return mins_[var_idx] == maxs_[var_idx]; }
 
     /**
+     * @brief instantiated な変数の数を取得（O(1)）
+     */
+    size_t instantiated_count() const { return instantiated_count_; }
+
+    /**
      * @brief 変数の値を取得（固定されている場合）
      */
     Domain::value_type value(size_t var_idx) const { return mins_[var_idx]; }
@@ -335,6 +340,9 @@ private:
 
     // 最後に保存した変数ごとのセーブポイント（重複保存防止）
     std::vector<int> last_saved_level_;
+
+    // instantiated 変数カウンタ（O(1) 参照用）
+    size_t instantiated_count_ = 0;
 
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
     std::vector<PendingUpdate> pending_updates_;

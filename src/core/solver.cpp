@@ -455,62 +455,30 @@ bool Solver::verify_solution(const Model& model) const {
 }
 
 size_t Solver::select_variable(const Model& model) {
-    const auto& variables = model.variables();
-    size_t n = variables.size();
-    if (n == 0) return 0;
+    size_t n = model.variables().size();
+    size_t best_idx = SIZE_MAX;
+    size_t min_domain_size = SIZE_MAX;
+    double best_activity = -1.0;
 
-    // 近似 domain size を計算するラムダ
-    auto approx_domain_size = [&model](size_t idx) -> size_t {
-        size_t raw_n = model.var_size(idx);
-        size_t init_range = model.initial_range(idx);
-        if (init_range == 0) return raw_n;
-        size_t bounds_range = static_cast<size_t>(model.var_max(idx) - model.var_min(idx) + 1);
-        return std::max<size_t>(1, static_cast<size_t>(
-            static_cast<double>(bounds_range) / init_range * raw_n));
-    };
-
-    // ランダムオフセット（変数配列全体に対して）
-    size_t offset = rng_() % n;
-
-    size_t best_idx = 0;
-    size_t min_domain_size = 0;
-    double best_activity = 0.0;
-    bool found = false;
-
-    for (size_t j = 0; j < n; ++j) {
-        size_t i = (offset + j) % n;
+    for (size_t i = 0; i < n; ++i) {
         if (model.is_instantiated(i)) continue;
 
-        if (!found) {
-            // 最初の未確定変数
-            best_idx = i;
-            min_domain_size = approx_domain_size(i);
-            best_activity = activity_[i];
-            found = true;
-            continue;
+        size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
+
+        bool better = false;
+        if (domain_size < min_domain_size) {
+            better = true;
+        } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
+            better = true;
         }
 
-        // MRV/Activity 比較
-        size_t domain_size = approx_domain_size(i);
-        double act = activity_[i];
-        bool better = false;
-        if (stats_.restart_count % 2 || activity_first_) {
-            // Activity 優先: Activity が高いものを優先、同じなら MRV
-            if (act > best_activity) better = true;
-            else if (act == best_activity && domain_size < min_domain_size) better = true;
-        } else {
-            // MRV 優先（デフォルト）: ドメインサイズが小さいものを優先、同じなら Activity
-            if (domain_size < min_domain_size) better = true;
-            else if (domain_size == min_domain_size && act > best_activity) better = true;
-        }
         if (better) {
-            min_domain_size = domain_size;
-            best_activity = act;
             best_idx = i;
+            min_domain_size = domain_size;
+            best_activity = activity_[i];
         }
     }
 
-    if (!found) return SIZE_MAX;
     return best_idx;
 }
 
@@ -729,15 +697,7 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
 }
 
 void Solver::save_partial_assignment(const Model& model) {
-    size_t n_vars = model.variables().size();
-
-    // カウントのみで判定（map 構築不要なケースを高速スキップ）
-    size_t num_instantiated = 0;
-    for (size_t i = 0; i < n_vars; ++i) {
-        if (model.is_instantiated(i)) {
-            ++num_instantiated;
-        }
-    }
+    size_t num_instantiated = model.instantiated_count();
 
     if (num_instantiated <= best_num_instantiated_) {
         return;
@@ -745,11 +705,10 @@ void Solver::save_partial_assignment(const Model& model) {
 
     // 前回より多い → 置き換え（未 instantiate の変数は前回の値を引き継ぐ）
     best_num_instantiated_ = num_instantiated;
+    size_t n_vars = model.variables().size();
     for (size_t i = 0; i < n_vars; ++i) {
         if (model.is_instantiated(i)) {
             best_assignment_[i] = model.value(i);
-        } else {
-            // 前回の保存値がなければ何もしない（エントリを追加しない）
         }
     }
 }

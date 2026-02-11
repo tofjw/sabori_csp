@@ -45,6 +45,11 @@ size_t Model::add_variable(VariablePtr var) {
     // 重複保存防止用
     last_saved_level_.push_back(-1);
 
+    // 初期状態で instantiated ならカウント
+    if (mins_.back() == maxs_.back()) {
+        instantiated_count_++;
+    }
+
     return id;
 }
 
@@ -143,6 +148,9 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
     if (new_min <= support_values_[var_idx]) {
         // Lazy: support がまだ有効なのでスキャン不要
         mins_[var_idx] = new_min;
+        if (new_min == maxs_[var_idx]) {
+            instantiated_count_++;
+        }
         return true;
     }
 
@@ -167,6 +175,7 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
         maxs_[var_idx] = actual_min;
         sizes_[var_idx] = 1;
         support_values_[var_idx] = actual_min;
+        instantiated_count_++;
         return true;
     }
 
@@ -195,6 +204,7 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
         maxs_[var_idx] = actual_min;
         sizes_[var_idx] = 1;
         support_values_[var_idx] = actual_min;
+        instantiated_count_++;
     } else {
         // 2値以上。bounds を両方タイトにする
         domain.set_min_cache(actual_min);
@@ -219,6 +229,9 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
     if (new_max >= support_values_[var_idx]) {
         // Lazy: support がまだ有効なのでスキャン不要
         maxs_[var_idx] = new_max;
+        if (new_max == mins_[var_idx]) {
+            instantiated_count_++;
+        }
         return true;
     }
 
@@ -243,6 +256,7 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
         maxs_[var_idx] = actual_max;
         sizes_[var_idx] = 1;
         support_values_[var_idx] = actual_max;
+        instantiated_count_++;
         return true;
     }
 
@@ -271,6 +285,7 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
         maxs_[var_idx] = actual_max;
         sizes_[var_idx] = 1;
         support_values_[var_idx] = actual_max;
+        instantiated_count_++;
     } else {
         // 2値以上。bounds を両方タイトにする
         domain.set_min_cache(actual_min);
@@ -321,6 +336,9 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         maxs_[var_idx] = new_max;
         domain.set_max_cache(new_max);
     }
+    if (mins_[var_idx] == maxs_[var_idx]) {
+        instantiated_count_++;
+    }
     sizes_[var_idx] = new_n;
 
     return true;
@@ -334,6 +352,7 @@ bool Model::instantiate(int save_point, size_t var_idx, Domain::value_type val) 
         return false;  // ドメインに無い
     }
 
+    bool was_not_instantiated = (mins_[var_idx] != maxs_[var_idx]);
     save_var_state(save_point, var_idx);
 
     domain.swap_at(idx, 0);
@@ -345,6 +364,10 @@ bool Model::instantiate(int save_point, size_t var_idx, Domain::value_type val) 
     maxs_[var_idx] = val;
     sizes_[var_idx] = 1;
     support_values_[var_idx] = val;
+
+    if (was_not_instantiated) {
+        instantiated_count_++;
+    }
     return true;
 }
 
@@ -353,6 +376,15 @@ void Model::rewind_to(int save_point) {
     while (!var_trail_.empty() && var_trail_.back().first > save_point) {
         auto& [level, entry] = var_trail_.back();
         size_t var_idx = entry.var_idx;
+
+        // instantiated カウンタ調整
+        bool was_instantiated = (mins_[var_idx] == maxs_[var_idx]);
+        bool will_be_instantiated = (entry.old_min == entry.old_max);
+        if (was_instantiated && !will_be_instantiated) {
+            instantiated_count_--;
+        } else if (!was_instantiated && will_be_instantiated) {
+            instantiated_count_++;
+        }
 
         // SoA データを復元
         mins_[var_idx] = entry.old_min;
@@ -401,6 +433,7 @@ size_t Model::constraint_trail_size() const {
 }
 
 void Model::sync_from_domains() {
+    instantiated_count_ = 0;
     for (size_t i = 0; i < variables_.size(); ++i) {
         mins_[i] = variables_[i]->min();
         maxs_[i] = variables_[i]->max();
@@ -408,6 +441,9 @@ void Model::sync_from_domains() {
         const auto& vals = variables_[i]->domain().values_ref();
         size_t n = variables_[i]->domain().n();
         support_values_[i] = vals[n / 2];
+        if (mins_[i] == maxs_[i]) {
+            instantiated_count_++;
+        }
     }
 }
 
