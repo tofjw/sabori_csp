@@ -2,7 +2,6 @@
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <set>
-#include <limits>
 
 namespace sabori_csp {
 
@@ -17,9 +16,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     , target_sum_(target_sum)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
-    , max_rem_potential_(0)
-    , last_propagated_slack_upper_(std::numeric_limits<int64_t>::min())
-    , last_propagated_slack_lower_(std::numeric_limits<int64_t>::min()) {
+    , max_rem_potential_(0) {
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -272,16 +269,13 @@ void IntLinEqConstraint::rewind_to(int save_point) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
         max_rem_potential_ = entry.max_pot;
-        last_propagated_slack_upper_ = entry.slack_upper;
-        last_propagated_slack_lower_ = entry.slack_lower;
         trail_.pop_back();
     }
 }
 
 void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
     if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_,
-                                        0 /*unfixed_count unused*/, last_propagated_slack_upper_, last_propagated_slack_lower_}});
+        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_}});
         model.mark_constraint_dirty(model_index(), save_point);
     }
 }
@@ -375,10 +369,6 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
 
-    int64_t slack = total_max - target_sum_;
-    if (slack == last_propagated_slack_lower_) return true;
-    last_propagated_slack_lower_ = slack;
-
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!model.is_instantiated(var_ids_[j])) {
@@ -452,10 +442,6 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     int64_t total_max = current_fixed_sum_ + max_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
-
-    int64_t slack = target_sum_ - total_min;
-    if (slack == last_propagated_slack_upper_) return true;
-    last_propagated_slack_upper_ = slack;
 
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
@@ -536,8 +522,6 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
     max_rem_potential_ = 0;
-    last_propagated_slack_upper_ = std::numeric_limits<int64_t>::min();
-    last_propagated_slack_lower_ = std::numeric_limits<int64_t>::min();
 
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];

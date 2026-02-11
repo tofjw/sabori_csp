@@ -168,21 +168,14 @@ private:
     int64_t min_rem_potential_;   // 未確定変数の最小ポテンシャル
     int64_t max_rem_potential_;   // 未確定変数の最大ポテンシャル
 
-    // 前回伝播時のスラック値（変化なしならスキップ）
-    int64_t last_propagated_slack_upper_;
-    int64_t last_propagated_slack_lower_;
-
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
-    // Trail: (save_point, (fixed_sum, min_pot, max_pot, unfixed_count, slack_upper, slack_lower))
+    // Trail: (save_point, (fixed_sum, min_pot, max_pot))
     struct TrailEntry {
         int64_t fixed_sum;
         int64_t min_pot;
         int64_t max_pot;
-        size_t unfixed_count;
-        int64_t slack_upper;
-        int64_t slack_lower;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
