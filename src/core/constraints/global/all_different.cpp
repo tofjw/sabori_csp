@@ -81,6 +81,43 @@ std::optional<bool> AllDifferentConstraint::is_satisfied() const {
     return true;
 }
 
+bool AllDifferentConstraint::prepare_propagation(Model& model) {
+    // presolve 後の変数状態に基づいてプールと未確定カウントを再構築
+    pool_n_ = pool_values_.size();
+    for (size_t i = 0; i < pool_n_; ++i) {
+        pool_sparse_[pool_values_[i]] = i;
+    }
+    unfixed_count_ = 0;
+    pool_trail_.clear();
+
+    for (const auto& var : vars_) {
+        if (var->is_assigned()) {
+            auto val = var->assigned_value().value();
+            auto it = pool_sparse_.find(val);
+            if (it != pool_sparse_.end() && it->second < pool_n_) {
+                size_t idx = it->second;
+                size_t last_idx = pool_n_ - 1;
+                Domain::value_type last_val = pool_values_[last_idx];
+
+                pool_values_[idx] = last_val;
+                pool_values_[last_idx] = val;
+                pool_sparse_[last_val] = idx;
+                pool_sparse_[val] = last_idx;
+                --pool_n_;
+            } else {
+                // 値がプールにない = 重複
+                return false;
+            }
+        } else {
+            ++unfixed_count_;
+        }
+    }
+
+    if (unfixed_count_ > pool_n_) return false;
+
+    return true;
+}
+
 bool AllDifferentConstraint::presolve(Model& model) {
     // 確定した変数の値を他の変数から削除
     for (const auto& var : vars_) {

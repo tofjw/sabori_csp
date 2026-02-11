@@ -1,18 +1,10 @@
 #include "sabori_csp/solver.hpp"
 #include <algorithm>
 #include <limits>
+#include <numeric>
 #include <iostream>
 
 namespace sabori_csp {
-
-namespace {
-inline uint64_t xorshift64(uint64_t& state) {
-    state ^= state << 13;
-    state ^= state >> 7;
-    state ^= state << 17;
-    return state;
-}
-}  // namespace
 
 Solver::Solver()
     : rng_(12345678) {}
@@ -26,6 +18,9 @@ std::optional<Solution> Solver::solve(Model& model) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
+    var_order_.resize(variables.size());
+    std::iota(var_order_.begin(), var_order_.end(), 0);
+    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -69,6 +64,9 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
+    var_order_.resize(variables.size());
+    std::iota(var_order_.begin(), var_order_.end(), 0);
+    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -182,6 +180,12 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
             // Activity 減衰
             decay_activities();
+
+            // スキャン順シャッフル（タイブレークのランダム化）
+            std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+
+            // domain_size 優先と activity 優先を交互に切り替え
+            activity_first_ = !activity_first_;
 
             if (!limit_changed) {
                 // コンフリクト制限を増加
@@ -336,6 +340,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     if (nogood_learning_ && decision_trail_.size() >= 2) {
         add_nogood(decision_trail_);
         for (const auto& lit : decision_trail_) {
+	  break;
             activity_[lit.var_idx] += 1.0 / decision_trail_.size();
         }
     }
@@ -455,21 +460,28 @@ bool Solver::verify_solution(const Model& model) const {
 }
 
 size_t Solver::select_variable(const Model& model) {
-    size_t n = model.variables().size();
     size_t best_idx = SIZE_MAX;
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
 
-    for (size_t i = 0; i < n; ++i) {
+    for (size_t i : var_order_) {
         if (model.is_instantiated(i)) continue;
 
         size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
 
         bool better = false;
-        if (domain_size < min_domain_size) {
-            better = true;
-        } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
-            better = true;
+        if (activity_first_) {
+            if (activity_[i] > best_activity) {
+                better = true;
+            } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
+                better = true;
+            }
+        } else {
+            if (domain_size < min_domain_size) {
+                better = true;
+            } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
+                better = true;
+            }
         }
 
         if (better) {

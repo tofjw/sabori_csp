@@ -350,15 +350,14 @@ private:
     // 統計
     SolverStats stats_;
 
-    // タイブレーク
-    std::vector<uint64_t> tiebreak_scores_;
+    // 変数スキャン順序（リスタートごとにシャッフル）
+    std::vector<size_t> var_order_;
 
     // 値選択バッファ（ヒープ確保を避けるため再利用）
     std::vector<Domain::value_type> value_buffer_;
 
     // 乱数
     std::mt19937 rng_;
-    uint64_t xor_state_ = 12345678ULL;
 };
 
 } // namespace sabori_csp

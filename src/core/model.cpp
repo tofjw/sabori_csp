@@ -149,6 +149,15 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
         // Lazy: support がまだ有効なのでスキャン不要
         mins_[var_idx] = new_min;
         if (new_min == maxs_[var_idx]) {
+            // Domain も singleton にする（assigned_value() の整合性のため）
+            auto& domain = variables_[var_idx]->domain();
+            size_t idx = domain.index_of(new_min);
+            domain.swap_at(idx, 0);
+            domain.set_n(1);
+            domain.set_min_cache(new_min);
+            domain.set_max_cache(new_min);
+            support_values_[var_idx] = new_min;
+            sizes_[var_idx] = 1;
             instantiated_count_++;
         }
         return true;
@@ -230,6 +239,15 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
         // Lazy: support がまだ有効なのでスキャン不要
         maxs_[var_idx] = new_max;
         if (new_max == mins_[var_idx]) {
+            // Domain も singleton にする（assigned_value() の整合性のため）
+            auto& domain = variables_[var_idx]->domain();
+            size_t idx = domain.index_of(new_max);
+            domain.swap_at(idx, 0);
+            domain.set_n(1);
+            domain.set_min_cache(new_max);
+            domain.set_max_cache(new_max);
+            support_values_[var_idx] = new_max;
+            sizes_[var_idx] = 1;
             instantiated_count_++;
         }
         return true;

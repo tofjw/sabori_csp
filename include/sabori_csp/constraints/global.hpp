@@ -28,6 +28,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -189,6 +190,23 @@ private:
      * @brief trail 保存ヘルパー
      */
     void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief infeasibility チェックのみ（bounds 変化なし時用）
+     */
+    bool check_feasibility();
+
+    /**
+     * @brief total_max 減少時の伝播（c>0: set_min, c<0: set_max）
+     * @param skip_idx トリガー変数の内部インデックス（スキップ）
+     */
+    bool propagate_lower_bounds(Model& model, size_t skip_idx);
+
+    /**
+     * @brief total_min 増加時の伝播（c>0: set_max, c<0: set_min）
+     * @param skip_idx トリガー変数の内部インデックス（スキップ）
+     */
+    bool propagate_upper_bounds(Model& model, size_t skip_idx);
 };
 
 /**
@@ -287,6 +305,7 @@ public:
     std::string name() const override;
     std::vector<VariablePtr> variables() const override;
     std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,

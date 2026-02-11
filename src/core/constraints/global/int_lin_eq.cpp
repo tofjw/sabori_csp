@@ -298,51 +298,37 @@ bool IntLinEqConstraint::on_set_min(Model& model, int save_point,
     auto it = var_ptr_to_idx_.find(var_ptr);
     if (it == var_ptr_to_idx_.end()) return true;
 
-    int64_t c = coeffs_[it->second];
+    size_t idx = it->second;
+    int64_t c = coeffs_[idx];
 
+    save_trail_if_needed(model, save_point);
     if (c >= 0) {
-        // min_rem_potential_ は c * min で寄与
-        save_trail_if_needed(model, save_point);
         min_rem_potential_ += c * (new_min - old_min);
+        return propagate_upper_bounds(model, idx);
     } else {
-        // max_rem_potential_ は c * min で寄与
-        save_trail_if_needed(model, save_point);
         max_rem_potential_ += c * (new_min - old_min);
+        return propagate_lower_bounds(model, idx);
     }
-
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
-    if (min_sum > target_sum_ || max_sum < target_sum_) {
-        return false;
-    }
-    return true;
 }
 
 bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
                                      size_t var_idx, Domain::value_type new_max,
                                      Domain::value_type old_max) {
-  Variable* var_ptr = model.variable(var_idx).get();
+    Variable* var_ptr = model.variable(var_idx).get();
     auto it = var_ptr_to_idx_.find(var_ptr);
     if (it == var_ptr_to_idx_.end()) return true;
 
-    int64_t c = coeffs_[it->second];
+    size_t idx = it->second;
+    int64_t c = coeffs_[idx];
 
+    save_trail_if_needed(model, save_point);
     if (c >= 0) {
-        // max_rem_potential_ は c * max で寄与
-        save_trail_if_needed(model, save_point);
         max_rem_potential_ += c * (new_max - old_max);
+        return propagate_lower_bounds(model, idx);
     } else {
-        // min_rem_potential_ は c * max で寄与
-        save_trail_if_needed(model, save_point);
         min_rem_potential_ += c * (new_max - old_max);
+        return propagate_upper_bounds(model, idx);
     }
-
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
-    if (min_sum > target_sum_ || max_sum < target_sum_) {
-        return false;
-    }
-    return true;
 }
 
 bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
@@ -351,36 +337,136 @@ bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
     auto it = var_ptr_to_idx_.find(var_ptr);
     if (it == var_ptr_to_idx_.end()) return true;
 
-    int64_t c = coeffs_[it->second];
+    size_t idx = it->second;
+    int64_t c = coeffs_[idx];
 
+    auto current_min = model.var_min(var_idx);
+    auto current_max = model.var_max(var_idx);
+    bool min_up = (current_min > removed_value);
+    bool max_down = (current_max < removed_value);
+
+    // ポテンシャル更新
     if (c >= 0) {
-        auto current_min = model.var_min(var_idx);
-        if (current_min > removed_value) {
+        if (min_up) {
             save_trail_if_needed(model, save_point);
             min_rem_potential_ += c * (current_min - removed_value);
         }
-        auto current_max = model.var_max(var_idx);
-        if (current_max < removed_value) {
+        if (max_down) {
             save_trail_if_needed(model, save_point);
             max_rem_potential_ += c * (current_max - removed_value);
         }
     } else {
-        auto current_min = model.var_min(var_idx);
-        if (current_min > removed_value) {
+        if (min_up) {
             save_trail_if_needed(model, save_point);
             max_rem_potential_ += c * (current_min - removed_value);
         }
-        auto current_max = model.var_max(var_idx);
-        if (current_max < removed_value) {
+        if (max_down) {
             save_trail_if_needed(model, save_point);
             min_rem_potential_ += c * (current_max - removed_value);
         }
     }
 
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
-    if (min_sum > target_sum_ || max_sum < target_sum_) {
-        return false;
+    // c の符号と変化方向から伝播方向を決定
+    bool need_lower = (c >= 0) ? max_down : min_up;
+    bool need_upper = (c >= 0) ? min_up : max_down;
+
+    if (need_lower && need_upper) {
+        if (!propagate_lower_bounds(model, idx)) return false;
+        return propagate_upper_bounds(model, idx);
+    } else if (need_lower) {
+        return propagate_lower_bounds(model, idx);
+    } else if (need_upper) {
+        return propagate_upper_bounds(model, idx);
+    }
+    return check_feasibility();
+}
+
+bool IntLinEqConstraint::check_feasibility() {
+    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
+    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
+    return !(total_min > target_sum_ || total_max < target_sum_);
+}
+
+bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
+    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
+    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
+    if (total_min > target_sum_ || total_max < target_sum_) return false;
+
+    for (size_t j = 0; j < vars_.size(); ++j) {
+        if (j == skip_idx || vars_[j]->is_assigned()) continue;
+
+        size_t var_id = vars_[j]->id();
+        int64_t c = coeffs_[j];
+
+        if (c > 0) {
+            // rest_max → new_min
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            int64_t rest_max = total_max - c * cur_max;
+            int64_t num_min = target_sum_ - rest_max;
+            int64_t new_min = (num_min >= 0) ? (num_min + c - 1) / c : -((-num_min) / c);
+            if (new_min > cur_min) {
+                model.enqueue_set_min(var_id, new_min);
+            }
+        } else {
+            // c < 0: rest_max → new_max
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            int64_t rest_max = total_max - c * cur_min;
+            int64_t num_min = target_sum_ - rest_max;
+            int64_t abs_c = -c;
+            int64_t new_max;
+            if (num_min >= 0) {
+                new_max = -((num_min + abs_c - 1) / abs_c);
+            } else {
+                new_max = (-num_min) / abs_c;
+            }
+            if (new_max < cur_max) {
+                model.enqueue_set_max(var_id, new_max);
+            }
+        }
+    }
+    return true;
+}
+
+bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
+    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
+    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
+    if (total_min > target_sum_ || total_max < target_sum_) return false;
+
+    for (size_t j = 0; j < vars_.size(); ++j) {
+        if (j == skip_idx || vars_[j]->is_assigned()) continue;
+
+        size_t var_id = vars_[j]->id();
+        int64_t c = coeffs_[j];
+
+        if (c > 0) {
+            // rest_min → new_max
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            int64_t rest_min = total_min - c * cur_min;
+            int64_t num_max = target_sum_ - rest_min;
+            int64_t new_max = (num_max >= 0) ? num_max / c : -(((-num_max) + c - 1) / c);
+            if (new_max < cur_max) {
+                model.enqueue_set_max(var_id, new_max);
+            }
+        } else {
+            // c < 0: rest_min → new_min
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            int64_t rest_min = total_min - c * cur_max;
+            int64_t num_max = target_sum_ - rest_min;
+            int64_t abs_c = -c;
+            int64_t new_min;
+            if (num_max >= 0) {
+                new_min = -(num_max / abs_c);
+            } else {
+                new_min = ((-num_max) + abs_c - 1) / abs_c;
+            }
+            if (new_min > cur_min) {
+                model.enqueue_set_min(var_id, new_min);
+            }
+        }
     }
     return true;
 }

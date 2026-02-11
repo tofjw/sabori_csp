@@ -141,6 +141,51 @@ std::optional<bool> CircuitConstraint::is_satisfied() const {
     return current == 0 && visited.size() == n_;
 }
 
+bool CircuitConstraint::prepare_propagation(Model& model) {
+    // presolve 後の変数状態に基づいて内部状態を完全に再構築
+    for (size_t i = 0; i < n_; ++i) {
+        head_[i] = i;
+        tail_[i] = i;
+        size_[i] = 1;
+        in_degree_[i] = 0;
+    }
+    unfixed_count_ = 0;
+    pool_n_ = n_;
+    for (size_t i = 0; i < n_; ++i) {
+        pool_[i] = static_cast<Domain::value_type>(i);
+        pool_idx_[static_cast<Domain::value_type>(i)] = i;
+    }
+    trail_.clear();
+
+    for (size_t i = 0; i < n_; ++i) {
+        if (vars_[i]->is_assigned()) {
+            auto val = vars_[i]->assigned_value().value();
+            size_t j = static_cast<size_t>(val - base_offset_);
+            if (j >= n_) return false;
+            if (in_degree_[j] > 0) return false;
+
+            size_t h1 = find(i);
+            size_t h2 = find(j);
+            if (h1 == h2) {
+                if (size_[h1] < n_) return false;
+            } else {
+                size_t t2 = tail_[h2];
+                tail_[h1] = t2;
+                head_[h2] = h1;
+                size_[h1] += size_[h2];
+            }
+            in_degree_[j] = 1;
+            remove_from_pool(static_cast<Domain::value_type>(j));
+        } else {
+            ++unfixed_count_;
+        }
+    }
+
+    if (unfixed_count_ > pool_n_) return false;
+
+    return true;
+}
+
 bool CircuitConstraint::presolve(Model& model) {
     // 初期伝播: 特に何もしない（on_instantiate で処理）
     return true;
