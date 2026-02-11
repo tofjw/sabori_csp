@@ -315,3 +315,106 @@ TEST_CASE("Model no duplicate trail save at same level", "[model][trail]") {
     REQUIRE(model.contains(x_idx, 6));
     REQUIRE(model.contains(x_idx, 7));
 }
+
+// --- Regression tests for lazy bounds with holes ---
+// Bug: set_min/set_max lazy path could set mins_/maxs_ to a value not in the
+// domain. When bounds converged to that non-existent value, index_of() returned
+// SIZE_MAX, causing swap_at(SIZE_MAX, 0) → heap-buffer-overflow.
+
+TEST_CASE("Model set_min lazy path with hole in domain", "[model][trail]") {
+    // Domain: {1, 3, 5, 7, 9} — has holes at 2, 4, 6, 8
+    Model model;
+    auto x = model.create_variable("x", std::vector<int64_t>{1, 3, 5, 7, 9});
+    size_t x_idx = x->id();
+
+    SECTION("set_min to hole value, then set_max converges to same hole") {
+        // set_min(4) → lazy path sets mins_=4 (but 4 is not in domain)
+        // set_max(4) → now mins_==maxs_==4, singleton path must not crash
+        REQUIRE(model.set_min(1, x_idx, 4));
+        // 4 is a hole: actual min should be 5 or lazy path defers
+        REQUIRE(model.set_max(1, x_idx, 4) == false);
+        // Domain should be empty (no value == 4 exists), so set_max returns false
+    }
+
+    SECTION("set_min to hole, set_max narrows further — no crash") {
+        REQUIRE(model.set_min(1, x_idx, 4));  // lazy: mins_=4
+        REQUIRE(model.set_max(1, x_idx, 5));  // lazy: maxs_=5
+        // Bounds [4,5] — only value 5 exists, but lazy bounds don't detect singleton
+        REQUIRE(model.contains(x_idx, 5));
+    }
+
+    SECTION("set_max to hole value, then set_min converges to same hole") {
+        REQUIRE(model.set_max(1, x_idx, 6));  // lazy: maxs_=6
+        // set_min(6) → mins_==maxs_==6, but 6 is a hole → must not crash
+        REQUIRE(model.set_min(1, x_idx, 6) == false);
+    }
+
+    SECTION("set_min and set_max converge to existing value") {
+        REQUIRE(model.set_min(1, x_idx, 5));
+        REQUIRE(model.set_max(1, x_idx, 5));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 5);
+    }
+
+    SECTION("set_min past support forces scan, then set_max converges") {
+        // support is vals[2]=5. set_min(7) > 5 → scan path finds actual_min=7
+        REQUIRE(model.set_min(1, x_idx, 7));
+        REQUIRE(model.mins()[x_idx] == 7);
+        // set_max(7) → converge to 7 which exists
+        REQUIRE(model.set_max(1, x_idx, 7));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 7);
+    }
+
+    SECTION("set_max below support forces scan, then set_min converges") {
+        // support is 5. set_max(3) < 5 → scan path finds actual_max=3
+        REQUIRE(model.set_max(1, x_idx, 3));
+        REQUIRE(model.maxs()[x_idx] == 3);
+        // set_min(3) → converge to 3 which exists
+        REQUIRE(model.set_min(1, x_idx, 3));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 3);
+    }
+}
+
+TEST_CASE("Model set_min/set_max with remove then lazy convergence", "[model][trail]") {
+    // Start with contiguous domain, create hole by remove_value, then converge
+    Model model;
+    auto x = model.create_variable("x", 1, 5);
+    size_t x_idx = x->id();
+
+    // Remove middle value to create a hole
+    REQUIRE(model.remove_value(1, x_idx, 3));
+
+    SECTION("set_min and set_max converge to removed value") {
+        // mins_=3 (lazy, but 3 was removed), maxs_=3 → must not crash
+        REQUIRE(model.set_min(1, x_idx, 3));
+        REQUIRE(model.set_max(1, x_idx, 3) == false);
+    }
+
+    SECTION("bounds tighten past hole correctly") {
+        // set_min(3) lazy, then set_max(4) → domain should be {4}
+        REQUIRE(model.set_min(1, x_idx, 3));
+        REQUIRE(model.set_max(1, x_idx, 4));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 4);
+    }
+
+    SECTION("rewind restores domain after convergence past hole") {
+        REQUIRE(model.set_min(2, x_idx, 3));
+        REQUIRE(model.set_max(2, x_idx, 4));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 4);
+
+        model.rewind_to(1);
+        // After rewind: domain should be {1, 2, 4, 5} (3 still removed at level 1)
+        REQUIRE(model.sizes()[x_idx] == 4);
+        REQUIRE(!model.contains(x_idx, 3));
+        REQUIRE(model.contains(x_idx, 4));
+
+        model.rewind_to(0);
+        // Full restore: domain should be {1, 2, 3, 4, 5}
+        REQUIRE(model.sizes()[x_idx] == 5);
+        REQUIRE(model.contains(x_idx, 3));
+    }
+}
