@@ -376,49 +376,10 @@ bool IntLinLeReifConstraint::on_set_max(Model& model, int save_point,
     return true;
 }
 
-bool IntLinLeReifConstraint::on_remove_value(Model& model, int save_point,
-                                              size_t var_idx, Domain::value_type removed_value) {
-    if (var_idx == b_id_) return true;  // b_ の変更は無視
-    size_t idx = find_internal_idx(var_idx);
-    int64_t c = coeffs_[idx];
-
-    if (c >= 0) {
-        auto current_min = model.var_min(var_idx);
-        if (current_min > removed_value) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_min - removed_value);
-        }
-        auto current_max = model.var_max(var_idx);
-        if (current_max < removed_value) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_max - removed_value);
-        }
-    } else {
-        auto current_min = model.var_min(var_idx);
-        if (current_min > removed_value) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_min - removed_value);
-        }
-        auto current_max = model.var_max(var_idx);
-        if (current_max < removed_value) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_max - removed_value);
-        }
-    }
-
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
-
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1 && min_sum > bound_) return false;
-        if (b_->assigned_value().value() == 0 && max_sum <= bound_) return false;
-    } else {
-        if (max_sum <= bound_) {
-            model.enqueue_instantiate(b_->id(), 1);
-        } else if (min_sum > bound_) {
-            model.enqueue_instantiate(b_->id(), 0);
-        }
-    }
+bool IntLinLeReifConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
+                                              size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+    // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
+    // 内部値の除去では bounds が変わらず potentials も不変。
     return true;
 }
 

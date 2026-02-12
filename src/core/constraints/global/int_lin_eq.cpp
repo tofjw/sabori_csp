@@ -318,50 +318,11 @@ bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
     }
 }
 
-bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type removed_value) {
-    size_t idx = find_internal_idx(var_idx);
-    int64_t c = coeffs_[idx];
-
-    auto current_min = model.var_min(var_idx);
-    auto current_max = model.var_max(var_idx);
-    bool min_up = (current_min > removed_value);
-    bool max_down = (current_max < removed_value);
-
-    // ポテンシャル更新
-    if (c >= 0) {
-        if (min_up) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_min - removed_value);
-        }
-        if (max_down) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_max - removed_value);
-        }
-    } else {
-        if (min_up) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_min - removed_value);
-        }
-        if (max_down) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_max - removed_value);
-        }
-    }
-
-    // c の符号と変化方向から伝播方向を決定
-    bool need_lower = (c >= 0) ? max_down : min_up;
-    bool need_upper = (c >= 0) ? min_up : max_down;
-
-    if (need_lower && need_upper) {
-        if (!propagate_lower_bounds(model, idx)) return false;
-        return propagate_upper_bounds(model, idx);
-    } else if (need_lower) {
-        return propagate_lower_bounds(model, idx);
-    } else if (need_upper) {
-        return propagate_upper_bounds(model, idx);
-    }
-    return check_feasibility();
+bool IntLinEqConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
+                                          size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+    // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
+    // 内部値の除去では bounds が変わらず potentials も不変。
+    return true;
 }
 
 bool IntLinEqConstraint::check_feasibility() {

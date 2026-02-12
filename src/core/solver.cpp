@@ -819,18 +819,40 @@ bool Solver::process_queue(Model& model) {
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return false;
             }
-            // 確定した場合は on_instantiate、そうでなければ on_remove_value
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
                     return false;
                 }
             } else if (!was_instantiated) {
-                // on_remove_value を関連する全制約に呼び出す
+                auto new_min = model.var_min(var_idx);
+                auto new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
-                for (size_t c_idx : constraint_indices) {
-                    if (!constraints[c_idx]->on_remove_value(model, current_decision_,
-                                                              var_idx, removed_value)) {
-                        return false;
+
+                // 下限が変化した場合 → on_set_min
+                if (new_min > prev_min) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_set_min(model, current_decision_,
+                                                             var_idx, new_min, prev_min)) {
+                            return false;
+                        }
+                    }
+                }
+                // 上限が変化した場合 → on_set_max
+                if (new_max < prev_max) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_set_max(model, current_decision_,
+                                                             var_idx, new_max, prev_max)) {
+                            return false;
+                        }
+                    }
+                }
+                // removed_value が新しい範囲内 → on_remove_value も呼ぶ
+                if (removed_value > new_min && removed_value < new_max) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_remove_value(model, current_decision_,
+                                                                  var_idx, removed_value)) {
+                            return false;
+                        }
                     }
                 }
             }
