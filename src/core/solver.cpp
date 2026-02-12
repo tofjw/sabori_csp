@@ -69,6 +69,60 @@ std::optional<Solution> Solver::solve(Model& model) {
     return result;
 }
 
+std::optional<Solution> Solver::solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    // 最適化状態を設定
+    optimizing_ = true;
+    obj_var_idx_ = obj_var_idx;
+    minimize_ = minimize;
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+
+    // solve() と同じ初期化
+    model.build_constraint_watch_list();
+
+    const auto& variables = model.variables();
+    activity_.assign(variables.size(), 0.0);
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+    decision_trail_.clear();
+    nogoods_.clear();
+    ng_watches_.clear();
+    best_num_instantiated_ = 0;
+    best_assignment_.clear();
+    current_best_assignment_.clear();
+    current_decision_ = 0;
+    stats_ = SolverStats{};
+
+    if (verbose_) {
+        std::cerr << "% [verbose] presolve start: " << model.constraints().size()
+                  << " constraints, " << variables.size() << " variables\n";
+    }
+    if (!presolve(model)) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
+        optimizing_ = false;
+        return std::nullopt;
+    }
+    if (verbose_) std::cerr << "% [verbose] presolve done\n";
+
+    auto result = search_with_restart_optimize(model, on_improve);
+    optimizing_ = false;
+    return result;
+}
+
 size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 制約ウォッチリストを構築
     model.build_constraint_watch_list();
@@ -238,6 +292,161 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
     }
     stats_.nogoods_size = nogoods_.size();
     return std::nullopt;
+}
+
+std::optional<Solution> Solver::search_with_restart_optimize(
+        Model& model, SolutionCallback callback) {
+    double inner_limit = initial_conflict_limit_;
+    double outer_limit = 10.0;
+
+    int root_point = current_decision_;
+
+    if (verbose_) {
+        std::cerr << "% [verbose] search_with_restart_optimize start\n";
+    }
+
+    while (!stopped_) {
+        for (int outer = 0; outer < static_cast<int>(outer_limit) && !stopped_; ++outer) {
+            int conflict_limit = static_cast<int>(inner_limit);
+            std::optional<Solution> found_solution;
+
+            size_t nogoods_before = nogoods_.size();
+            auto res = run_search(model, conflict_limit, 0,
+                                  [&found_solution](const Solution& sol) {
+                                      found_solution = sol;
+                                      return false;  // 最初の解で停止
+                                  }, false);
+
+            if (res == SearchResult::SAT) {
+                auto obj_val = model.value(obj_var_idx_);
+                bool improved = !best_objective_ ||
+                    (minimize_ && obj_val < *best_objective_) ||
+                    (!minimize_ && obj_val > *best_objective_);
+
+                if (improved) {
+                    best_objective_ = obj_val;
+                    best_solution_ = found_solution;
+
+                    if (verbose_) {
+                        std::cerr << "% [verbose] new best objective: " << obj_val << "\n";
+                    }
+
+                    // 途中解を報告
+                    if (callback) {
+                        callback(*found_solution);
+                    }
+
+                    // 解で current_best_assignment_ を更新（値選択の優先度に使用）
+                    current_best_assignment_.clear();
+                    const auto& variables = model.variables();
+                    for (size_t i = 0; i < variables.size(); ++i) {
+                        if (model.is_instantiated(i)) {
+                            current_best_assignment_[i] = model.value(i);
+                        }
+                    }
+                }
+
+                // root へバックトラック
+                model.clear_pending_updates();
+                backtrack(model, root_point);
+                current_decision_ = root_point;
+
+                // 目的変数のドメインを縮小（永続的に root_point レベルで保存）
+                if (minimize_) {
+                    model.enqueue_set_max(obj_var_idx_, obj_val - 1);
+                } else {
+                    model.enqueue_set_min(obj_var_idx_, obj_val + 1);
+                }
+
+                if (!process_queue(model)) {
+                    // 伝播で UNSAT → 最適解が確定
+                    model.clear_pending_updates();
+                    stats_.nogoods_size = nogoods_.size();
+                    if (verbose_) {
+                        std::cerr << "% [verbose] optimal (propagation proved no improvement)\n";
+                    }
+                    return best_solution_;
+                }
+
+                // リスタートパラメータを完全リセット（新しい問題空間に入るので）
+                inner_limit = initial_conflict_limit_;
+                outer_limit = 10.0;
+                break;  // outer ループを抜けて while から再突入 → outer=0 から
+            }
+
+            if (res == SearchResult::UNSAT) {
+                // 探索空間が尽きた → 最適 (or nullopt if no solution found)
+                stats_.nogoods_size = nogoods_.size();
+                if (verbose_) {
+                    std::cerr << "% [verbose] optimal (search exhausted)\n";
+                }
+                return best_solution_;
+            }
+
+            // UNKNOWN: リスタート
+            model.clear_pending_updates();
+            backtrack(model, root_point);
+            current_decision_ = root_point;
+            stats_.restart_count++;
+            current_best_assignment_ = select_best_assignment();
+
+            // NG を有用度順にソート
+            std::stable_sort(nogoods_.begin(), nogoods_.end(),
+                [](const auto& a, const auto& b) {
+                    if (a->permanent != b->permanent) return a->permanent > b->permanent;
+                    return a->last_active > b->last_active;
+                });
+
+            // NG が増えなかった場合は inner_limit を増加
+            bool limit_changed = false;
+            if (nogoods_.size() <= nogoods_before) {
+                inner_limit++;
+                outer_limit++;
+                limit_changed = true;
+            }
+
+            // 容量管理
+            while (nogoods_.size() > max_nogoods_) {
+                if (nogoods_.back()->permanent) break;
+                remove_nogood(nogoods_.back().get());
+                nogoods_.pop_back();
+            }
+
+            // Activity 減衰
+            decay_activities();
+
+            // スキャン順シャッフル
+            std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+            std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+
+            // domain_size 優先と activity 優先を交互に切り替え
+            activity_first_ = !activity_first_;
+
+            if (!limit_changed) {
+                inner_limit *= conflict_limit_multiplier_;
+                if (inner_limit > outer_limit) {
+                    outer_limit *= conflict_limit_multiplier_;
+                    inner_limit = initial_conflict_limit_;
+                }
+            }
+
+            if (verbose_) {
+                std::cerr << "% [verbose] restart #" << stats_.restart_count
+                          << " conflict_limit=" << conflict_limit
+                          << " fails=" << stats_.fail_count
+                          << " max_depth=" << stats_.max_depth
+                          << " nogoods=" << nogoods_.size()
+                          << " best=" << (best_objective_ ? std::to_string(*best_objective_) : "none")
+                          << "\n";
+            }
+        }
+    }
+
+    if (verbose_) {
+        std::cerr << "% [verbose] search stopped (timeout)\n";
+    }
+    stats_.nogoods_size = nogoods_.size();
+    return best_solution_;
 }
 
 void Solver::add_solution_nogood(const Model& model) {

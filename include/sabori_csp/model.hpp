@@ -140,6 +140,12 @@ public:
      */
     VariablePtr variable(const std::string& name) const;
 
+    /**
+     * @brief 名前から変数インデックスを検索（エイリアスも考慮）
+     * @return 見つかればインデックス、なければ SIZE_MAX
+     */
+    size_t find_variable_index(const std::string& name) const;
+
     // ===== SoA データアクセス =====
 
     /**

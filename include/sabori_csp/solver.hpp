@@ -126,6 +126,18 @@ public:
     size_t solve_all(Model& model, SolutionCallback callback);
 
     /**
+     * @brief 最適化問題を探索内 branch-and-bound で解く
+     * @param model 解くモデル
+     * @param obj_var_idx 目的変数のインデックス
+     * @param minimize trueなら最小化、falseなら最大化
+     * @param on_improve 改善解が見つかるたびに呼ばれるコールバック（nullptrなら無視）
+     * @return 最適解が見つかればその解、なければstd::nullopt
+     */
+    std::optional<Solution> solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve = nullptr);
+
+    /**
      * @brief 統計情報を取得
      */
     const SolverStats& stats() const { return stats_; }
@@ -227,6 +239,12 @@ private:
                                                  bool find_all = false);
 
     /**
+     * @brief 最適化用探索ループ（探索内 branch-and-bound）
+     */
+    std::optional<Solution> search_with_restart_optimize(
+        Model& model, SolutionCallback callback);
+
+    /**
      * @brief 現在の完全割当を永続NoGoodとして追加
      */
     void add_solution_nogood(const Model& model);
@@ -325,6 +343,13 @@ private:
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     bool activity_first_ = false;  // false: MRV優先, true: Activity優先
+
+    // 最適化状態
+    bool optimizing_ = false;
+    size_t obj_var_idx_ = SIZE_MAX;
+    bool minimize_ = true;
+    std::optional<Solution> best_solution_;
+    std::optional<Domain::value_type> best_objective_;
 
     // 状態
     int current_decision_ = 0;

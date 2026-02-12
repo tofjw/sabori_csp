@@ -98,6 +98,15 @@ VariablePtr Model::variable(const std::string& name) const {
     return variables_[it->second];
 }
 
+size_t Model::find_variable_index(const std::string& name) const {
+    auto it = name_to_id_.find(name);
+    if (it != name_to_id_.end()) return it->second;
+    // エイリアスも確認
+    auto ait = variable_aliases_.find(name);
+    if (ait != variable_aliases_.end()) return ait->second;
+    return SIZE_MAX;
+}
+
 const std::vector<Domain::value_type>& Model::mins() const {
     return mins_;
 }
