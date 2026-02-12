@@ -173,6 +173,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |
 | `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
 | `table_int` | `TableConstraint` | 変数の値の組み合わせがタプル集合に含まれる |
+| `count_eq` | `CountEqConstraint` | count(x[i] == target) = c |
 
 #### table_int 制約
 
