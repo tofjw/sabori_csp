@@ -18,9 +18,21 @@ std::optional<Solution> Solver::solve(Model& model) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
-    var_order_.resize(variables.size());
-    std::iota(var_order_.begin(), var_order_.end(), 0);
-    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+    // var_order_ を decision vars | defined vars にパーティション分割
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -64,9 +76,21 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
-    var_order_.resize(variables.size());
-    std::iota(var_order_.begin(), var_order_.end(), 0);
-    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+    // var_order_ を decision vars | defined vars にパーティション分割
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -181,8 +205,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Activity 減衰
             decay_activities();
 
-            // スキャン順シャッフル（タイブレークのランダム化）
-            std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+            // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
+            std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+            std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
 
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
@@ -529,33 +554,44 @@ size_t Solver::select_variable(const Model& model) {
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
 
-    for (size_t i : var_order_) {
-        if (model.is_instantiated(i)) continue;
+    auto scan_range = [&](size_t begin, size_t end) {
+        for (size_t k = begin; k < end; ++k) {
+            size_t i = var_order_[k];
+            if (model.is_instantiated(i)) continue;
 
-        size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
-
-        bool better = false;
-        if (activity_first_) {
-            if (activity_[i] > best_activity) {
-                better = true;
-            } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
-                better = true;
+            size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
+            bool better = false;
+            if (activity_first_) {
+                if (activity_[i] > best_activity) {
+                    better = true;
+                } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
+                    better = true;
+                }
+            } else {
+                if (domain_size < min_domain_size) {
+                    better = true;
+                } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
+                    better = true;
+                }
             }
-        } else {
-            if (domain_size < min_domain_size) {
-                better = true;
-            } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
-                better = true;
+
+            if (better) {
+                best_idx = i;
+                min_domain_size = domain_size;
+                best_activity = activity_[i];
             }
         }
+    };
 
-        if (better) {
-            best_idx = i;
-            min_domain_size = domain_size;
-            best_activity = activity_[i];
-        }
-    }
-
+#if 1
+    // Decision vars を先にスキャン
+    scan_range(0, decision_var_end_);
+    if (best_idx != SIZE_MAX) return best_idx;
+    // 全 decision vars が instantiated → defined vars にフォールバック
+    scan_range(decision_var_end_, var_order_.size());
+#else
+    scan_range(0, var_order_.size());
+#endif
     return best_idx;
 }
 

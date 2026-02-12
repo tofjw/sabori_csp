@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <iostream>
+#include <cassert>
 
 namespace sabori_csp {
 
@@ -42,6 +43,9 @@ size_t Model::add_variable(VariablePtr var) {
     size_t n = var->domain().n();
     support_values_.push_back(vals[n / 2]);
 
+    // is_defined_var フラグ
+    is_defined_var_.push_back(false);
+
     // 重複保存防止用
     last_saved_level_.push_back(-1);
 
@@ -51,6 +55,10 @@ size_t Model::add_variable(VariablePtr var) {
     }
 
     return id;
+}
+
+void Model::set_defined_var(size_t var_idx) {
+    is_defined_var_[var_idx] = true;
 }
 
 void Model::add_variable_alias(const std::string& alias_name, size_t var_id) {
@@ -145,13 +153,15 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
 
     save_var_state(save_point, var_idx);
 
-    if (new_min <= support_values_[var_idx]) {
+    if (new_min <= support_values_[var_idx] && support_values_[var_idx] <= maxs_[var_idx]) {
         // Lazy: support がまだ有効なのでスキャン不要
         mins_[var_idx] = new_min;
         if (new_min == maxs_[var_idx]) {
             // Domain も singleton にする（assigned_value() の整合性のため）
             auto& domain = variables_[var_idx]->domain();
             size_t idx = domain.index_of(new_min);
+            assert(idx != SIZE_MAX);
+
             domain.swap_at(idx, 0);
             domain.set_n(1);
             domain.set_min_cache(new_min);
@@ -176,7 +186,10 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
 
     // actual_min == maxs_ → 確実に1値
     if (actual_min == maxs_[var_idx]) {
-        domain.swap_at(domain.index_of(actual_min), 0);
+        size_t idx = domain.index_of(actual_min);
+        assert(idx != SIZE_MAX);
+
+        domain.swap_at(idx, 0);
         domain.set_n(1);
         domain.set_min_cache(actual_min);
         domain.set_max_cache(actual_min);
@@ -205,7 +218,10 @@ bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) 
 
     if (actual_max == actual_min) {
         // 1値 → instantiate
-        domain.swap_at(domain.index_of(actual_min), 0);
+        size_t idx = domain.index_of(actual_min);
+        assert(idx != SIZE_MAX);
+
+        domain.swap_at(idx, 0);
         domain.set_n(1);
         domain.set_min_cache(actual_min);
         domain.set_max_cache(actual_min);
@@ -235,13 +251,15 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
     save_var_state(save_point, var_idx);
 
-    if (new_max >= support_values_[var_idx]) {
+    if (new_max >= support_values_[var_idx] && support_values_[var_idx] >= mins_[var_idx]) {
         // Lazy: support がまだ有効なのでスキャン不要
         maxs_[var_idx] = new_max;
         if (new_max == mins_[var_idx]) {
             // Domain も singleton にする（assigned_value() の整合性のため）
             auto& domain = variables_[var_idx]->domain();
             size_t idx = domain.index_of(new_max);
+            assert(idx != SIZE_MAX);
+
             domain.swap_at(idx, 0);
             domain.set_n(1);
             domain.set_min_cache(new_max);
@@ -266,7 +284,10 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
     // actual_max == mins_ → 確実に1値
     if (actual_max == mins_[var_idx]) {
-        domain.swap_at(domain.index_of(actual_max), 0);
+        size_t idx = domain.index_of(actual_max);
+        assert(idx != SIZE_MAX);
+
+        domain.swap_at(idx, 0);
         domain.set_n(1);
         domain.set_min_cache(actual_max);
         domain.set_max_cache(actual_max);
@@ -295,7 +316,10 @@ bool Model::set_max(int save_point, size_t var_idx, Domain::value_type new_max) 
 
     if (actual_min == actual_max) {
         // 1値 → instantiate
-        domain.swap_at(domain.index_of(actual_max), 0);
+        size_t idx = domain.index_of(actual_max);
+        assert(idx != SIZE_MAX);
+
+        domain.swap_at(idx, 0);
         domain.set_n(1);
         domain.set_min_cache(actual_max);
         domain.set_max_cache(actual_max);
@@ -323,6 +347,7 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         return true;  // 既に無い
     }
 
+    bool was_instantiated = (mins_[var_idx] == maxs_[var_idx]);
     save_var_state(save_point, var_idx);
 
     domain.swap_at(idx, domain.n() - 1);
@@ -334,12 +359,7 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         return false;
     }
 
-    // support が削除された場合、dense[0] を新 support に（O(1)、必ず domain 内）
-    if (val == support_values_[var_idx]) {
-        support_values_[var_idx] = domain.values_ref()[0];
-    }
-
-    // 境界値の場合、sparse 配列で O(gap) スキャン
+    // 境界値の場合、sparse 配列で O(gap) スキャン（support 更新より先に行う）
     if (val == mins_[var_idx]) {
         Domain::value_type new_min = val + 1;
         while (new_min <= maxs_[var_idx] && !domain.sparse_contains(new_min)) new_min++;
@@ -354,7 +374,22 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
         maxs_[var_idx] = new_max;
         domain.set_max_cache(new_max);
     }
-    if (mins_[var_idx] == maxs_[var_idx]) {
+
+    // support が削除された場合、bounds 更新後に有効な値で置換
+    if (val == support_values_[var_idx]) {
+        const auto& vals = domain.values_ref();
+        support_values_[var_idx] = vals[0];
+        if (vals[0] < mins_[var_idx] || vals[0] > maxs_[var_idx]) {
+            for (size_t i = 1; i < new_n; ++i) {
+                if (vals[i] >= mins_[var_idx] && vals[i] <= maxs_[var_idx]) {
+                    support_values_[var_idx] = vals[i];
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!was_instantiated && mins_[var_idx] == maxs_[var_idx]) {
         instantiated_count_++;
     }
     sizes_[var_idx] = new_n;

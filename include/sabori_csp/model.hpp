@@ -200,6 +200,16 @@ public:
      */
     bool contains(size_t var_idx, Domain::value_type val) const;
 
+    /**
+     * @brief 変数が is_defined_var か
+     */
+    bool is_defined_var(size_t var_idx) const { return is_defined_var_[var_idx]; }
+
+    /**
+     * @brief 変数を is_defined_var としてマーク
+     */
+    void set_defined_var(size_t var_idx);
+
     // ===== ドメイン操作（Trail 付き） =====
 
     /**
@@ -332,6 +342,7 @@ private:
     std::vector<size_t> sizes_;
     std::vector<size_t> initial_ranges_;  // domain.initial_range() のキャッシュ
     std::vector<Domain::value_type> support_values_;  // ドメイン内の証人値（lazy bounds 用）
+    std::vector<bool> is_defined_var_;  // is_defined_var アノテーション
 
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;

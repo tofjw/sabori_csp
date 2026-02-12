@@ -352,6 +352,7 @@ private:
 
     // 変数スキャン順序（リスタートごとにシャッフル）
     std::vector<size_t> var_order_;
+    size_t decision_var_end_ = 0;  // var_order_ 内の decision/defined 境界
 
     // 値選択バッファ（ヒープ確保を避けるため再利用）
     std::vector<Domain::value_type> value_buffer_;

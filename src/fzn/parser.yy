@@ -117,6 +117,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }
@@ -132,6 +133,7 @@ var_decl:
             if ($7) {
                 for (const auto& ann : *$7) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $7;
             }
@@ -148,6 +150,7 @@ var_decl:
             if ($7) {
                 for (const auto& ann : *$7) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $7;
             }
@@ -164,6 +167,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }
@@ -180,6 +184,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }
@@ -197,6 +202,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }
@@ -213,6 +219,7 @@ var_decl:
             if ($9) {
                 for (const auto& ann : *$9) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $9;
             }
@@ -431,6 +438,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }
@@ -452,6 +460,7 @@ var_decl:
             if ($5) {
                 for (const auto& ann : *$5) {
                     if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
                 }
                 delete $5;
             }

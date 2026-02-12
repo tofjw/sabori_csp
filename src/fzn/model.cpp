@@ -105,6 +105,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         } else {
             var = model->create_variable(name, decl.lb, decl.ub);
         }
+        if (decl.is_defined_var) {
+            model->set_defined_var(var->id());
+        }
         var_map[name] = var;
     }
 
