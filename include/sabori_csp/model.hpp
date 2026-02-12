@@ -16,6 +16,21 @@
 namespace sabori_csp {
 
 /**
+ * @brief 変数データ（AoS 構造体）
+ *
+ * 同一変数の min/max/size を同一キャッシュラインに配置する。
+ */
+struct VarData {
+    Domain::value_type min;
+    Domain::value_type max;
+    size_t size;
+    size_t initial_range;
+    Domain::value_type support_value;
+    int last_saved_level = -1;
+    bool is_defined_var = false;
+};
+
+/**
  * @brief 変数ドメイン用 Trail エントリ
  */
 struct VarTrailEntry {
@@ -53,7 +68,7 @@ struct PendingUpdate {
 /**
  * @brief CSPモデル
  *
- * 変数と制約を管理し、SoA形式で高速アクセス用データを保持する。
+ * 変数と制約を管理し、AoS形式（VarData）で高速アクセス用データを保持する。
  * 集中型 Trail でバックトラックを効率化する。
  */
 class Model {
@@ -146,50 +161,32 @@ public:
      */
     size_t find_variable_index(const std::string& name) const;
 
-    // ===== SoA データアクセス =====
-
-    /**
-     * @brief SoA最小値配列を取得
-     */
-    const std::vector<Domain::value_type>& mins() const;
-    std::vector<Domain::value_type>& mins();
-
-    /**
-     * @brief SoA最大値配列を取得
-     */
-    const std::vector<Domain::value_type>& maxs() const;
-    std::vector<Domain::value_type>& maxs();
-
-    /**
-     * @brief SoAサイズ配列を取得
-     */
-    const std::vector<size_t>& sizes() const;
-    std::vector<size_t>& sizes();
+    // ===== 変数データアクセス =====
 
     /**
      * @brief 変数の最小値を取得
      */
-    Domain::value_type var_min(size_t var_idx) const { return mins_[var_idx]; }
+    Domain::value_type var_min(size_t var_idx) const { return var_data_[var_idx].min; }
 
     /**
      * @brief 変数の最大値を取得
      */
-    Domain::value_type var_max(size_t var_idx) const { return maxs_[var_idx]; }
+    Domain::value_type var_max(size_t var_idx) const { return var_data_[var_idx].max; }
 
     /**
      * @brief 変数のドメインサイズを取得（sparse set の物理サイズ）
      */
-    size_t var_size(size_t var_idx) const { return sizes_[var_idx]; }
+    size_t var_size(size_t var_idx) const { return var_data_[var_idx].size; }
 
     /**
      * @brief 変数の初期レンジを取得
      */
-    size_t initial_range(size_t var_idx) const { return initial_ranges_[var_idx]; }
+    size_t initial_range(size_t var_idx) const { return var_data_[var_idx].initial_range; }
 
     /**
      * @brief 変数が単一値に固定されているか
      */
-    bool is_instantiated(size_t var_idx) const { return mins_[var_idx] == maxs_[var_idx]; }
+    bool is_instantiated(size_t var_idx) const { return var_data_[var_idx].min == var_data_[var_idx].max; }
 
     /**
      * @brief instantiated な変数の数を取得（O(1)）
@@ -199,7 +196,7 @@ public:
     /**
      * @brief 変数の値を取得（固定されている場合）
      */
-    Domain::value_type value(size_t var_idx) const { return mins_[var_idx]; }
+    Domain::value_type value(size_t var_idx) const { return var_data_[var_idx].min; }
 
     /**
      * @brief 変数のドメインに値が含まれるか
@@ -207,9 +204,15 @@ public:
     bool contains(size_t var_idx, Domain::value_type val) const;
 
     /**
+     * @brief 変数データへの参照を取得（Variable::sync_soa 等で使用）
+     */
+    VarData& var_data(size_t var_idx) { return var_data_[var_idx]; }
+    const VarData& var_data(size_t var_idx) const { return var_data_[var_idx]; }
+
+    /**
      * @brief 変数が is_defined_var か
      */
-    bool is_defined_var(size_t var_idx) const { return is_defined_var_[var_idx]; }
+    bool is_defined_var(size_t var_idx) const { return var_data_[var_idx].is_defined_var; }
 
     /**
      * @brief 変数を is_defined_var としてマーク
@@ -342,21 +345,13 @@ private:
     // 変数IDカウンタ
     size_t next_var_id_ = 0;
 
-    // SoA データ（高速アクセス用）
-    std::vector<Domain::value_type> mins_;
-    std::vector<Domain::value_type> maxs_;
-    std::vector<size_t> sizes_;
-    std::vector<size_t> initial_ranges_;  // domain.initial_range() のキャッシュ
-    std::vector<Domain::value_type> support_values_;  // ドメイン内の証人値（lazy bounds 用）
-    std::vector<bool> is_defined_var_;  // is_defined_var アノテーション
+    // 変数データ（AoS: 同一変数の min/max/size が同一キャッシュラインに乗る）
+    std::vector<VarData> var_data_;
 
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;
     std::vector<std::pair<int, ConstraintTrailEntry>> constraint_trail_;
     std::vector<std::pair<int, size_t>> dirty_constraint_trail_;  // (save_point, constraint_idx)
-
-    // 最後に保存した変数ごとのセーブポイント（重複保存防止）
-    std::vector<int> last_saved_level_;
 
     // instantiated 変数カウンタ（O(1) 参照用）
     size_t instantiated_count_ = 0;

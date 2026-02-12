@@ -44,12 +44,10 @@ bool Variable::remove_above(Domain::value_type threshold) {
 
 void Variable::sync_soa() {
     if (!model_) return;
-    auto& mins = model_->mins();
-    auto& maxs = model_->maxs();
-    auto& sizes = model_->sizes();
-    mins[id_] = domain_.min().value_or(mins[id_]);
-    maxs[id_] = domain_.max().value_or(maxs[id_]);
-    sizes[id_] = domain_.size();
+    auto& vd = model_->var_data(id_);
+    vd.min = domain_.min().value_or(vd.min);
+    vd.max = domain_.max().value_or(vd.max);
+    vd.size = domain_.size();
 }
 
 } // namespace sabori_csp
