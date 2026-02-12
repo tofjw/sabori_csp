@@ -233,119 +233,184 @@ void Solver::add_solution_nogood(const Model& model) {
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                                  SolutionCallback callback, bool find_all) {
-    // タイムアウトチェック
-    if (stopped_) {
-        return SearchResult::UNKNOWN;
-    }
+    // 明示的スタックによる反復探索（再帰によるスタックオーバーフローを回避）
+    struct SearchFrame {
+        size_t var_idx;
+        std::vector<Domain::value_type> values;
+        size_t value_idx;
+        int save_point;
+        Domain::value_type prev_min, prev_max;
+        size_t nogoods_before;
+        int remaining_cl;  // このレベルの残りコンフリクト予算
+    };
+
+    std::vector<SearchFrame> stack;
+    SearchResult result = SearchResult::UNSAT;
+    bool ascending = false;
 
     const auto& variables = model.variables();
 
-    // 統計更新
-    stats_.depth_sum += depth;
-    stats_.depth_count++;
-    if (depth > stats_.max_depth) {
-        stats_.max_depth = depth;
-    }
+    while (true) {
+        if (!ascending) {
+            // === 降下: 新レベルに入る ===
+            size_t current_depth = depth + stack.size();
 
-    // 変数選択（全変数確定なら SIZE_MAX）
-    size_t var_idx = select_variable(model);
-
-    if (var_idx == SIZE_MAX) {
-        if (verify_solution(model)) {
-            if (!callback(build_solution(model))) {
-                return SearchResult::SAT;
+            // タイムアウトチェック
+            if (stopped_) {
+                result = SearchResult::UNKNOWN;
+                ascending = true;
+                continue;
             }
-            return find_all ? SearchResult::UNSAT : SearchResult::SAT;
-        }
-        return SearchResult::UNSAT;
-    }
 
-    int save_point = current_decision_;
-    auto prev_min = model.var_min(var_idx);
-    auto prev_max = model.var_max(var_idx);
+            // 統計更新
+            stats_.depth_sum += current_depth;
+            stats_.depth_count++;
+            if (current_depth > stats_.max_depth) {
+                stats_.max_depth = current_depth;
+            }
 
-    // 値を取得（ソートなし、オリジナル domain.values() を使用）
-    auto& domain = variables[var_idx]->domain();
-    auto values = domain.values();
+            // 変数選択（全変数確定なら SIZE_MAX）
+            size_t var_idx = select_variable(model);
 
-    // 保存された値がある場合は優先（先頭と swap で O(1)）
-    if (current_best_assignment_.count(var_idx)) {
-        auto best_val = current_best_assignment_[var_idx];
-        auto it = std::find(values.begin(), values.end(), best_val);
-        if (it != values.end() && it != values.begin()) {
-            std::swap(*it, values[0]);
-        }
-    }
+            if (var_idx == SIZE_MAX) {
+                if (verify_solution(model)) {
+                    if (!callback(build_solution(model))) {
+                        result = SearchResult::SAT;
+                    } else {
+                        result = find_all ? SearchResult::UNSAT : SearchResult::SAT;
+                    }
+                } else {
+                    result = SearchResult::UNSAT;
+                }
+                ascending = true;
+                continue;
+            }
 
-    size_t nogoods_before = nogoods_.size();
+            int save_point = current_decision_;
+            auto prev_min = model.var_min(var_idx);
+            auto prev_max = model.var_max(var_idx);
 
-    for (auto val : values) {
-        current_decision_++;
+            // 値を取得（ソートなし、オリジナル domain.values() を使用）
+            auto& domain = variables[var_idx]->domain();
+            auto values = domain.values();
 
-        // 値を割り当て（Trail に保存される）
-        if (!model.instantiate(current_decision_, var_idx, val)) {
+            // 保存された値がある場合は優先（先頭と swap で O(1)）
+            if (current_best_assignment_.count(var_idx)) {
+                auto best_val = current_best_assignment_[var_idx];
+                auto it = std::find(values.begin(), values.end(), best_val);
+                if (it != values.end() && it != values.begin()) {
+                    std::swap(*it, values[0]);
+                }
+            }
+
+            size_t nogoods_before = nogoods_.size();
+
+            // フレームの CL を決定（親のCLを継承）
+            int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
+
+            stack.push_back({var_idx, std::move(values), 0,
+                           save_point, prev_min, prev_max, nogoods_before, cl});
+            // TRY VALUES へフォールスルー
+        } else {
+            // === 上昇: 子の結果を処理 ===
+            if (stack.empty()) {
+                return result;
+            }
+
+            auto& frame = stack.back();
+
+            decision_trail_.pop_back();
+
+            if (result == SearchResult::SAT) {
+                stack.pop_back();
+                continue;  // SAT を上へ伝播
+            }
+
+            if (result == SearchResult::UNKNOWN || frame.remaining_cl <= 1) {
+                current_decision_--;
+                backtrack(model, frame.save_point);
+                stack.pop_back();
+                result = SearchResult::UNKNOWN;
+                continue;  // UNKNOWN を上へ伝播
+            }
+
+            // UNSAT: 次の値を試す
+            frame.remaining_cl--;
             current_decision_--;
-            continue;
+            backtrack(model, frame.save_point);
+            frame.value_idx++;
+            // TRY VALUES へフォールスルー
         }
 
-        // 伝播
-        bool propagate_ok = propagate_instantiate(model, var_idx, prev_min, prev_max);
-        bool queue_ok = false;
-        if (propagate_ok) {
-            // キュー処理
-            queue_ok = process_queue(model);
-            if (queue_ok) {
-                decision_trail_.push_back({var_idx, val});
+        // === TRY VALUES ===
+        auto& frame = stack.back();
+        bool found_value = false;
 
-                auto res = run_search(model, conflict_limit, depth + 1, callback, find_all);
+        while (frame.value_idx < frame.values.size()) {
+            auto val = frame.values[frame.value_idx];
 
-                decision_trail_.pop_back();
+            current_decision_++;
 
-                if (res == SearchResult::SAT) {
-                    return res;
-                }
-                if (res == SearchResult::UNKNOWN || conflict_limit <= 1) {
-                    current_decision_--;
-                    backtrack(model, save_point);
-                    return SearchResult::UNKNOWN;
-                }
-
-                conflict_limit--;
+            // 値を割り当て（Trail に保存される）
+            if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+                current_decision_--;
+                frame.value_idx++;
+                continue;
             }
+
+            // 伝播
+            bool propagate_ok = propagate_instantiate(model, frame.var_idx,
+                                                       frame.prev_min, frame.prev_max);
+            bool queue_ok = false;
+            if (propagate_ok) {
+                // キュー処理
+                queue_ok = process_queue(model);
+                if (queue_ok) {
+                    decision_trail_.push_back({frame.var_idx, val});
+                    ascending = false;
+                    found_value = true;
+                    break;  // 降下へ
+                }
+            }
+
+            // 伝播失敗時はキューに残りがある可能性があるのでクリア
+            if (!propagate_ok || !queue_ok) {
+                model.clear_pending_updates();
+            }
+
+            current_decision_--;
+            backtrack(model, frame.save_point);
+            frame.value_idx++;
         }
 
-        // 伝播失敗時はキューに残りがある可能性があるのでクリア
-        if (!propagate_ok || !queue_ok) {
-            model.clear_pending_updates();
-        }
+        if (!found_value) {
+            // 全値失敗: Activity 更新
+            activity_[frame.var_idx] += 1.0;
+            stats_.fail_count++;
 
-        current_decision_--;
-        backtrack(model, save_point);
-    }
+            // 部分解を保存
+            save_partial_assignment(model);
 
-    // 失敗: Activity 更新
-    activity_[var_idx] += 1.0;
-    stats_.fail_count++;
+            // 子ノードで追加された NoGood を削除
+            while (nogoods_.size() > frame.nogoods_before) {
+                remove_nogood(nogoods_.back().get());
+                nogoods_.pop_back();
+            }
 
-    // 部分解を保存
-    save_partial_assignment(model);
+            // NoGood 記録
+            if (nogood_learning_ && decision_trail_.size() >= 2) {
+                add_nogood(decision_trail_);
+                for (const auto& lit : decision_trail_) {
+                    break;
+                    activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                }
+            }
 
-    // 子ノードで追加された NoGood を削除
-    while (nogoods_.size() > nogoods_before) {
-        remove_nogood(nogoods_.back().get());
-        nogoods_.pop_back();
-    }
-
-    // NoGood 記録
-    if (nogood_learning_ && decision_trail_.size() >= 2) {
-        add_nogood(decision_trail_);
-        for (const auto& lit : decision_trail_) {
-	  break;
-            activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+            stack.pop_back();
+            result = SearchResult::UNSAT;
+            ascending = true;
         }
     }
-
-    return SearchResult::UNSAT;
 }
 
 bool Solver::presolve(Model& model) {
