@@ -579,6 +579,11 @@ constraint_arg:
             IntRange range{$1, $3};
             $$ = new ConstraintArg(range);
         }
+    | int_set
+        {
+            $$ = new ConstraintArg(std::move(*$1));
+            delete $1;
+        }
     ;
 
 solve_decl:

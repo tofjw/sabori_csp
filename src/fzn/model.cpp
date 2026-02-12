@@ -1,4 +1,5 @@
 #include "sabori_csp/fzn/model.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace sabori_csp {
@@ -831,14 +832,65 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 // x <= ub
                 model->add_constraint(std::make_shared<IntLeConstraint>(x, ub_var));
                 constraint = nullptr; // Already added
+            } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
+                const auto& values = std::get<std::vector<Domain::value_type>>(decl.args[1]);
+                // Remove values from x's domain that are not in the set
+                auto domain_vals = x->domain().values();
+                for (auto v : domain_vals) {
+                    if (std::find(values.begin(), values.end(), v) == values.end()) {
+                        x->domain().remove(v);
+                    }
+                }
+                constraint = nullptr; // Already handled
             } else {
-                throw std::runtime_error("set_in requires range argument (lb..ub)");
+                throw std::runtime_error("set_in requires range or set argument");
             }
         } else if (decl.name == "set_in_reif") {
-            // set_in_reif(x, lb..ub, b) - reified version, skip for now
-            // This is complex to implement properly, so we'll skip it
-            // The problem might still work if this constraint isn't critical
-            constraint = nullptr;
+            // set_in_reif(x, S, b) means b ↔ (x ∈ S)
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("set_in_reif requires 3 arguments");
+            }
+            auto x = get_var(decl.args[0]);
+            auto b = get_var(decl.args[2]);
+
+            if (std::holds_alternative<IntRange>(decl.args[1])) {
+                // Range case: b ↔ (lb <= x <= ub)
+                const auto& range = std::get<IntRange>(decl.args[1]);
+                static int set_in_reif_counter = 0;
+                int id = set_in_reif_counter++;
+                auto lb_var = model->create_variable("__sir_lb_" + std::to_string(id), range.lb);
+                auto ub_var = model->create_variable("__sir_ub_" + std::to_string(id), range.ub);
+                auto b1 = model->create_variable("__sir_b1_" + std::to_string(id), 0, 1);
+                auto b2 = model->create_variable("__sir_b2_" + std::to_string(id), 0, 1);
+                // b1 = (lb <= x)
+                model->add_constraint(std::make_shared<IntLeReifConstraint>(lb_var, x, b1));
+                // b2 = (x <= ub)
+                model->add_constraint(std::make_shared<IntLeReifConstraint>(x, ub_var, b2));
+                // b = b1 ∧ b2
+                model->add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+                    std::vector<VariablePtr>{b1, b2}, b));
+                constraint = nullptr;
+            } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
+                // Set literal case: b ↔ (x = v1 ∨ x = v2 ∨ ... ∨ vn)
+                const auto& values = std::get<std::vector<Domain::value_type>>(decl.args[1]);
+                static int set_in_reif_set_counter = 0;
+                int id = set_in_reif_set_counter++;
+                std::vector<VariablePtr> bool_vars;
+                for (size_t i = 0; i < values.size(); ++i) {
+                    auto vi_var = model->create_variable(
+                        "__sir_v_" + std::to_string(id) + "_" + std::to_string(i), values[i]);
+                    auto bi = model->create_variable(
+                        "__sir_bi_" + std::to_string(id) + "_" + std::to_string(i), 0, 1);
+                    // bi = (x == vi)
+                    model->add_constraint(std::make_shared<IntEqReifConstraint>(x, vi_var, bi));
+                    bool_vars.push_back(bi);
+                }
+                // b = b1 ∨ b2 ∨ ... ∨ bn
+                model->add_constraint(std::make_shared<ArrayBoolOrConstraint>(bool_vars, b));
+                constraint = nullptr;
+            } else {
+                throw std::runtime_error("set_in_reif requires range or set argument");
+            }
         } else {
             // Unknown constraint - error
             throw std::runtime_error("Unsupported constraint: " + decl.name);

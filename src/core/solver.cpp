@@ -508,15 +508,20 @@ void Solver::set_activity(const std::map<std::string, double>& activity, const M
 
     // 名前からインデックスを解決して設定
     for (const auto& [name, score] : activity) {
-        auto var = model.variable(name);
-        if (var) {
-            // 変数のインデックスを検索
-            for (size_t i = 0; i < model.variables().size(); ++i) {
-                if (model.variable(i) == var) {
-                    activity_[i] = score;
-                    break;
+        try {
+            auto var = model.variable(name);
+            if (var) {
+                // 変数のインデックスを検索
+                for (size_t i = 0; i < model.variables().size(); ++i) {
+                    if (model.variable(i) == var) {
+                        activity_[i] = score;
+                        break;
+                    }
                 }
             }
+        } catch (const std::out_of_range&) {
+            // Variable may not exist in the new model (e.g. helper variables with static counters)
+            continue;
         }
     }
 }
