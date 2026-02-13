@@ -359,7 +359,7 @@ TEST_CASE("Model set_min lazy path with hole in domain", "[model][trail]") {
     SECTION("set_min past support forces scan, then set_max converges") {
         // support is vals[2]=5. set_min(7) > 5 → scan path finds actual_min=7
         REQUIRE(model.set_min(1, x_idx, 7));
-        REQUIRE(model.mins()[x_idx] == 7);
+        REQUIRE(model.var_min(x_idx) == 7);
         // set_max(7) → converge to 7 which exists
         REQUIRE(model.set_max(1, x_idx, 7));
         REQUIRE(model.is_instantiated(x_idx));
@@ -369,7 +369,7 @@ TEST_CASE("Model set_min lazy path with hole in domain", "[model][trail]") {
     SECTION("set_max below support forces scan, then set_min converges") {
         // support is 5. set_max(3) < 5 → scan path finds actual_max=3
         REQUIRE(model.set_max(1, x_idx, 3));
-        REQUIRE(model.maxs()[x_idx] == 3);
+        REQUIRE(model.var_max(x_idx) == 3);
         // set_min(3) → converge to 3 which exists
         REQUIRE(model.set_min(1, x_idx, 3));
         REQUIRE(model.is_instantiated(x_idx));
@@ -408,13 +408,13 @@ TEST_CASE("Model set_min/set_max with remove then lazy convergence", "[model][tr
 
         model.rewind_to(1);
         // After rewind: domain should be {1, 2, 4, 5} (3 still removed at level 1)
-        REQUIRE(model.sizes()[x_idx] == 4);
+        REQUIRE(model.var_size(x_idx) == 4);
         REQUIRE(!model.contains(x_idx, 3));
         REQUIRE(model.contains(x_idx, 4));
 
         model.rewind_to(0);
         // Full restore: domain should be {1, 2, 3, 4, 5}
-        REQUIRE(model.sizes()[x_idx] == 5);
+        REQUIRE(model.var_size(x_idx) == 5);
         REQUIRE(model.contains(x_idx, 3));
     }
 }
