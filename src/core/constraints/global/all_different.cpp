@@ -157,10 +157,10 @@ bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type
 }
 
 bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
-					    size_t var_idx, Domain::value_type value,
+					    size_t var_idx, size_t internal_var_idx, Domain::value_type value,
 					    Domain::value_type prev_min,
 					    Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
       return false;
     }
 

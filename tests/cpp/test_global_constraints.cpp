@@ -148,12 +148,12 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
 
     // Simulate instantiation at level 1
     model.instantiate(1, x->id(), 1);
-    REQUIRE(c.on_instantiate(model, 1, 0, 1, 1, 3));
+    REQUIRE(c.on_instantiate(model, 1, 0, 0, 1, 1, 3));
     REQUIRE(c.pool_size() == 2);
 
     // Simulate instantiation at level 2
     model.instantiate(2, y->id(), 2);
-    REQUIRE(c.on_instantiate(model, 2, 1, 2, 1, 3));
+    REQUIRE(c.on_instantiate(model, 2, 1, 0, 2, 1, 3));
     REQUIRE(c.pool_size() == 1);
 
     // Rewind to level 1
@@ -265,11 +265,11 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
 
     // Simulate instantiation at level 1
     model.instantiate(1, x->id(), 2);
-    c.on_instantiate(model, 1, 0, 2, 1, 5);
+    c.on_instantiate(model, 1, 0, 0, 2, 1, 5);
 
     // Simulate instantiation at level 2
     model.instantiate(2, y->id(), 4);
-    c.on_instantiate(model, 2, 1, 4, 1, 5);
+    c.on_instantiate(model, 2, 1, 0, 4, 1, 5);
 
     // Verify final state
     REQUIRE(c.on_final_instantiate() == true);  // 2 + 4 = 6
@@ -936,12 +936,12 @@ TEST_CASE("CircuitConstraint rewind_to", "[constraint][circuit][trail]") {
 
     // Simulate instantiation at level 1: x[0] = 1
     model.instantiate(1, x0->id(), 1);
-    REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
+    REQUIRE(c.on_instantiate(model, 1, 0, 0, 1, 0, 2));
     REQUIRE(c.pool_size() == 2);
 
     // Simulate instantiation at level 2: x[1] = 2
     model.instantiate(2, x1->id(), 2);
-    REQUIRE(c.on_instantiate(model, 2, 1, 2, 0, 2));
+    REQUIRE(c.on_instantiate(model, 2, 1, 0, 2, 0, 2));
     REQUIRE(c.pool_size() == 1);
 
     // Rewind to level 1
@@ -963,11 +963,11 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
 
         // x[0] = 1: 0 -> 1
         model.instantiate(1, x0->id(), 1);
-        REQUIRE(c.on_instantiate(model, 1, 0, 1, 0, 2));
+        REQUIRE(c.on_instantiate(model, 1, 0, 0, 1, 0, 2));
 
         // x[1] = 0: 1 -> 0, forms subcircuit (0 -> 1 -> 0)
         model.instantiate(2, x1->id(), 0);
-        REQUIRE_FALSE(c.on_instantiate(model, 2, 1, 0, 0, 2));
+        REQUIRE_FALSE(c.on_instantiate(model, 2, 1, 0, 0, 0, 2));
     }
 
     SECTION("self-loop is subcircuit") {
@@ -979,7 +979,7 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
 
         // x[0] = 0: self-loop, forms subcircuit of size 1
         model.instantiate(1, x0->id(), 0);
-        REQUIRE_FALSE(c.on_instantiate(model, 1, 0, 0, 0, 2));
+        REQUIRE_FALSE(c.on_instantiate(model, 1, 0, 0, 0, 0, 2));
     }
 }
 

@@ -32,7 +32,8 @@ public:
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
-                        size_t var_idx, Domain::value_type value,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
     bool on_last_uninstantiated(Model& model, int save_point,
@@ -95,7 +96,8 @@ public:
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
-                        size_t var_idx, Domain::value_type value,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
     bool on_last_uninstantiated(Model& model, int save_point,
@@ -149,7 +151,8 @@ public:
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
-                        size_t var_idx, Domain::value_type value,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
     bool on_last_uninstantiated(Model& model, int save_point,
@@ -236,7 +239,8 @@ public:
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
-                        size_t var_idx, Domain::value_type value,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate() override;
 

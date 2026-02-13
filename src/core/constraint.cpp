@@ -72,7 +72,8 @@ void Constraint::init_watches() {
 }
 
 bool Constraint::on_instantiate(Model& model, int save_point,
-                                 size_t var_idx, Domain::value_type /*value*/,
+                                 size_t var_idx, size_t internal_var_idx,
+                                 Domain::value_type /*value*/,
                                  Domain::value_type /*prev_min*/,
                                  Domain::value_type /*prev_max*/) {
     // 確定した変数が監視変数でなければ何もしない
@@ -81,9 +82,8 @@ bool Constraint::on_instantiate(Model& model, int save_point,
     }
 
     // w1 が確定した場合
-    // var_idx はモデル内のインデックス、w1_/w2_ は制約内のインデックス
-    // var_ids_ キャッシュで整数比較（shared_ptr 比較を回避）
-    if (var_ids_[w1_] == var_idx || model.is_instantiated(var_ids_[w1_])) {
+    // internal_var_idx は制約内のインデックス、w1_/w2_ も制約内のインデックス
+    if (static_cast<int>(internal_var_idx) == w1_ || model.is_instantiated(var_ids_[w1_])) {
         // 別の未確定変数を探して監視を移す
         for (size_t idx = 0; idx < var_ids_.size(); ++idx) {
             if (static_cast<int>(idx) == w1_ || static_cast<int>(idx) == w2_) {
@@ -96,7 +96,7 @@ bool Constraint::on_instantiate(Model& model, int save_point,
         }
     }
     // w2 が確定した場合
-    else if (var_ids_[w2_] == var_idx || model.is_instantiated(var_ids_[w2_])) {
+    else if (static_cast<int>(internal_var_idx) == w2_ || model.is_instantiated(var_ids_[w2_])) {
         // 別の未確定変数を探して監視を移す
         for (size_t idx = 0; idx < var_ids_.size(); ++idx) {
             if (static_cast<int>(idx) == w1_ || static_cast<int>(idx) == w2_) {
@@ -135,21 +135,24 @@ bool Constraint::on_last_uninstantiated(Model& /*model*/, int /*save_point*/,
 }
 
 bool Constraint::on_set_min(Model& /*model*/, int /*save_point*/,
-                            size_t /*var_idx*/, Domain::value_type /*new_min*/,
+                            size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                            Domain::value_type /*new_min*/,
                             Domain::value_type /*old_min*/) {
     // デフォルトでは何もしない
     return true;
 }
 
 bool Constraint::on_set_max(Model& /*model*/, int /*save_point*/,
-                            size_t /*var_idx*/, Domain::value_type /*new_max*/,
+                            size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                            Domain::value_type /*new_max*/,
                             Domain::value_type /*old_max*/) {
     // デフォルトでは何もしない
     return true;
 }
 
 bool Constraint::on_remove_value(Model& /*model*/, int /*save_point*/,
-                                  size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+                                  size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                  Domain::value_type /*removed_value*/) {
     // デフォルトでは何もしない
     return true;
 }

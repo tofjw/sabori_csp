@@ -71,10 +71,11 @@ bool IntLinLeConstraint::presolve(Model& model) {
 }
 
 bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type value,
+                                          size_t var_idx, size_t internal_var_idx,
+                                          Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
     int64_t c = coeffs_[internal_idx];
 
     // Trail に保存
@@ -169,9 +170,10 @@ void IntLinLeConstraint::save_trail_if_needed(Model& model, int save_point) {
 }
 
 bool IntLinLeConstraint::on_set_min(Model& model, int save_point,
-                                     size_t var_idx, Domain::value_type new_min,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type new_min,
                                      Domain::value_type old_min) {
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     // c >= 0 の変数のみ影響: min_rem_potential_ は c * min で寄与
@@ -187,9 +189,10 @@ bool IntLinLeConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
-                                     size_t var_idx, Domain::value_type new_max,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type new_max,
                                      Domain::value_type old_max) {
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     // c < 0 の変数のみ影響: min_rem_potential_ は c * max で寄与
@@ -205,7 +208,8 @@ bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool IntLinLeConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
-                                          size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+                                          size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                          Domain::value_type /*removed_value*/) {
     // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
     // 内部値の除去では bounds が変わらず potentials も不変。
     return true;

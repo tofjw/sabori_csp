@@ -107,7 +107,8 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_instantiate(Model& model, int save_point,
-                                size_t var_idx, Domain::value_type value,
+                                size_t var_idx, size_t internal_var_idx,
+                                Domain::value_type value,
                                 Domain::value_type prev_min, Domain::value_type prev_max);
 
     /**
@@ -151,7 +152,8 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_set_min(Model& model, int save_point,
-                            size_t var_idx, Domain::value_type new_min,
+                            size_t var_idx, size_t internal_var_idx,
+                            Domain::value_type new_min,
                             Domain::value_type old_min);
 
     /**
@@ -168,7 +170,8 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_set_max(Model& model, int save_point,
-                            size_t var_idx, Domain::value_type new_max,
+                            size_t var_idx, size_t internal_var_idx,
+                            Domain::value_type new_max,
                             Domain::value_type old_max);
 
     /**
@@ -184,7 +187,8 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_remove_value(Model& model, int save_point,
-                                  size_t var_idx, Domain::value_type removed_value);
+                                  size_t var_idx, size_t internal_var_idx,
+                                  Domain::value_type removed_value);
 
     /**
      * @brief 初期状態で矛盾しているかどうか
@@ -300,18 +304,6 @@ protected:
         for (const auto& var : vars_) {
             var_ids_.push_back(var->id());
         }
-    }
-
-    /**
-     * @brief モデル変数IDから制約内インデックスを検索
-     * @param model_var_idx モデル内の変数ID
-     * @return 制約内インデックス。見つからなければ SIZE_MAX
-     */
-    size_t find_internal_idx(size_t model_var_idx) const {
-        for (size_t i = 0; i < var_ids_.size(); ++i) {
-            if (var_ids_[i] == model_var_idx) return i;
-        }
-        return SIZE_MAX;
     }
 
 private:

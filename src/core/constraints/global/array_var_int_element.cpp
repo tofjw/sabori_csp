@@ -431,7 +431,7 @@ bool ArrayVarIntElementConstraint::propagate_via_queue(Model& model) {
 
 bool ArrayVarIntElementConstraint::on_instantiate(
     Model& model, int save_point,
-    size_t /*var_idx*/, Domain::value_type /*value*/,
+    size_t /*var_idx*/, size_t /*internal_var_idx*/, Domain::value_type /*value*/,
     Domain::value_type /*prev_min*/, Domain::value_type /*prev_max*/) {
 
     // Trail に状態を保存
@@ -451,7 +451,7 @@ bool ArrayVarIntElementConstraint::on_instantiate(
 
 bool ArrayVarIntElementConstraint::on_set_min(
     Model& model, int save_point,
-    size_t var_idx, Domain::value_type /*new_min*/,
+    size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type /*new_min*/,
     Domain::value_type /*old_min*/) {
 
     // Trail に状態を保存
@@ -471,7 +471,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
 
 bool ArrayVarIntElementConstraint::on_set_max(
     Model& model, int save_point,
-    size_t var_idx, Domain::value_type /*new_max*/,
+    size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type /*new_max*/,
     Domain::value_type /*old_max*/) {
 
     // Trail に状態を保存

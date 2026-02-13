@@ -174,14 +174,15 @@ bool IntLinEqConstraint::presolve(Model& model) {
 }
 
 bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type value,
+                                          size_t var_idx, size_t internal_var_idx,
+                                          Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
 
     // Trail に保存
     save_trail_if_needed(model, save_point);
@@ -281,9 +282,10 @@ void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
 }
 
 bool IntLinEqConstraint::on_set_min(Model& model, int save_point,
-                                     size_t var_idx, Domain::value_type new_min,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type new_min,
                                      Domain::value_type old_min) {
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     save_trail_if_needed(model, save_point);
@@ -297,9 +299,10 @@ bool IntLinEqConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
-                                     size_t var_idx, Domain::value_type new_max,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type new_max,
                                      Domain::value_type old_max) {
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     save_trail_if_needed(model, save_point);
@@ -313,7 +316,8 @@ bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool IntLinEqConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
-                                          size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+                                          size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                          Domain::value_type /*removed_value*/) {
     // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
     // 内部値の除去では bounds が変わらず potentials も不変。
     return true;

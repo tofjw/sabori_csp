@@ -98,7 +98,8 @@ bool IntLinLeImpConstraint::presolve(Model& model) {
 }
 
 bool IntLinLeImpConstraint::on_instantiate(Model& model, int save_point,
-                                            size_t var_idx, Domain::value_type value,
+                                            size_t var_idx, size_t internal_var_idx,
+                                            Domain::value_type value,
                                             Domain::value_type prev_min,
                                             Domain::value_type prev_max) {
     // b_ が確定した場合
@@ -116,7 +117,7 @@ bool IntLinLeImpConstraint::on_instantiate(Model& model, int save_point,
 
     // b が確定していない場合は状態のみ更新
     // b = 0 の場合も状態を更新（b が後で 1 になる可能性があるため）
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
 
     // Trail に保存
     save_trail_if_needed(model, save_point);
@@ -228,10 +229,11 @@ void IntLinLeImpConstraint::save_trail_if_needed(Model& model, int save_point) {
 }
 
 bool IntLinLeImpConstraint::on_set_min(Model& model, int save_point,
-                                        size_t var_idx, Domain::value_type new_min,
+                                        size_t var_idx, size_t internal_var_idx,
+                                        Domain::value_type new_min,
                                         Domain::value_type old_min) {
     if (var_idx == b_id_) return true;  // b_ の変更は無視
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     // c >= 0 の変数のみ影響: min_rem_potential_ は c * min で寄与
@@ -249,10 +251,11 @@ bool IntLinLeImpConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool IntLinLeImpConstraint::on_set_max(Model& model, int save_point,
-                                        size_t var_idx, Domain::value_type new_max,
+                                        size_t var_idx, size_t internal_var_idx,
+                                        Domain::value_type new_max,
                                         Domain::value_type old_max) {
     if (var_idx == b_id_) return true;  // b_ の変更は無視
-    size_t idx = find_internal_idx(var_idx);
+    size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
     // c < 0 の変数のみ影響: min_rem_potential_ は c * max で寄与
@@ -270,7 +273,8 @@ bool IntLinLeImpConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool IntLinLeImpConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
-                                             size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+                                             size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                             Domain::value_type /*removed_value*/) {
     // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
     // 内部値の除去では bounds が変わらず potentials も不変。
     return true;

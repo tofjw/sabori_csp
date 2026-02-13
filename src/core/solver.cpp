@@ -698,7 +698,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
         if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-						    var_idx, val, prev_min, prev_max)) {
+						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
             return false;
         }
     }
@@ -1098,7 +1098,7 @@ bool Solver::process_queue(Model& model) {
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                                         var_idx, new_min, prev_min)) {
+                                                         var_idx, w.internal_var_idx, new_min, prev_min)) {
                         return false;
                     }
                 }
@@ -1121,7 +1121,7 @@ bool Solver::process_queue(Model& model) {
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                                         var_idx, new_max, prev_max)) {
+                                                         var_idx, w.internal_var_idx, new_max, prev_max)) {
                         return false;
                     }
                 }
@@ -1147,7 +1147,7 @@ bool Solver::process_queue(Model& model) {
                 if (new_min > prev_min) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                                             var_idx, new_min, prev_min)) {
+                                                             var_idx, w.internal_var_idx, new_min, prev_min)) {
                             return false;
                         }
                     }
@@ -1156,7 +1156,7 @@ bool Solver::process_queue(Model& model) {
                 if (new_max < prev_max) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                                             var_idx, new_max, prev_max)) {
+                                                             var_idx, w.internal_var_idx, new_max, prev_max)) {
                             return false;
                         }
                     }
@@ -1165,7 +1165,7 @@ bool Solver::process_queue(Model& model) {
                 if (removed_value > new_min && removed_value < new_max) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
-                                                                  var_idx, removed_value)) {
+                                                                  var_idx, w.internal_var_idx, removed_value)) {
                             return false;
                         }
                     }

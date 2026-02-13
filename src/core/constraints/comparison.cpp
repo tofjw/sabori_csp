@@ -61,11 +61,11 @@ bool IntEqConstraint::presolve(Model& model) {
 }
 
 bool IntEqConstraint::on_instantiate(Model& model, int save_point,
-                                      size_t var_idx, Domain::value_type value,
+                                      size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                       Domain::value_type prev_min,
                                       Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -90,7 +90,7 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntEqConstraint::on_set_min(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_min,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                   Domain::value_type /*old_min*/) {
     // x == y: bounds を相互伝播
     if (var_idx == x_->id()) {
@@ -102,7 +102,7 @@ bool IntEqConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntEqConstraint::on_set_max(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_max,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                   Domain::value_type /*old_max*/) {
     // x == y: bounds を相互伝播
     if (var_idx == x_->id()) {
@@ -275,11 +275,11 @@ bool IntEqReifConstraint::presolve(Model& model) {
 }
 
 bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type value,
+                                          size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -323,7 +323,7 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntEqReifConstraint::on_set_min(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type new_min,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                       Domain::value_type /*old_min*/) {
     // (x == y) <-> b
     if (!b_->is_assigned()) {
@@ -348,7 +348,7 @@ bool IntEqReifConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type new_max,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                       Domain::value_type /*old_max*/) {
     // (x == y) <-> b
     if (!b_->is_assigned()) {
@@ -372,7 +372,7 @@ bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
 }
 
 bool IntEqReifConstraint::on_remove_value(Model& model, int /*save_point*/,
-                                           size_t var_idx, Domain::value_type removed_value) {
+                                           size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type removed_value) {
     (void)removed_value;
 
     // x または y から値が削除された場合、b を更新
@@ -475,11 +475,11 @@ bool IntNeConstraint::presolve(Model& model) {
 }
 
 bool IntNeConstraint::on_instantiate(Model& model, int save_point,
-                                      size_t var_idx, Domain::value_type value,
+                                      size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                       Domain::value_type prev_min,
                                       Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -644,11 +644,11 @@ bool IntNeReifConstraint::presolve(Model& model) {
 }
 
 bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type value,
+                                          size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -697,7 +697,7 @@ bool IntNeReifConstraint::on_final_instantiate() {
 }
 
 bool IntNeReifConstraint::on_set_min(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type new_min,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                       Domain::value_type /*old_min*/) {
     // (x != y) <-> b
     if (!b_->is_assigned()) {
@@ -722,7 +722,7 @@ bool IntNeReifConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntNeReifConstraint::on_set_max(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type new_max,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                       Domain::value_type /*old_max*/) {
     // (x != y) <-> b
     if (!b_->is_assigned()) {
@@ -746,7 +746,7 @@ bool IntNeReifConstraint::on_set_max(Model& model, int /*save_point*/,
 }
 
 bool IntNeReifConstraint::on_remove_value(Model& model, int /*save_point*/,
-                                           size_t var_idx, Domain::value_type removed_value) {
+                                           size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type removed_value) {
     (void)removed_value;
 
     // x または y から値が削除された場合、b を更新
@@ -842,11 +842,11 @@ bool IntLtConstraint::presolve(Model& model) {
 }
 
 bool IntLtConstraint::on_instantiate(Model& model, int save_point,
-                                      size_t var_idx, Domain::value_type value,
+                                      size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                       Domain::value_type prev_min,
                                       Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -869,7 +869,7 @@ bool IntLtConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntLtConstraint::on_set_min(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_min,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                   Domain::value_type /*old_min*/) {
     // x < y
     // x.min が上がった → y.min >= x.min + 1
@@ -881,7 +881,7 @@ bool IntLtConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntLtConstraint::on_set_max(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_max,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                   Domain::value_type /*old_max*/) {
     // x < y
     // y.max が下がった → x.max <= y.max - 1
@@ -944,11 +944,11 @@ bool IntLeConstraint::presolve(Model& model) {
 }
 
 bool IntLeConstraint::on_instantiate(Model& model, int save_point,
-                                      size_t var_idx, Domain::value_type value,
+                                      size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                       Domain::value_type prev_min,
                                       Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -971,7 +971,7 @@ bool IntLeConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntLeConstraint::on_set_min(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_min,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                   Domain::value_type /*old_min*/) {
     // x <= y
     // x.min が上がった → y.min >= x.min
@@ -982,7 +982,7 @@ bool IntLeConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntLeConstraint::on_set_max(Model& model, int /*save_point*/,
-                                  size_t var_idx, Domain::value_type new_max,
+                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                   Domain::value_type /*old_max*/) {
     // x <= y
     // y.max が下がった → x.max <= y.max
@@ -1085,11 +1085,11 @@ bool IntLeReifConstraint::presolve(Model& model) {
 }
 
 bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type value,
+                                          size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                           Domain::value_type prev_min,
                                           Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1149,7 +1149,7 @@ bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntLeReifConstraint::on_set_min(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type /*new_min*/,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type /*new_min*/,
                                       Domain::value_type /*old_min*/) {
     // (x <= y) <-> b
     auto x_max = model.var_max(x_->id());
@@ -1178,7 +1178,7 @@ bool IntLeReifConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntLeReifConstraint::on_set_max(Model& model, int /*save_point*/,
-                                      size_t var_idx, Domain::value_type /*new_max*/,
+                                      size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type /*new_max*/,
                                       Domain::value_type /*old_max*/) {
     // (x <= y) <-> b
     auto x_max = model.var_max(x_->id());
@@ -1287,10 +1287,10 @@ bool IntMaxConstraint::presolve(Model& model) {
 }
 
 bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, Domain::value_type value,
+                                       size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1377,7 +1377,7 @@ bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntMaxConstraint::on_set_min(Model& model, int /*save_point*/,
-                                   size_t var_idx, Domain::value_type new_min,
+                                   size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                    Domain::value_type /*old_min*/) {
     // m = max(x, y)
     // x.min or y.min が上がった → m.min >= max(x.min, y.min)
@@ -1391,7 +1391,7 @@ bool IntMaxConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntMaxConstraint::on_set_max(Model& model, int /*save_point*/,
-                                   size_t var_idx, Domain::value_type new_max,
+                                   size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                    Domain::value_type /*old_max*/) {
     // m = max(x, y)
     if (var_idx == x_->id() || var_idx == y_->id()) {
@@ -1490,10 +1490,10 @@ bool IntMinConstraint::presolve(Model& model) {
 }
 
 bool IntMinConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, Domain::value_type value,
+                                       size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1580,7 +1580,7 @@ bool IntMinConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntMinConstraint::on_set_min(Model& model, int /*save_point*/,
-                                   size_t var_idx, Domain::value_type new_min,
+                                   size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
                                    Domain::value_type /*old_min*/) {
     // m = min(x, y)
     if (var_idx == m_->id()) {
@@ -1597,7 +1597,7 @@ bool IntMinConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntMinConstraint::on_set_max(Model& model, int /*save_point*/,
-                                   size_t var_idx, Domain::value_type new_max,
+                                   size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
                                    Domain::value_type /*old_max*/) {
     // m = min(x, y)
     // x.max or y.max が下がった → m.max <= min(x.max, y.max)

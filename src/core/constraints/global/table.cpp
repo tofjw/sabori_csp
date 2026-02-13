@@ -147,14 +147,15 @@ bool TableConstraint::prepare_propagation(Model& model) {
 }
 
 bool TableConstraint::on_instantiate(Model& model, int save_point,
-                                     size_t var_idx, Domain::value_type value,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type value,
                                      Domain::value_type prev_min,
                                      Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
 
     // supports に値があるか確認
     auto sit = supports_offsets_[internal_idx].find(value);
@@ -197,8 +198,9 @@ bool TableConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 }
 
 bool TableConstraint::on_remove_value(Model& model, int save_point,
-                                       size_t var_idx, Domain::value_type removed_value) {
-    size_t internal_idx = find_internal_idx(var_idx);
+                                       size_t var_idx, size_t internal_var_idx,
+                                       Domain::value_type removed_value) {
+    size_t internal_idx = internal_var_idx;
 
     // supports にその値がなければ何もしない
     auto sit = supports_offsets_[internal_idx].find(removed_value);
@@ -218,9 +220,10 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
 }
 
 bool TableConstraint::on_set_min(Model& model, int save_point,
-                                  size_t var_idx, Domain::value_type new_min,
+                                  size_t var_idx, size_t internal_var_idx,
+                                  Domain::value_type new_min,
                                   Domain::value_type old_min) {
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
     bool changed = false;
 
     // 範囲外の値（old_min から new_min-1）の supports を NOT して AND
@@ -244,9 +247,10 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool TableConstraint::on_set_max(Model& model, int save_point,
-                                  size_t var_idx, Domain::value_type new_max,
+                                  size_t var_idx, size_t internal_var_idx,
+                                  Domain::value_type new_max,
                                   Domain::value_type old_max) {
-    size_t internal_idx = find_internal_idx(var_idx);
+    size_t internal_idx = internal_var_idx;
     bool changed = false;
 
     // 範囲外の値（new_max+1 から old_max）の supports を NOT して AND

@@ -95,11 +95,11 @@ bool IntTimesConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
-                                         size_t var_idx, Domain::value_type value,
+                                         size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                          Domain::value_type prev_min,
                                          Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -406,11 +406,11 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, Domain::value_type value,
+                                       size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
     // 基底クラスの処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }

@@ -213,10 +213,11 @@ void CircuitConstraint::remove_from_pool(Domain::value_type value) {
 }
 
 bool CircuitConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t var_idx, Domain::value_type value,
+                                        size_t var_idx, size_t internal_var_idx,
+                                        Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
-    size_t i = find_internal_idx(var_idx);
+    size_t i = internal_var_idx;
     // 値を内部インデックス（0-based）に変換
     size_t j = static_cast<size_t>(value - base_offset_);
 
