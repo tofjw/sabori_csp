@@ -635,7 +635,6 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             if (nogood_learning_ && decision_trail_.size() >= 2) {
                 add_nogood(decision_trail_);
                 for (const auto& lit : decision_trail_) {
-                    break;
                     activity_[lit.var_idx] += 1.0 / decision_trail_.size();
                 }
             }

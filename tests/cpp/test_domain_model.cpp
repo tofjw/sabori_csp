@@ -146,14 +146,14 @@ TEST_CASE("Model basic operations", "[model]") {
         REQUIRE(y_idx == 1);
     }
 
-    SECTION("SoA data") {
-        REQUIRE(model.mins()[x_idx] == 1);
-        REQUIRE(model.maxs()[x_idx] == 5);
-        REQUIRE(model.sizes()[x_idx] == 5);
+    SECTION("variable data") {
+        REQUIRE(model.var_min(x_idx) == 1);
+        REQUIRE(model.var_max(x_idx) == 5);
+        REQUIRE(model.var_size(x_idx) == 5);
 
-        REQUIRE(model.mins()[y_idx] == 1);
-        REQUIRE(model.maxs()[y_idx] == 3);
-        REQUIRE(model.sizes()[y_idx] == 3);
+        REQUIRE(model.var_min(y_idx) == 1);
+        REQUIRE(model.var_max(y_idx) == 3);
+        REQUIRE(model.var_size(y_idx) == 3);
     }
 
     SECTION("variable lookup") {
@@ -171,14 +171,14 @@ TEST_CASE("Model instantiate with trail", "[model][trail]") {
         REQUIRE(model.instantiate(1, x_idx, 3));
         REQUIRE(model.is_instantiated(x_idx));
         REQUIRE(model.value(x_idx) == 3);
-        REQUIRE(model.sizes()[x_idx] == 1);
+        REQUIRE(model.var_size(x_idx) == 1);
         REQUIRE(model.var_trail_size() == 1);
     }
 
     SECTION("instantiate invalid value") {
         REQUIRE(!model.instantiate(1, x_idx, 10));
         REQUIRE(!model.is_instantiated(x_idx));
-        REQUIRE(model.sizes()[x_idx] == 5);
+        REQUIRE(model.var_size(x_idx) == 5);
     }
 }
 
@@ -197,12 +197,12 @@ TEST_CASE("Model rewind_to", "[model][trail]") {
     // Level 1: instantiate x
     REQUIRE(model.instantiate(level_1, x_idx, 3));
     REQUIRE(model.is_instantiated(x_idx));
-    REQUIRE(model.sizes()[x_idx] == 1);
+    REQUIRE(model.var_size(x_idx) == 1);
 
     // Level 2: instantiate y
     REQUIRE(model.instantiate(level_2, y_idx, 2));
     REQUIRE(model.is_instantiated(y_idx));
-    REQUIRE(model.sizes()[y_idx] == 1);
+    REQUIRE(model.var_size(y_idx) == 1);
 
     SECTION("rewind to level 1") {
         model.rewind_to(level_1);
@@ -213,9 +213,9 @@ TEST_CASE("Model rewind_to", "[model][trail]") {
 
         // y should be restored
         REQUIRE(!model.is_instantiated(y_idx));
-        REQUIRE(model.sizes()[y_idx] == 3);
-        REQUIRE(model.mins()[y_idx] == 1);
-        REQUIRE(model.maxs()[y_idx] == 3);
+        REQUIRE(model.var_size(y_idx) == 3);
+        REQUIRE(model.var_min(y_idx) == 1);
+        REQUIRE(model.var_max(y_idx) == 3);
     }
 
     SECTION("rewind to level 0") {
@@ -223,12 +223,12 @@ TEST_CASE("Model rewind_to", "[model][trail]") {
 
         // Both should be restored
         REQUIRE(!model.is_instantiated(x_idx));
-        REQUIRE(model.sizes()[x_idx] == 5);
-        REQUIRE(model.mins()[x_idx] == 1);
-        REQUIRE(model.maxs()[x_idx] == 5);
+        REQUIRE(model.var_size(x_idx) == 5);
+        REQUIRE(model.var_min(x_idx) == 1);
+        REQUIRE(model.var_max(x_idx) == 5);
 
         REQUIRE(!model.is_instantiated(y_idx));
-        REQUIRE(model.sizes()[y_idx] == 3);
+        REQUIRE(model.var_size(y_idx) == 3);
     }
 }
 
@@ -238,15 +238,15 @@ TEST_CASE("Model set_min with trail", "[model][trail]") {
     size_t x_idx = x->id();
 
     REQUIRE(model.set_min(1, x_idx, 5));
-    REQUIRE(model.mins()[x_idx] == 5);
-    REQUIRE(model.sizes()[x_idx] == 10);  // sparse set は変更しない（lazy bounds）
+    REQUIRE(model.var_min(x_idx) == 5);
+    REQUIRE(model.var_size(x_idx) == 10);  // sparse set は変更しない（lazy bounds）
     REQUIRE(!model.contains(x_idx, 4));
     REQUIRE(model.contains(x_idx, 5));
 
     // Rewind
     model.rewind_to(0);
-    REQUIRE(model.mins()[x_idx] == 1);
-    REQUIRE(model.sizes()[x_idx] == 10);
+    REQUIRE(model.var_min(x_idx) == 1);
+    REQUIRE(model.var_size(x_idx) == 10);
     REQUIRE(model.contains(x_idx, 4));
 }
 
@@ -256,15 +256,15 @@ TEST_CASE("Model set_max with trail", "[model][trail]") {
     size_t x_idx = x->id();
 
     REQUIRE(model.set_max(1, x_idx, 5));
-    REQUIRE(model.maxs()[x_idx] == 5);
-    REQUIRE(model.sizes()[x_idx] == 10);  // sparse set は変更しない（lazy bounds）
+    REQUIRE(model.var_max(x_idx) == 5);
+    REQUIRE(model.var_size(x_idx) == 10);  // sparse set は変更しない（lazy bounds）
     REQUIRE(!model.contains(x_idx, 6));
     REQUIRE(model.contains(x_idx, 5));
 
     // Rewind
     model.rewind_to(0);
-    REQUIRE(model.maxs()[x_idx] == 10);
-    REQUIRE(model.sizes()[x_idx] == 10);
+    REQUIRE(model.var_max(x_idx) == 10);
+    REQUIRE(model.var_size(x_idx) == 10);
     REQUIRE(model.contains(x_idx, 6));
 }
 
@@ -274,22 +274,22 @@ TEST_CASE("Model remove_value with trail", "[model][trail]") {
     size_t x_idx = x->id();
 
     REQUIRE(model.remove_value(1, x_idx, 3));
-    REQUIRE(model.sizes()[x_idx] == 4);
+    REQUIRE(model.var_size(x_idx) == 4);
     REQUIRE(!model.contains(x_idx, 3));
 
     REQUIRE(model.remove_value(2, x_idx, 1));  // Remove min
-    REQUIRE(model.sizes()[x_idx] == 3);
-    REQUIRE(model.mins()[x_idx] == 2);
+    REQUIRE(model.var_size(x_idx) == 3);
+    REQUIRE(model.var_min(x_idx) == 2);
 
     // Rewind to level 1
     model.rewind_to(1);
-    REQUIRE(model.sizes()[x_idx] == 4);
+    REQUIRE(model.var_size(x_idx) == 4);
     REQUIRE(model.contains(x_idx, 1));
     REQUIRE(!model.contains(x_idx, 3));
 
     // Rewind to level 0
     model.rewind_to(0);
-    REQUIRE(model.sizes()[x_idx] == 5);
+    REQUIRE(model.var_size(x_idx) == 5);
     REQUIRE(model.contains(x_idx, 3));
 }
 
@@ -310,7 +310,7 @@ TEST_CASE("Model no duplicate trail save at same level", "[model][trail]") {
 
     // Rewind should restore original state
     model.rewind_to(0);
-    REQUIRE(model.sizes()[x_idx] == 10);
+    REQUIRE(model.var_size(x_idx) == 10);
     REQUIRE(model.contains(x_idx, 5));
     REQUIRE(model.contains(x_idx, 6));
     REQUIRE(model.contains(x_idx, 7));
