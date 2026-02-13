@@ -1164,6 +1164,86 @@ private:
     bool table_is_empty() const;
 };
 
+/**
+ * @brief count_eq制約: 配列 x[] の中で target に等しい要素の数 = c
+ *
+ * O(1) のインクリメンタル伝播で bounds consistency を維持。
+ *
+ * 不変条件: definite_count_ <= c <= definite_count_ + possible_count_
+ *
+ * - definite_count_: x[i] == target で確定済みの数
+ * - possible_count_: 未確定かつ target が domain に含まれる x[i] の数
+ */
+class CountEqConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param x_vars 配列変数
+     * @param target 定数ターゲット値
+     * @param count_var カウント変数
+     */
+    CountEqConstraint(std::vector<VariablePtr> x_vars,
+                      Domain::value_type target,
+                      VariablePtr count_var);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
+    bool presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, Domain::value_type removed_value) override;
+
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    Domain::value_type target_;
+    size_t n_;  // 配列サイズ (x[] の要素数)
+
+    // 内部カウンタ
+    size_t definite_count_;   // x[i] == target で確定済みの数
+    size_t possible_count_;   // 未確定かつ target が domain に含まれる x[i] の数
+    std::vector<bool> is_possible_;  // 各 x[i] が "possible" かどうか
+
+    // Trail
+    struct TrailEntry {
+        size_t definite_count;
+        size_t possible_count;
+        std::vector<std::pair<size_t, bool>> is_possible_changes;  // (index, old_value)
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    /**
+     * @brief trail 保存ヘルパー
+     */
+    void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief 不変条件に基づく伝播
+     */
+    bool propagate(Model& model);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP
