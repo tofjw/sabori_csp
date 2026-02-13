@@ -140,117 +140,55 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
 }
 
 /**
- * @brief 最適化問題を解く（branch-and-bound）
+ * @brief 最適化問題を解く（探索内 branch-and-bound）
  */
 void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minimize) {
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
-    std::optional<sabori_csp::Domain::value_type> best_cost;
-    std::optional<sabori_csp::Solution> best_solution;
-    bool found_any = false;
 
-    // Activity スコア、NoGood、ヒント解を引き継ぐ
-    std::map<std::string, double> activity_map;
-    std::vector<sabori_csp::NamedNoGood> nogoods;
-    std::optional<sabori_csp::Solution> hint_solution;
-    constexpr size_t max_nogoods_to_inherit = 1000;  // 引き継ぐ NoGood の最大数
+    auto model = fzn_model.to_model();
+    sabori_csp::Solver solver;
+    solver.set_verbose(g_verbose);
+    g_current_solver = &solver;
 
-    while (true) {
-        if (g_timeout_flag) break;
-
-        auto model = fzn_model.to_model();
-        sabori_csp::Solver solver;
-        solver.set_verbose(g_verbose);
-        g_current_solver = &solver;
-
-        // 前回の activity を引き継ぐ
-        if (!activity_map.empty()) {
-            solver.set_activity(activity_map, *model);
-        }
-
-        // 前回の NoGood を引き継ぐ
-        if (!nogoods.empty()) {
-            solver.add_nogoods(nogoods, *model);
-        }
-
-        // 前回のベスト解をヒントとして設定
-        if (hint_solution) {
-            solver.set_hint_solution(*hint_solution, *model);
-        }
-
-        auto sol = solver.solve(*model);
-        print_stats(solver);
-
-        // 今回の activity を保存（次回に引き継ぐ）
-        activity_map = solver.get_activity_map(*model);
-
-        // 今回の NoGood を保存（次回に引き継ぐ）
-        nogoods = solver.get_nogoods(*model, max_nogoods_to_inherit);
-
-        // 今回の解をヒントとして保存（次回に引き継ぐ）
-        if (sol) {
-            hint_solution = *sol;
-        }
-        if (!sol) {
-            break;  // No more solutions
-        }
-
-        found_any = true;
-        auto it = sol->find(objective_var_name);
-        if (it == sol->end()) {
-            // Objective variable not in solution (shouldn't happen)
-            if (find_all) {
-                print_solution(*sol, fzn_model);
-            } else {
-                best_solution = *sol;
-            }
-            break;
-        }
-
-        auto cost = it->second;
-
-        // Check if this is an improving solution
-        if (!best_cost ||
-            (minimize && cost < *best_cost) ||
-            (!minimize && cost > *best_cost)) {
-            best_cost = cost;
-
-            if (find_all) {
-                // Output all improving solutions
-                print_solution(*sol, fzn_model);
-            } else {
-                // Only keep the best solution for final output
-                best_solution = *sol;
-            }
-        }
-
-        // Tighten bound for next iteration
-        if (minimize) {
-            if (!fzn_model.set_var_upper_bound(objective_var_name, cost - 1)) {
-                break;  // Can't improve further
-            }
-        } else {
-            if (!fzn_model.set_var_lower_bound(objective_var_name, cost + 1)) {
-                break;  // Can't improve further
-            }
-        }
+    // 目的変数のインデックスを検索
+    size_t obj_var_idx = model->find_variable_index(objective_var_name);
+    if (obj_var_idx == SIZE_MAX) {
+        std::cerr << "Error: objective variable '" << objective_var_name << "' not found\n";
+        std::cout << "=====UNKNOWN=====\n";
+        return;
     }
 
+    bool found_any = false;
+    std::optional<sabori_csp::Solution> last_solution;
+
+    auto result = solver.solve_optimize(*model, obj_var_idx, minimize,
+        [&](const sabori_csp::Solution& sol) {
+            found_any = true;
+            if (find_all) {
+                print_solution(sol, fzn_model);
+            } else {
+                last_solution = sol;
+            }
+            return true;
+        });
+
+    print_stats(solver);
+
     if (!found_any) {
-        if (g_timeout_flag) {
+        if (solver.is_stopped()) {
             std::cout << "=====UNKNOWN=====\n";
         } else {
             std::cout << "=====UNSATISFIABLE=====\n";
         }
     } else {
-        if (!find_all && best_solution) {
-            print_solution(*best_solution, fzn_model);
+        if (!find_all && last_solution) {
+            print_solution(*last_solution, fzn_model);
         }
-	if (g_timeout_flag) {
+        if (solver.is_stopped()) {
             std::cout << "=====TIMEOUT=====\n";
-	}
-	else {
-	    std::cout << "==========\n";
-	}
+        } else {
+            std::cout << "==========\n";
+        }
     }
 }
 

@@ -18,9 +18,21 @@ std::optional<Solution> Solver::solve(Model& model) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
-    var_order_.resize(variables.size());
-    std::iota(var_order_.begin(), var_order_.end(), 0);
-    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+    // var_order_ を decision vars | defined vars にパーティション分割
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -57,6 +69,60 @@ std::optional<Solution> Solver::solve(Model& model) {
     return result;
 }
 
+std::optional<Solution> Solver::solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    // 最適化状態を設定
+    optimizing_ = true;
+    obj_var_idx_ = obj_var_idx;
+    minimize_ = minimize;
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+
+    // solve() と同じ初期化
+    model.build_constraint_watch_list();
+
+    const auto& variables = model.variables();
+    activity_.assign(variables.size(), 0.0);
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+    decision_trail_.clear();
+    nogoods_.clear();
+    ng_watches_.clear();
+    best_num_instantiated_ = 0;
+    best_assignment_.clear();
+    current_best_assignment_.clear();
+    current_decision_ = 0;
+    stats_ = SolverStats{};
+
+    if (verbose_) {
+        std::cerr << "% [verbose] presolve start: " << model.constraints().size()
+                  << " constraints, " << variables.size() << " variables\n";
+    }
+    if (!presolve(model)) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
+        optimizing_ = false;
+        return std::nullopt;
+    }
+    if (verbose_) std::cerr << "% [verbose] presolve done\n";
+
+    auto result = search_with_restart_optimize(model, on_improve);
+    optimizing_ = false;
+    return result;
+}
+
 size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 制約ウォッチリストを構築
     model.build_constraint_watch_list();
@@ -64,9 +130,21 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     // 初期化
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
-    var_order_.resize(variables.size());
-    std::iota(var_order_.begin(), var_order_.end(), 0);
-    std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+    // var_order_ を decision vars | defined vars にパーティション分割
+    var_order_.clear();
+    var_order_.reserve(variables.size());
+    std::vector<size_t> defined_vars;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_defined_var(i)) {
+            defined_vars.push_back(i);
+        } else {
+            var_order_.push_back(i);
+        }
+    }
+    decision_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
     ng_watches_.clear();
@@ -181,8 +259,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Activity 減衰
             decay_activities();
 
-            // スキャン順シャッフル（タイブレークのランダム化）
-            std::shuffle(var_order_.begin(), var_order_.end(), rng_);
+            // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
+            std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+            std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
 
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
@@ -215,6 +294,161 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
     return std::nullopt;
 }
 
+std::optional<Solution> Solver::search_with_restart_optimize(
+        Model& model, SolutionCallback callback) {
+    double inner_limit = initial_conflict_limit_;
+    double outer_limit = 10.0;
+
+    int root_point = current_decision_;
+
+    if (verbose_) {
+        std::cerr << "% [verbose] search_with_restart_optimize start\n";
+    }
+
+    while (!stopped_) {
+        for (int outer = 0; outer < static_cast<int>(outer_limit) && !stopped_; ++outer) {
+            int conflict_limit = static_cast<int>(inner_limit);
+            std::optional<Solution> found_solution;
+
+            size_t nogoods_before = nogoods_.size();
+            auto res = run_search(model, conflict_limit, 0,
+                                  [&found_solution](const Solution& sol) {
+                                      found_solution = sol;
+                                      return false;  // 最初の解で停止
+                                  }, false);
+
+            if (res == SearchResult::SAT) {
+                auto obj_val = model.value(obj_var_idx_);
+                bool improved = !best_objective_ ||
+                    (minimize_ && obj_val < *best_objective_) ||
+                    (!minimize_ && obj_val > *best_objective_);
+
+                if (improved) {
+                    best_objective_ = obj_val;
+                    best_solution_ = found_solution;
+
+                    if (verbose_) {
+                        std::cerr << "% [verbose] new best objective: " << obj_val << "\n";
+                    }
+
+                    // 途中解を報告
+                    if (callback) {
+                        callback(*found_solution);
+                    }
+
+                    // 解で current_best_assignment_ を更新（値選択の優先度に使用）
+                    current_best_assignment_.clear();
+                    const auto& variables = model.variables();
+                    for (size_t i = 0; i < variables.size(); ++i) {
+                        if (model.is_instantiated(i)) {
+                            current_best_assignment_[i] = model.value(i);
+                        }
+                    }
+                }
+
+                // root へバックトラック
+                model.clear_pending_updates();
+                backtrack(model, root_point);
+                current_decision_ = root_point;
+
+                // 目的変数のドメインを縮小（永続的に root_point レベルで保存）
+                if (minimize_) {
+                    model.enqueue_set_max(obj_var_idx_, obj_val - 1);
+                } else {
+                    model.enqueue_set_min(obj_var_idx_, obj_val + 1);
+                }
+
+                if (!process_queue(model)) {
+                    // 伝播で UNSAT → 最適解が確定
+                    model.clear_pending_updates();
+                    stats_.nogoods_size = nogoods_.size();
+                    if (verbose_) {
+                        std::cerr << "% [verbose] optimal (propagation proved no improvement)\n";
+                    }
+                    return best_solution_;
+                }
+
+                // リスタートパラメータを完全リセット（新しい問題空間に入るので）
+                inner_limit = initial_conflict_limit_;
+                outer_limit = 10.0;
+                break;  // outer ループを抜けて while から再突入 → outer=0 から
+            }
+
+            if (res == SearchResult::UNSAT) {
+                // 探索空間が尽きた → 最適 (or nullopt if no solution found)
+                stats_.nogoods_size = nogoods_.size();
+                if (verbose_) {
+                    std::cerr << "% [verbose] optimal (search exhausted)\n";
+                }
+                return best_solution_;
+            }
+
+            // UNKNOWN: リスタート
+            model.clear_pending_updates();
+            backtrack(model, root_point);
+            current_decision_ = root_point;
+            stats_.restart_count++;
+            current_best_assignment_ = select_best_assignment();
+
+            // NG を有用度順にソート
+            std::stable_sort(nogoods_.begin(), nogoods_.end(),
+                [](const auto& a, const auto& b) {
+                    if (a->permanent != b->permanent) return a->permanent > b->permanent;
+                    return a->last_active > b->last_active;
+                });
+
+            // NG が増えなかった場合は inner_limit を増加
+            bool limit_changed = false;
+            if (nogoods_.size() <= nogoods_before) {
+                inner_limit++;
+                outer_limit++;
+                limit_changed = true;
+            }
+
+            // 容量管理
+            while (nogoods_.size() > max_nogoods_) {
+                if (nogoods_.back()->permanent) break;
+                remove_nogood(nogoods_.back().get());
+                nogoods_.pop_back();
+            }
+
+            // Activity 減衰
+            decay_activities();
+
+            // スキャン順シャッフル
+            std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
+            std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+
+            // domain_size 優先と activity 優先を交互に切り替え
+            activity_first_ = !activity_first_;
+
+            if (!limit_changed) {
+                inner_limit *= conflict_limit_multiplier_;
+                if (inner_limit > outer_limit) {
+                    outer_limit *= conflict_limit_multiplier_;
+                    inner_limit = initial_conflict_limit_;
+                }
+            }
+
+            if (verbose_) {
+                std::cerr << "% [verbose] restart #" << stats_.restart_count
+                          << " conflict_limit=" << conflict_limit
+                          << " fails=" << stats_.fail_count
+                          << " max_depth=" << stats_.max_depth
+                          << " nogoods=" << nogoods_.size()
+                          << " best=" << (best_objective_ ? std::to_string(*best_objective_) : "none")
+                          << "\n";
+            }
+        }
+    }
+
+    if (verbose_) {
+        std::cerr << "% [verbose] search stopped (timeout)\n";
+    }
+    stats_.nogoods_size = nogoods_.size();
+    return best_solution_;
+}
+
 void Solver::add_solution_nogood(const Model& model) {
     std::vector<Literal> lits;
     const auto& variables = model.variables();
@@ -233,119 +467,184 @@ void Solver::add_solution_nogood(const Model& model) {
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                                  SolutionCallback callback, bool find_all) {
-    // タイムアウトチェック
-    if (stopped_) {
-        return SearchResult::UNKNOWN;
-    }
+    // 明示的スタックによる反復探索（再帰によるスタックオーバーフローを回避）
+    struct SearchFrame {
+        size_t var_idx;
+        std::vector<Domain::value_type> values;
+        size_t value_idx;
+        int save_point;
+        Domain::value_type prev_min, prev_max;
+        size_t nogoods_before;
+        int remaining_cl;  // このレベルの残りコンフリクト予算
+    };
+
+    std::vector<SearchFrame> stack;
+    SearchResult result = SearchResult::UNSAT;
+    bool ascending = false;
 
     const auto& variables = model.variables();
 
-    // 統計更新
-    stats_.depth_sum += depth;
-    stats_.depth_count++;
-    if (depth > stats_.max_depth) {
-        stats_.max_depth = depth;
-    }
+    while (true) {
+        if (!ascending) {
+            // === 降下: 新レベルに入る ===
+            size_t current_depth = depth + stack.size();
 
-    // 変数選択（全変数確定なら SIZE_MAX）
-    size_t var_idx = select_variable(model);
-
-    if (var_idx == SIZE_MAX) {
-        if (verify_solution(model)) {
-            if (!callback(build_solution(model))) {
-                return SearchResult::SAT;
+            // タイムアウトチェック
+            if (stopped_) {
+                result = SearchResult::UNKNOWN;
+                ascending = true;
+                continue;
             }
-            return find_all ? SearchResult::UNSAT : SearchResult::SAT;
-        }
-        return SearchResult::UNSAT;
-    }
 
-    int save_point = current_decision_;
-    auto prev_min = model.var_min(var_idx);
-    auto prev_max = model.var_max(var_idx);
+            // 統計更新
+            stats_.depth_sum += current_depth;
+            stats_.depth_count++;
+            if (current_depth > stats_.max_depth) {
+                stats_.max_depth = current_depth;
+            }
 
-    // 値を取得（ソートなし、オリジナル domain.values() を使用）
-    auto& domain = variables[var_idx]->domain();
-    auto values = domain.values();
+            // 変数選択（全変数確定なら SIZE_MAX）
+            size_t var_idx = select_variable(model);
 
-    // 保存された値がある場合は優先（先頭と swap で O(1)）
-    if (current_best_assignment_.count(var_idx)) {
-        auto best_val = current_best_assignment_[var_idx];
-        auto it = std::find(values.begin(), values.end(), best_val);
-        if (it != values.end() && it != values.begin()) {
-            std::swap(*it, values[0]);
-        }
-    }
+            if (var_idx == SIZE_MAX) {
+                if (verify_solution(model)) {
+                    if (!callback(build_solution(model))) {
+                        result = SearchResult::SAT;
+                    } else {
+                        result = find_all ? SearchResult::UNSAT : SearchResult::SAT;
+                    }
+                } else {
+                    result = SearchResult::UNSAT;
+                }
+                ascending = true;
+                continue;
+            }
 
-    size_t nogoods_before = nogoods_.size();
+            int save_point = current_decision_;
+            auto prev_min = model.var_min(var_idx);
+            auto prev_max = model.var_max(var_idx);
 
-    for (auto val : values) {
-        current_decision_++;
+            // 値を取得（ソートなし、オリジナル domain.values() を使用）
+            auto& domain = variables[var_idx]->domain();
+            auto values = domain.values();
 
-        // 値を割り当て（Trail に保存される）
-        if (!model.instantiate(current_decision_, var_idx, val)) {
+            // 保存された値がある場合は優先（先頭と swap で O(1)）
+            if (current_best_assignment_.count(var_idx)) {
+                auto best_val = current_best_assignment_[var_idx];
+                auto it = std::find(values.begin(), values.end(), best_val);
+                if (it != values.end() && it != values.begin()) {
+                    std::swap(*it, values[0]);
+                }
+            }
+
+            size_t nogoods_before = nogoods_.size();
+
+            // フレームの CL を決定（親のCLを継承）
+            int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
+
+            stack.push_back({var_idx, std::move(values), 0,
+                           save_point, prev_min, prev_max, nogoods_before, cl});
+            // TRY VALUES へフォールスルー
+        } else {
+            // === 上昇: 子の結果を処理 ===
+            if (stack.empty()) {
+                return result;
+            }
+
+            auto& frame = stack.back();
+
+            decision_trail_.pop_back();
+
+            if (result == SearchResult::SAT) {
+                stack.pop_back();
+                continue;  // SAT を上へ伝播
+            }
+
+            if (result == SearchResult::UNKNOWN || frame.remaining_cl <= 1) {
+                current_decision_--;
+                backtrack(model, frame.save_point);
+                stack.pop_back();
+                result = SearchResult::UNKNOWN;
+                continue;  // UNKNOWN を上へ伝播
+            }
+
+            // UNSAT: 次の値を試す
+            frame.remaining_cl--;
             current_decision_--;
-            continue;
+            backtrack(model, frame.save_point);
+            frame.value_idx++;
+            // TRY VALUES へフォールスルー
         }
 
-        // 伝播
-        bool propagate_ok = propagate_instantiate(model, var_idx, prev_min, prev_max);
-        bool queue_ok = false;
-        if (propagate_ok) {
-            // キュー処理
-            queue_ok = process_queue(model);
-            if (queue_ok) {
-                decision_trail_.push_back({var_idx, val});
+        // === TRY VALUES ===
+        auto& frame = stack.back();
+        bool found_value = false;
 
-                auto res = run_search(model, conflict_limit, depth + 1, callback, find_all);
+        while (frame.value_idx < frame.values.size()) {
+            auto val = frame.values[frame.value_idx];
 
-                decision_trail_.pop_back();
+            current_decision_++;
 
-                if (res == SearchResult::SAT) {
-                    return res;
-                }
-                if (res == SearchResult::UNKNOWN || conflict_limit <= 1) {
-                    current_decision_--;
-                    backtrack(model, save_point);
-                    return SearchResult::UNKNOWN;
-                }
-
-                conflict_limit--;
+            // 値を割り当て（Trail に保存される）
+            if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+                current_decision_--;
+                frame.value_idx++;
+                continue;
             }
+
+            // 伝播
+            bool propagate_ok = propagate_instantiate(model, frame.var_idx,
+                                                       frame.prev_min, frame.prev_max);
+            bool queue_ok = false;
+            if (propagate_ok) {
+                // キュー処理
+                queue_ok = process_queue(model);
+                if (queue_ok) {
+                    decision_trail_.push_back({frame.var_idx, val});
+                    ascending = false;
+                    found_value = true;
+                    break;  // 降下へ
+                }
+            }
+
+            // 伝播失敗時はキューに残りがある可能性があるのでクリア
+            if (!propagate_ok || !queue_ok) {
+                model.clear_pending_updates();
+            }
+
+            current_decision_--;
+            backtrack(model, frame.save_point);
+            frame.value_idx++;
         }
 
-        // 伝播失敗時はキューに残りがある可能性があるのでクリア
-        if (!propagate_ok || !queue_ok) {
-            model.clear_pending_updates();
-        }
+        if (!found_value) {
+            // 全値失敗: Activity 更新
+            activity_[frame.var_idx] += 1.0;
+            stats_.fail_count++;
 
-        current_decision_--;
-        backtrack(model, save_point);
-    }
+            // 部分解を保存
+            save_partial_assignment(model);
 
-    // 失敗: Activity 更新
-    activity_[var_idx] += 1.0;
-    stats_.fail_count++;
+            // 子ノードで追加された NoGood を削除
+            while (nogoods_.size() > frame.nogoods_before) {
+                remove_nogood(nogoods_.back().get());
+                nogoods_.pop_back();
+            }
 
-    // 部分解を保存
-    save_partial_assignment(model);
+            // NoGood 記録
+            if (nogood_learning_ && decision_trail_.size() >= 2) {
+                add_nogood(decision_trail_);
+                for (const auto& lit : decision_trail_) {
+                    break;
+                    activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                }
+            }
 
-    // 子ノードで追加された NoGood を削除
-    while (nogoods_.size() > nogoods_before) {
-        remove_nogood(nogoods_.back().get());
-        nogoods_.pop_back();
-    }
-
-    // NoGood 記録
-    if (nogood_learning_ && decision_trail_.size() >= 2) {
-        add_nogood(decision_trail_);
-        for (const auto& lit : decision_trail_) {
-	  break;
-            activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+            stack.pop_back();
+            result = SearchResult::UNSAT;
+            ascending = true;
         }
     }
-
-    return SearchResult::UNSAT;
 }
 
 bool Solver::presolve(Model& model) {
@@ -464,33 +763,44 @@ size_t Solver::select_variable(const Model& model) {
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
 
-    for (size_t i : var_order_) {
-        if (model.is_instantiated(i)) continue;
+    auto scan_range = [&](size_t begin, size_t end) {
+        for (size_t k = begin; k < end; ++k) {
+            size_t i = var_order_[k];
+            if (model.is_instantiated(i)) continue;
 
-        size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
-
-        bool better = false;
-        if (activity_first_) {
-            if (activity_[i] > best_activity) {
-                better = true;
-            } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
-                better = true;
+            size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
+            bool better = false;
+            if (activity_first_) {
+                if (activity_[i] > best_activity) {
+                    better = true;
+                } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
+                    better = true;
+                }
+            } else {
+                if (domain_size < min_domain_size) {
+                    better = true;
+                } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
+                    better = true;
+                }
             }
-        } else {
-            if (domain_size < min_domain_size) {
-                better = true;
-            } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
-                better = true;
+
+            if (better) {
+                best_idx = i;
+                min_domain_size = domain_size;
+                best_activity = activity_[i];
             }
         }
+    };
 
-        if (better) {
-            best_idx = i;
-            min_domain_size = domain_size;
-            best_activity = activity_[i];
-        }
-    }
-
+#if 1
+    // Decision vars を先にスキャン
+    scan_range(0, decision_var_end_);
+    if (best_idx != SIZE_MAX) return best_idx;
+    // 全 decision vars が instantiated → defined vars にフォールバック
+    scan_range(decision_var_end_, var_order_.size());
+#else
+    scan_range(0, var_order_.size());
+#endif
     return best_idx;
 }
 
@@ -508,15 +818,20 @@ void Solver::set_activity(const std::map<std::string, double>& activity, const M
 
     // 名前からインデックスを解決して設定
     for (const auto& [name, score] : activity) {
-        auto var = model.variable(name);
-        if (var) {
-            // 変数のインデックスを検索
-            for (size_t i = 0; i < model.variables().size(); ++i) {
-                if (model.variable(i) == var) {
-                    activity_[i] = score;
-                    break;
+        try {
+            auto var = model.variable(name);
+            if (var) {
+                // 変数のインデックスを検索
+                for (size_t i = 0; i < model.variables().size(); ++i) {
+                    if (model.variable(i) == var) {
+                        activity_[i] = score;
+                        break;
+                    }
                 }
             }
+        } catch (const std::out_of_range&) {
+            // Variable may not exist in the new model (e.g. helper variables with static counters)
+            continue;
         }
     }
 }
@@ -819,18 +1134,40 @@ bool Solver::process_queue(Model& model) {
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return false;
             }
-            // 確定した場合は on_instantiate、そうでなければ on_remove_value
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
                     return false;
                 }
             } else if (!was_instantiated) {
-                // on_remove_value を関連する全制約に呼び出す
+                auto new_min = model.var_min(var_idx);
+                auto new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
-                for (size_t c_idx : constraint_indices) {
-                    if (!constraints[c_idx]->on_remove_value(model, current_decision_,
-                                                              var_idx, removed_value)) {
-                        return false;
+
+                // 下限が変化した場合 → on_set_min
+                if (new_min > prev_min) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_set_min(model, current_decision_,
+                                                             var_idx, new_min, prev_min)) {
+                            return false;
+                        }
+                    }
+                }
+                // 上限が変化した場合 → on_set_max
+                if (new_max < prev_max) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_set_max(model, current_decision_,
+                                                             var_idx, new_max, prev_max)) {
+                            return false;
+                        }
+                    }
+                }
+                // removed_value が新しい範囲内 → on_remove_value も呼ぶ
+                if (removed_value > new_min && removed_value < new_max) {
+                    for (size_t c_idx : constraint_indices) {
+                        if (!constraints[c_idx]->on_remove_value(model, current_decision_,
+                                                                  var_idx, removed_value)) {
+                            return false;
+                        }
                     }
                 }
             }

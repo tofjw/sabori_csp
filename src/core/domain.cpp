@@ -1,6 +1,7 @@
 #include "sabori_csp/domain.hpp"
 #include <algorithm>
 #include <limits>
+#include <cassert>
 
 namespace sabori_csp {
 
@@ -180,9 +181,13 @@ void Domain::set_max_cache(value_type max) {
 }
 
 void Domain::swap_at(size_t i, size_t j) {
+    assert(i < values_.size() && "swap_at: index i out of bounds");
+    assert(j < values_.size() && "swap_at: index j out of bounds");
     if (i == j) return;
     value_type vi = values_[i];
     value_type vj = values_[j];
+    assert(static_cast<size_t>(vi - offset_) < sparse_.size() && "swap_at: vi out of sparse range");
+    assert(static_cast<size_t>(vj - offset_) < sparse_.size() && "swap_at: vj out of sparse range");
     values_[i] = vj;
     values_[j] = vi;
     sparse_[static_cast<size_t>(vi - offset_)] = j;

@@ -25,6 +25,7 @@ struct VarDecl {
     Domain::value_type ub;  // upper bound
     bool is_output = false;
     bool is_bool = false;   // true if declared as "var bool"
+    bool is_defined_var = false;  // true if annotated with is_defined_var
     std::optional<Domain::value_type> fixed_value;  // For par (constant) values
     std::vector<Domain::value_type> domain_values;  // For set domain: var {1,3,5}: x
 };

@@ -204,30 +204,10 @@ bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
     return true;
 }
 
-bool IntLinLeConstraint::on_remove_value(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type removed_value) {
-    size_t idx = find_internal_idx(var_idx);
-    int64_t c = coeffs_[idx];
-
-    if (c >= 0) {
-        // min が変わった場合のみ更新
-        auto current_min = model.var_min(var_idx);
-        if (current_min > removed_value) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_min - removed_value);
-        }
-    } else {
-        // max が変わった場合のみ更新
-        auto current_max = model.var_max(var_idx);
-        if (current_max < removed_value) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_max - removed_value);
-        }
-    }
-
-    if (current_fixed_sum_ + min_rem_potential_ > bound_) {
-        return false;
-    }
+bool IntLinLeConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
+                                          size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+    // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
+    // 内部値の除去では bounds が変わらず potentials も不変。
     return true;
 }
 

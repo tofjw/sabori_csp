@@ -312,50 +312,11 @@ bool IntLinEqConstraint::on_set_max(Model& model, int save_point,
     }
 }
 
-bool IntLinEqConstraint::on_remove_value(Model& model, int save_point,
-                                          size_t var_idx, Domain::value_type removed_value) {
-    size_t idx = find_internal_idx(var_idx);
-    int64_t c = coeffs_[idx];
-
-    auto current_min = model.var_min(var_idx);
-    auto current_max = model.var_max(var_idx);
-    bool min_up = (current_min > removed_value);
-    bool max_down = (current_max < removed_value);
-
-    // ポテンシャル更新
-    if (c >= 0) {
-        if (min_up) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_min - removed_value);
-        }
-        if (max_down) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_max - removed_value);
-        }
-    } else {
-        if (min_up) {
-            save_trail_if_needed(model, save_point);
-            max_rem_potential_ += c * (current_min - removed_value);
-        }
-        if (max_down) {
-            save_trail_if_needed(model, save_point);
-            min_rem_potential_ += c * (current_max - removed_value);
-        }
-    }
-
-    // c の符号と変化方向から伝播方向を決定
-    bool need_lower = (c >= 0) ? max_down : min_up;
-    bool need_upper = (c >= 0) ? min_up : max_down;
-
-    if (need_lower && need_upper) {
-        if (!propagate_lower_bounds(model, idx)) return false;
-        return propagate_upper_bounds(model, idx);
-    } else if (need_lower) {
-        return propagate_lower_bounds(model, idx);
-    } else if (need_upper) {
-        return propagate_upper_bounds(model, idx);
-    }
-    return check_feasibility();
+bool IntLinEqConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
+                                          size_t /*var_idx*/, Domain::value_type /*removed_value*/) {
+    // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
+    // 内部値の除去では bounds が変わらず potentials も不変。
+    return true;
 }
 
 bool IntLinEqConstraint::check_feasibility() {
@@ -371,8 +332,8 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
 
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
-        if (!model.is_instantiated(var_ids_[j])) {
-            size_t var_id = var_ids_[j];
+        if (!vars_[j]->is_assigned()) {
+            size_t var_id = vars_[j]->id();
             int64_t c = coeffs_[j];
             if (c > 0) {
                 auto cur_min = model.var_min(var_id);
@@ -404,9 +365,9 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     }
 
     for (size_t j = 0; j < vars_.size(); ++j) {
-        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
+        if (j == skip_idx || vars_[j]->is_assigned()) continue;
 
-        size_t var_id = var_ids_[j];
+        size_t var_id = vars_[j]->id();
         int64_t c = coeffs_[j];
 
         if (c > 0) {
@@ -445,8 +406,8 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
 
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
-        if (!model.is_instantiated(var_ids_[j])) {
-            size_t var_id = var_ids_[j];
+        if (!vars_[j]->is_assigned()) {
+            size_t var_id = vars_[j]->id();
             int64_t c = coeffs_[j];
             if (c > 0) {
                 auto cur_min = model.var_min(var_id);
@@ -478,9 +439,9 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     }
 
     for (size_t j = 0; j < vars_.size(); ++j) {
-        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
+        if (j == skip_idx || vars_[j]->is_assigned()) continue;
 
-        size_t var_id = var_ids_[j];
+        size_t var_id = vars_[j]->id();
         int64_t c = coeffs_[j];
 
         if (c > 0) {
@@ -525,15 +486,14 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
 
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
-        size_t vid = var_ids_[i];
 
-        if (model.is_instantiated(vid)) {
+        if (vars_[i]->is_assigned()) {
             // 確定している変数
-            current_fixed_sum_ += c * model.var_min(vid);
+            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
         } else {
             // 未確定の変数
-            auto min_val = model.var_min(vid);
-            auto max_val = model.var_max(vid);
+            auto min_val = model.var_min(vars_[i]->id());
+            auto max_val = model.var_max(vars_[i]->id());
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;
