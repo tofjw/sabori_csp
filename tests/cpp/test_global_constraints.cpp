@@ -2591,3 +2591,154 @@ TEST_CASE("TableConstraint with Solver", "[constraint][table][solver]") {
         REQUIRE(count == static_cast<size_t>(expected_count));
     }
 }
+
+// ============================================================================
+// CountEqConstraint tests
+// ============================================================================
+
+TEST_CASE("CountEqConstraint name", "[constraint][count_eq]") {
+    auto x1 = std::make_shared<Variable>("x1", Domain(1, 3));
+    auto x2 = std::make_shared<Variable>("x2", Domain(1, 3));
+    auto c = std::make_shared<Variable>("c", Domain(0, 2));
+    CountEqConstraint cst({x1, x2}, 2, c);
+
+    REQUIRE(cst.name() == "count_eq");
+}
+
+TEST_CASE("CountEqConstraint variables", "[constraint][count_eq]") {
+    auto x1 = std::make_shared<Variable>("x1", Domain(1, 3));
+    auto x2 = std::make_shared<Variable>("x2", Domain(1, 3));
+    auto c = std::make_shared<Variable>("c", Domain(0, 2));
+    CountEqConstraint cst({x1, x2}, 2, c);
+
+    auto vars = cst.variables();
+    REQUIRE(vars.size() == 3);  // x1, x2, c
+}
+
+TEST_CASE("CountEqConstraint is_satisfied", "[constraint][count_eq]") {
+    SECTION("satisfied - count matches") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(2, 2));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 1));
+        auto x3 = std::make_shared<Variable>("x3", Domain(2, 2));
+        auto c = std::make_shared<Variable>("c", Domain(2, 2));
+        CountEqConstraint cst({x1, x2, x3}, 2, c);
+
+        REQUIRE(cst.is_satisfied().has_value());
+        REQUIRE(cst.is_satisfied().value() == true);
+    }
+
+    SECTION("violated - count does not match") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(2, 2));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 1));
+        auto x3 = std::make_shared<Variable>("x3", Domain(2, 2));
+        auto c = std::make_shared<Variable>("c", Domain(1, 1));
+        CountEqConstraint cst({x1, x2, x3}, 2, c);
+
+        REQUIRE(cst.is_satisfied().has_value());
+        REQUIRE(cst.is_satisfied().value() == false);
+    }
+
+    SECTION("not fully assigned") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 3));
+        auto x2 = std::make_shared<Variable>("x2", Domain(2, 2));
+        auto c = std::make_shared<Variable>("c", Domain(0, 2));
+        CountEqConstraint cst({x1, x2}, 2, c);
+
+        REQUIRE_FALSE(cst.is_satisfied().has_value());
+    }
+}
+
+TEST_CASE("CountEqConstraint presolve", "[constraint][count_eq]") {
+    SECTION("c bounds tightened") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(2, 2));  // definite: target=2
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 3));  // possible
+        auto x3 = std::make_shared<Variable>("x3", Domain(3, 3));  // not possible (no 2)
+        auto c = std::make_shared<Variable>("c", Domain(0, 3));
+        CountEqConstraint cst({x1, x2, x3}, 2, c);
+
+        REQUIRE(cst.presolve(dummy_model) == true);
+        // definite=1, possible=1 → c ∈ [1, 2]
+        REQUIRE(c->min() == 1);
+        REQUIRE(c->max() == 2);
+    }
+
+    SECTION("all must be target when c forces it") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 3));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 3));
+        auto x3 = std::make_shared<Variable>("x3", Domain(1, 3));
+        auto c = std::make_shared<Variable>("c", Domain(3, 3));
+        CountEqConstraint cst({x1, x2, x3}, 2, c);
+
+        REQUIRE(cst.presolve(dummy_model) == true);
+        // c=3, definite=0, possible=3 → c.min(3) == def+poss(3) → all forced to 2
+        REQUIRE(x1->min() == 2);
+        REQUIRE(x1->max() == 2);
+        REQUIRE(x2->min() == 2);
+        REQUIRE(x2->max() == 2);
+        REQUIRE(x3->min() == 2);
+        REQUIRE(x3->max() == 2);
+    }
+
+    SECTION("none can be target when c=0") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(1, 3));
+        auto x2 = std::make_shared<Variable>("x2", Domain(1, 3));
+        auto c = std::make_shared<Variable>("c", Domain(0, 0));
+        CountEqConstraint cst({x1, x2}, 2, c);
+
+        REQUIRE(cst.presolve(dummy_model) == true);
+        // c=0, definite=0 → c.max(0)==definite(0) → remove target from all
+        REQUIRE_FALSE(x1->domain().contains(2));
+        REQUIRE_FALSE(x2->domain().contains(2));
+    }
+
+    SECTION("infeasible - not enough possible") {
+        auto x1 = std::make_shared<Variable>("x1", Domain(3, 3));
+        auto x2 = std::make_shared<Variable>("x2", Domain(3, 3));
+        auto c = std::make_shared<Variable>("c", Domain(2, 2));
+        CountEqConstraint cst({x1, x2}, 2, c);
+
+        // definite=0, possible=0, c=2 → impossible
+        REQUIRE(cst.presolve(dummy_model) == false);
+    }
+}
+
+TEST_CASE("CountEqConstraint solver integration", "[constraint][count_eq]") {
+    SECTION("all solutions count") {
+        // x1 in {1,2}, x2 in {1,2}, target=2, c in {0,1,2}
+        // Solutions: (1,1,0), (1,2,1), (2,1,1), (2,2,2) → 4 solutions
+        Model model;
+        auto x1 = model.create_variable("x1", 1, 2);
+        auto x2 = model.create_variable("x2", 1, 2);
+        auto c = model.create_variable("c", 0, 2);
+        model.add_constraint(std::make_shared<CountEqConstraint>(
+            std::vector<VariablePtr>{x1, x2}, 2, c));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) {
+            return true;
+        });
+
+        REQUIRE(count == 4);
+    }
+
+    SECTION("with fixed count") {
+        // x1 in {1,2,3}, x2 in {1,2,3}, x3 in {1,2,3}, target=1, c=2
+        // Exactly 2 of 3 vars must be 1. Remaining can be 2 or 3.
+        // Choose which 2: C(3,2)=3 combos, each combo the non-1 has 2 choices
+        // Total: 3 * 2 = 6
+        Model model;
+        auto x1 = model.create_variable("x1", 1, 3);
+        auto x2 = model.create_variable("x2", 1, 3);
+        auto x3 = model.create_variable("x3", 1, 3);
+        auto c = model.create_variable("c", 2, 2);
+        model.add_constraint(std::make_shared<CountEqConstraint>(
+            std::vector<VariablePtr>{x1, x2, x3}, 1, c));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) {
+            return true;
+        });
+
+        REQUIRE(count == 6);
+    }
+}
