@@ -557,6 +557,9 @@ void Model::build_constraint_watch_list() {
 }
 
 bool Model::prepare_propagation() {
+    // presolve でドメインが変更されている可能性があるため、先に SoA を同期
+    sync_from_domains();
+
     // 全制約の prepare_propagation を順番に実行
     // 各制約は変数の現在状態を見て内部状態を初期化し、
     // 必要に応じてドメインを絞り込む

@@ -751,6 +751,7 @@ bool Solver::verify_solution(const Model& model) const {
     for (const auto& constraint : model.constraints()) {
         auto satisfied = constraint->is_satisfied();
         if (satisfied.has_value() && !satisfied.value()) {
+            std::cerr << "constraint verify error: " << constraint->name() << "\n";
             abort();
             return false;
         }
