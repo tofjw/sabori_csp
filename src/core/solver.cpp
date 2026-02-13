@@ -696,8 +696,8 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     auto val = model.value(var_idx);
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
-    for (size_t c_idx : constraint_indices) {
-        if (!constraints[c_idx]->on_instantiate(model, current_decision_,
+    for (const auto& w : constraint_indices) {
+        if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
 						    var_idx, val, prev_min, prev_max)) {
             return false;
         }
@@ -1096,8 +1096,8 @@ bool Solver::process_queue(Model& model) {
             } else if (!was_instantiated) {
                 // on_set_min を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
-                for (size_t c_idx : constraint_indices) {
-                    if (!constraints[c_idx]->on_set_min(model, current_decision_,
+                for (const auto& w : constraint_indices) {
+                    if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, new_min, prev_min)) {
                         return false;
                     }
@@ -1119,8 +1119,8 @@ bool Solver::process_queue(Model& model) {
             } else if (!was_instantiated) {
                 // on_set_max を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
-                for (size_t c_idx : constraint_indices) {
-                    if (!constraints[c_idx]->on_set_max(model, current_decision_,
+                for (const auto& w : constraint_indices) {
+                    if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, new_max, prev_max)) {
                         return false;
                     }
@@ -1145,8 +1145,8 @@ bool Solver::process_queue(Model& model) {
 
                 // 下限が変化した場合 → on_set_min
                 if (new_min > prev_min) {
-                    for (size_t c_idx : constraint_indices) {
-                        if (!constraints[c_idx]->on_set_min(model, current_decision_,
+                    for (const auto& w : constraint_indices) {
+                        if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, new_min, prev_min)) {
                             return false;
                         }
@@ -1154,8 +1154,8 @@ bool Solver::process_queue(Model& model) {
                 }
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
-                    for (size_t c_idx : constraint_indices) {
-                        if (!constraints[c_idx]->on_set_max(model, current_decision_,
+                    for (const auto& w : constraint_indices) {
+                        if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, new_max, prev_max)) {
                             return false;
                         }
@@ -1163,8 +1163,8 @@ bool Solver::process_queue(Model& model) {
                 }
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
                 if (removed_value > new_min && removed_value < new_max) {
-                    for (size_t c_idx : constraint_indices) {
-                        if (!constraints[c_idx]->on_remove_value(model, current_decision_,
+                    for (const auto& w : constraint_indices) {
+                        if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                   var_idx, removed_value)) {
                             return false;
                         }

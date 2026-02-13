@@ -364,14 +364,18 @@ private:
     std::vector<Constraint*> constraint_ptrs_;
 
     // 制約ウォッチリスト: 各変数に関連する制約のリスト
-    std::vector<std::vector<size_t>> var_to_constraint_indices_;
+    struct WatchEntry {
+        size_t constraint_idx;
+        size_t internal_var_idx;
+    };
+    std::vector<std::vector<WatchEntry>> var_to_constraint_indices_;
 
 public:
     /**
      * @brief 変数に関連する制約インデックスを取得
      */
-    const std::vector<size_t>& constraints_for_var(size_t var_idx) const {
-        static const std::vector<size_t> empty;
+    const std::vector<WatchEntry>& constraints_for_var(size_t var_idx) const {
+        static const std::vector<WatchEntry> empty;
         if (var_idx < var_to_constraint_indices_.size()) {
             return var_to_constraint_indices_[var_idx];
         }

@@ -523,13 +523,13 @@ void Model::build_constraint_watch_list() {
         const auto& constraint = constraints_[c_idx];
         const auto& vars = constraint->variables();
 
-        for (const auto& var : vars) {
+        for (size_t i = 0; i < vars.size(); ++i) {
             // 変数の ID を直接インデックスとして使用
-            size_t v_idx = var->id();
+            size_t v_idx = vars[i]->id();
             if (v_idx < var_to_constraint_indices_.size()) {
-                var_to_constraint_indices_[v_idx].push_back(c_idx);
+                var_to_constraint_indices_[v_idx].push_back({c_idx, i});
             } else {
-                std::cerr << "% [watchlist] WARNING: var " << var->name()
+                std::cerr << "% [watchlist] WARNING: var " << vars[i]->name()
                           << " id=" << v_idx << " >= variables_.size()=" << variables_.size()
                           << " in constraint #" << c_idx << " (" << constraint->name() << ")\n";
             }
