@@ -718,6 +718,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 if (nogood_learning_ && decision_trail_.size() >= 2) {
                     add_nogood(decision_trail_);
                     for (const auto& lit : decision_trail_) {
+		      break;
                         activity_[lit.var_idx] += 1.0 / decision_trail_.size();
                     }
                 }
@@ -776,6 +777,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 if (nogood_learning_ && decision_trail_.size() >= 2) {
                     add_nogood(decision_trail_);
                     for (const auto& lit : decision_trail_) {
+		      break;
                         activity_[lit.var_idx] += 1.0 / decision_trail_.size();
                     }
                 }
@@ -841,6 +843,14 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     for (const auto& w : constraint_indices) {
         if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
 						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
+
+	  size_t n = constraints[w.constraint_idx]->variables().size();
+	  for (const auto& v : constraints[w.constraint_idx]->variables()) {
+	    if (v->is_assigned()) {
+	      activity_[v->id()] += 1.0 / n;
+	    }
+	  }
+	  
             return false;
         }
     }
