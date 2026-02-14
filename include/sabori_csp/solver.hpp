@@ -400,7 +400,7 @@ private:
     // リスタート
     double initial_conflict_limit_ = 2.0;
     double conflict_limit_multiplier_ = 1.1;
-    double activity_decay_ = 0.99;
+    double activity_decay_ = 0.9;
 
     // 統計
     SolverStats stats_;

@@ -1194,6 +1194,10 @@ private:
     /// word_saved_at_[w] = w が保存された時点の generation
     std::vector<int> word_saved_at_;
 
+    /// filter_domains 用: 変更 word 追跡で has_support スキップ
+    int filter_gen_ = 0;
+    std::vector<int> word_modified_at_;
+
     /**
      * @brief trail に空エントリ作成 + generation 更新（同一レベルでの重複保存を防止）
      */

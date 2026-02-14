@@ -95,6 +95,9 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
     // word_saved_at_ 初期化
     word_saved_at_.assign(num_words_, 0);
 
+    // word_modified_at_ 初期化
+    word_modified_at_.assign(num_words_, 0);
+
     check_initial_consistency();
 }
 
@@ -182,6 +185,8 @@ bool TableConstraint::prepare_propagation(Model& model) {
     trail_.clear();
     trail_generation_ = 0;
     std::fill(word_saved_at_.begin(), word_saved_at_.end(), 0);
+    filter_gen_ = 0;
+    std::fill(word_modified_at_.begin(), word_modified_at_.end(), 1);
     init_watches();
     return true;
 }
@@ -201,11 +206,13 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
     size_t offset = get_support_offset(internal_idx, value);
     if (offset == NO_SUPPORT) return false;
 
+    ++filter_gen_;
     save_trail_if_needed(model, save_point);
     for (size_t w = 0; w <= last_nz_word_; ++w) {
         uint64_t new_val = current_table_[w] & supports_data_[offset + w];
         if (new_val != current_table_[w]) {
             save_word(w);
+            word_modified_at_[w] = filter_gen_;
             current_table_[w] = new_val;
         }
     }
@@ -251,11 +258,13 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
     size_t offset = get_support_offset(internal_idx, removed_value);
     if (offset == NO_SUPPORT) return true;
 
+    ++filter_gen_;
     save_trail_if_needed(model, save_point);
     for (size_t w = 0; w <= last_nz_word_; ++w) {
         uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
         if (new_val != current_table_[w]) {
             save_word(w);
+            word_modified_at_[w] = filter_gen_;
             current_table_[w] = new_val;
         }
     }
@@ -281,6 +290,7 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
         size_t offset = get_support_offset(internal_idx, val);
         if (offset != NO_SUPPORT) {
             if (!changed) {
+                ++filter_gen_;
                 save_trail_if_needed(model, save_point);
                 changed = true;
             }
@@ -288,6 +298,7 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
                 uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
                 if (new_val != current_table_[w]) {
                     save_word(w);
+                    word_modified_at_[w] = filter_gen_;
                     current_table_[w] = new_val;
                 }
             }
@@ -317,6 +328,7 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
         size_t offset = get_support_offset(internal_idx, val);
         if (offset != NO_SUPPORT) {
             if (!changed) {
+                ++filter_gen_;
                 save_trail_if_needed(model, save_point);
                 changed = true;
             }
@@ -324,6 +336,7 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
                 uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
                 if (new_val != current_table_[w]) {
                     save_word(w);
+                    word_modified_at_[w] = filter_gen_;
                     current_table_[w] = new_val;
                 }
             }
@@ -391,9 +404,45 @@ bool TableConstraint::filter_domains(Model& model, int skip_var_idx) {
         if (vars_[v]->is_assigned()) continue;
 
         const auto& dom = vars_[v]->domain();
+        const auto& info = var_support_info_[v];
+
         for (auto it = dom.begin(); it != dom.end(); ++it) {
-            if (!has_support(v, *it)) {
-                model.enqueue_remove_value(vars_[v]->id(), *it);
+            Domain::value_type val = *it;
+            auto diff = val - info.min_val;
+            if (diff < 0 || static_cast<size_t>(diff) >= info.range_size) {
+                model.enqueue_remove_value(vars_[v]->id(), val);
+                continue;
+            }
+            size_t flat_idx = info.flat_offset + static_cast<size_t>(diff);
+            size_t offset = supports_offsets_flat_[flat_idx];
+            if (offset == NO_SUPPORT) {
+                model.enqueue_remove_value(vars_[v]->id(), val);
+                continue;
+            }
+
+            // Generation skip: residual word 未変更ならサポート確定
+            size_t res_w = residual_words_[flat_idx];
+            if (word_modified_at_[res_w] != filter_gen_) {
+                continue;
+            }
+
+            // Residual word 変更済みだが overlap が残っているかチェック
+            if (res_w <= last_nz_word_ &&
+                (supports_data_[offset + res_w] & current_table_[res_w])) {
+                continue;
+            }
+
+            // Full scan
+            bool found = false;
+            for (size_t w = 0; w <= last_nz_word_; ++w) {
+                if (supports_data_[offset + w] & current_table_[w]) {
+                    residual_words_[flat_idx] = w;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                model.enqueue_remove_value(vars_[v]->id(), val);
             }
         }
     }
