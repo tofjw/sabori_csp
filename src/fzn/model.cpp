@@ -524,57 +524,49 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("bool_lin_eq requires 3 arguments");
             }
-            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
-                throw std::runtime_error("bool_lin_eq: first argument must be an array of integers");
-            }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
-                throw std::runtime_error("bool_lin_eq: second argument must be an array of variables");
-            }
-            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
-                throw std::runtime_error("bool_lin_eq: third argument must be an integer");
-            }
-            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
-            auto sum = std::get<Domain::value_type>(decl.args[2]);
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in bool_lin_eq: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+            // 3rd arg can be par int or var int
+            if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                auto sum = std::get<Domain::value_type>(decl.args[2]);
+                constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+            } else {
+                // var int: rewrite sum(c[i]*x[i]) = y as sum(c[i]*x[i]) + (-1)*y = 0
+                auto rhs_var = get_var(decl.args[2]);
+                coeffs.push_back(-1);
+                vars.push_back(rhs_var);
+                constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, 0);
+            }
         } else if (decl.name == "bool_lin_le") {
             // bool_lin_le(coeffs, vars, bound) is equivalent to int_lin_le
             if (decl.args.size() != 3) {
                 throw std::runtime_error("bool_lin_le requires 3 arguments");
             }
-            if (!std::holds_alternative<std::vector<Domain::value_type>>(decl.args[0])) {
-                throw std::runtime_error("bool_lin_le: first argument must be an array of integers");
-            }
-            if (!std::holds_alternative<std::vector<std::string>>(decl.args[1])) {
-                throw std::runtime_error("bool_lin_le: second argument must be an array of variables");
-            }
-            if (!std::holds_alternative<Domain::value_type>(decl.args[2])) {
-                throw std::runtime_error("bool_lin_le: third argument must be an integer");
-            }
-            const auto& coeffs_raw = std::get<std::vector<Domain::value_type>>(decl.args[0]);
-            const auto& var_names = std::get<std::vector<std::string>>(decl.args[1]);
-            auto bound = std::get<Domain::value_type>(decl.args[2]);
+            const auto coeffs_raw = resolve_int_array(decl.args[0]);
+            const auto var_names = resolve_var_array(decl.args[1]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in bool_lin_le: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+            // 3rd arg can be par int or var int
+            if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
+                auto bound = std::get<Domain::value_type>(decl.args[2]);
+                constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+            } else {
+                // var int: rewrite sum(c[i]*x[i]) <= y as sum(c[i]*x[i]) + (-1)*y <= 0
+                auto rhs_var = get_var(decl.args[2]);
+                coeffs.push_back(-1);
+                vars.push_back(rhs_var);
+                constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, 0);
+            }
         } else if (decl.name == "array_bool_and") {
 #if 1
             // array_bool_and([b1, b2, ..., bn], r) means r = b1 ∧ b2 ∧ ... ∧ bn
