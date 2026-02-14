@@ -398,7 +398,7 @@ private:
     std::unordered_map<size_t, Domain::value_type> current_best_assignment_;
 
     // リスタート
-    double initial_conflict_limit_ = 5.0;
+    double initial_conflict_limit_ = 2.0;
     double conflict_limit_multiplier_ = 1.1;
     double activity_decay_ = 0.99;
 

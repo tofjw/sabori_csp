@@ -1165,22 +1165,49 @@ private:
 
     std::vector<Domain::value_type> flat_tuples_;  ///< is_satisfied 用コピー
 
-    /// フラットビットセット: supports_data_[supports_offsets_[var][val] + w]
+    /// フラットビットセット: supports_data_[get_support_offset(var, val) + w]
     std::vector<uint64_t> supports_data_;
-    /// 各変数の値→supports_data_内オフセット
-    std::vector<std::unordered_map<Domain::value_type, size_t>> supports_offsets_;
+    /// 各変数の値→supports_data_内オフセット（フラット配列）
+    struct VarSupportInfo {
+        Domain::value_type min_val;
+        size_t range_size;
+        size_t flat_offset;  ///< supports_offsets_flat_ 内のオフセット
+    };
+    std::vector<VarSupportInfo> var_support_info_;
+    static constexpr size_t NO_SUPPORT = SIZE_MAX;
+    std::vector<size_t> supports_offsets_flat_;  ///< NO_SUPPORT = サポートなし
     /// 有効タプルのビットマスク
     std::vector<uint64_t> current_table_;
+    /// current_table_ の最後の非ゼロ word インデックス (テーブルが空なら 0)
+    size_t last_nz_word_;
+    /// Residual support: 各 (var, value) ペアの前回サポート word index
+    mutable std::vector<size_t> residual_words_;
 
     struct TrailEntry {
-        std::vector<uint64_t> old_table;
+        std::vector<std::pair<size_t, uint64_t>> word_diffs;  ///< (word_idx, old_value)
+        size_t old_last_nz_word;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
+    /// Save-on-write generation counter（同一レベルでの重複 word 保存を防止）
+    int trail_generation_ = 0;
+    /// word_saved_at_[w] = w が保存された時点の generation
+    std::vector<int> word_saved_at_;
+
     /**
-     * @brief trail に保存（同一レベルでの重複保存を防止）
+     * @brief trail に空エントリ作成 + generation 更新（同一レベルでの重複保存を防止）
      */
     void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief word 単位の save-on-write ヘルパー
+     */
+    inline void save_word(size_t w) {
+        if (word_saved_at_[w] != trail_generation_) {
+            word_saved_at_[w] = trail_generation_;
+            trail_.back().second.word_diffs.push_back({w, current_table_[w]});
+        }
+    }
 
     /**
      * @brief 各変数のドメインからサポートのない値を除去
@@ -1189,6 +1216,18 @@ private:
      * @return 矛盾がなければ true
      */
     bool filter_domains(Model& model, int skip_var_idx);
+
+    /**
+     * @brief 指定変数の指定値の supports_data_ 内オフセットを返す
+     * @return オフセット。サポートなしなら NO_SUPPORT
+     */
+    size_t get_support_offset(size_t var_idx, Domain::value_type val) const {
+        const auto& info = var_support_info_[var_idx];
+        auto diff = val - info.min_val;
+        if (diff < 0 || static_cast<size_t>(diff) >= info.range_size)
+            return NO_SUPPORT;
+        return supports_offsets_flat_[info.flat_offset + static_cast<size_t>(diff)];
+    }
 
     /**
      * @brief 指定変数の指定値にサポートがあるか

@@ -29,16 +29,37 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
 
     num_words_ = (num_tuples_ + 63) / 64;
 
-    // supports_offsets_ と supports_data_ の構築
-    supports_offsets_.resize(arity_);
+    // var_support_info_ の構築: 各変数の min/max を求める
+    var_support_info_.resize(arity_);
+    for (size_t v = 0; v < arity_; ++v) {
+        auto val0 = flat_tuples_[v];
+        Domain::value_type vmin = val0, vmax = val0;
+        for (size_t t = 1; t < num_tuples_; ++t) {
+            auto val = flat_tuples_[t * arity_ + v];
+            if (val < vmin) vmin = val;
+            if (val > vmax) vmax = val;
+        }
+        var_support_info_[v].min_val = vmin;
+        var_support_info_[v].range_size = static_cast<size_t>(vmax - vmin + 1);
+    }
+
+    // supports_offsets_flat_ の構築
+    size_t total_flat = 0;
+    for (size_t v = 0; v < arity_; ++v) {
+        var_support_info_[v].flat_offset = total_flat;
+        total_flat += var_support_info_[v].range_size;
+    }
+    supports_offsets_flat_.assign(total_flat, NO_SUPPORT);
 
     // 1パス目: 各変数×値の組み合わせを列挙してオフセットを割り当て
     size_t total_entries = 0;
     for (size_t t = 0; t < num_tuples_; ++t) {
         for (size_t v = 0; v < arity_; ++v) {
             auto val = flat_tuples_[t * arity_ + v];
-            if (supports_offsets_[v].find(val) == supports_offsets_[v].end()) {
-                supports_offsets_[v][val] = total_entries;
+            auto& info = var_support_info_[v];
+            auto idx = static_cast<size_t>(val - info.min_val);
+            if (supports_offsets_flat_[info.flat_offset + idx] == NO_SUPPORT) {
+                supports_offsets_flat_[info.flat_offset + idx] = total_entries;
                 total_entries += num_words_;
             }
         }
@@ -53,7 +74,7 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
         uint64_t bit = 1ULL << (t % 64);
         for (size_t v = 0; v < arity_; ++v) {
             auto val = flat_tuples_[t * arity_ + v];
-            size_t offset = supports_offsets_[v][val];
+            size_t offset = get_support_offset(v, val);
             supports_data_[offset + word_idx] |= bit;
         }
     }
@@ -64,6 +85,15 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
     if (remainder != 0) {
         current_table_[num_words_ - 1] = (1ULL << remainder) - 1;
     }
+
+    // last_nz_word_ 初期化（全ビットが立っているので末尾ワード）
+    last_nz_word_ = num_words_ > 0 ? num_words_ - 1 : 0;
+
+    // residual_words_ 初期化（全エントリを 0 で初期化）
+    residual_words_.assign(total_flat, 0);
+
+    // word_saved_at_ 初期化
+    word_saved_at_.assign(num_words_, 0);
 
     check_initial_consistency();
 }
@@ -103,7 +133,7 @@ bool TableConstraint::presolve(Model& model) {
         auto& dom = vars_[v]->domain();
         auto vals = dom.values();
         for (auto val : vals) {
-            if (supports_offsets_[v].find(val) == supports_offsets_[v].end()) {
+            if (get_support_offset(v, val) == NO_SUPPORT) {
                 dom.remove(val);
                 if (dom.empty()) return false;
             }
@@ -125,9 +155,8 @@ bool TableConstraint::prepare_propagation(Model& model) {
         std::vector<uint64_t> var_union(num_words_, 0ULL);
         const auto& dom = vars_[v]->domain();
         for (auto it = dom.begin(); it != dom.end(); ++it) {
-            auto sit = supports_offsets_[v].find(*it);
-            if (sit != supports_offsets_[v].end()) {
-                size_t offset = sit->second;
+            size_t offset = get_support_offset(v, *it);
+            if (offset != NO_SUPPORT) {
                 for (size_t w = 0; w < num_words_; ++w) {
                     var_union[w] |= supports_data_[offset + w];
                 }
@@ -139,9 +168,20 @@ bool TableConstraint::prepare_propagation(Model& model) {
         }
     }
 
+    // last_nz_word_ を再計算
+    last_nz_word_ = 0;
+    for (size_t w = num_words_; w > 0; --w) {
+        if (current_table_[w - 1] != 0) {
+            last_nz_word_ = w - 1;
+            break;
+        }
+    }
+
     if (table_is_empty()) return false;
 
     trail_.clear();
+    trail_generation_ = 0;
+    std::fill(word_saved_at_.begin(), word_saved_at_.end(), 0);
     init_watches();
     return true;
 }
@@ -158,15 +198,20 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
     size_t internal_idx = internal_var_idx;
 
     // supports に値があるか確認
-    auto sit = supports_offsets_[internal_idx].find(value);
-    if (sit == supports_offsets_[internal_idx].end()) return false;
+    size_t offset = get_support_offset(internal_idx, value);
+    if (offset == NO_SUPPORT) return false;
 
     save_trail_if_needed(model, save_point);
-
-    // current_table_ &= supports[internal_idx][value]
-    size_t offset = sit->second;
-    for (size_t w = 0; w < num_words_; ++w) {
-        current_table_[w] &= supports_data_[offset + w];
+    for (size_t w = 0; w <= last_nz_word_; ++w) {
+        uint64_t new_val = current_table_[w] & supports_data_[offset + w];
+        if (new_val != current_table_[w]) {
+            save_word(w);
+            current_table_[w] = new_val;
+        }
+    }
+    // Shrink last_nz_word_
+    while (last_nz_word_ > 0 && current_table_[last_nz_word_] == 0) {
+        --last_nz_word_;
     }
 
     if (table_is_empty()) return false;
@@ -203,15 +248,20 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
     size_t internal_idx = internal_var_idx;
 
     // supports にその値がなければ何もしない
-    auto sit = supports_offsets_[internal_idx].find(removed_value);
-    if (sit == supports_offsets_[internal_idx].end()) return true;
+    size_t offset = get_support_offset(internal_idx, removed_value);
+    if (offset == NO_SUPPORT) return true;
 
     save_trail_if_needed(model, save_point);
-
-    // current_table_ &= ~supports[internal_idx][removed_value]
-    size_t offset = sit->second;
-    for (size_t w = 0; w < num_words_; ++w) {
-        current_table_[w] &= ~supports_data_[offset + w];
+    for (size_t w = 0; w <= last_nz_word_; ++w) {
+        uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
+        if (new_val != current_table_[w]) {
+            save_word(w);
+            current_table_[w] = new_val;
+        }
+    }
+    // Shrink last_nz_word_
+    while (last_nz_word_ > 0 && current_table_[last_nz_word_] == 0) {
+        --last_nz_word_;
     }
 
     if (table_is_empty()) return false;
@@ -227,19 +277,28 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
     bool changed = false;
 
     // 範囲外の値（old_min から new_min-1）の supports を NOT して AND
-    for (auto& [val, offset] : supports_offsets_[internal_idx]) {
-        if (val >= old_min && val < new_min) {
+    for (auto val = old_min; val < new_min; ++val) {
+        size_t offset = get_support_offset(internal_idx, val);
+        if (offset != NO_SUPPORT) {
             if (!changed) {
                 save_trail_if_needed(model, save_point);
                 changed = true;
             }
-            for (size_t w = 0; w < num_words_; ++w) {
-                current_table_[w] &= ~supports_data_[offset + w];
+            for (size_t w = 0; w <= last_nz_word_; ++w) {
+                uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
+                if (new_val != current_table_[w]) {
+                    save_word(w);
+                    current_table_[w] = new_val;
+                }
             }
         }
     }
 
     if (changed) {
+        // Shrink last_nz_word_
+        while (last_nz_word_ > 0 && current_table_[last_nz_word_] == 0) {
+            --last_nz_word_;
+        }
         if (table_is_empty()) return false;
         return filter_domains(model, -1);
     }
@@ -254,19 +313,28 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
     bool changed = false;
 
     // 範囲外の値（new_max+1 から old_max）の supports を NOT して AND
-    for (auto& [val, offset] : supports_offsets_[internal_idx]) {
-        if (val > new_max && val <= old_max) {
+    for (auto val = new_max + 1; val <= old_max; ++val) {
+        size_t offset = get_support_offset(internal_idx, val);
+        if (offset != NO_SUPPORT) {
             if (!changed) {
                 save_trail_if_needed(model, save_point);
                 changed = true;
             }
-            for (size_t w = 0; w < num_words_; ++w) {
-                current_table_[w] &= ~supports_data_[offset + w];
+            for (size_t w = 0; w <= last_nz_word_; ++w) {
+                uint64_t new_val = current_table_[w] & ~supports_data_[offset + w];
+                if (new_val != current_table_[w]) {
+                    save_word(w);
+                    current_table_[w] = new_val;
+                }
             }
         }
     }
 
     if (changed) {
+        // Shrink last_nz_word_
+        while (last_nz_word_ > 0 && current_table_[last_nz_word_] == 0) {
+            --last_nz_word_;
+        }
         if (table_is_empty()) return false;
         return filter_domains(model, -1);
     }
@@ -275,7 +343,10 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
 
 void TableConstraint::rewind_to(int save_point) {
     while (!trail_.empty() && trail_.back().first > save_point) {
-        current_table_ = std::move(trail_.back().second.old_table);
+        for (auto& [w, old_val] : trail_.back().second.word_diffs) {
+            current_table_[w] = old_val;
+        }
+        last_nz_word_ = trail_.back().second.old_last_nz_word;
         trail_.pop_back();
     }
 }
@@ -289,10 +360,14 @@ void TableConstraint::check_initial_consistency() {
     // ただし、変数のドメインに存在しない値しかテーブルにない場合は矛盾
     for (size_t v = 0; v < arity_; ++v) {
         bool has_any = false;
-        for (const auto& [val, offset] : supports_offsets_[v]) {
-            if (vars_[v]->domain().contains(val)) {
-                has_any = true;
-                break;
+        const auto& info = var_support_info_[v];
+        for (size_t i = 0; i < info.range_size; ++i) {
+            if (supports_offsets_flat_[info.flat_offset + i] != NO_SUPPORT) {
+                auto val = info.min_val + static_cast<Domain::value_type>(i);
+                if (vars_[v]->domain().contains(val)) {
+                    has_any = true;
+                    break;
+                }
             }
         }
         if (!has_any) {
@@ -304,7 +379,8 @@ void TableConstraint::check_initial_consistency() {
 
 void TableConstraint::save_trail_if_needed(Model& model, int save_point) {
     if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_table_}});
+        ++trail_generation_;
+        trail_.push_back({save_point, {{}, last_nz_word_}});
         model.mark_constraint_dirty(model_index(), save_point);
     }
 }
@@ -325,12 +401,25 @@ bool TableConstraint::filter_domains(Model& model, int skip_var_idx) {
 }
 
 bool TableConstraint::has_support(size_t var_idx, Domain::value_type value) const {
-    auto it = supports_offsets_[var_idx].find(value);
-    if (it == supports_offsets_[var_idx].end()) return false;
+    const auto& info = var_support_info_[var_idx];
+    auto diff = value - info.min_val;
+    if (diff < 0 || static_cast<size_t>(diff) >= info.range_size) return false;
+    size_t flat_idx = info.flat_offset + static_cast<size_t>(diff);
+    size_t offset = supports_offsets_flat_[flat_idx];
+    if (offset == NO_SUPPORT) return false;
 
-    size_t offset = it->second;
-    for (size_t w = 0; w < num_words_; ++w) {
+    // Residual check: 前回サポートが見つかった word を先にチェック
+    size_t res_w = residual_words_[flat_idx];
+    if (res_w <= last_nz_word_ &&
+        (supports_data_[offset + res_w] & current_table_[res_w])) {
+        return true;
+    }
+
+    // Full scan (last_nz_word_ までに制限)
+    size_t limit = last_nz_word_ + 1;
+    for (size_t w = 0; w < limit; ++w) {
         if (supports_data_[offset + w] & current_table_[w]) {
+            residual_words_[flat_idx] = w;
             return true;
         }
     }
@@ -338,10 +427,7 @@ bool TableConstraint::has_support(size_t var_idx, Domain::value_type value) cons
 }
 
 bool TableConstraint::table_is_empty() const {
-    for (size_t w = 0; w < num_words_; ++w) {
-        if (current_table_[w] != 0) return false;
-    }
-    return true;
+    return current_table_[last_nz_word_] == 0;
 }
 
 }  // namespace sabori_csp

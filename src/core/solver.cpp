@@ -217,7 +217,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                                                       SolutionCallback callback,
                                                       bool find_all) {
     double inner_limit = initial_conflict_limit_;
-    double outer_limit = 10.0;
+    double outer_limit = inner_limit + 1;
 
     int root_point = current_decision_;
     size_t prev_fail_count = 0;
@@ -277,9 +277,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 	    // (fail が発生しなかったケースを含む)
 	    bool limit_changed = false;
             if (nogoods_.size() <= nogoods_before) {
-	        inner_limit ++;
-	        outer_limit ++;
-		limit_changed = true;
+                inner_limit++;
+                outer_limit++;
+                limit_changed = true;
             }
 
             // 容量管理: 末尾（冷たい NG）を削除（permanent は保護）
@@ -330,7 +330,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 std::optional<Solution> Solver::search_with_restart_optimize(
         Model& model, SolutionCallback callback) {
     double inner_limit = initial_conflict_limit_;
-    double outer_limit = 10.0;
+    double outer_limit = inner_limit + 1;
 
     int root_point = current_decision_;
 
@@ -403,7 +403,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                 // リスタートパラメータを完全リセット（新しい問題空間に入るので）
                 inner_limit = initial_conflict_limit_;
-                outer_limit = 10.0;
+                outer_limit = inner_limit + 1;
                 break;  // outer ループを抜けて while から再突入 → outer=0 から
             }
 
