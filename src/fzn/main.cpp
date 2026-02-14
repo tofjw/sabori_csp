@@ -20,11 +20,12 @@ void timeout_handler(int) {
 }
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-t SEC] <file.fzn>\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-t SEC] [-b N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
+    std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
 }
 
 bool g_print_stats = false;
@@ -38,6 +39,8 @@ void print_stats(const sabori_csp::Solver& solver) {
               << " max_depth=" << s.max_depth
               << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
               << " nogoods=" << s.nogoods_size
+              << " bisect=" << s.bisect_count
+              << " enumerate=" << s.enumerate_count
               << "\n";
 }
 
@@ -103,10 +106,13 @@ void print_solution(const sabori_csp::Solution& sol,
 /**
  * @brief 充足可能性問題を解く
  */
+int g_bisection_threshold = 8;
+
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model();
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
+    solver.set_bisection_threshold(g_bisection_threshold);
     g_current_solver = &solver;
 
     if (find_all) {
@@ -148,6 +154,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     auto model = fzn_model.to_model();
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
+    solver.set_bisection_threshold(g_bisection_threshold);
     g_current_solver = &solver;
 
     // 目的変数のインデックスを検索
@@ -196,6 +203,7 @@ int main(int argc, char* argv[]) {
     bool find_all = false;
     const char* filename = nullptr;
     int timeout_sec = 0;
+    int bisection_threshold = 8;
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -207,6 +215,8 @@ int main(int argc, char* argv[]) {
             g_verbose = true;
         } else if (std::strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             timeout_sec = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
+            bisection_threshold = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -219,6 +229,8 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
+
+    g_bisection_threshold = bisection_threshold;
 
     // Setup timeout
     if (timeout_sec > 0) {

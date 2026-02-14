@@ -9,6 +9,33 @@ namespace sabori_csp {
 Solver::Solver()
     : rng_(12345678) {}
 
+bool Literal::is_satisfied(const Model& model) const {
+    switch (type) {
+    case Type::Eq:
+        return model.is_instantiated(var_idx) && model.value(var_idx) == value;
+    case Type::Leq:
+        return model.var_max(var_idx) <= value;
+    case Type::Geq:
+        return model.var_min(var_idx) >= value;
+    }
+    return false;
+}
+
+Literal Literal::negate() const {
+    switch (type) {
+    case Type::Eq:
+        // Eq の否定は Eq のまま（remove_value で処理）
+        return {var_idx, value, Type::Eq};
+    case Type::Leq:
+        // x <= v の否定は x >= v+1
+        return {var_idx, value + 1, Type::Geq};
+    case Type::Geq:
+        // x >= v の否定は x <= v-1
+        return {var_idx, value - 1, Type::Leq};
+    }
+    return *this;
+}
+
 std::optional<Solution> Solver::solve(Model& model) {
     std::optional<Solution> result;
 
@@ -35,7 +62,9 @@ std::optional<Solution> Solver::solve(Model& model) {
     std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
-    ng_watches_.clear();
+    ng_eq_watches_.clear();
+    ng_leq_watches_.clear();
+    ng_geq_watches_.clear();
     best_num_instantiated_ = 0;
     best_assignment_.clear();
     current_best_assignment_.clear();
@@ -100,7 +129,9 @@ std::optional<Solution> Solver::solve_optimize(
     std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
-    ng_watches_.clear();
+    ng_eq_watches_.clear();
+    ng_leq_watches_.clear();
+    ng_geq_watches_.clear();
     best_num_instantiated_ = 0;
     best_assignment_.clear();
     current_best_assignment_.clear();
@@ -147,7 +178,9 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
     decision_trail_.clear();
     nogoods_.clear();
-    ng_watches_.clear();
+    ng_eq_watches_.clear();
+    ng_leq_watches_.clear();
+    ng_geq_watches_.clear();
     best_num_instantiated_ = 0;
     best_assignment_.clear();
     current_best_assignment_.clear();
@@ -470,12 +503,21 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     // 明示的スタックによる反復探索（再帰によるスタックオーバーフローを回避）
     struct SearchFrame {
         size_t var_idx;
-        std::vector<Domain::value_type> values;
-        size_t value_idx;
         int save_point;
         Domain::value_type prev_min, prev_max;
         size_t nogoods_before;
-        int remaining_cl;  // このレベルの残りコンフリクト予算
+        int remaining_cl;
+
+        enum class Mode : uint8_t { Enumerate, Bisect } mode;
+
+        // Enumerate 用
+        std::vector<Domain::value_type> values;
+        size_t value_idx;
+
+        // Bisect 用
+        Domain::value_type split_point;
+        uint8_t branch;  // 0=未開始, 1=first試行済, 2=second試行済
+        bool right_first;  // true: 右(x>mid)を先に試す
     };
 
     std::vector<SearchFrame> stack;
@@ -523,28 +565,71 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             int save_point = current_decision_;
             auto prev_min = model.var_min(var_idx);
             auto prev_max = model.var_max(var_idx);
-
-            // 値を取得（ソートなし、オリジナル domain.values() を使用）
-            auto& domain = variables[var_idx]->domain();
-            auto values = domain.values();
-
-            // 保存された値がある場合は優先（先頭と swap で O(1)）
-            if (current_best_assignment_.count(var_idx)) {
-                auto best_val = current_best_assignment_[var_idx];
-                auto it = std::find(values.begin(), values.end(), best_val);
-                if (it != values.end() && it != values.begin()) {
-                    std::swap(*it, values[0]);
-                }
-            }
-
             size_t nogoods_before = nogoods_.size();
-
-            // フレームの CL を決定（親のCLを継承）
             int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
 
-            stack.push_back({var_idx, std::move(values), 0,
-                           save_point, prev_min, prev_max, nogoods_before, cl});
-            // TRY VALUES へフォールスルー
+            // モード判定
+            auto domain_range = static_cast<size_t>(prev_max - prev_min + 1);
+            bool use_bisect = bisection_threshold_ > 0 && domain_range > bisection_threshold_;
+
+            if (use_bisect) {
+                // Bisect モード
+                stats_.bisect_count++;
+                auto mid = prev_min + (prev_max - prev_min) / 2;
+
+                // ヒント解がある場合はそちら側を優先
+                bool right_first = false;
+                if (current_best_assignment_.count(var_idx)) {
+                    auto hint_val = current_best_assignment_[var_idx];
+                    if (hint_val > mid) {
+                        right_first = true;
+                    }
+                }
+
+                SearchFrame frame;
+                frame.var_idx = var_idx;
+                frame.save_point = save_point;
+                frame.prev_min = prev_min;
+                frame.prev_max = prev_max;
+                frame.nogoods_before = nogoods_before;
+                frame.remaining_cl = cl;
+                frame.mode = SearchFrame::Mode::Bisect;
+                frame.split_point = mid;
+                frame.branch = 0;
+                frame.right_first = right_first;
+                frame.value_idx = 0;
+                stack.push_back(std::move(frame));
+            } else {
+                // Enumerate モード
+                stats_.enumerate_count++;
+                auto& domain = variables[var_idx]->domain();
+                auto values = domain.values();
+
+                // 保存された値がある場合は優先
+                if (current_best_assignment_.count(var_idx)) {
+                    auto best_val = current_best_assignment_[var_idx];
+                    auto it = std::find(values.begin(), values.end(), best_val);
+                    if (it != values.end() && it != values.begin()) {
+                        std::swap(*it, values[0]);
+                    }
+                }
+
+                SearchFrame frame;
+                frame.var_idx = var_idx;
+                frame.save_point = save_point;
+                frame.prev_min = prev_min;
+                frame.prev_max = prev_max;
+                frame.nogoods_before = nogoods_before;
+                frame.remaining_cl = cl;
+                frame.mode = SearchFrame::Mode::Enumerate;
+                frame.values = std::move(values);
+                frame.value_idx = 0;
+                frame.split_point = 0;
+                frame.branch = 0;
+                frame.right_first = false;
+                stack.push_back(std::move(frame));
+            }
+            // TRY VALUES/BRANCH へフォールスルー
         } else {
             // === 上昇: 子の結果を処理 ===
             if (stack.empty()) {
@@ -565,83 +650,140 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 backtrack(model, frame.save_point);
                 stack.pop_back();
                 result = SearchResult::UNKNOWN;
-                continue;  // UNKNOWN を上へ伝播
-            }
-
-            // UNSAT: 次の値を試す
-            frame.remaining_cl--;
-            current_decision_--;
-            backtrack(model, frame.save_point);
-            frame.value_idx++;
-            // TRY VALUES へフォールスルー
-        }
-
-        // === TRY VALUES ===
-        auto& frame = stack.back();
-        bool found_value = false;
-
-        while (frame.value_idx < frame.values.size()) {
-            auto val = frame.values[frame.value_idx];
-
-            current_decision_++;
-
-            // 値を割り当て（Trail に保存される）
-            if (!model.instantiate(current_decision_, frame.var_idx, val)) {
-                current_decision_--;
-                frame.value_idx++;
                 continue;
             }
 
-            // 伝播
-            bool propagate_ok = propagate_instantiate(model, frame.var_idx,
-                                                       frame.prev_min, frame.prev_max);
-            bool queue_ok = false;
-            if (propagate_ok) {
-                // キュー処理
-                queue_ok = process_queue(model);
-                if (queue_ok) {
-                    decision_trail_.push_back({frame.var_idx, val});
-                    ascending = false;
-                    found_value = true;
-                    break;  // 降下へ
-                }
-            }
-
-            // 伝播失敗時はキューに残りがある可能性があるのでクリア
-            if (!propagate_ok || !queue_ok) {
-                model.clear_pending_updates();
-            }
-
+            // UNSAT: 次の値/branch を試す
+            frame.remaining_cl--;
             current_decision_--;
             backtrack(model, frame.save_point);
-            frame.value_idx++;
+
+            if (frame.mode == SearchFrame::Mode::Enumerate) {
+                frame.value_idx++;
+            }
+            // Bisect モードでは branch は TRY BRANCH 側で自動インクリメント
+            // フォールスルー
         }
 
-        if (!found_value) {
-            // 全値失敗: Activity 更新
-            activity_[frame.var_idx] += 1.0;
-            stats_.fail_count++;
+        auto& frame = stack.back();
 
-            // 部分解を保存
-            save_partial_assignment(model);
+        if (frame.mode == SearchFrame::Mode::Enumerate) {
+            // === TRY VALUES (Enumerate) ===
+            bool found_value = false;
 
-            // 子ノードで追加された NoGood を削除
-            while (nogoods_.size() > frame.nogoods_before) {
-                remove_nogood(nogoods_.back().get());
-                nogoods_.pop_back();
-            }
+            while (frame.value_idx < frame.values.size()) {
+                auto val = frame.values[frame.value_idx];
 
-            // NoGood 記録
-            if (nogood_learning_ && decision_trail_.size() >= 2) {
-                add_nogood(decision_trail_);
-                for (const auto& lit : decision_trail_) {
-                    activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                current_decision_++;
+
+                if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+                    current_decision_--;
+                    frame.value_idx++;
+                    continue;
                 }
+
+                bool propagate_ok = propagate_instantiate(model, frame.var_idx,
+                                                           frame.prev_min, frame.prev_max);
+                bool queue_ok = false;
+                if (propagate_ok) {
+                    queue_ok = process_queue(model);
+                    if (queue_ok) {
+                        decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
+                        ascending = false;
+                        found_value = true;
+                        break;
+                    }
+                }
+
+                if (!propagate_ok || !queue_ok) {
+                    model.clear_pending_updates();
+                }
+
+                current_decision_--;
+                backtrack(model, frame.save_point);
+                frame.value_idx++;
             }
 
-            stack.pop_back();
-            result = SearchResult::UNSAT;
-            ascending = true;
+            if (!found_value) {
+                // 全値失敗
+                activity_[frame.var_idx] += 1.0;
+                stats_.fail_count++;
+                save_partial_assignment(model);
+
+                while (nogoods_.size() > frame.nogoods_before) {
+                    remove_nogood(nogoods_.back().get());
+                    nogoods_.pop_back();
+                }
+
+                if (nogood_learning_ && decision_trail_.size() >= 2) {
+                    add_nogood(decision_trail_);
+                    for (const auto& lit : decision_trail_) {
+                        activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                    }
+                }
+
+                stack.pop_back();
+                result = SearchResult::UNSAT;
+                ascending = true;
+            }
+        } else {
+            // === TRY BRANCH (Bisect) ===
+            bool found_branch = false;
+
+            while (frame.branch < 2) {
+                frame.branch++;
+                current_decision_++;
+
+                // right_first なら branch==1 で右、branch==2 で左
+                bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
+
+                bool ok;
+                Literal decision_lit;
+                if (try_left) {
+                    // 左: x <= mid
+                    model.enqueue_set_max(frame.var_idx, frame.split_point);
+                    decision_lit = {frame.var_idx, frame.split_point, Literal::Type::Leq};
+                } else {
+                    // 右: x > mid (x >= mid+1)
+                    model.enqueue_set_min(frame.var_idx, frame.split_point + 1);
+                    decision_lit = {frame.var_idx, frame.split_point + 1, Literal::Type::Geq};
+                }
+
+                ok = process_queue(model);
+                if (ok) {
+                    decision_trail_.push_back(decision_lit);
+                    ascending = false;
+                    found_branch = true;
+                    break;
+                }
+
+                model.clear_pending_updates();
+                current_decision_--;
+                backtrack(model, frame.save_point);
+            }
+
+            if (!found_branch) {
+                // 両方失敗
+                activity_[frame.var_idx] += 1.0;
+                stats_.fail_count++;
+                save_partial_assignment(model);
+
+                while (nogoods_.size() > frame.nogoods_before) {
+                    remove_nogood(nogoods_.back().get());
+                    nogoods_.pop_back();
+                }
+
+                if (nogood_learning_ && decision_trail_.size() >= 2) {
+                    add_nogood(decision_trail_);
+                    for (const auto& lit : decision_trail_) {
+                        activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                    }
+                }
+
+                stack.pop_back();
+                result = SearchResult::UNSAT;
+                ascending = true;
+            }
         }
     }
 }
@@ -703,15 +845,15 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
         }
     }
 
-    // NoGood チェック
+    // NoGood チェック (Eq watches)
     if (nogood_learning_) {
-        auto it1 = ng_watches_.find(var_idx);
-        if (it1 != ng_watches_.end()) {
+        auto it1 = ng_eq_watches_.find(var_idx);
+        if (it1 != ng_eq_watches_.end()) {
             auto it2 = it1->second.find(val);
             if (it2 != it1->second.end()) {
                 for (auto* ng : std::vector<NoGood*>(it2->second)) {
                     stats_.nogood_check_count++;
-                    if (!propagate_nogood(model, ng, {var_idx, val})) {
+                    if (!propagate_nogood(model, ng, {var_idx, val, Literal::Type::Eq})) {
                         ng->last_active = ++ng_use_counter_;
                         stats_.nogood_prune_count++;
                         return false;
@@ -719,6 +861,10 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                 }
             }
         }
+
+        // instantiate は Leq/Geq 両方を充足しうる
+        if (!propagate_bound_nogoods(model, var_idx, true)) return false;
+        if (!propagate_bound_nogoods(model, var_idx, false)) return false;
     }
 
     return true;
@@ -869,7 +1015,7 @@ std::vector<NamedNoGood> Solver::get_nogoods(const Model& model, size_t max_coun
                 valid = false;
                 break;
             }
-            named_ng.literals.push_back({var->name(), lit.value});
+            named_ng.literals.push_back({var->name(), lit.value, lit.type});
         }
 
         if (valid && !named_ng.literals.empty()) {
@@ -902,7 +1048,7 @@ size_t Solver::add_nogoods(const std::vector<NamedNoGood>& nogoods, const Model&
                 valid = false;
                 break;
             }
-            literals.push_back({it->second, named_lit.value});
+            literals.push_back({it->second, named_lit.value, named_lit.type});
         }
 
         if (valid && !literals.empty()) {
@@ -939,40 +1085,68 @@ void Solver::add_nogood(const std::vector<Literal>& literals) {
     auto ng = std::make_unique<NoGood>(literals);
     auto* ng_ptr = ng.get();
 
-    // Watch 登録
-    const auto& lit1 = ng_ptr->literals[ng_ptr->w1];
-    ng_watches_[lit1.var_idx][lit1.value].push_back(ng_ptr);
+    // Watch 登録（Literal::Type でディスパッチ）
+    auto register_watch = [this](const Literal& lit, NoGood* ng) {
+        switch (lit.type) {
+        case Literal::Type::Eq:
+            ng_eq_watches_[lit.var_idx][lit.value].push_back(ng);
+            break;
+        case Literal::Type::Leq:
+            ng_leq_watches_[lit.var_idx].emplace_back(lit.value, ng);
+            break;
+        case Literal::Type::Geq:
+            ng_geq_watches_[lit.var_idx].emplace_back(lit.value, ng);
+            break;
+        }
+    };
 
+    register_watch(ng_ptr->literals[ng_ptr->w1], ng_ptr);
     if (ng_ptr->w1 != ng_ptr->w2) {
-        const auto& lit2 = ng_ptr->literals[ng_ptr->w2];
-        ng_watches_[lit2.var_idx][lit2.value].push_back(ng_ptr);
+        register_watch(ng_ptr->literals[ng_ptr->w2], ng_ptr);
     }
 
     nogoods_.push_back(std::move(ng));
-    // 容量管理はリスタート時に行う
 }
 
 void Solver::remove_nogood(NoGood* ng) {
-    // Watch から削除
-    const auto& lit1 = ng->literals[ng->w1];
-    auto& watches1 = ng_watches_[lit1.var_idx][lit1.value];
-    watches1.erase(std::remove(watches1.begin(), watches1.end(), ng), watches1.end());
+    auto unregister_watch = [this](const Literal& lit, NoGood* ng) {
+        switch (lit.type) {
+        case Literal::Type::Eq: {
+            auto& watches = ng_eq_watches_[lit.var_idx][lit.value];
+            watches.erase(std::remove(watches.begin(), watches.end(), ng), watches.end());
+            break;
+        }
+        case Literal::Type::Leq: {
+            auto& watches = ng_leq_watches_[lit.var_idx];
+            watches.erase(
+                std::remove_if(watches.begin(), watches.end(),
+                    [&](const auto& p) { return p.first == lit.value && p.second == ng; }),
+                watches.end());
+            break;
+        }
+        case Literal::Type::Geq: {
+            auto& watches = ng_geq_watches_[lit.var_idx];
+            watches.erase(
+                std::remove_if(watches.begin(), watches.end(),
+                    [&](const auto& p) { return p.first == lit.value && p.second == ng; }),
+                watches.end());
+            break;
+        }
+        }
+    };
 
+    unregister_watch(ng->literals[ng->w1], ng);
     if (ng->w1 != ng->w2) {
-        const auto& lit2 = ng->literals[ng->w2];
-        auto& watches2 = ng_watches_[lit2.var_idx][lit2.value];
-        watches2.erase(std::remove(watches2.begin(), watches2.end(), ng), watches2.end());
+        unregister_watch(ng->literals[ng->w2], ng);
     }
 }
 
 bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered) {
-    const auto& variables = model.variables();
     auto& lits = ng->literals;
 
     // triggered が w1 か w2 か判定
     size_t triggered_idx, other_idx;
-    if (lits[ng->w1].var_idx == triggered.var_idx &&
-        lits[ng->w1].value == triggered.value) {
+    if (lits[ng->w1] == triggered) {
         triggered_idx = ng->w1;
         other_idx = ng->w2;
     } else {
@@ -980,29 +1154,61 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
         other_idx = ng->w1;
     }
 
+    // watch 解除/再登録用ヘルパー
+    auto unregister_triggered = [this, &triggered, ng]() {
+        switch (triggered.type) {
+        case Literal::Type::Eq: {
+            auto& w = ng_eq_watches_[triggered.var_idx][triggered.value];
+            w.erase(std::remove(w.begin(), w.end(), ng), w.end());
+            break;
+        }
+        case Literal::Type::Leq: {
+            auto& w = ng_leq_watches_[triggered.var_idx];
+            w.erase(
+                std::remove_if(w.begin(), w.end(),
+                    [&](const auto& p) { return p.first == triggered.value && p.second == ng; }),
+                w.end());
+            break;
+        }
+        case Literal::Type::Geq: {
+            auto& w = ng_geq_watches_[triggered.var_idx];
+            w.erase(
+                std::remove_if(w.begin(), w.end(),
+                    [&](const auto& p) { return p.first == triggered.value && p.second == ng; }),
+                w.end());
+            break;
+        }
+        }
+    };
+
+    auto register_watch = [this](const Literal& lit, NoGood* ng) {
+        switch (lit.type) {
+        case Literal::Type::Eq:
+            ng_eq_watches_[lit.var_idx][lit.value].push_back(ng);
+            break;
+        case Literal::Type::Leq:
+            ng_leq_watches_[lit.var_idx].emplace_back(lit.value, ng);
+            break;
+        case Literal::Type::Geq:
+            ng_geq_watches_[lit.var_idx].emplace_back(lit.value, ng);
+            break;
+        }
+    };
+
     // 未成立リテラルを探す（watched 以外で）
     for (size_t i = 0; i < lits.size(); ++i) {
         if (i == ng->w1 || i == ng->w2) {
             continue;
         }
-        const auto& lit = lits[i];
-
-        if (!model.is_instantiated(lit.var_idx) ||
-            model.value(lit.var_idx) != lit.value) {
+        if (!lits[i].is_satisfied(model)) {
             // 未成立 → watch をここに移す
-            // 古い watch を削除
-            auto& old_watches = ng_watches_[triggered.var_idx][triggered.value];
-            old_watches.erase(std::remove(old_watches.begin(), old_watches.end(), ng),
-                              old_watches.end());
-
-            // 新しい watch を追加
+            unregister_triggered();
             if (triggered_idx == ng->w1) {
                 ng->w1 = i;
             } else {
                 ng->w2 = i;
             }
-            ng_watches_[lit.var_idx][lit.value].push_back(ng);
-
+            register_watch(lits[i], ng);
             return true;
         }
     }
@@ -1010,15 +1216,69 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
     // 移せない → other の watched リテラルが唯一の未成立か確認
     const auto& other_lit = lits[other_idx];
 
-    if (model.is_instantiated(other_lit.var_idx) &&
-        model.value(other_lit.var_idx) == other_lit.value) {
+    if (other_lit.is_satisfied(model)) {
         // 全リテラル成立 → 矛盾
         return false;
     }
 
-    // other_var のドメインから other_val を除去
+    // Unit propagation: other_lit の否定を強制
     stats_.nogood_domain_count++;
-    model.enqueue_remove_value(other_lit.var_idx, other_lit.value);
+    switch (other_lit.type) {
+    case Literal::Type::Eq:
+        model.enqueue_remove_value(other_lit.var_idx, other_lit.value);
+        break;
+    case Literal::Type::Leq:
+        // x <= v の否定 → x >= v+1
+        model.enqueue_set_min(other_lit.var_idx, other_lit.value + 1);
+        break;
+    case Literal::Type::Geq:
+        // x >= v の否定 → x <= v-1
+        model.enqueue_set_max(other_lit.var_idx, other_lit.value - 1);
+        break;
+    }
+
+    return true;
+}
+
+bool Solver::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound) {
+    if (!nogood_learning_) return true;
+
+    if (is_lower_bound) {
+        // 下限が上がった → Geq リテラル (x >= v) が充足された可能性
+        auto it = ng_geq_watches_.find(var_idx);
+        if (it != ng_geq_watches_.end()) {
+            auto current_min = model.var_min(var_idx);
+            // コピーして回す（propagate_nogood が watches を変更するため）
+            auto watches_copy = it->second;
+            for (const auto& [threshold, ng] : watches_copy) {
+                if (current_min >= threshold) {
+                    stats_.nogood_check_count++;
+                    if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Geq})) {
+                        ng->last_active = ++ng_use_counter_;
+                        stats_.nogood_prune_count++;
+                        return false;
+                    }
+                }
+            }
+        }
+    } else {
+        // 上限が下がった → Leq リテラル (x <= v) が充足された可能性
+        auto it = ng_leq_watches_.find(var_idx);
+        if (it != ng_leq_watches_.end()) {
+            auto current_max = model.var_max(var_idx);
+            auto watches_copy = it->second;
+            for (const auto& [threshold, ng] : watches_copy) {
+                if (current_max <= threshold) {
+                    stats_.nogood_check_count++;
+                    if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Leq})) {
+                        ng->last_active = ++ng_use_counter_;
+                        stats_.nogood_prune_count++;
+                        return false;
+                    }
+                }
+            }
+        }
+    }
 
     return true;
 }
@@ -1094,13 +1354,16 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
             } else if (!was_instantiated) {
-                // on_set_min を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, w.internal_var_idx, new_min, prev_min)) {
                         return false;
                     }
+                }
+                // Bound NoGood 伝播
+                if (!propagate_bound_nogoods(model, var_idx, true)) {
+                    return false;
                 }
             }
             break;
@@ -1117,13 +1380,16 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
             } else if (!was_instantiated) {
-                // on_set_max を関連する全制約に呼び出す
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, w.internal_var_idx, new_max, prev_max)) {
                         return false;
                     }
+                }
+                // Bound NoGood 伝播
+                if (!propagate_bound_nogoods(model, var_idx, false)) {
+                    return false;
                 }
             }
             break;

@@ -35,15 +35,28 @@ enum class SearchResult {
 };
 
 /**
- * @brief リテラル（変数IDと値のペア）
+ * @brief リテラル（変数IDと値のペア + 型）
  */
 struct Literal {
+    enum class Type : uint8_t {
+        Eq,   // var == value
+        Leq,  // var <= value
+        Geq   // var >= value
+    };
+
     size_t var_idx;
     Domain::value_type value;
+    Type type = Type::Eq;
 
     bool operator==(const Literal& other) const {
-        return var_idx == other.var_idx && value == other.value;
+        return var_idx == other.var_idx && value == other.value && type == other.type;
     }
+
+    /// このリテラルが現在のモデル状態で成立しているか
+    bool is_satisfied(const Model& model) const;
+
+    /// このリテラルの否定を返す (Eq→Eq, Leq↔Geq+1)
+    Literal negate() const;
 };
 
 /**
@@ -52,6 +65,7 @@ struct Literal {
 struct NamedLiteral {
     std::string var_name;
     Domain::value_type value;
+    Literal::Type type = Literal::Type::Eq;
 };
 
 /**
@@ -95,6 +109,8 @@ struct SolverStats {
     size_t nogood_domain_count = 0;
     size_t nogood_instantiate_count = 0;
     size_t nogoods_size = 0;
+    size_t bisect_count = 0;
+    size_t enumerate_count = 0;
 };
 
 /**
@@ -224,6 +240,12 @@ public:
      */
     void set_verbose(bool enabled) { verbose_ = enabled; }
 
+    /**
+     * @brief 二分割探索の閾値を設定
+     * @param threshold ドメインサイズがこの値を超えたら二分割（0=無効）
+     */
+    void set_bisection_threshold(size_t threshold) { bisection_threshold_ = threshold; }
+
 private:
     std::atomic<bool> stopped_{false};
     bool verbose_ = false;
@@ -317,6 +339,11 @@ private:
      */
     bool propagate_nogood(Model& model, NoGood* ng, const Literal& triggered);
 
+    /**
+     * @brief 境界変更時の NoGood 伝播
+     */
+    bool propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound);
+
     // ===== 部分解管理 =====
 
     /**
@@ -343,6 +370,7 @@ private:
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     bool activity_first_ = false;  // false: MRV優先, true: Activity優先
+    size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
 
     // 最適化状態
     bool optimizing_ = false;
@@ -358,7 +386,9 @@ private:
 
     // NoGood
     std::vector<std::unique_ptr<NoGood>> nogoods_;
-    std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_watches_;
+    std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
+    std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
+    std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_geq_watches_;
     static constexpr size_t max_nogoods_ = 100000;
     size_t ng_use_counter_ = 0;  // prune 発生ごとにインクリメント
 
