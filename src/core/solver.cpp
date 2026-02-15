@@ -334,6 +334,11 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
     int root_point = current_decision_;
 
+    prev_improving_solution_.clear();
+    gradient_ema_.clear();
+    gradient_var_idx_ = SIZE_MAX;
+    gradient_direction_ = 0;
+
     if (verbose_) {
         std::cerr << "% [verbose] search_with_restart_optimize start\n";
     }
@@ -377,6 +382,48 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                             current_best_assignment_[i] = model.value(i);
                         }
                     }
+
+                    // 疑似勾配の計算（移動平均で蓄積）
+                    gradient_var_idx_ = SIZE_MAX;
+                    gradient_direction_ = 0;
+                    if (!prev_improving_solution_.empty()) {
+                        constexpr double alpha = 0.3;
+                        for (size_t i = 0; i < decision_var_end_; ++i) {
+                            size_t vi = var_order_[i];
+                            auto prev_it = prev_improving_solution_.find(vi);
+                            auto curr_it = current_best_assignment_.find(vi);
+                            if (prev_it != prev_improving_solution_.end() &&
+                                curr_it != current_best_assignment_.end()) {
+                                double delta = static_cast<double>(curr_it->second - prev_it->second);
+                                gradient_ema_[vi] = alpha * delta + (1.0 - alpha) * gradient_ema_[vi];
+                            }
+                        }
+                        // EMA が有意かつ線形制約がかかっている変数から1つランダムに選択
+                        const auto& all_constraints = model.constraints();
+                        std::vector<size_t> candidates;
+                        for (const auto& [vi, ema] : gradient_ema_) {
+                            if (ema >= 1.0 || ema <= -1.0) {
+                                // int_lin_* or bool_lin* 制約がかかっているか確認
+                                bool has_lin = false;
+                                for (const auto& w : model.constraints_for_var(vi)) {
+                                    const auto& cname = all_constraints[w.constraint_idx]->name();
+                                    if (cname.compare(0, 8, "int_lin_") == 0 ||
+                                        cname.compare(0, 8, "bool_lin") == 0) {
+                                        has_lin = true;
+                                        break;
+                                    }
+                                }
+                                if (has_lin) candidates.push_back(vi);
+                            }
+                        }
+                        if (!candidates.empty()) {
+                            size_t vi = candidates[rng_() % candidates.size()];
+                            gradient_var_idx_ = vi;
+                            gradient_direction_ = (gradient_ema_[vi] > 0) ? +1 : -1;
+                            gradient_ref_val_ = current_best_assignment_[vi];
+                        }
+                    }
+                    prev_improving_solution_ = current_best_assignment_;
                 }
 
                 // root へバックトラック
@@ -605,8 +652,22 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 auto& domain = variables[var_idx]->domain();
                 auto values = domain.values();
 
-                // 保存された値がある場合は優先
-                if (current_best_assignment_.count(var_idx)) {
+                // 疑似勾配ヒント（対象変数のみ）
+                if (var_idx == gradient_var_idx_ && gradient_direction_ != 0) {
+                    std::vector<size_t> candidate_indices;
+                    for (size_t i = 0; i < values.size(); ++i) {
+                        if (gradient_direction_ > 0 && values[i] > gradient_ref_val_) {
+                            candidate_indices.push_back(i);
+                        } else if (gradient_direction_ < 0 && values[i] < gradient_ref_val_) {
+                            candidate_indices.push_back(i);
+                        }
+                    }
+                    if (!candidate_indices.empty()) {
+                        size_t pick = candidate_indices[rng_() % candidate_indices.size()];
+                        if (pick != 0) std::swap(values[pick], values[0]);
+                    }
+                    gradient_var_idx_ = SIZE_MAX;
+                } else if (current_best_assignment_.count(var_idx)) {
                     auto best_val = current_best_assignment_[var_idx];
                     auto it = std::find(values.begin(), values.end(), best_val);
                     if (it != values.end() && it != values.begin()) {
