@@ -81,6 +81,7 @@ std::optional<Solution> Solver::solve(Model& model) {
         return std::nullopt;  // UNSAT
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    init_var_order_tracking(model);
 
     // リスタート有効時は専用ループを使用
     if (restart_enabled_) {
@@ -148,6 +149,7 @@ std::optional<Solution> Solver::solve_optimize(
         return std::nullopt;
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    init_var_order_tracking(model);
 
     auto result = search_with_restart_optimize(model, on_improve);
     optimizing_ = false;
@@ -191,6 +193,7 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     if (!presolve(model)) {
         return 0;  // UNSAT
     }
+    init_var_order_tracking(model);
 
     size_t count = 0;
 
@@ -295,6 +298,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
             std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
             std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+            init_var_order_tracking(model);
 
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
@@ -447,6 +451,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     }
                     return best_solution_;
                 }
+                init_var_order_tracking(model);
 
                 // リスタートパラメータを完全リセット（新しい問題空間に入るので）
                 inner_limit = initial_conflict_limit_;
@@ -498,6 +503,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // スキャン順シャッフル
             std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
             std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng_);
+            init_var_order_tracking(model);
 
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
@@ -743,6 +749,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     continue;
                 }
 
+                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_});
+
                 bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                            frame.prev_min, frame.prev_max);
                 bool queue_ok = false;
@@ -795,6 +803,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             while (frame.branch < 2) {
                 frame.branch++;
                 current_decision_++;
+                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_});
 
                 // right_first なら branch==1 で右、branch==2 で左
                 bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
@@ -897,6 +906,7 @@ bool Solver::presolve(Model& model) {
 
 bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                                     Domain::value_type prev_min, Domain::value_type prev_max) {
+    mark_variable_assigned(var_idx);
     const auto& constraints = model.constraints();
     auto val = model.value(var_idx);
 
@@ -944,6 +954,12 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 void Solver::backtrack(Model& model, int save_point) {
     model.rewind_to(save_point);
     model.rewind_dirty_constraints(save_point);
+    // パーティション境界を復元
+    while (!unassigned_trail_.empty() && unassigned_trail_.back().level > save_point) {
+        decision_unassigned_end_ = unassigned_trail_.back().dec_end;
+        defined_unassigned_end_ = unassigned_trail_.back().def_end;
+        unassigned_trail_.pop_back();
+    }
 }
 
 Solution Solver::build_solution(const Model& model) const {
@@ -975,6 +991,58 @@ bool Solver::verify_solution(const Model& model) const {
     return true;
 }
 
+void Solver::init_var_order_tracking(const Model& model) {
+    const size_t n = var_order_.size();
+    var_position_.resize(n);
+    for (size_t k = 0; k < n; ++k) {
+        var_position_[var_order_[k]] = k;
+    }
+    // Decision vars: 割当済みを後方へ
+    decision_unassigned_end_ = decision_var_end_;
+    for (size_t k = 0; k < decision_unassigned_end_; ) {
+        if (model.is_instantiated(var_order_[k])) {
+            --decision_unassigned_end_;
+            std::swap(var_order_[k], var_order_[decision_unassigned_end_]);
+            var_position_[var_order_[k]] = k;
+            var_position_[var_order_[decision_unassigned_end_]] = decision_unassigned_end_;
+        } else {
+            ++k;
+        }
+    }
+    // Defined vars: 同様
+    defined_unassigned_end_ = n;
+    for (size_t k = decision_var_end_; k < defined_unassigned_end_; ) {
+        if (model.is_instantiated(var_order_[k])) {
+            --defined_unassigned_end_;
+            std::swap(var_order_[k], var_order_[defined_unassigned_end_]);
+            var_position_[var_order_[k]] = k;
+            var_position_[var_order_[defined_unassigned_end_]] = defined_unassigned_end_;
+        } else {
+            ++k;
+        }
+    }
+    unassigned_trail_.clear();
+}
+
+void Solver::mark_variable_assigned(size_t var_idx) {
+    size_t pos = var_position_[var_idx];
+    if (pos < decision_var_end_) {
+        if (pos < decision_unassigned_end_) {
+            --decision_unassigned_end_;
+            std::swap(var_order_[pos], var_order_[decision_unassigned_end_]);
+            var_position_[var_order_[pos]] = pos;
+            var_position_[var_order_[decision_unassigned_end_]] = decision_unassigned_end_;
+        }
+    } else {
+        if (pos < defined_unassigned_end_) {
+            --defined_unassigned_end_;
+            std::swap(var_order_[pos], var_order_[defined_unassigned_end_]);
+            var_position_[var_order_[pos]] = pos;
+            var_position_[var_order_[defined_unassigned_end_]] = defined_unassigned_end_;
+        }
+    }
+}
+
 size_t Solver::select_variable(const Model& model) {
     size_t best_idx = SIZE_MAX;
     size_t min_domain_size = SIZE_MAX;
@@ -983,8 +1051,7 @@ size_t Solver::select_variable(const Model& model) {
     auto scan_range = [&](size_t begin, size_t end) {
         for (size_t k = begin; k < end; ++k) {
             size_t i = var_order_[k];
-            if (model.is_instantiated(i)) continue;
-
+            // is_instantiated チェック不要（パーティション保証）
             size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
             bool better = false;
             if (activity_first_) {
@@ -1009,15 +1076,11 @@ size_t Solver::select_variable(const Model& model) {
         }
     };
 
-#if 1
-    // Decision vars を先にスキャン
-    scan_range(0, decision_var_end_);
+    // Decision vars の未割当セクションのみスキャン
+    scan_range(0, decision_unassigned_end_);
     if (best_idx != SIZE_MAX) return best_idx;
-    // 全 decision vars が instantiated → defined vars にフォールバック
-    scan_range(decision_var_end_, var_order_.size());
-#else
-    scan_range(0, var_order_.size());
-#endif
+    // 全 decision vars が割当済み → defined vars の未割当セクションにフォールバック
+    scan_range(decision_var_end_, defined_unassigned_end_);
     return best_idx;
 }
 

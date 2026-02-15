@@ -1450,6 +1450,298 @@ TEST_CASE("IntElementConstraint 0-based index", "[solver][int_element]") {
     }
 }
 
+TEST_CASE("IntElementConstraint bounds propagation", "[solver][int_element]") {
+    SECTION("forward: index bounds narrow result bounds") {
+        Model model;
+
+        // array = {5, 100, 3, 50, 7} (1-based)
+        // index ∈ [2, 4] → array[1..3] = {100, 3, 50}
+        // result should be bounded to [3, 100]
+        auto index = model.create_variable("index", 2, 4);
+        auto result = model.create_variable("result", 0, 200);
+
+        std::vector<Domain::value_type> array = {5, 100, 3, 50, 7};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 3);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+        }
+    }
+
+    SECTION("reverse: result.min narrows index bounds") {
+        Model model;
+
+        // array = {1, 2, 3, 10, 20} (1-based)
+        // result ∈ [10, 100]
+        // Only index 4 and 5 have values >= 10
+        auto index = model.create_variable("index", 1, 5);
+        auto result = model.create_variable("result", 10, 100);
+
+        std::vector<Domain::value_type> array = {1, 2, 3, 10, 20};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // Only (4, 10) and (5, 20) are valid
+        REQUIRE(count == 2);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+            REQUIRE(res >= 10);
+        }
+    }
+
+    SECTION("reverse: result.max narrows index bounds") {
+        Model model;
+
+        // array = {100, 50, 3, 2, 1} (1-based)
+        // result ∈ [0, 3]
+        // Only index 3, 4, 5 have values <= 3
+        auto index = model.create_variable("index", 1, 5);
+        auto result = model.create_variable("result", 0, 3);
+
+        std::vector<Domain::value_type> array = {100, 50, 3, 2, 1};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // Only (3, 3), (4, 2), (5, 1) are valid
+        REQUIRE(count == 3);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+            REQUIRE(res <= 3);
+        }
+    }
+
+    SECTION("unsatisfiable via bounds") {
+        Model model;
+
+        // array = {1, 2, 3} (1-based)
+        // result ∈ [10, 20] → no element has value >= 10
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 10, 20);
+
+        std::vector<Domain::value_type> array = {1, 2, 3};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE_FALSE(solution.has_value());
+    }
+
+    SECTION("chain propagation with int_lin_eq") {
+        Model model;
+
+        // array = {10, 20, 30, 40, 50} (1-based)
+        // result + extra = 60
+        // extra ∈ [20, 30] → result ∈ [30, 40]
+        // Only index 3 (30) and 4 (40) are valid
+        auto index = model.create_variable("index", 1, 5);
+        auto result = model.create_variable("result", 0, 100);
+        auto extra = model.create_variable("extra", 20, 30);
+
+        std::vector<Domain::value_type> array = {10, 20, 30, 40, 50};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+        model.add_constraint(std::make_shared<IntLinEqConstraint>(
+            std::vector<int64_t>{1, 1},
+            std::vector<VariablePtr>{result, extra},
+            60
+        ));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // result=30, extra=30 (index=3) and result=40, extra=20 (index=4)
+        REQUIRE(count == 2);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            auto ext = sol.at("extra");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+            REQUIRE(res + ext == 60);
+        }
+    }
+
+    SECTION("0-based bounds propagation") {
+        Model model;
+
+        // array = {5, 100, 3, 50, 7} (0-based)
+        // index ∈ [1, 3] → array[1..3] = {100, 3, 50}
+        auto index = model.create_variable("index", 1, 3);
+        auto result = model.create_variable("result", 0, 200);
+
+        std::vector<Domain::value_type> array = {5, 100, 3, 50, 7};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result, true));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 3);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx)] == res);
+        }
+    }
+
+    SECTION("reverse: result.min with index starting at 0-based 0 (p_max_ boundary)") {
+        // array[0] >= result.min のとき、p_max_ 二分探索が mid=0 の else 分岐に入る
+        // 修正前は size_t アンダーフロー (right = 0 - 1 = SIZE_MAX) で segfault
+        Model model;
+
+        // array = {10, 5, 3, 8} (1-based: index 1..4)
+        // result ∈ [4, 10] → array[0]=10 >= 4 なので p_max_[0]=10 >= 4
+        // → p_max_ 二分探索で mid=0, else 分岐 (right = mid - 1)
+        auto index = model.create_variable("index", 1, 4);
+        auto result = model.create_variable("result", 4, 10);
+
+        std::vector<Domain::value_type> array = {10, 5, 3, 8};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // array[1]=10, array[4]=8 are in [4,10]; array[2]=5 is in [4,10] too
+        // array[3]=3 is NOT in [4,10]
+        REQUIRE(count == 3);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+            REQUIRE(res >= 4);
+            REQUIRE(res <= 10);
+        }
+    }
+
+    SECTION("reverse: result.max with index starting at 0-based 0 (p_min_ boundary)") {
+        // array[0] <= result.max のとき、p_min_ 二分探索が mid=0 の else 分岐に入る
+        Model model;
+
+        // array = {3, 50, 100, 5} (1-based: index 1..4)
+        // result ∈ [1, 5] → array[0]=3 <= 5 なので p_min_[0]=3 <= 5
+        // → p_min_ 二分探索で mid=0, else 分岐 (right = mid - 1)
+        auto index = model.create_variable("index", 1, 4);
+        auto result = model.create_variable("result", 1, 5);
+
+        std::vector<Domain::value_type> array = {3, 50, 100, 5};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // array[1]=3, array[4]=5 are in [1,5]; array[2]=50, array[3]=100 are NOT
+        REQUIRE(count == 2);
+        for (const auto& sol : solutions) {
+            auto idx = sol.at("index");
+            auto res = sol.at("result");
+            REQUIRE(array[static_cast<size_t>(idx - 1)] == res);
+            REQUIRE(res <= 5);
+        }
+    }
+
+    SECTION("single element array") {
+        // n=1: 全ての二分探索が lo_0=0, hi_0=0 で mid=0 を使う
+        Model model;
+
+        auto index = model.create_variable("index", 1, 1);
+        auto result = model.create_variable("result", 0, 100);
+
+        std::vector<Domain::value_type> array = {42};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("index") == 1);
+        REQUIRE(solution->at("result") == 42);
+    }
+
+    SECTION("0-based single element with chain constraint") {
+        // 0-based + n=1 + 連鎖伝播
+        Model model;
+
+        auto index = model.create_variable("index", 0, 0);
+        auto result = model.create_variable("result", 0, 100);
+        auto other = model.create_variable("other", 0, 100);
+
+        std::vector<Domain::value_type> array = {7};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result, true));
+        // result + other = 10 → result=7, other=3
+        model.add_constraint(std::make_shared<IntLinEqConstraint>(
+            std::vector<int64_t>{1, 1},
+            std::vector<VariablePtr>{result, other},
+            10
+        ));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("result") == 7);
+        REQUIRE(solution->at("other") == 3);
+    }
+
+    SECTION("two element array - reverse propagation at boundaries") {
+        // n=2: 二分探索のエッジケース (left=0, right=1 → mid=0)
+        Model model;
+
+        // array = {100, 1} (1-based)
+        // result ∈ [50, 200] → only index 1 has value >= 50
+        auto index = model.create_variable("index", 1, 2);
+        auto result = model.create_variable("result", 50, 200);
+
+        std::vector<Domain::value_type> array = {100, 1};
+        model.add_constraint(std::make_shared<IntElementConstraint>(index, array, result));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("index") == 1);
+        REQUIRE(solution->at("result") == 100);
+    }
+}
+
 TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
     SECTION("one variable fixed - consistent") {
         Model model;

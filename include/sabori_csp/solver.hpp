@@ -318,6 +318,16 @@ private:
     size_t select_variable(const Model& model);
 
     /**
+     * @brief var_order_ のパーティション追跡を初期化
+     */
+    void init_var_order_tracking(const Model& model);
+
+    /**
+     * @brief 変数を割当済みセクションへ移動
+     */
+    void mark_variable_assigned(size_t var_idx);
+
+    /**
      * @brief Activity を減衰
      */
     void decay_activities();
@@ -415,6 +425,18 @@ private:
     // 変数スキャン順序（リスタートごとにシャッフル）
     std::vector<size_t> var_order_;
     size_t decision_var_end_ = 0;  // var_order_ 内の decision/defined 境界
+
+    // 変数選択の高速化（未割当/割当済パーティション）
+    std::vector<size_t> var_position_;       // var_idx → var_order_ 内の位置
+    size_t decision_unassigned_end_ = 0;     // [0, decision_unassigned_end_): 未割当 decision vars
+    size_t defined_unassigned_end_ = 0;      // [decision_var_end_, defined_unassigned_end_): 未割当 defined vars
+
+    struct UnassignedTrailEntry {
+        int level;
+        size_t dec_end;
+        size_t def_end;
+    };
+    std::vector<UnassignedTrailEntry> unassigned_trail_;
 
     // 値選択バッファ（ヒープ確保を避けるため再利用）
     std::vector<Domain::value_type> value_buffer_;

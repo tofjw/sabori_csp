@@ -502,6 +502,22 @@ public:
                                  size_t last_var_internal_idx) override;
 
     /**
+     * @brief 下限更新時のインクリメンタル伝播
+     */
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    /**
+     * @brief 上限更新時のインクリメンタル伝播
+     */
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す（空実装）
      */
     void rewind_to(int save_point);
@@ -522,11 +538,16 @@ private:
     // CSR: 値 -> インデックスリスト（逆引き）
     std::unordered_map<Domain::value_type, std::vector<Domain::value_type>> value_to_indices_;
 
-    // Monotonic Wrapper (将来の bounds propagation 用)
-    std::vector<Domain::value_type> p_min_;  // prefix min
-    std::vector<Domain::value_type> p_max_;  // prefix max
-    std::vector<Domain::value_type> s_min_;  // suffix min
-    std::vector<Domain::value_type> s_max_;  // suffix max
+    // Monotonic prefix/suffix arrays for reverse bounds propagation
+    std::vector<Domain::value_type> p_min_;  // prefix min (non-increasing)
+    std::vector<Domain::value_type> p_max_;  // prefix max (non-decreasing)
+    std::vector<Domain::value_type> s_min_;  // suffix min (non-decreasing)
+    std::vector<Domain::value_type> s_max_;  // suffix max (non-increasing)
+
+    // Sparse Table for O(1) range min/max queries
+    std::vector<std::vector<Domain::value_type>> sparse_min_;
+    std::vector<std::vector<Domain::value_type>> sparse_max_;
+    int log_n_;
 
     // 変数ポインタ → 内部インデックス (0: index, 1: result)
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
@@ -535,6 +556,16 @@ private:
      * @brief index を 0-based に変換
      */
     Domain::value_type index_to_0based(Domain::value_type idx) const;
+
+    /**
+     * @brief 区間 [lo, hi] (0-based) の最小値を O(1) で取得
+     */
+    Domain::value_type range_min(size_t lo, size_t hi) const;
+
+    /**
+     * @brief 区間 [lo, hi] (0-based) の最大値を O(1) で取得
+     */
+    Domain::value_type range_max(size_t lo, size_t hi) const;
 };
 
 /**
