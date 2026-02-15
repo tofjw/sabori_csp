@@ -1049,22 +1049,32 @@ size_t Solver::select_variable(const Model& model) {
     double best_activity = -1.0;
 
     auto scan_range = [&](size_t begin, size_t end) {
-        for (size_t k = begin; k < end; ++k) {
+        size_t n = end - begin;
+        if (n == 0) return;
+        size_t start = rng_() % n;
+        size_t tie_count = 0;
+        for (size_t j = 0; j < n; ++j) {
+            size_t k = begin + (start + j) % n;
             size_t i = var_order_[k];
             // is_instantiated チェック不要（パーティション保証）
             size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
             bool better = false;
+            bool tied = false;
             if (activity_first_) {
                 if (activity_[i] > best_activity) {
                     better = true;
                 } else if (activity_[i] == best_activity && domain_size < min_domain_size) {
                     better = true;
+                } else if (activity_[i] == best_activity && domain_size == min_domain_size) {
+                    tied = true;
                 }
             } else {
                 if (domain_size < min_domain_size) {
                     better = true;
                 } else if (domain_size == min_domain_size && activity_[i] > best_activity) {
                     better = true;
+                } else if (domain_size == min_domain_size && activity_[i] == best_activity) {
+                    tied = true;
                 }
             }
 
@@ -1072,6 +1082,12 @@ size_t Solver::select_variable(const Model& model) {
                 best_idx = i;
                 min_domain_size = domain_size;
                 best_activity = activity_[i];
+                tie_count = 1;
+            } else if (tied) {
+                ++tie_count;
+                if (rng_() % tie_count == 0) {
+                    best_idx = i;
+                }
             }
         }
     };

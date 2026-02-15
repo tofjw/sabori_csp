@@ -100,7 +100,7 @@ void print_solution(const sabori_csp::Solution& sol,
         }
     }
 
-    std::cout << "----------\n";
+    std::cout << "----------" << std::endl;
 }
 
 /**
