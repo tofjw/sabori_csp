@@ -397,6 +397,13 @@ private:
     std::unordered_map<size_t, Domain::value_type> best_assignment_;
     std::unordered_map<size_t, Domain::value_type> current_best_assignment_;
 
+    // 疑似勾配（最適化用）
+    std::unordered_map<size_t, Domain::value_type> prev_improving_solution_;
+    std::unordered_map<size_t, double> gradient_ema_;  // 移動平均
+    size_t gradient_var_idx_ = SIZE_MAX;
+    int gradient_direction_ = 0;
+    Domain::value_type gradient_ref_val_ = 0;
+
     // リスタート
     double initial_conflict_limit_ = 2.0;
     double conflict_limit_multiplier_ = 1.1;
