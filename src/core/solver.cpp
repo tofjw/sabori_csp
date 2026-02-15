@@ -1477,9 +1477,8 @@ bool Solver::process_queue(Model& model) {
             break;
         }
         case PendingUpdate::Type::SetMin: {
-            auto new_min = update.value;
-            if (new_min <= prev_min) continue;  // 変化なし
-            if (!model.set_min(current_decision_, var_idx, new_min)) {
+            if (update.value <= prev_min) continue;  // 変化なし
+            if (!model.set_min(current_decision_, var_idx, update.value)) {
                 return false;
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_min
@@ -1488,10 +1487,12 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
             } else if (!was_instantiated) {
+                // ドメインのholeにより実際のminは要求値より大きい場合がある
+                auto actual_new_min = model.var_min(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                                         var_idx, w.internal_var_idx, new_min, prev_min)) {
+                                                         var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
                         return false;
                     }
                 }
@@ -1503,9 +1504,8 @@ bool Solver::process_queue(Model& model) {
             break;
         }
         case PendingUpdate::Type::SetMax: {
-            auto new_max = update.value;
-            if (new_max >= prev_max) continue;  // 変化なし
-            if (!model.set_max(current_decision_, var_idx, new_max)) {
+            if (update.value >= prev_max) continue;  // 変化なし
+            if (!model.set_max(current_decision_, var_idx, update.value)) {
                 return false;
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_max
@@ -1514,10 +1514,12 @@ bool Solver::process_queue(Model& model) {
                     return false;
                 }
             } else if (!was_instantiated) {
+                // ドメインのholeにより実際のmaxは要求値より小さい場合がある
+                auto actual_new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                                         var_idx, w.internal_var_idx, new_max, prev_max)) {
+                                                         var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
                         return false;
                     }
                 }
