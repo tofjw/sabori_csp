@@ -25,6 +25,7 @@ add_library(sabori_csp_core
   constraints/global/array_var_int_element.cpp
   constraints/global/table.cpp
   constraints/global/count_eq.cpp
+  constraints/global/disjunctive.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC

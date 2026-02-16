@@ -1,0 +1,14 @@
+% Test: non-strict disjunctive with zero-duration task
+% Task 1: s1, d=3 (must not overlap with task 2)
+% Task 2: s2, d=2 (must not overlap with task 1)
+% Task 3: s3, d=0 (can overlap with anything)
+% With only 5 time slots and tasks of d=3 and d=2, s1 and s2 are tight.
+% s3 (d=0) should be free to take any value in 0..4.
+var 0..4: s1 :: output_var;
+var 0..4: s2 :: output_var;
+var 0..4: s3 :: output_var;
+var 3..3: d1;
+var 2..2: d2;
+var 0..0: d3;
+constraint fzn_disjunctive([s1, s2, s3], [d1, d2, d3]);
+solve satisfy;

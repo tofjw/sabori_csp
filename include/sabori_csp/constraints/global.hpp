@@ -1359,6 +1359,96 @@ private:
     bool propagate(Model& model);
 };
 
+/**
+ * @brief Disjunctive (unary resource) 制約
+ *
+ * 各タスク i は開始時刻 s[i]、実行時間 d[i] を持ち、
+ * 任意の2タスク i,j について s[i]+d[i] <= s[j] ∨ s[j]+d[j] <= s[i] を保証。
+ * strict=false の場合、d[i]=0 のタスクは他タスクと重複可能。
+ */
+class DisjunctiveConstraint : public Constraint {
+public:
+    DisjunctiveConstraint(std::vector<VariablePtr> starts,
+                          std::vector<VariablePtr> durations,
+                          bool strict);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+
+    void rewind_to(int save_point) override;
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    size_t n_;          // タスク数
+    bool strict_;       // strict disjunctive かどうか
+    int offset_;        // 時間軸オフセット (min_start)
+    int horizon_;       // 時間軸長 (max_end - min_start)
+
+    std::vector<uint64_t> timeline_;  // ビットマップ (1=占有)
+
+    // Trail
+    struct UndoEntry {
+        int block_idx;
+        uint64_t old_mask;
+    };
+    std::vector<std::pair<int, UndoEntry>> trail_;
+
+    // Compulsory Part tracking
+    std::vector<int> cp_lo_;   // [cp_lo_[i], cp_hi_[i]) = task i の現在 CP 区間
+    std::vector<int> cp_hi_;
+
+    struct CpUndoEntry {
+        size_t task_idx;
+        int old_cp_lo;
+        int old_cp_hi;
+    };
+    std::vector<std::pair<int, CpUndoEntry>> cp_trail_;
+
+    // Task helpers
+    bool task_fully_assigned(size_t task) const;
+    int task_start(size_t task) const;
+    int task_dur(size_t task) const;
+    int task_dur_min(size_t task) const;
+
+    // Bit operations
+    bool check_conflict(int start, int len) const;
+    int count_set_bits(int start, int len) const;
+    int count_free_bits(int start, int len) const;
+    bool check_conflict_excluding(int start, int len, size_t exclude_task) const;
+    int find_first_valid_excluding(int lo, int hi, int dur, size_t exclude_task) const;
+    int find_last_valid_excluding(int lo, int hi, int dur, size_t exclude_task) const;
+    void set_bits_direct(int start, int len);
+    void set_bits(Model& model, int save_point, int start, int len);
+    void ensure_dirty_marked(Model& model, int save_point);
+    int find_next_zero(int from) const;
+    int find_prev_zero(int from) const;
+
+    // Compulsory part
+    bool update_compulsory_part(Model& model, int save_point, size_t task);
+    bool update_compulsory_part_direct(size_t task);
+
+    // Propagation
+    bool propagate_bounds(Model& model);
+    bool edge_finding(Model& model, bool direct);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

@@ -917,6 +917,20 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             } else {
                 throw std::runtime_error("set_in_reif requires range or set argument");
             }
+        } else if (decl.name == "fzn_disjunctive" || decl.name == "fzn_disjunctive_strict") {
+            if (decl.args.size() != 2) {
+                throw std::runtime_error(decl.name + " requires 2 arguments (starts, durations)");
+            }
+            const auto start_names = resolve_var_array(decl.args[0]);
+            const auto dur_names   = resolve_var_array(decl.args[1]);
+            std::vector<VariablePtr> starts, durations;
+            for (const auto& name : start_names)
+                starts.push_back(get_var_by_name(name));
+            for (const auto& name : dur_names)
+                durations.push_back(get_var_by_name(name));
+            bool strict = (decl.name == "fzn_disjunctive_strict");
+            constraint = std::make_shared<DisjunctiveConstraint>(
+                std::move(starts), std::move(durations), strict);
         } else {
             // Unknown constraint - error
             throw std::runtime_error("Unsupported constraint: " + decl.name);

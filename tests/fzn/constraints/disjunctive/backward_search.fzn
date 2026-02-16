@@ -1,0 +1,10 @@
+var 6..6: s1;
+var 4..4: s2;
+var 0..7: s3 :: output_var;
+var 0..7: s4 :: output_var;
+var 2..2: d1;
+var 2..2: d2;
+var 2..2: d3;
+var 2..2: d4;
+constraint fzn_disjunctive_strict([s1, s2, s3, s4], [d1, d2, d3, d4]);
+solve satisfy;
