@@ -1,0 +1,34 @@
+# Build directories
+build*/
+
+# Emacs
+*~
+\#*\#
+.dir-locals.el
+
+# gprof
+gmon.out
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# CMake
+compile_commands.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Archives
+*.tar.gz
+*.zip
+
+# AppImage extracted
+squashfs-root/
+
+# MinZinc AppImage
+*.AppImage
