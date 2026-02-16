@@ -36,6 +36,25 @@ Literal Literal::negate() const {
     return *this;
 }
 
+bool Solver::apply_unit_nogoods(Model& model) {
+    if (unit_nogoods_.empty()) return true;
+    for (const auto& lit : unit_nogoods_) {
+        auto neg = lit.negate();
+        switch (neg.type) {
+        case Literal::Type::Eq:
+            model.enqueue_remove_value(neg.var_idx, neg.value);
+            break;
+        case Literal::Type::Leq:
+            model.enqueue_set_max(neg.var_idx, neg.value);
+            break;
+        case Literal::Type::Geq:
+            model.enqueue_set_min(neg.var_idx, neg.value);
+            break;
+        }
+    }
+    return process_queue(model);
+}
+
 std::optional<Solution> Solver::solve(Model& model) {
     std::optional<Solution> result;
 
@@ -247,32 +266,51 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                     // 全解探索: コールバックに報告し、解をNGとして追加して続行
                     if (!callback(*result)) {
                         stats_.nogoods_size = nogoods_.size();
+                        stats_.unit_nogoods_size = unit_nogoods_.size();
                         return std::nullopt;  // コールバックが停止を要求
                     }
                     model.clear_pending_updates();
                     add_solution_nogood(model);
                     backtrack(model, root_point);
 
+                    if (!apply_unit_nogoods(model)) {
+                        model.clear_pending_updates();
+                        stats_.nogoods_size = nogoods_.size();
+                        stats_.unit_nogoods_size = unit_nogoods_.size();
+                        return std::nullopt;
+                    }
+
                     // 全変数がまだ決定済み → backtrackで何も復元されなかった
                     // → 新しい探索空間なし → これ以上の解はない
                     if (select_variable(model) == SIZE_MAX) {
                         stats_.nogoods_size = nogoods_.size();
+                        stats_.unit_nogoods_size = unit_nogoods_.size();
                         return std::nullopt;
                     }
 
                     continue;
                 }
                 stats_.nogoods_size = nogoods_.size();
+                stats_.unit_nogoods_size = unit_nogoods_.size();
                 return result;
             }
             if (res == SearchResult::UNSAT) {
                 stats_.nogoods_size = nogoods_.size();
+                stats_.unit_nogoods_size = unit_nogoods_.size();
                 return std::nullopt;
             }
 
             // UNKNOWN: リスタート
             model.clear_pending_updates();
             backtrack(model, root_point);
+
+            if (!apply_unit_nogoods(model)) {
+                model.clear_pending_updates();
+                stats_.nogoods_size = nogoods_.size();
+                stats_.unit_nogoods_size = unit_nogoods_.size();
+                return std::nullopt;
+            }
+
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
 
@@ -336,6 +374,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         std::cerr << "% [verbose] search stopped (timeout)\n";
     }
     stats_.nogoods_size = nogoods_.size();
+    stats_.unit_nogoods_size = unit_nogoods_.size();
     return std::nullopt;
 }
 
@@ -443,6 +482,22 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 backtrack(model, root_point);
                 current_decision_ = root_point;
 
+                // unit nogood をドメインに適用
+                for (const auto& lit : unit_nogoods_) {
+                    auto neg = lit.negate();
+                    switch (neg.type) {
+                    case Literal::Type::Eq:
+                        model.enqueue_remove_value(neg.var_idx, neg.value);
+                        break;
+                    case Literal::Type::Leq:
+                        model.enqueue_set_max(neg.var_idx, neg.value);
+                        break;
+                    case Literal::Type::Geq:
+                        model.enqueue_set_min(neg.var_idx, neg.value);
+                        break;
+                    }
+                }
+
                 // 目的変数のドメインを縮小（永続的に root_point レベルで保存）
                 if (minimize_) {
                     model.enqueue_set_max(obj_var_idx_, obj_val - 1);
@@ -454,6 +509,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     // 伝播で UNSAT → 最適解が確定
                     model.clear_pending_updates();
                     stats_.nogoods_size = nogoods_.size();
+                    stats_.unit_nogoods_size = unit_nogoods_.size();
                     if (verbose_) {
                         std::cerr << "% [verbose] optimal (propagation proved no improvement)\n";
                     }
@@ -470,6 +526,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             if (res == SearchResult::UNSAT) {
                 // 探索空間が尽きた → 最適 (or nullopt if no solution found)
                 stats_.nogoods_size = nogoods_.size();
+                stats_.unit_nogoods_size = unit_nogoods_.size();
                 if (verbose_) {
                     std::cerr << "% [verbose] optimal (search exhausted)\n";
                 }
@@ -480,6 +537,15 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             model.clear_pending_updates();
             backtrack(model, root_point);
             current_decision_ = root_point;
+
+            if (!apply_unit_nogoods(model)) {
+                // unit nogood の適用で UNSAT → 最適解が確定
+                model.clear_pending_updates();
+                stats_.nogoods_size = nogoods_.size();
+                stats_.unit_nogoods_size = unit_nogoods_.size();
+                return best_solution_;
+            }
+
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
 
@@ -540,6 +606,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
         std::cerr << "% [verbose] search stopped (timeout)\n";
     }
     stats_.nogoods_size = nogoods_.size();
+    stats_.unit_nogoods_size = unit_nogoods_.size();
     return best_solution_;
 }
 
@@ -797,6 +864,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     for (const auto& lit : decision_trail_) {
                         activity_[lit.var_idx] += 1.0 / decision_trail_.size();
                     }
+                } else if (nogood_learning_ && decision_trail_.size() == 1) {
+                    unit_nogoods_.push_back(decision_trail_[0]);
                 }
 
                 stack.pop_back();
@@ -856,6 +925,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     for (const auto& lit : decision_trail_) {
                         activity_[lit.var_idx] += 1.0 / decision_trail_.size();
                     }
+                } else if (nogood_learning_ && decision_trail_.size() == 1) {
+                    unit_nogoods_.push_back(decision_trail_[0]);
                 }
 
                 stack.pop_back();

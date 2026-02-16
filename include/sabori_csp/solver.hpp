@@ -109,6 +109,7 @@ struct SolverStats {
     size_t nogood_domain_count = 0;
     size_t nogood_instantiate_count = 0;
     size_t nogoods_size = 0;
+    size_t unit_nogoods_size = 0;
     size_t bisect_count = 0;
     size_t enumerate_count = 0;
 };
@@ -332,6 +333,12 @@ private:
      */
     void decay_activities();
 
+    /**
+     * @brief Unit nogood をドメインに適用し、process_queue を実行
+     * @return false なら UNSAT
+     */
+    bool apply_unit_nogoods(Model& model);
+
     // ===== NoGood 学習 =====
 
     /**
@@ -395,6 +402,7 @@ private:
     std::vector<Literal> decision_trail_;
 
     // NoGood
+    std::vector<Literal> unit_nogoods_;  // 長さ1のNG（リスタート時にドメイン削減に使う）
     std::vector<std::unique_ptr<NoGood>> nogoods_;
     std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
     std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
@@ -417,7 +425,7 @@ private:
     // リスタート
     double initial_conflict_limit_ = 2.0;
     double conflict_limit_multiplier_ = 1.1;
-    double activity_decay_ = 0.9;
+    double activity_decay_ = 0.99;
 
     // 統計
     SolverStats stats_;
