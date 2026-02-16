@@ -252,6 +252,14 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                     model.clear_pending_updates();
                     add_solution_nogood(model);
                     backtrack(model, root_point);
+
+                    // 全変数がまだ決定済み → backtrackで何も復元されなかった
+                    // → 新しい探索空間なし → これ以上の解はない
+                    if (select_variable(model) == SIZE_MAX) {
+                        stats_.nogoods_size = nogoods_.size();
+                        return std::nullopt;
+                    }
+
                     continue;
                 }
                 stats_.nogoods_size = nogoods_.size();
