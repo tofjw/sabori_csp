@@ -873,7 +873,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 if (nogood_learning_ && decision_trail_.size() >= 2) {
                     add_nogood(decision_trail_);
                     for (const auto& lit : decision_trail_) {
-                        activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                        activity_[lit.var_idx] += 0.01 / decision_trail_.size();
                     }
                 } else if (nogood_learning_ && decision_trail_.size() == 1) {
                     unit_nogoods_.push_back(decision_trail_[0]);
@@ -934,7 +934,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 if (nogood_learning_ && decision_trail_.size() >= 2) {
                     add_nogood(decision_trail_);
                     for (const auto& lit : decision_trail_) {
-                        activity_[lit.var_idx] += 1.0 / decision_trail_.size();
+                        activity_[lit.var_idx] += 0.01 / decision_trail_.size();
                     }
                 } else if (nogood_learning_ && decision_trail_.size() == 1) {
                     unit_nogoods_.push_back(decision_trail_[0]);
@@ -1025,6 +1025,10 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                     if (!propagate_nogood(model, ng, {var_idx, val, Literal::Type::Eq})) {
                         ng->last_active = ++ng_use_counter_;
                         stats_.nogood_prune_count++;
+                        size_t n = ng->literals.size();
+                        for (const auto& lit : ng->literals) {
+                            activity_[lit.var_idx] += 1.0 / n;
+                        }
                         return false;
                     }
                 }
@@ -1494,6 +1498,10 @@ bool Solver::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Geq})) {
                         ng->last_active = ++ng_use_counter_;
                         stats_.nogood_prune_count++;
+                        size_t n = ng->literals.size();
+                        for (const auto& lit : ng->literals) {
+                            activity_[lit.var_idx] += 1.0 / n;
+                        }
                         return false;
                     }
                 }
@@ -1511,6 +1519,10 @@ bool Solver::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Leq})) {
                         ng->last_active = ++ng_use_counter_;
                         stats_.nogood_prune_count++;
+                        size_t n = ng->literals.size();
+                        for (const auto& lit : ng->literals) {
+                            activity_[lit.var_idx] += 1.0 / n;
+                        }
                         return false;
                     }
                 }
@@ -1597,6 +1609,12 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
+                        size_t n = constraints[w.constraint_idx]->variables().size();
+                        for (const auto& v : constraints[w.constraint_idx]->variables()) {
+                            if (v->is_assigned()) {
+                                activity_[v->id()] += 1.0 / n;
+                            }
+                        }
                         return false;
                     }
                 }
@@ -1624,6 +1642,12 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
+                        size_t n = constraints[w.constraint_idx]->variables().size();
+                        for (const auto& v : constraints[w.constraint_idx]->variables()) {
+                            if (v->is_assigned()) {
+                                activity_[v->id()] += 1.0 / n;
+                            }
+                        }
                         return false;
                     }
                 }
@@ -1654,6 +1678,12 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_min, prev_min)) {
+                            size_t n = constraints[w.constraint_idx]->variables().size();
+                            for (const auto& v : constraints[w.constraint_idx]->variables()) {
+                                if (v->is_assigned()) {
+                                    activity_[v->id()] += 1.0 / n;
+                                }
+                            }
                             return false;
                         }
                     }
@@ -1663,6 +1693,12 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_max, prev_max)) {
+                            size_t n = constraints[w.constraint_idx]->variables().size();
+                            for (const auto& v : constraints[w.constraint_idx]->variables()) {
+                                if (v->is_assigned()) {
+                                    activity_[v->id()] += 1.0 / n;
+                                }
+                            }
                             return false;
                         }
                     }
@@ -1672,6 +1708,12 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                   var_idx, w.internal_var_idx, removed_value)) {
+                            size_t n = constraints[w.constraint_idx]->variables().size();
+                            for (const auto& v : constraints[w.constraint_idx]->variables()) {
+                                if (v->is_assigned()) {
+                                    activity_[v->id()] += 1.0 / n;
+                                }
+                            }
                             return false;
                         }
                     }
