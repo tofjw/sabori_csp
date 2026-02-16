@@ -40,6 +40,7 @@ void print_stats(const sabori_csp::Solver& solver) {
               << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
               << " nogoods=" << s.nogoods_size
               << " unit_nogoods=" << s.unit_nogoods_size
+              << " nogood_prune=" << s.nogood_prune_count
               << " bisect=" << s.bisect_count
               << " enumerate=" << s.enumerate_count
               << "\n";

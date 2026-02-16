@@ -238,11 +238,8 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
 std::optional<Solution> Solver::search_with_restart(Model& model,
                                                       SolutionCallback callback,
                                                       bool find_all) {
-    double inner_limit = initial_conflict_limit_;
-    double outer_limit = inner_limit + 1;
-
+    double outer = initial_outer_ceiling_;
     int root_point = current_decision_;
-    size_t prev_fail_count = 0;
 
     if (verbose_) {
         std::cerr << "% [verbose] search_with_restart start"
@@ -250,11 +247,15 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
     }
 
     while (!stopped_) {
-        for (int outer = 0; outer < static_cast<int>(outer_limit) && !stopped_; ++outer) {
-            int conflict_limit = static_cast<int>(inner_limit);
+        // ===== cycle 開始 =====
+        size_t prune_at_cycle_start = stats_.nogood_prune_count;
+        size_t max_depth_at_cycle_start = stats_.max_depth;
+        double inner = initial_conflict_limit_;
+
+        while (inner <= outer && !stopped_) {
+            int conflict_limit = static_cast<int>(inner);
             std::optional<Solution> result;
 
-            size_t nogoods_before = nogoods_.size();
             auto res = run_search(model, conflict_limit, 0,
                                   [&result](const Solution& sol) {
                                       result = sol;
@@ -280,8 +281,6 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                         return std::nullopt;
                     }
 
-                    // 全変数がまだ決定済み → backtrackで何も復元されなかった
-                    // → 新しい探索空間なし → これ以上の解はない
                     if (select_variable(model) == SIZE_MAX) {
                         stats_.nogoods_size = nogoods_.size();
                         stats_.unit_nogoods_size = unit_nogoods_.size();
@@ -321,16 +320,6 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                     return a->last_active > b->last_active;
                 });
 
-
-            // NG が増えなかった場合は inner_limit を増加
-	    // (fail が発生しなかったケースを含む)
-	    bool limit_changed = false;
-            if (nogoods_.size() <= nogoods_before) {
-                inner_limit++;
-                outer_limit++;
-                limit_changed = true;
-            }
-
             // 容量管理: 末尾（冷たい NG）を削除（permanent は保護）
             while (nogoods_.size() > max_nogoods_) {
                 if (nogoods_.back()->permanent) break;
@@ -349,24 +338,36 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
 
-            if (!limit_changed) {
-                // コンフリクト制限を増加
-                inner_limit *= conflict_limit_multiplier_;
-
-                if (inner_limit > outer_limit) {
-                    outer_limit *= conflict_limit_multiplier_;
-                    inner_limit = initial_conflict_limit_;
-                }
-            }
-            prev_fail_count = stats_.fail_count;
-
             if (verbose_) {
                 std::cerr << "% [verbose] restart #" << stats_.restart_count
-                          << " conflict_limit=" << conflict_limit
+                          << " cl=" << conflict_limit
+                          << " outer=" << outer
                           << " fails=" << stats_.fail_count
                           << " max_depth=" << stats_.max_depth
-                          << " nogoods=" << nogoods_.size() << "\n";
+                          << " nogoods=" << nogoods_.size()
+                          << " prune=" << stats_.nogood_prune_count
+                          << "\n";
             }
+
+            inner *= inner_ratio_;
+        }
+
+        // ===== cycle 終了: outer を調整 =====
+        size_t prune_delta = stats_.nogood_prune_count - prune_at_cycle_start;
+        bool depth_grew = stats_.max_depth > max_depth_at_cycle_start;
+
+        if (prune_delta > 0 && depth_grew) {
+            // prune が起きて depth も伸びた → 順調 → shrink
+            outer = std::max(outer * outer_shrink_factor_, outer_min_);
+        } else {
+            // それ以外 → grow
+            outer = std::min(outer * outer_grow_factor_, outer_max_);
+        }
+
+        if (verbose_) {
+            std::cerr << "% [verbose] cycle end: prune_delta=" << prune_delta
+                      << " depth_grew=" << depth_grew
+                      << " new_outer=" << outer << "\n";
         }
     }
 
@@ -380,9 +381,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
 std::optional<Solution> Solver::search_with_restart_optimize(
         Model& model, SolutionCallback callback) {
-    double inner_limit = initial_conflict_limit_;
-    double outer_limit = inner_limit + 1;
-
+    double outer = initial_outer_ceiling_;
     int root_point = current_decision_;
 
     prev_improving_solution_.clear();
@@ -395,11 +394,16 @@ std::optional<Solution> Solver::search_with_restart_optimize(
     }
 
     while (!stopped_) {
-        for (int outer = 0; outer < static_cast<int>(outer_limit) && !stopped_; ++outer) {
-            int conflict_limit = static_cast<int>(inner_limit);
+        // ===== cycle 開始 =====
+        size_t prune_at_cycle_start = stats_.nogood_prune_count;
+        size_t max_depth_at_cycle_start = stats_.max_depth;
+        bool cycle_interrupted = false;
+        double inner = initial_conflict_limit_;
+
+        while (inner <= outer && !stopped_) {
+            int conflict_limit = static_cast<int>(inner);
             std::optional<Solution> found_solution;
 
-            size_t nogoods_before = nogoods_.size();
             auto res = run_search(model, conflict_limit, 0,
                                   [&found_solution](const Solution& sol) {
                                       found_solution = sol;
@@ -454,7 +458,6 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         std::vector<size_t> candidates;
                         for (const auto& [vi, ema] : gradient_ema_) {
                             if (ema >= 1.0 || ema <= -1.0) {
-                                // int_lin_* or bool_lin* 制約がかかっているか確認
                                 bool has_lin = false;
                                 for (const auto& w : model.constraints_for_var(vi)) {
                                     const auto& cname = all_constraints[w.constraint_idx]->name();
@@ -517,10 +520,10 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 }
                 init_var_order_tracking(model);
 
-                // リスタートパラメータを完全リセット（新しい問題空間に入るので）
-                inner_limit = initial_conflict_limit_;
-                outer_limit = inner_limit + 1;
-                break;  // outer ループを抜けて while から再突入 → outer=0 から
+                // 改善時: outer をリセットして cycle を中断
+                outer = initial_outer_ceiling_;
+                cycle_interrupted = true;
+                break;
             }
 
             if (res == SearchResult::UNSAT) {
@@ -556,14 +559,6 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     return a->last_active > b->last_active;
                 });
 
-            // NG が増えなかった場合は inner_limit を増加
-            bool limit_changed = false;
-            if (nogoods_.size() <= nogoods_before) {
-                inner_limit++;
-                outer_limit++;
-                limit_changed = true;
-            }
-
             // 容量管理
             while (nogoods_.size() > max_nogoods_) {
                 if (nogoods_.back()->permanent) break;
@@ -582,22 +577,38 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
 
-            if (!limit_changed) {
-                inner_limit *= conflict_limit_multiplier_;
-                if (inner_limit > outer_limit) {
-                    outer_limit *= conflict_limit_multiplier_;
-                    inner_limit = initial_conflict_limit_;
-                }
-            }
-
             if (verbose_) {
                 std::cerr << "% [verbose] restart #" << stats_.restart_count
-                          << " conflict_limit=" << conflict_limit
+                          << " cl=" << conflict_limit
+                          << " outer=" << outer
                           << " fails=" << stats_.fail_count
                           << " max_depth=" << stats_.max_depth
                           << " nogoods=" << nogoods_.size()
+                          << " prune=" << stats_.nogood_prune_count
                           << " best=" << (best_objective_ ? std::to_string(*best_objective_) : "none")
                           << "\n";
+            }
+
+            inner *= inner_ratio_;
+        }
+
+        // ===== cycle 終了: outer を調整（改善時中断でなければ） =====
+        if (!cycle_interrupted) {
+            size_t prune_delta = stats_.nogood_prune_count - prune_at_cycle_start;
+            bool depth_grew = stats_.max_depth > max_depth_at_cycle_start;
+
+            if (prune_delta > 0 && depth_grew) {
+                // prune が起きて depth も伸びた → 順調 → shrink
+                outer = std::max(outer * outer_shrink_factor_, outer_min_);
+            } else {
+                // それ以外 → grow
+                outer = std::min(outer * outer_grow_factor_, outer_max_);
+            }
+
+            if (verbose_) {
+                std::cerr << "% [verbose] cycle end: prune_delta=" << prune_delta
+                          << " depth_grew=" << depth_grew
+                          << " new_outer=" << outer << "\n";
             }
         }
     }

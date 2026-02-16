@@ -422,9 +422,14 @@ private:
     int gradient_direction_ = 0;
     Domain::value_type gradient_ref_val_ = 0;
 
-    // リスタート
+    // リスタート（Adaptive Restart）
     double initial_conflict_limit_ = 2.0;
-    double conflict_limit_multiplier_ = 1.1;
+    double inner_ratio_ = 1.01;
+    double initial_outer_ceiling_ = 4.0;
+    double outer_min_ = 3.0;
+    double outer_max_ = 10000.0;
+    double outer_grow_factor_ = 1.2;
+    double outer_shrink_factor_ = 0.99;
     double activity_decay_ = 0.99;
 
     // 統計
