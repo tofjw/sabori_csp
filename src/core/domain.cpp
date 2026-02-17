@@ -65,10 +65,7 @@ Domain::Domain(std::vector<value_type> values)
 bool Domain::contains(value_type value) const {
     if (value < min_ || value > max_) return false;
     if (bounds_only_) {
-        for (auto v : removed_values_) {
-            if (v == value) return false;
-        }
-        return true;
+        return removed_set_.find(value) == removed_set_.end();
     }
     auto idx_val = static_cast<size_t>(value - offset_);
     if (idx_val >= sparse_.size()) {
@@ -80,12 +77,10 @@ bool Domain::contains(value_type value) const {
 bool Domain::remove(value_type value) {
     if (bounds_only_) {
         if (value < min_ || value > max_) return true;  // 範囲外
-        // removed_values_ に既にあるか確認
-        for (auto v : removed_values_) {
-            if (v == value) return true;  // 既に除去済み
-        }
+        if (removed_set_.find(value) != removed_set_.end()) return true;  // 既に除去済み
         if (n_ == 1) return false;  // 空になる
         removed_values_.push_back(value);
+        removed_set_.insert(value);
         --n_;
         // 境界値の場合は min/max を調整
         if (value == min_) {
@@ -135,6 +130,8 @@ bool Domain::remove_below(value_type threshold) {
         for (size_t i = 0; i < removed_values_.size(); ++i) {
             if (removed_values_[i] >= threshold) {
                 removed_values_[kept++] = removed_values_[i];
+            } else {
+                removed_set_.erase(removed_values_[i]);
             }
         }
         // n_ の再計算: (max_ - threshold + 1) - kept
@@ -173,6 +170,8 @@ bool Domain::remove_above(value_type threshold) {
         for (size_t i = 0; i < removed_values_.size(); ++i) {
             if (removed_values_[i] <= threshold) {
                 removed_values_[kept++] = removed_values_[i];
+            } else {
+                removed_set_.erase(removed_values_[i]);
             }
         }
         size_t new_range = static_cast<size_t>(threshold - min_ + 1);
@@ -226,11 +225,9 @@ std::vector<Domain::value_type> Domain::values() const {
         std::vector<value_type> result;
         result.reserve(n_);
         for (value_type v = min_; v <= max_; ++v) {
-            bool removed = false;
-            for (auto rv : removed_values_) {
-                if (rv == v) { removed = true; break; }
+            if (removed_set_.find(v) == removed_set_.end()) {
+                result.push_back(v);
             }
-            if (!removed) result.push_back(v);
         }
         return result;
     }

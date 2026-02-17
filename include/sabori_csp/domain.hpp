@@ -6,6 +6,7 @@
 #define SABORI_CSP_DOMAIN_HPP
 
 #include <vector>
+#include <unordered_set>
 #include <optional>
 #include <cstdint>
 #include <algorithm>
@@ -121,10 +122,7 @@ public:
     bool sparse_contains(value_type value) const {
         if (bounds_only_) {
             if (value < min_ || value > max_) return false;
-            for (auto v : removed_values_) {
-                if (v == value) return false;
-            }
-            return true;
+            return removed_set_.find(value) == removed_set_.end();
         }
         auto idx_val = static_cast<size_t>(value - offset_);
         if (value < offset_ || idx_val >= sparse_.size()) return false;
@@ -144,7 +142,12 @@ public:
     /**
      * @brief bounds-only 時のバックトラック用: removed_values_ を切り詰め
      */
-    void truncate_removed(size_t count) { removed_values_.resize(count); }
+    void truncate_removed(size_t count) {
+        for (size_t i = count; i < removed_values_.size(); ++i) {
+            removed_set_.erase(removed_values_[i]);
+        }
+        removed_values_.resize(count);
+    }
 
     // ===== Sparse Set 内部アクセス（Model からの操作用） =====
 
@@ -211,7 +214,8 @@ private:
     // bounds-only モード用フィールド
     bool bounds_only_ = false;
     size_t initial_range_ = 0;
-    std::vector<value_type> removed_values_;  // bounds-only 時の除去値リスト
+    std::vector<value_type> removed_values_;       // bounds-only 時の除去値リスト（バックトラック用）
+    std::unordered_set<value_type> removed_set_;   // bounds-only 時の除去値セット（O(1) ルックアップ用）
 };
 
 } // namespace sabori_csp
