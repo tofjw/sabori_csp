@@ -139,43 +139,14 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point
         return false;  // 有効なインデックスがない
     }
 
-    // result のドメインから範囲外の値を削除
+    // result のドメインから範囲外の値を削除（remove_below/remove_above で効率化）
     auto& result_domain = result_->domain();
-    auto result_values = result_domain.values();
-    for (auto v : result_values) {
-        if (v < new_result_min || v > new_result_max) {
-            bool success;
-            if (save_point >= 0) {
-                success = model.remove_value(save_point, result_->id(), v);
-            } else {
-                success = result_domain.remove(v);
-            }
-            if (!success) {
-#if 0
-                std::cerr << "[DEBUG] FAIL(3): result remove failed v=" << v
-                          << " result=" << result_->name()
-                          << " result_domain=[" << std::to_string(model.var_min(result_->id()))
-                          << ".." << std::to_string(model.var_max(result_->id())) << "]"
-                          << " new_result=[" << new_result_min << ".." << new_result_max << "]"
-                          << " index=" << index_->name()
-                          << " index_domain=[" << std::to_string(model.var_min(index_->id()))
-                          << ".." << std::to_string(model.var_max(index_->id())) << "]";
-                // Print array elements for valid indices
-                auto idx_vals = index_->domain().values();
-                for (auto idx : idx_vals) {
-                    auto idx_0based = index_to_0based(idx);
-                    if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-                        auto& arr_var = array_[static_cast<size_t>(idx_0based)];
-                        std::cerr << " arr[" << idx << "]=" << arr_var->name()
-                                  << "[" << std::to_string(model.var_min(arr_var->id()))
-                                  << ".." << std::to_string(model.var_max(arr_var->id())) << "]";
-                    }
-                }
-                std::cerr << std::endl;
-#endif
-                return false;
-            }
-        }
+    if (save_point >= 0) {
+        if (!model.set_min(save_point, result_->id(), new_result_min)) return false;
+        if (!model.set_max(save_point, result_->id(), new_result_max)) return false;
+    } else {
+        if (!result_domain.remove_below(new_result_min)) return false;
+        if (!result_domain.remove_above(new_result_max)) return false;
     }
 
     // 2. index のドメインから、result と重ならないインデックスを削除
@@ -251,36 +222,22 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point
                 return false;
             }
 
-            // array[index] から範囲外の値を削除
-            auto arr_values = arr_domain.values();
-            for (auto v : arr_values) {
-                if (v < common_min || v > common_max) {
-                    bool success;
-                    if (save_point >= 0) {
-                        success = model.remove_value(save_point, arr_var->id(), v);
-                    } else {
-                        success = arr_domain.remove(v);
-                    }
-                    if (!success) {
-                        return false;
-                    }
-                }
+            // array[index] から範囲外の値を削除（remove_below/remove_above で効率化）
+            if (save_point >= 0) {
+                if (!model.set_min(save_point, arr_var->id(), common_min)) return false;
+                if (!model.set_max(save_point, arr_var->id(), common_max)) return false;
+            } else {
+                if (!arr_domain.remove_below(common_min)) return false;
+                if (!arr_domain.remove_above(common_max)) return false;
             }
 
             // result から範囲外の値を削除
-            result_values = result_domain.values();
-            for (auto v : result_values) {
-                if (v < common_min || v > common_max) {
-                    bool success;
-                    if (save_point >= 0) {
-                        success = model.remove_value(save_point, result_->id(), v);
-                    } else {
-                        success = result_domain.remove(v);
-                    }
-                    if (!success) {
-                        return false;
-                    }
-                }
+            if (save_point >= 0) {
+                if (!model.set_min(save_point, result_->id(), common_min)) return false;
+                if (!model.set_max(save_point, result_->id(), common_max)) return false;
+            } else {
+                if (!result_domain.remove_below(common_min)) return false;
+                if (!result_domain.remove_above(common_max)) return false;
             }
         }
     }

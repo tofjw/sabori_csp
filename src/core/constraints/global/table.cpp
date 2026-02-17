@@ -132,11 +132,24 @@ std::optional<bool> TableConstraint::is_satisfied() const {
 
 bool TableConstraint::presolve(Model& model) {
     // テーブルに存在しない値をドメインから直接除去
+    // bounds-only 対応: テーブルの値範囲で反復し、ドメイン外の値をスキップ
     for (size_t v = 0; v < arity_; ++v) {
         auto& dom = vars_[v]->domain();
-        auto vals = dom.values();
-        for (auto val : vals) {
-            if (get_support_offset(v, val) == NO_SUPPORT) {
+        const auto& info = var_support_info_[v];
+        auto table_max = info.min_val + static_cast<Domain::value_type>(info.range_size - 1);
+
+        // テーブル範囲外の値を一括除去
+        if (!dom.remove_below(info.min_val)) return false;
+        if (!dom.remove_above(table_max)) return false;
+
+        // テーブル範囲内でサポートのない値を除去
+        auto dom_min = dom.min().value_or(0);
+        auto dom_max = dom.max().value_or(0);
+        for (size_t i = 0; i < info.range_size; ++i) {
+            auto val = info.min_val + static_cast<Domain::value_type>(i);
+            if (val < dom_min || val > dom_max) continue;
+            if (!dom.contains(val)) continue;
+            if (supports_offsets_flat_[info.flat_offset + i] == NO_SUPPORT) {
                 dom.remove(val);
                 if (dom.empty()) return false;
             }
@@ -155,14 +168,20 @@ bool TableConstraint::prepare_propagation(Model& model) {
 
     for (size_t v = 0; v < arity_; ++v) {
         // この変数のドメインに残っている値のsupportsをunion
+        // bounds-only 対応: テーブルの値範囲で反復し、dom.contains() でチェック
         std::vector<uint64_t> var_union(num_words_, 0ULL);
         const auto& dom = vars_[v]->domain();
-        for (auto it = dom.begin(); it != dom.end(); ++it) {
-            size_t offset = get_support_offset(v, *it);
-            if (offset != NO_SUPPORT) {
-                for (size_t w = 0; w < num_words_; ++w) {
-                    var_union[w] |= supports_data_[offset + w];
-                }
+        const auto& info = var_support_info_[v];
+        auto dom_min = dom.min().value_or(0);
+        auto dom_max = dom.max().value_or(0);
+        for (size_t i = 0; i < info.range_size; ++i) {
+            size_t offset = supports_offsets_flat_[info.flat_offset + i];
+            if (offset == NO_SUPPORT) continue;
+            auto val = info.min_val + static_cast<Domain::value_type>(i);
+            if (val < dom_min || val > dom_max) continue;
+            if (!dom.contains(val)) continue;
+            for (size_t w = 0; w < num_words_; ++w) {
+                var_union[w] |= supports_data_[offset + w];
             }
         }
         // current_table_ &= var_union
@@ -240,10 +259,17 @@ bool TableConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
     }
 
     // 最後の未確定変数のドメインをフィルタリング
+    // bounds-only 対応: テーブルの値範囲で反復
     const auto& dom = last_var->domain();
-    for (auto it = dom.begin(); it != dom.end(); ++it) {
-        if (!has_support(last_var_internal_idx, *it)) {
-            model.enqueue_remove_value(last_var->id(), *it);
+    const auto& info = var_support_info_[last_var_internal_idx];
+    auto dom_min = model.var_min(last_var->id());
+    auto dom_max = model.var_max(last_var->id());
+    for (size_t i = 0; i < info.range_size; ++i) {
+        auto val = info.min_val + static_cast<Domain::value_type>(i);
+        if (val < dom_min || val > dom_max) continue;
+        if (!dom.contains(val)) continue;
+        if (!has_support(last_var_internal_idx, val)) {
+            model.enqueue_remove_value(last_var->id(), val);
         }
     }
     return true;
@@ -406,14 +432,15 @@ bool TableConstraint::filter_domains(Model& model, int skip_var_idx) {
         const auto& dom = vars_[v]->domain();
         const auto& info = var_support_info_[v];
 
-        for (auto it = dom.begin(); it != dom.end(); ++it) {
-            Domain::value_type val = *it;
-            auto diff = val - info.min_val;
-            if (diff < 0 || static_cast<size_t>(diff) >= info.range_size) {
-                model.enqueue_remove_value(vars_[v]->id(), val);
-                continue;
-            }
-            size_t flat_idx = info.flat_offset + static_cast<size_t>(diff);
+        // bounds-only 対応: テーブルの値範囲で反復し、dom.contains() でチェック
+        auto dom_min = model.var_min(vars_[v]->id());
+        auto dom_max = model.var_max(vars_[v]->id());
+        for (size_t i = 0; i < info.range_size; ++i) {
+            auto val = info.min_val + static_cast<Domain::value_type>(i);
+            if (val < dom_min || val > dom_max) continue;
+            if (!dom.contains(val)) continue;
+
+            size_t flat_idx = info.flat_offset + i;
             size_t offset = supports_offsets_flat_[flat_idx];
             if (offset == NO_SUPPORT) {
                 model.enqueue_remove_value(vars_[v]->id(), val);

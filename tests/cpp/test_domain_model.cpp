@@ -418,3 +418,158 @@ TEST_CASE("Model set_min/set_max with remove then lazy convergence", "[model][tr
         REQUIRE(model.contains(x_idx, 3));
     }
 }
+
+// ============================================================================
+// Domain bounds-only tests
+// ============================================================================
+
+TEST_CASE("Domain bounds-only basic operations", "[domain][bounds-only]") {
+    Domain d(0, 100000);  // range > 10000 → bounds-only
+
+    SECTION("initial state") {
+        REQUIRE(d.is_bounds_only());
+        REQUIRE(d.size() == 100001);
+        REQUIRE(d.min().value() == 0);
+        REQUIRE(d.max().value() == 100000);
+    }
+
+    SECTION("contains") {
+        REQUIRE(d.contains(0));
+        REQUIRE(d.contains(50000));
+        REQUIRE(d.contains(100000));
+        REQUIRE(!d.contains(-1));
+        REQUIRE(!d.contains(100001));
+    }
+
+    SECTION("remove middle value") {
+        REQUIRE(d.remove(50000));
+        REQUIRE(d.size() == 100000);
+        REQUIRE(!d.contains(50000));
+        REQUIRE(d.contains(49999));
+        REQUIRE(d.contains(50001));
+    }
+
+    SECTION("remove min value") {
+        REQUIRE(d.remove(0));
+        REQUIRE(d.min().value() == 1);
+        REQUIRE(!d.contains(0));
+    }
+
+    SECTION("remove max value") {
+        REQUIRE(d.remove(100000));
+        REQUIRE(d.max().value() == 99999);
+        REQUIRE(!d.contains(100000));
+    }
+
+    SECTION("assign") {
+        REQUIRE(d.assign(42));
+        REQUIRE(d.is_singleton());
+        REQUIRE(d.min().value() == 42);
+        REQUIRE(d.max().value() == 42);
+        REQUIRE(!d.contains(41));
+    }
+
+    SECTION("remove_below") {
+        REQUIRE(d.remove_below(1000));
+        REQUIRE(d.min().value() == 1000);
+        REQUIRE(!d.contains(999));
+    }
+
+    SECTION("remove_above") {
+        REQUIRE(d.remove_above(500));
+        REQUIRE(d.max().value() == 500);
+        REQUIRE(!d.contains(501));
+    }
+
+    SECTION("values returns correct list") {
+        Domain small_bounds(0, 15000);
+        small_bounds.remove(100);
+        small_bounds.remove(200);
+        auto vals = small_bounds.values();
+        REQUIRE(vals.size() == 14999);
+        REQUIRE(std::find(vals.begin(), vals.end(), 100) == vals.end());
+        REQUIRE(std::find(vals.begin(), vals.end(), 200) == vals.end());
+    }
+}
+
+TEST_CASE("Domain small range is NOT bounds-only", "[domain]") {
+    Domain d(1, 9999);
+    REQUIRE(!d.is_bounds_only());
+    REQUIRE(d.size() == 9999);
+}
+
+TEST_CASE("Domain bounds-only initial_range", "[domain][bounds-only]") {
+    Domain d(100, 200000);
+    REQUIRE(d.is_bounds_only());
+    REQUIRE(d.initial_range() == 199901);
+}
+
+// ============================================================================
+// Model bounds-only trail tests
+// ============================================================================
+
+TEST_CASE("Model bounds-only with trail", "[model][trail][bounds-only]") {
+    Model model;
+    auto x = model.create_variable("x", 0, 100000);
+    size_t x_idx = x->id();
+
+    SECTION("instantiate and rewind") {
+        REQUIRE(model.instantiate(1, x_idx, 42));
+        REQUIRE(model.is_instantiated(x_idx));
+        REQUIRE(model.value(x_idx) == 42);
+
+        model.rewind_to(0);
+        REQUIRE(!model.is_instantiated(x_idx));
+        REQUIRE(model.var_min(x_idx) == 0);
+        REQUIRE(model.var_max(x_idx) == 100000);
+    }
+
+    SECTION("set_min and rewind") {
+        REQUIRE(model.set_min(1, x_idx, 50000));
+        REQUIRE(model.var_min(x_idx) == 50000);
+
+        model.rewind_to(0);
+        REQUIRE(model.var_min(x_idx) == 0);
+    }
+
+    SECTION("set_max and rewind") {
+        REQUIRE(model.set_max(1, x_idx, 50000));
+        REQUIRE(model.var_max(x_idx) == 50000);
+
+        model.rewind_to(0);
+        REQUIRE(model.var_max(x_idx) == 100000);
+    }
+
+    SECTION("remove_value interior and rewind") {
+        REQUIRE(model.remove_value(1, x_idx, 500));
+        REQUIRE(!model.contains(x_idx, 500));
+
+        model.rewind_to(0);
+        REQUIRE(model.contains(x_idx, 500));
+    }
+
+    SECTION("remove_value boundary and rewind") {
+        REQUIRE(model.remove_value(1, x_idx, 0));
+        REQUIRE(model.var_min(x_idx) == 1);
+
+        model.rewind_to(0);
+        REQUIRE(model.var_min(x_idx) == 0);
+        REQUIRE(model.contains(x_idx, 0));
+    }
+
+    SECTION("multiple removes across levels then rewind") {
+        REQUIRE(model.remove_value(1, x_idx, 100));
+        REQUIRE(model.remove_value(1, x_idx, 200));
+        REQUIRE(model.remove_value(2, x_idx, 300));
+
+        model.rewind_to(1);
+        REQUIRE(!model.contains(x_idx, 100));
+        REQUIRE(!model.contains(x_idx, 200));
+        REQUIRE(model.contains(x_idx, 300));  // level 2 の remove が復元
+
+        model.rewind_to(0);
+        REQUIRE(model.contains(x_idx, 100));
+        REQUIRE(model.contains(x_idx, 200));
+        REQUIRE(model.contains(x_idx, 300));
+    }
+}

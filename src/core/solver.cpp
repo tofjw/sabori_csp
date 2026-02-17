@@ -727,8 +727,10 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
 
             // モード判定
+            auto& domain = variables[var_idx]->domain();
             auto domain_range = static_cast<size_t>(prev_max - prev_min + 1);
-            bool use_bisect = bisection_threshold_ > 0 && domain_range > bisection_threshold_;
+            bool use_bisect = domain.is_bounds_only() ||
+                              (bisection_threshold_ > 0 && domain_range > bisection_threshold_);
 
             if (use_bisect) {
                 // Bisect モード
@@ -1218,6 +1220,9 @@ size_t Solver::select_variable(const Model& model) {
 void Solver::decay_activities() {
     for (auto& a : activity_) {
         a *= activity_decay_;
+        // activity is expired. use random selection
+        if (a < 0.0001)
+            a = 0;
     }
 }
 

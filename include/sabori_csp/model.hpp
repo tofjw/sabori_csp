@@ -38,6 +38,7 @@ struct VarTrailEntry {
     int64_t old_min;
     int64_t old_max;
     size_t old_n;
+    size_t old_removed_count;  // bounds-only 用（sparse-set では 0）
 };
 
 /**
