@@ -1,0 +1,8 @@
+% Wide domain satisfy test: x in 0..100000, y in 0..100000, x + y = 150000, x = 100000
+var 0..100000: x :: output_var;
+var 0..100000: y :: output_var;
+
+constraint int_lin_eq([1, 1], [x, y], 150000);
+constraint int_eq(x, 100000);
+
+solve satisfy;

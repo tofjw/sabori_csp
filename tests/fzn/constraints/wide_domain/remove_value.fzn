@@ -1,0 +1,10 @@
+% Wide domain with value removal (int_ne)
+% x in 0..100000, x != 50000, x + y = 50000
+var 0..100000: x :: output_var;
+var 0..100000: y :: output_var;
+
+constraint int_ne(x, 50000);
+constraint int_lin_eq([1, 1], [x, y], 50000);
+constraint int_lin_le([-1], [x], 0);
+
+solve maximize x;

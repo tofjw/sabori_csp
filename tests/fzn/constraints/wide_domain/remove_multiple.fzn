@@ -1,0 +1,9 @@
+% Wide domain with multiple value removals
+% x != 99998, x != 99999, x != 100000 -> maximize x -> x = 99997
+var 0..100000: x :: output_var;
+
+constraint int_ne(x, 100000);
+constraint int_ne(x, 99999);
+constraint int_ne(x, 99998);
+
+solve maximize x;

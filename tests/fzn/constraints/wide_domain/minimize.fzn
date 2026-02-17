@@ -1,0 +1,8 @@
+% Wide domain minimize test
+var 0..1000000: x :: output_var;
+var 0..1000000: y :: output_var;
+
+constraint int_lin_le([1, 1], [x, y], 1000000);
+constraint int_lin_le([-1], [x], -100);
+
+solve minimize y;
