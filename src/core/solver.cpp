@@ -577,6 +577,25 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
 
+            // 解が見つからなかった場合: EMA有意な変数からランダムに選んで勾配を適用
+            if (!current_best_assignment_.empty() && !gradient_ema_.empty()) {
+                std::vector<size_t> candidates;
+                for (const auto& [vi, ema] : gradient_ema_) {
+                    if (ema >= 1.0 || ema <= -1.0) {
+                        candidates.push_back(vi);
+                    }
+                }
+                if (!candidates.empty()) {
+                    size_t vi = candidates[rng_() % candidates.size()];
+                    auto it = current_best_assignment_.find(vi);
+                    if (it != current_best_assignment_.end()) {
+                        gradient_var_idx_ = vi;
+                        gradient_direction_ = (gradient_ema_[vi] > 0) ? +1 : -1;
+                        gradient_ref_val_ = it->second;
+                    }
+                }
+            }
+
             if (verbose_) {
                 std::cerr << "% [verbose] restart #" << stats_.restart_count
                           << " cl=" << conflict_limit
