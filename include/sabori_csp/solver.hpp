@@ -329,6 +329,19 @@ private:
     void mark_variable_assigned(size_t var_idx);
 
     /**
+     * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
+     */
+    inline void bump_activity(const Model& model, size_t constraint_idx) {
+        const auto& constraint = model.constraints()[constraint_idx];
+        size_t n = constraint->variables().size();
+        for (const auto& v : constraint->variables()) {
+            if (v->is_assigned()) {
+                activity_[v->id()] += 1.0 / n;
+            }
+        }
+    }
+
+    /**
      * @brief Activity を減衰
      */
     void decay_activities();
