@@ -3,6 +3,7 @@ add_executable(test_sabori_csp
   test_constraints.cpp
   test_domain_model.cpp
   test_global_constraints.cpp
+  test_nogood.cpp
 )
 
 target_link_libraries(test_sabori_csp

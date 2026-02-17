@@ -1700,6 +1700,10 @@ bool Solver::process_queue(Model& model) {
                             return false;
                         }
                     }
+                    // Bound NoGood 伝播
+                    if (!propagate_bound_nogoods(model, var_idx, true)) {
+                        return false;
+                    }
                 }
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
@@ -1709,6 +1713,10 @@ bool Solver::process_queue(Model& model) {
                             bump_activity(model, w.constraint_idx);
                             return false;
                         }
+                    }
+                    // Bound NoGood 伝播
+                    if (!propagate_bound_nogoods(model, var_idx, false)) {
+                        return false;
                     }
                 }
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
