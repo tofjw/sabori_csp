@@ -776,6 +776,16 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     if (!candidate_indices.empty()) {
                         size_t pick = candidate_indices[rng_() % candidate_indices.size()];
                         if (pick != 0) std::swap(values[pick], values[0]);
+                        // 2番目の候補としてベスト解の値を配置
+                        if (values.size() > 1 && current_best_assignment_.count(var_idx)) {
+                            auto best_val = current_best_assignment_[var_idx];
+                            for (size_t i = 1; i < values.size(); ++i) {
+                                if (values[i] == best_val) {
+                                    if (i != 1) std::swap(values[i], values[1]);
+                                    break;
+                                }
+                            }
+                        }
                     }
                     gradient_var_idx_ = SIZE_MAX;
                 } else if (current_best_assignment_.count(var_idx)) {
