@@ -198,10 +198,10 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
 
     if (unfixed_count_ <= 1) {
       size_t last_idx = SIZE_MAX;
-      if (!vars_[watch1()]->is_assigned()) {
+      if (!model.is_instantiated(var_ids_[watch1()])) {
 	last_idx = watch1();
       }
-      if (!vars_[watch2()]->is_assigned()) {
+      if (!model.is_instantiated(var_ids_[watch2()])) {
 	last_idx = watch2();
       }
 
@@ -219,11 +219,11 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
 
 bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 						    size_t last_var_internal_idx) {
-    auto& last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (last_var->is_assigned()) {
-        auto val = last_var->assigned_value().value();
+    if (model.is_instantiated(last_var_id)) {
+        auto val = model.value(last_var_id);
         // その値がプールに残っているか（他の変数と重複していないか）
         auto it = pool_sparse_.find(val);
         return (it != pool_sparse_.end() && it->second < pool_n_);
@@ -232,7 +232,7 @@ bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_poi
     // 利用可能な値が1つだけなら自動決定
     if (pool_n_ == 1) {
         Domain::value_type remaining_value = pool_values_[0];
-        model.enqueue_instantiate(last_var->id(), remaining_value);
+        model.enqueue_instantiate(last_var_id, remaining_value);
     }
     // 利用可能な値が0なら矛盾
     else if (pool_n_ == 0) {
