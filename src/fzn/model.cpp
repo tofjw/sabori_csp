@@ -310,11 +310,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_eq: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
 #endif
@@ -332,11 +328,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_le: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
         } else if (decl.name == "int_lin_eq_reif") {
@@ -355,11 +347,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_eq_reif: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
 #endif
@@ -378,11 +366,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_ne_reif: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinNeReifConstraint>(coeffs, vars, target, b);
         } else if (decl.name == "int_lin_le_reif") {
@@ -400,11 +384,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_le_reif: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeReifConstraint>(coeffs, vars, bound, b);
         } else if (decl.name == "int_lin_le_imp") {
@@ -422,11 +402,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_le_imp: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeImpConstraint>(coeffs, vars, bound, b);
         } else if (decl.name == "int_lin_ne") {
@@ -443,11 +419,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_lin_ne: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinNeConstraint>(coeffs, vars, target);
         // ========================================
@@ -576,11 +548,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in array_bool_and: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             auto r = get_var(decl.args[1]);
             constraint = std::make_shared<ArrayBoolAndConstraint>(vars, r);
@@ -593,11 +561,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             const auto var_names = resolve_var_array(decl.args[0]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in array_bool_or: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             auto r = get_var(decl.args[1]);
             constraint = std::make_shared<ArrayBoolOrConstraint>(vars, r);
@@ -612,18 +576,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             std::vector<VariablePtr> pos_vars;
             std::vector<VariablePtr> neg_vars;
             for (const auto& name : pos_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in bool_clause: " + name);
-                }
-                pos_vars.push_back(it->second);
+                pos_vars.push_back(get_var_by_name(name));
             }
             for (const auto& name : neg_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in bool_clause: " + name);
-                }
-                neg_vars.push_back(it->second);
+                neg_vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
 #endif
@@ -645,11 +601,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             VariablePtr index_var;
             if (std::holds_alternative<std::string>(decl.args[0])) {
                 const auto& name = std::get<std::string>(decl.args[0]);
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_element: " + name);
-                }
-                index_var = it->second;
+                index_var = get_var_by_name(name);
             } else if (std::holds_alternative<Domain::value_type>(decl.args[0])) {
                 auto val = std::get<Domain::value_type>(decl.args[0]);
                 static int idx_const_counter = 0;
@@ -691,11 +643,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             VariablePtr result_var;
             if (std::holds_alternative<std::string>(decl.args[2])) {
                 const auto& name = std::get<std::string>(decl.args[2]);
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in int_element: " + name);
-                }
-                result_var = it->second;
+                result_var = get_var_by_name(name);
             } else if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 auto val = std::get<Domain::value_type>(decl.args[2]);
                 static int res_const_counter = 0;
@@ -741,11 +689,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             const auto var_names = resolve_var_array(decl.args[1]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in array_int_maximum: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<ArrayIntMaximumConstraint>(m, vars);
         } else if (decl.name == "array_int_minimum") {
@@ -757,11 +701,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             const auto var_names = resolve_var_array(decl.args[1]);
             std::vector<VariablePtr> vars;
             for (const auto& name : var_names) {
-                auto it = var_map.find(name);
-                if (it == var_map.end()) {
-                    throw std::runtime_error("Unknown variable in array_int_minimum: " + name);
-                }
-                vars.push_back(it->second);
+                vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<ArrayIntMinimumConstraint>(m, vars);
         } else if (decl.name == "int_min") {
