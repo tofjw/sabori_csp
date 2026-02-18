@@ -6,6 +6,30 @@
 
 namespace sabori_csp {
 
+namespace {
+
+/// 整数除算（-∞ 方向への丸め）
+Domain::value_type div_floor_int(Domain::value_type a, Domain::value_type b) {
+    auto d = a / b;
+    auto r = a % b;
+    if (r != 0 && ((a ^ b) < 0)) {
+        d--;
+    }
+    return d;
+}
+
+/// 整数除算（+∞ 方向への丸め）
+Domain::value_type div_ceil_int(Domain::value_type a, Domain::value_type b) {
+    auto d = a / b;
+    auto r = a % b;
+    if (r != 0 && ((a ^ b) >= 0)) {
+        d++;
+    }
+    return d;
+}
+
+} // anonymous namespace
+
 // ============================================================================
 // IntTimesConstraint implementation
 // ============================================================================
@@ -215,6 +239,50 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
     }
 
     return true;
+}
+
+bool IntTimesConstraint::on_set_min(Model& model, int /*save_point*/,
+                                     size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                     Domain::value_type /*new_min*/,
+                                     Domain::value_type /*old_min*/) {
+    auto x_min = model.var_min(x_id_);
+    auto x_max = model.var_max(x_id_);
+    auto y_min = model.var_min(y_id_);
+    auto y_max = model.var_max(y_id_);
+    auto z_min = model.var_min(z_id_);
+    auto z_max = model.var_max(z_id_);
+
+    // Forward: z ∈ hull(x * y)
+    model.enqueue_set_min(z_id_, std::min({x_min * y_min, x_min * y_max,
+                                            x_max * y_min, x_max * y_max}));
+    model.enqueue_set_max(z_id_, std::max({x_min * y_min, x_min * y_max,
+                                            x_max * y_min, x_max * y_max}));
+
+    // Backward: x ∈ hull(z / y)  （y が 0 を含まない場合のみ）
+    if (y_min > 0 || y_max < 0) {
+        model.enqueue_set_min(x_id_, std::min({div_ceil_int(z_min, y_min), div_ceil_int(z_min, y_max),
+                                                div_ceil_int(z_max, y_min), div_ceil_int(z_max, y_max)}));
+        model.enqueue_set_max(x_id_, std::max({div_floor_int(z_min, y_min), div_floor_int(z_min, y_max),
+                                                div_floor_int(z_max, y_min), div_floor_int(z_max, y_max)}));
+    }
+
+    // Backward: y ∈ hull(z / x)  （x が 0 を含まない場合のみ）
+    if (x_min > 0 || x_max < 0) {
+        model.enqueue_set_min(y_id_, std::min({div_ceil_int(z_min, x_min), div_ceil_int(z_min, x_max),
+                                                div_ceil_int(z_max, x_min), div_ceil_int(z_max, x_max)}));
+        model.enqueue_set_max(y_id_, std::max({div_floor_int(z_min, x_min), div_floor_int(z_min, x_max),
+                                                div_floor_int(z_max, x_min), div_floor_int(z_max, x_max)}));
+    }
+
+    return true;
+}
+
+bool IntTimesConstraint::on_set_max(Model& model, int save_point,
+                                     size_t var_idx, size_t internal_var_idx,
+                                     Domain::value_type new_max,
+                                     Domain::value_type /*old_max*/) {
+    // on_set_min と同じ伝播（全変数の境界が相互に影響するため）
+    return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
 }
 
 bool IntTimesConstraint::on_final_instantiate() {
