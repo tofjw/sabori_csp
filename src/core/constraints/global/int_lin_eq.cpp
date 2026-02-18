@@ -336,7 +336,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
 
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
-        if (!vars_[j]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[j])) {
             size_t var_id = var_ids_[j];
             int64_t c = coeffs_[j];
             if (c > 0) {
@@ -369,7 +369,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     }
 
     for (size_t j = 0; j < vars_.size(); ++j) {
-        if (j == skip_idx || vars_[j]->is_assigned()) continue;
+        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
 
         size_t var_id = var_ids_[j];
         int64_t c = coeffs_[j];
@@ -410,7 +410,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
 
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
-        if (!vars_[j]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[j])) {
             size_t var_id = var_ids_[j];
             int64_t c = coeffs_[j];
             if (c > 0) {
@@ -443,7 +443,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     }
 
     for (size_t j = 0; j < vars_.size(); ++j) {
-        if (j == skip_idx || vars_[j]->is_assigned()) continue;
+        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
 
         size_t var_id = var_ids_[j];
         int64_t c = coeffs_[j];
