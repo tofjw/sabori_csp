@@ -14,7 +14,10 @@ IntTimesConstraint::IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr
     : Constraint({x, y, z})
     , x_(std::move(x))
     , y_(std::move(y))
-    , z_(std::move(z)) {
+    , z_(std::move(z))
+    , x_id_(x_->id())
+    , y_id_(y_->id())
+    , z_id_(z_->id()) {
     // var_ptr_to_idx_ を構築
     var_ptr_to_idx_[x_.get()] = 0;
     var_ptr_to_idx_[y_.get()] = 1;
@@ -105,19 +108,19 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // x * y = z の伝播
-    if (x_->is_assigned() && y_->is_assigned() && !z_->is_assigned()) {
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
         // x と y が確定したら z を確定
-        auto product = x_->assigned_value().value() * y_->assigned_value().value();
+        auto product = model.value(x_id_) * model.value(y_id_);
         if (!z_->domain().contains(product)) {
             return false;
         }
-        model.enqueue_instantiate(z_->id(), product);
+        model.enqueue_instantiate(z_id_, product);
     }
 
-    if (x_->is_assigned() && z_->is_assigned() && !y_->is_assigned()) {
+    if (model.is_instantiated(x_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(y_id_)) {
         // x と z が確定、y を計算
-        auto x_val = x_->assigned_value().value();
-        auto z_val = z_->assigned_value().value();
+        auto x_val = model.value(x_id_);
+        auto z_val = model.value(z_id_);
         if (x_val == 0) {
             // 0 * y = z → z は 0 でなければならない
             if (z_val != 0) {
@@ -133,14 +136,14 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!y_->domain().contains(y_val)) {
                 return false;
             }
-            model.enqueue_instantiate(y_->id(), y_val);
+            model.enqueue_instantiate(y_id_, y_val);
         }
     }
 
-    if (y_->is_assigned() && z_->is_assigned() && !x_->is_assigned()) {
+    if (model.is_instantiated(y_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(x_id_)) {
         // y と z が確定、x を計算
-        auto y_val = y_->assigned_value().value();
-        auto z_val = z_->assigned_value().value();
+        auto y_val = model.value(y_id_);
+        auto z_val = model.value(z_id_);
         if (y_val == 0) {
             // x * 0 = z → z は 0 でなければならない
             if (z_val != 0) {
@@ -156,23 +159,23 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             if (!x_->domain().contains(x_val)) {
                 return false;
             }
-            model.enqueue_instantiate(x_->id(), x_val);
+            model.enqueue_instantiate(x_id_, x_val);
         }
     }
 
     // 1変数のみ確定の場合、z のドメインをフィルタリング
-    if (x_->is_assigned() && !y_->is_assigned() && !z_->is_assigned()) {
-        auto x_val = x_->assigned_value().value();
+    if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
+        auto x_val = model.value(x_id_);
         if (x_val == 0) {
             // z = 0 に確定
             if (!z_->domain().contains(0)) {
                 return false;
             }
-            model.enqueue_instantiate(z_->id(), 0);
+            model.enqueue_instantiate(z_id_, 0);
         } else {
             // z のバウンドを x_val * y の範囲で制限
-            auto y_min = model.var_min(y_->id());
-            auto y_max = model.var_max(y_->id());
+            auto y_min = model.var_min(y_id_);
+            auto y_max = model.var_max(y_id_);
             Domain::value_type new_z_min, new_z_max;
             if (x_val > 0) {
                 new_z_min = x_val * y_min;
@@ -181,23 +184,23 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
                 new_z_min = x_val * y_max;
                 new_z_max = x_val * y_min;
             }
-            model.enqueue_set_min(z_->id(), new_z_min);
-            model.enqueue_set_max(z_->id(), new_z_max);
+            model.enqueue_set_min(z_id_, new_z_min);
+            model.enqueue_set_max(z_id_, new_z_max);
         }
     }
 
-    if (y_->is_assigned() && !x_->is_assigned() && !z_->is_assigned()) {
-        auto y_val = y_->assigned_value().value();
+    if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_) && !model.is_instantiated(z_id_)) {
+        auto y_val = model.value(y_id_);
         if (y_val == 0) {
             // z = 0 に確定
             if (!z_->domain().contains(0)) {
                 return false;
             }
-            model.enqueue_instantiate(z_->id(), 0);
+            model.enqueue_instantiate(z_id_, 0);
         } else {
             // z のバウンドを x * y_val の範囲で制限
-            auto x_min = model.var_min(x_->id());
-            auto x_max = model.var_max(x_->id());
+            auto x_min = model.var_min(x_id_);
+            auto x_max = model.var_max(x_id_);
             Domain::value_type new_z_min, new_z_max;
             if (y_val > 0) {
                 new_z_min = x_min * y_val;
@@ -206,8 +209,8 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
                 new_z_min = x_max * y_val;
                 new_z_max = x_min * y_val;
             }
-            model.enqueue_set_min(z_->id(), new_z_min);
-            model.enqueue_set_max(z_->id(), new_z_max);
+            model.enqueue_set_min(z_id_, new_z_min);
+            model.enqueue_set_max(z_id_, new_z_max);
         }
     }
 
@@ -223,8 +226,8 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
                                                  size_t last_var_internal_idx) {
     if (last_var_internal_idx == 0) {
         // x が未確定、y と z は確定
-        auto y_val = y_->assigned_value().value();
-        auto z_val = z_->assigned_value().value();
+        auto y_val = model.value(y_id_);
+        auto z_val = model.value(z_id_);
         if (y_val == 0) {
             if (z_val != 0) {
                 return false;
@@ -238,12 +241,12 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
             if (!x_->domain().contains(x_val)) {
                 return false;
             }
-            model.enqueue_instantiate(x_->id(), x_val);
+            model.enqueue_instantiate(x_id_, x_val);
         }
     } else if (last_var_internal_idx == 1) {
         // y が未確定、x と z は確定
-        auto x_val = x_->assigned_value().value();
-        auto z_val = z_->assigned_value().value();
+        auto x_val = model.value(x_id_);
+        auto z_val = model.value(z_id_);
         if (x_val == 0) {
             if (z_val != 0) {
                 return false;
@@ -257,15 +260,15 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
             if (!y_->domain().contains(y_val)) {
                 return false;
             }
-            model.enqueue_instantiate(y_->id(), y_val);
+            model.enqueue_instantiate(y_id_, y_val);
         }
     } else if (last_var_internal_idx == 2) {
         // z が未確定、x と y は確定
-        auto product = x_->assigned_value().value() * y_->assigned_value().value();
+        auto product = model.value(x_id_) * model.value(y_id_);
         if (!z_->domain().contains(product)) {
             return false;
         }
-        model.enqueue_instantiate(z_->id(), product);
+        model.enqueue_instantiate(z_id_, product);
     }
 
     return true;
@@ -317,7 +320,9 @@ void IntTimesConstraint::check_initial_consistency() {
 IntAbsConstraint::IntAbsConstraint(VariablePtr x, VariablePtr y)
     : Constraint({x, y})
     , x_(std::move(x))
-    , y_(std::move(y)) {
+    , y_(std::move(y))
+    , x_id_(x_->id())
+    , y_id_(y_->id()) {
     check_initial_consistency();
 }
 
@@ -422,21 +427,21 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // x が確定したら y を確定
-    if (x_->is_assigned() && !y_->is_assigned()) {
-        auto x_val = x_->assigned_value().value();
+    if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_)) {
+        auto x_val = model.value(x_id_);
         auto abs_x = (x_val >= 0) ? x_val : -x_val;
         if (!y_->domain().contains(abs_x)) {
             return false;
         }
-        model.enqueue_instantiate(y_->id(), abs_x);
+        model.enqueue_instantiate(y_id_, abs_x);
     }
 
     // y が確定したら x のバウンドを制限
-    if (y_->is_assigned() && !x_->is_assigned()) {
-        auto y_val = y_->assigned_value().value();
+    if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_)) {
+        auto y_val = model.value(y_id_);
         // x は [-y_val, y_val] の範囲に制限
-        model.enqueue_set_min(x_->id(), -y_val);
-        model.enqueue_set_max(x_->id(), y_val);
+        model.enqueue_set_min(x_id_, -y_val);
+        model.enqueue_set_max(x_id_, y_val);
     }
 
     return true;

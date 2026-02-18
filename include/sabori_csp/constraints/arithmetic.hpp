@@ -62,6 +62,7 @@ private:
     VariablePtr x_;  // 被乗数
     VariablePtr y_;  // 乗数
     VariablePtr z_;  // 積
+    size_t x_id_, y_id_, z_id_;
 
     // 変数ポインタ → 内部インデックス (0: x, 1: y, 2: z)
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
@@ -111,6 +112,7 @@ protected:
 private:
     VariablePtr x_;  // 入力変数
     VariablePtr y_;  // 絶対値変数
+    size_t x_id_, y_id_;
 
     /**
      * @brief bounds propagation を実行
