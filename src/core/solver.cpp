@@ -757,13 +757,13 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 stats_.bisect_count++;
                 auto mid = prev_min + (prev_max - prev_min) / 2;
 
-                // ヒント解がある場合はそちら側を優先
-                bool right_first = false;
+                // ヒント解がある場合はそちら側を優先、なければランダム
+                bool right_first;
                 if (current_best_assignment_.count(var_idx)) {
                     auto hint_val = current_best_assignment_[var_idx];
-                    if (hint_val > mid) {
-                        right_first = true;
-                    }
+                    right_first = (hint_val > mid);
+                } else {
+                    right_first = (rng_() & 1) != 0;
                 }
 
                 SearchFrame frame;
