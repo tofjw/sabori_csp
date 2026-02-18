@@ -2713,6 +2713,139 @@ TEST_CASE("IntTimesConstraint sign combinations", "[constraint][int_times]") {
     }
 }
 
+TEST_CASE("IntTimesConstraint mixed sign propagation", "[constraint][int_times]") {
+    SECTION("x positive fixed, y negative range") {
+        Model model;
+        auto x = model.create_variable("x", 3);
+        auto y = model.create_variable("y", -4, -1);
+        auto z = model.create_variable("z", -20, 20);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // y in {-4,-3,-2,-1}, z = 3*y: {-12,-9,-6,-3}
+        REQUIRE(count == 4);
+    }
+
+    SECTION("x negative fixed, y mixed range") {
+        Model model;
+        auto x = model.create_variable("x", -2);
+        auto y = model.create_variable("y", -3, 3);
+        auto z = model.create_variable("z", -10, 10);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // y in {-3..3}, z = -2*y: {6,4,2,0,-2,-4,-6}
+        REQUIRE(count == 7);
+    }
+
+    SECTION("y positive fixed, x negative range") {
+        Model model;
+        auto x = model.create_variable("x", -4, -1);
+        auto y = model.create_variable("y", 3);
+        auto z = model.create_variable("z", -20, 20);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // x in {-4,-3,-2,-1}, z = x*3: {-12,-9,-6,-3}
+        REQUIRE(count == 4);
+    }
+
+    SECTION("y negative fixed, x mixed range") {
+        Model model;
+        auto x = model.create_variable("x", -3, 3);
+        auto y = model.create_variable("y", -2);
+        auto z = model.create_variable("z", -10, 10);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // x in {-3..3}, z = x*(-2): {6,4,2,0,-2,-4,-6}
+        REQUIRE(count == 7);
+    }
+
+    SECTION("x zero, y mixed range") {
+        Model model;
+        auto x = model.create_variable("x", 0);
+        auto y = model.create_variable("y", -3, 3);
+        auto z = model.create_variable("z", -5, 5);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            REQUIRE(sol.at("z") == 0);
+            return true;
+        });
+        // y in {-3..3}, z = 0 for all
+        REQUIRE(count == 7);
+    }
+
+    SECTION("y zero, x mixed range") {
+        Model model;
+        auto x = model.create_variable("x", -3, 3);
+        auto y = model.create_variable("y", 0);
+        auto z = model.create_variable("z", -5, 5);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            REQUIRE(sol.at("z") == 0);
+            return true;
+        });
+        // x in {-3..3}, z = 0 for all
+        REQUIRE(count == 7);
+    }
+
+    SECTION("z range constrains valid products") {
+        Model model;
+        auto x = model.create_variable("x", -3);
+        auto y = model.create_variable("y", -3, 3);
+        auto z = model.create_variable("z", -5, 5);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // x=-3, z=-3*y: y=-3→9, y=-2→6, y=-1→3, y=0→0, y=1→-3, y=2→-6, y=3→-9
+        // z in [-5,5]: y in {-1,0,1} → z in {3,0,-3}
+        REQUIRE(count == 3);
+    }
+
+    SECTION("all variables mixed range") {
+        Model model;
+        auto x = model.create_variable("x", -2, 2);
+        auto y = model.create_variable("y", -2, 2);
+        auto z = model.create_variable("z", -4, 4);
+        model.add_constraint(std::make_shared<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution& sol) {
+            REQUIRE(sol.at("x") * sol.at("y") == sol.at("z"));
+            return true;
+        });
+        // All 25 combinations should be valid (x*y in [-4,4])
+        REQUIRE(count == 25);
+    }
+}
+
 // ============================================================================
 // TableConstraint tests
 // ============================================================================

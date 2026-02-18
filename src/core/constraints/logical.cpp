@@ -20,13 +20,20 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
+    // 変数IDキャッシュを構築
+    var_ids_.resize(n_);
+    for (size_t i = 0; i < n_; ++i) {
+        var_ids_[i] = vars_[i]->id();
+    }
+    r_id_ = r_->id();
+
     // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
-        var_id_to_idx_[vars_[i]->id()] = i;
+        var_id_to_idx_[var_ids_[i]] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;  // r は index n
-    var_id_to_idx_[r_->id()] = n_;
+    var_id_to_idx_[r_id_] = n_;
 
     // 初期 watch を設定: 0 になりうる（= 未確定 or 0 を含む）変数を探す
     w1_ = SIZE_MAX;
@@ -230,9 +237,9 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         if (value == 1) {
             // r = 1: 全ての bi = 1（キューイング）
             for (size_t i = 0; i < n_; ++i) {
-                if (!vars_[i]->is_assigned()) {
-                    model.enqueue_instantiate(vars_[i]->id(), 1);
-                } else if (vars_[i]->assigned_value().value() != 1) {
+                if (!model.is_instantiated(var_ids_[i])) {
+                    model.enqueue_instantiate(var_ids_[i], 1);
+                } else if (model.value(var_ids_[i]) != 1) {
                     return false;  // 既に 0 が確定している bi がある
                 }
             }
@@ -246,13 +253,13 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         size_t unassigned_count = 0;
 
         for (size_t i = 0; i < n_; ++i) {
-            if (!vars_[i]->is_assigned()) {
+            if (!model.is_instantiated(var_ids_[i])) {
                 candidate_count++;
                 unassigned_count++;
                 last_unassigned = i;
                 if (first_candidate == SIZE_MAX) first_candidate = i;
                 else if (second_candidate == SIZE_MAX) second_candidate = i;
-            } else if (vars_[i]->assigned_value().value() == 0) {
+            } else if (model.value(var_ids_[i]) == 0) {
                 // 既に 0 の bi がある → r = 0 は既に充足
                 return true;
             }
@@ -265,7 +272,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
 
         if (unassigned_count == 1) {
             // 未確定が1つだけ → それを 0 に強制
-            model.enqueue_instantiate(vars_[last_unassigned]->id(), 0);
+            model.enqueue_instantiate(var_ids_[last_unassigned], 0);
         }
 
         // watch を有効な候補に更新
@@ -277,9 +284,9 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
     // bi が確定した場合
     if (value == 0) {
         // bi = 0 → r = 0（キューイング）
-        if (!r_->is_assigned()) {
-            model.enqueue_instantiate(r_->id(), 0);
-        } else if (r_->assigned_value().value() != 0) {
+        if (!model.is_instantiated(r_id_)) {
+            model.enqueue_instantiate(r_id_, 0);
+        } else if (model.value(r_id_) != 0) {
             return false;  // r = 1 だが bi = 0
         }
         return true;
@@ -289,39 +296,39 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
     // 全ての bi = 1 なら r = 1
     bool all_one = true;
     for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[i])) {
             all_one = false;
             break;
-        } else if (vars_[i]->assigned_value().value() != 1) {
+        } else if (model.value(var_ids_[i]) != 1) {
             all_one = false;
             break;
         }
     }
     if (all_one) {
-        if (!r_->is_assigned()) {
-            model.enqueue_instantiate(r_->id(), 1);
-        } else if (r_->assigned_value().value() != 1) {
+        if (!model.is_instantiated(r_id_)) {
+            model.enqueue_instantiate(r_id_, 1);
+        } else if (model.value(r_id_) != 1) {
             return false;  // 全 bi=1 だが r=0 → 矛盾
         }
     }
 
     // r = 0 で bi = 1 が確定した場合: 2WL 処理
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
+    if (model.is_instantiated(r_id_) && model.value(r_id_) == 0) {
         // この bi が watched だった場合、別の候補に移す
         if (internal_idx == w1_ || internal_idx == w2_) {
             size_t watched_idx = (internal_idx == w1_) ? 1 : 2;
             size_t other_watch = (internal_idx == w1_) ? w2_ : w1_;
 
             // 新しい watch 候補を探す
-            size_t new_watch = find_unwatched_candidate(w1_, w2_);
+            size_t new_watch = find_unwatched_candidate(model, w1_, w2_);
 
             if (new_watch != SIZE_MAX) {
                 // 移動可能
                 move_watch(model, save_point, watched_idx, new_watch);
             } else {
                 // 移動先がない: もう一方の watched 変数をチェック
-                if (vars_[other_watch]->is_assigned()) {
-                    if (vars_[other_watch]->assigned_value().value() == 1) {
+                if (model.is_instantiated(var_ids_[other_watch])) {
+                    if (model.value(var_ids_[other_watch]) == 1) {
                         // 両方の watch が 1 に確定 → 0 になる変数がない → 矛盾
                         // （r = 0 を満たすには少なくとも1つの bi = 0 が必要）
                         return false;
@@ -329,7 +336,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                     // other_watch = 0 なら OK（r = 0 が満たされる）
                 } else {
                     // other_watch が未確定 → それを 0 に確定（キューイング）
-                    model.enqueue_instantiate(vars_[other_watch]->id(), 0);
+                    model.enqueue_instantiate(var_ids_[other_watch], 0);
                 }
             }
         }
@@ -429,14 +436,14 @@ void ArrayBoolAndConstraint::check_initial_consistency() {
     }
 }
 
-size_t ArrayBoolAndConstraint::find_unwatched_candidate(size_t exclude1, size_t exclude2) const {
+size_t ArrayBoolAndConstraint::find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const {
     for (size_t i = 0; i < n_; ++i) {
         if (i == exclude1 || i == exclude2) continue;
         // 0 になりうる（未確定 or 0 を含むドメイン）
-        if (!vars_[i]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[i])) {
             return i;
         }
-        if (vars_[i]->assigned_value().value() == 0) {
+        if (model.value(var_ids_[i]) == 0) {
             return i;  // 既に 0 に確定している
         }
     }
@@ -468,13 +475,20 @@ ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, Vari
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
+    // 変数IDキャッシュを構築
+    var_ids_.resize(n_);
+    for (size_t i = 0; i < n_; ++i) {
+        var_ids_[i] = vars_[i]->id();
+    }
+    r_id_ = r_->id();
+
     // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
         var_ptr_to_idx_[vars_[i].get()] = i;
-        var_id_to_idx_[vars_[i]->id()] = i;
+        var_id_to_idx_[var_ids_[i]] = i;
     }
     var_ptr_to_idx_[r_.get()] = n_;
-    var_id_to_idx_[r_->id()] = n_;
+    var_id_to_idx_[r_id_] = n_;
 
     // 初期 watch: 1 になりうる変数を探す
     w1_ = SIZE_MAX;
@@ -609,9 +623,9 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
         if (value == 0) {
             // r = 0: 全ての bi = 0（キューイング）
             for (size_t i = 0; i < n_; ++i) {
-                if (!vars_[i]->is_assigned()) {
-                    model.enqueue_instantiate(vars_[i]->id(), 0);
-                } else if (vars_[i]->assigned_value().value() != 0) {
+                if (!model.is_instantiated(var_ids_[i])) {
+                    model.enqueue_instantiate(var_ids_[i], 0);
+                } else if (model.value(var_ids_[i]) != 0) {
                     return false;
                 }
             }
@@ -624,13 +638,13 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
             size_t unassigned_count = 0;
 
             for (size_t i = 0; i < n_; ++i) {
-                if (!vars_[i]->is_assigned()) {
+                if (!model.is_instantiated(var_ids_[i])) {
                     candidate_count++;
                     unassigned_count++;
                     last_unassigned = i;
                     if (first_candidate == SIZE_MAX) first_candidate = i;
                     else if (second_candidate == SIZE_MAX) second_candidate = i;
-                } else if (vars_[i]->assigned_value().value() == 1) {
+                } else if (model.value(var_ids_[i]) == 1) {
                     // 既に 1 の bi がある → r = 1 は既に充足
                     return true;
                 }
@@ -643,7 +657,7 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
 
             if (unassigned_count == 1) {
                 // 未確定が1つだけ → それを 1 に強制
-                model.enqueue_instantiate(vars_[last_unassigned]->id(), 1);
+                model.enqueue_instantiate(var_ids_[last_unassigned], 1);
             }
 
             // watch を有効な候補に更新
@@ -656,9 +670,9 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
     // bi が確定した場合
     if (value == 1) {
         // bi = 1 → r = 1（キューイング）
-        if (!r_->is_assigned()) {
-            model.enqueue_instantiate(r_->id(), 1);
-        } else if (r_->assigned_value().value() != 1) {
+        if (!model.is_instantiated(r_id_)) {
+            model.enqueue_instantiate(r_id_, 1);
+        } else if (model.value(r_id_) != 1) {
             return false;
         }
         return true;
@@ -668,40 +682,40 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
     // 全ての bi = 0 なら r = 0
     bool all_zero = true;
     for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[i])) {
             all_zero = false;
             break;
-        } else if (vars_[i]->assigned_value().value() != 0) {
+        } else if (model.value(var_ids_[i]) != 0) {
             all_zero = false;
             break;
         }
     }
     if (all_zero) {
-        if (!r_->is_assigned()) {
-            model.enqueue_instantiate(r_->id(), 0);
-        } else if (r_->assigned_value().value() != 0) {
+        if (!model.is_instantiated(r_id_)) {
+            model.enqueue_instantiate(r_id_, 0);
+        } else if (model.value(r_id_) != 0) {
             return false;  // 全 bi=0 だが r=1 → 矛盾
         }
     }
 
     // r = 1 で bi = 0 が確定した場合: 2WL 処理
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
+    if (model.is_instantiated(r_id_) && model.value(r_id_) == 1) {
         if (internal_idx == w1_ || internal_idx == w2_) {
             size_t watched_idx = (internal_idx == w1_) ? 1 : 2;
             size_t other_watch = (internal_idx == w1_) ? w2_ : w1_;
 
-            size_t new_watch = find_unwatched_candidate(w1_, w2_);
+            size_t new_watch = find_unwatched_candidate(model, w1_, w2_);
 
             if (new_watch != SIZE_MAX) {
                 move_watch(model, save_point, watched_idx, new_watch);
             } else {
-                if (vars_[other_watch]->is_assigned()) {
-                    if (vars_[other_watch]->assigned_value().value() == 0) {
+                if (model.is_instantiated(var_ids_[other_watch])) {
+                    if (model.value(var_ids_[other_watch]) == 0) {
                         return false;  // 全て 0 になってしまう → r = 1 が満たせない
                     }
                 } else {
                     // other_watch が未確定 → それを 1 に確定（キューイング）
-                    model.enqueue_instantiate(vars_[other_watch]->id(), 1);
+                    model.enqueue_instantiate(var_ids_[other_watch], 1);
                 }
             }
         }
@@ -794,13 +808,13 @@ void ArrayBoolOrConstraint::check_initial_consistency() {
     }
 }
 
-size_t ArrayBoolOrConstraint::find_unwatched_candidate(size_t exclude1, size_t exclude2) const {
+size_t ArrayBoolOrConstraint::find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const {
     for (size_t i = 0; i < n_; ++i) {
         if (i == exclude1 || i == exclude2) continue;
-        if (!vars_[i]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[i])) {
             return i;
         }
-        if (vars_[i]->assigned_value().value() == 1) {
+        if (model.value(var_ids_[i]) == 1) {
             return i;
         }
     }
@@ -832,6 +846,16 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     , n_neg_(neg_.size())
     , w1_(SIZE_MAX)
     , w2_(SIZE_MAX) {
+
+    // 変数IDキャッシュを構築
+    pos_ids_.resize(n_pos_);
+    for (size_t i = 0; i < n_pos_; ++i) {
+        pos_ids_[i] = pos_[i]->id();
+    }
+    neg_ids_.resize(n_neg_);
+    for (size_t i = 0; i < n_neg_; ++i) {
+        neg_ids_[i] = neg_[i]->id();
+    }
 
     // 変数ポインタ → リテラルインデックスマップを構築
     // 変数ID → リテラルインデックスマップを構築
@@ -992,12 +1016,12 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
     size_t assigned_lit = it->second;
 
     // このリテラルが節を充足したか（O(1)）
-    if (is_satisfied_by(assigned_lit)) {
+    if (is_satisfied_by(model, assigned_lit)) {
         return true;
     }
 
     // watch が充足していれば節は充足（O(1)）
-    if (is_satisfied_by(w1_) || is_satisfied_by(w2_)) {
+    if (is_satisfied_by(model, w1_) || is_satisfied_by(model, w2_)) {
         return true;
     }
 
@@ -1007,26 +1031,26 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         size_t other_watch = (assigned_lit == w1_) ? w2_ : w1_;
 
         // 新しい watch 候補を探す
-        size_t new_watch = find_unwatched_candidate(w1_, w2_);
+        size_t new_watch = find_unwatched_candidate(model, w1_, w2_);
 
         if (new_watch != SIZE_MAX) {
             move_watch(model, save_point, watched_idx, new_watch);
         } else {
             // 移動先がない
-            if (!can_satisfy(other_watch)) {
+            if (!can_satisfy(model, other_watch)) {
                 // もう一方も充足不可能 → 矛盾
                 return false;
             }
 
-            VariablePtr other_var = get_var(other_watch);
-            if (other_var->is_assigned()) {
+            size_t other_var_id = get_var_id(other_watch);
+            if (model.is_instantiated(other_var_id)) {
                 // 既に確定している場合
-                if (!is_satisfied_by(other_watch)) {
+                if (!is_satisfied_by(model, other_watch)) {
                     return false;  // 充足していない → 矛盾
                 }
             } else {
                 // Unit propagation: other_watch を充足方向に確定
-                model.enqueue_instantiate(other_var->id(), satisfying_value(other_watch));
+                model.enqueue_instantiate(other_var_id, satisfying_value(other_watch));
             }
         }
     }
@@ -1107,6 +1131,15 @@ bool BoolClauseConstraint::can_satisfy(size_t lit_idx) const {
     }
 }
 
+bool BoolClauseConstraint::can_satisfy(const Model& model, size_t lit_idx) const {
+    size_t var_id = get_var_id(lit_idx);
+    if (lit_idx < n_pos_) {
+        return !model.is_instantiated(var_id) || model.value(var_id) == 1;
+    } else {
+        return !model.is_instantiated(var_id) || model.value(var_id) == 0;
+    }
+}
+
 bool BoolClauseConstraint::is_satisfied_by(size_t lit_idx) const {
     if (lit_idx < n_pos_) {
         return pos_[lit_idx]->is_assigned() &&
@@ -1115,6 +1148,15 @@ bool BoolClauseConstraint::is_satisfied_by(size_t lit_idx) const {
         size_t neg_idx = lit_idx - n_pos_;
         return neg_[neg_idx]->is_assigned() &&
                neg_[neg_idx]->assigned_value().value() == 0;
+    }
+}
+
+bool BoolClauseConstraint::is_satisfied_by(const Model& model, size_t lit_idx) const {
+    size_t var_id = get_var_id(lit_idx);
+    if (lit_idx < n_pos_) {
+        return model.is_instantiated(var_id) && model.value(var_id) == 1;
+    } else {
+        return model.is_instantiated(var_id) && model.value(var_id) == 0;
     }
 }
 
@@ -1130,10 +1172,18 @@ VariablePtr BoolClauseConstraint::get_var(size_t lit_idx) const {
     }
 }
 
-size_t BoolClauseConstraint::find_unwatched_candidate(size_t exclude1, size_t exclude2) const {
+size_t BoolClauseConstraint::get_var_id(size_t lit_idx) const {
+    if (lit_idx < n_pos_) {
+        return pos_ids_[lit_idx];
+    } else {
+        return neg_ids_[lit_idx - n_pos_];
+    }
+}
+
+size_t BoolClauseConstraint::find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const {
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
         if (i == exclude1 || i == exclude2) continue;
-        if (can_satisfy(i)) {
+        if (can_satisfy(model, i)) {
             return i;
         }
     }
@@ -1156,7 +1206,9 @@ void BoolClauseConstraint::move_watch(Model& model, int /*save_point*/, int whic
 BoolNotConstraint::BoolNotConstraint(VariablePtr a, VariablePtr b)
     : Constraint({a, b})
     , a_(std::move(a))
-    , b_(std::move(b)) {
+    , b_(std::move(b))
+    , a_id_(a_->id())
+    , b_id_(b_->id()) {
     check_initial_consistency();
 }
 
@@ -1209,21 +1261,21 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // a が確定したら b を決定（キューイング）
-    if (a_->is_assigned() && !b_->is_assigned()) {
-        auto val = 1 - a_->assigned_value().value();
+    if (model.is_instantiated(a_id_) && !model.is_instantiated(b_id_)) {
+        auto val = 1 - model.value(a_id_);
         if (!b_->domain().contains(val)) {
             return false;
         }
-        model.enqueue_instantiate(b_->id(), val);
+        model.enqueue_instantiate(b_id_, val);
     }
 
     // b が確定したら a を決定（キューイング）
-    if (b_->is_assigned() && !a_->is_assigned()) {
-        auto val = 1 - b_->assigned_value().value();
+    if (model.is_instantiated(b_id_) && !model.is_instantiated(a_id_)) {
+        auto val = 1 - model.value(b_id_);
         if (!a_->domain().contains(val)) {
             return false;
         }
-        model.enqueue_instantiate(a_->id(), val);
+        model.enqueue_instantiate(a_id_, val);
     }
 
     return true;

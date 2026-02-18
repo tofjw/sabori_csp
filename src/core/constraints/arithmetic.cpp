@@ -170,16 +170,19 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             }
             model.enqueue_instantiate(z_->id(), 0);
         } else {
-            // z のドメインから x * y で生成できない値を削除
-            std::set<Domain::value_type> valid_z;
-            for (auto y_val : y_->domain().values()) {
-                valid_z.insert(x_val * y_val);
+            // z のバウンドを x_val * y の範囲で制限
+            auto y_min = model.var_min(y_->id());
+            auto y_max = model.var_max(y_->id());
+            Domain::value_type new_z_min, new_z_max;
+            if (x_val > 0) {
+                new_z_min = x_val * y_min;
+                new_z_max = x_val * y_max;
+            } else {
+                new_z_min = x_val * y_max;
+                new_z_max = x_val * y_min;
             }
-            for (auto z_val : z_->domain().values()) {
-                if (valid_z.count(z_val) == 0) {
-                    model.enqueue_remove_value(z_->id(), z_val);
-                }
-            }
+            model.enqueue_set_min(z_->id(), new_z_min);
+            model.enqueue_set_max(z_->id(), new_z_max);
         }
     }
 
@@ -192,16 +195,19 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             }
             model.enqueue_instantiate(z_->id(), 0);
         } else {
-            // z のドメインから x * y で生成できない値を削除
-            std::set<Domain::value_type> valid_z;
-            for (auto x_val : x_->domain().values()) {
-                valid_z.insert(x_val * y_val);
+            // z のバウンドを x * y_val の範囲で制限
+            auto x_min = model.var_min(x_->id());
+            auto x_max = model.var_max(x_->id());
+            Domain::value_type new_z_min, new_z_max;
+            if (y_val > 0) {
+                new_z_min = x_min * y_val;
+                new_z_max = x_max * y_val;
+            } else {
+                new_z_min = x_max * y_val;
+                new_z_max = x_min * y_val;
             }
-            for (auto z_val : z_->domain().values()) {
-                if (valid_z.count(z_val) == 0) {
-                    model.enqueue_remove_value(z_->id(), z_val);
-                }
-            }
+            model.enqueue_set_min(z_->id(), new_z_min);
+            model.enqueue_set_max(z_->id(), new_z_max);
         }
     }
 
@@ -425,16 +431,12 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_instantiate(y_->id(), abs_x);
     }
 
-    // y が確定したら x のドメインをフィルタリング
+    // y が確定したら x のバウンドを制限
     if (y_->is_assigned() && !x_->is_assigned()) {
         auto y_val = y_->assigned_value().value();
-        // x は y_val または -y_val のみ
-        auto x_vals = x_->domain().values();
-        for (auto v : x_vals) {
-            if (v != y_val && v != -y_val) {
-                model.enqueue_remove_value(x_->id(), v);
-            }
-        }
+        // x は [-y_val, y_val] の範囲に制限
+        model.enqueue_set_min(x_->id(), -y_val);
+        model.enqueue_set_max(x_->id(), y_val);
     }
 
     return true;

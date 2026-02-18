@@ -41,6 +41,7 @@ protected:
 private:
     VariablePtr x_;
     VariablePtr y_;
+    size_t x_id_, y_id_;
 };
 
 /**
@@ -80,6 +81,7 @@ private:
     VariablePtr x_;
     VariablePtr y_;
     VariablePtr b_;
+    size_t x_id_, y_id_, b_id_;
 };
 
 /**
@@ -106,6 +108,7 @@ protected:
 private:
     VariablePtr x_;
     VariablePtr y_;
+    size_t x_id_, y_id_;
 };
 
 /**
@@ -145,6 +148,7 @@ private:
     VariablePtr x_;
     VariablePtr y_;
     VariablePtr b_;
+    size_t x_id_, y_id_, b_id_;
 };
 
 /**
@@ -179,6 +183,7 @@ protected:
 private:
     VariablePtr x_;
     VariablePtr y_;
+    size_t x_id_, y_id_;
 };
 
 /**
@@ -213,6 +218,7 @@ protected:
 private:
     VariablePtr x_;
     VariablePtr y_;
+    size_t x_id_, y_id_;
 };
 
 /**
@@ -248,6 +254,7 @@ private:
     VariablePtr x_;
     VariablePtr y_;
     VariablePtr b_;
+    size_t x_id_, y_id_, b_id_;
 };
 
 /**
@@ -285,6 +292,7 @@ private:
     VariablePtr x_;
     VariablePtr y_;
     VariablePtr m_;
+    size_t x_id_, y_id_, m_id_;
 };
 
 /**
@@ -322,6 +330,7 @@ private:
     VariablePtr x_;
     VariablePtr y_;
     VariablePtr m_;
+    size_t x_id_, y_id_, m_id_;
 };
 
 } // namespace sabori_csp

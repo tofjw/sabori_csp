@@ -51,6 +51,9 @@ private:
     VariablePtr r_;                   // 結果変数
     size_t n_;                        // vars_ のサイズ
 
+    std::vector<size_t> var_ids_;  // vars_[i]->id() をキャッシュ
+    size_t r_id_;                   // r_->id() をキャッシュ
+
     // 2-watched literal: r = 0 のとき、0 になりうる変数を2つ監視
     size_t w1_;  // 1つ目の watched index
     size_t w2_;  // 2つ目の watched index
@@ -65,11 +68,12 @@ private:
 
     /**
      * @brief 未確定または 0 を含むドメインを持つ変数のインデックスを探す
+     * @param model モデルへの参照
      * @param exclude1 除外するインデックス
      * @param exclude2 除外するインデックス
      * @return 見つかったインデックス、なければ SIZE_MAX
      */
-    size_t find_unwatched_candidate(size_t exclude1, size_t exclude2) const;
+    size_t find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const;
 
     /**
      * @brief watched literal を移動する
@@ -112,6 +116,9 @@ private:
     VariablePtr r_;
     size_t n_;
 
+    std::vector<size_t> var_ids_;  // vars_[i]->id() をキャッシュ
+    size_t r_id_;                   // r_->id() をキャッシュ
+
     size_t w1_;
     size_t w2_;
 
@@ -120,7 +127,7 @@ private:
     // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_idx_;
 
-    size_t find_unwatched_candidate(size_t exclude1, size_t exclude2) const;
+    size_t find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const;
     void move_watch(Model& model, int save_point, int which_watch, size_t new_idx);
 };
 
@@ -168,6 +175,9 @@ private:
     size_t n_pos_;                  // pos_ のサイズ
     size_t n_neg_;                  // neg_ のサイズ
 
+    std::vector<size_t> pos_ids_;  // pos_[i]->id() をキャッシュ
+    std::vector<size_t> neg_ids_;  // neg_[i]->id() をキャッシュ
+
     // 2-watched literal
     // w1_, w2_ はリテラルのインデックス
     // 0 <= idx < n_pos_: pos_[idx]
@@ -189,6 +199,7 @@ private:
      * - neg リテラル: 未確定 or = 0 なら充足可能
      */
     bool can_satisfy(size_t lit_idx) const;
+    bool can_satisfy(const Model& model, size_t lit_idx) const;
 
     /**
      * @brief リテラルが既に節を充足しているか
@@ -196,6 +207,7 @@ private:
      * - neg リテラル: = 0 なら充足
      */
     bool is_satisfied_by(size_t lit_idx) const;
+    bool is_satisfied_by(const Model& model, size_t lit_idx) const;
 
     /**
      * @brief リテラルを充足方向に確定させる値を取得
@@ -210,9 +222,14 @@ private:
     VariablePtr get_var(size_t lit_idx) const;
 
     /**
+     * @brief リテラルに対応する変数IDを取得
+     */
+    size_t get_var_id(size_t lit_idx) const;
+
+    /**
      * @brief 別の watch 候補を探す
      */
-    size_t find_unwatched_candidate(size_t exclude1, size_t exclude2) const;
+    size_t find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const;
 
     /**
      * @brief watch を移動
@@ -250,6 +267,8 @@ protected:
 private:
     VariablePtr a_;
     VariablePtr b_;
+    size_t a_id_;  // a_->id() をキャッシュ
+    size_t b_id_;  // b_->id() をキャッシュ
 };
 
 } // namespace sabori_csp

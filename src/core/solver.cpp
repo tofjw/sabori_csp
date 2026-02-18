@@ -281,10 +281,30 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                         return std::nullopt;
                     }
 
-                    if (select_variable(model) == SIZE_MAX) {
-                        stats_.nogoods_size = nogoods_.size();
-                        stats_.unit_nogoods_size = unit_nogoods_.size();
-                        return std::nullopt;
+                    // unit nogood + permanent NG の伝播で全変数が確定する場合がある
+                    // その場合、有効な解なら報告して続行する
+                    while (select_variable(model) == SIZE_MAX) {
+                        if (verify_solution(model)) {
+                            auto sol = build_solution(model);
+                            if (!callback(sol)) {
+                                stats_.nogoods_size = nogoods_.size();
+                                stats_.unit_nogoods_size = unit_nogoods_.size();
+                                return std::nullopt;
+                            }
+                            model.clear_pending_updates();
+                            add_solution_nogood(model);
+                            backtrack(model, root_point);
+                            if (!apply_unit_nogoods(model)) {
+                                model.clear_pending_updates();
+                                stats_.nogoods_size = nogoods_.size();
+                                stats_.unit_nogoods_size = unit_nogoods_.size();
+                                return std::nullopt;
+                            }
+                        } else {
+                            stats_.nogoods_size = nogoods_.size();
+                            stats_.unit_nogoods_size = unit_nogoods_.size();
+                            return std::nullopt;
+                        }
                     }
 
                     continue;
