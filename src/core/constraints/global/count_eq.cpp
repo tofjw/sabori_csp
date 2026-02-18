@@ -27,6 +27,7 @@ CountEqConstraint::CountEqConstraint(std::vector<VariablePtr> x_vars,
 
     // 変数IDキャッシュを構築
     update_var_ids();
+    c_id_ = vars_[n_]->id();
 }
 
 std::string CountEqConstraint::name() const {
@@ -229,30 +230,31 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         // 最後の未確定変数が c（count 変数）
         // 全 x[i] は確定済み
         auto def = static_cast<Domain::value_type>(definite_count_);
-        if (vars_[n_]->is_assigned()) {
-            return vars_[n_]->assigned_value().value() == def;
+        if (model.is_instantiated(c_id_)) {
+            return model.value(c_id_) == def;
         }
         if (vars_[n_]->domain().contains(def)) {
-            model.enqueue_instantiate(vars_[n_]->id(), def);
+            model.enqueue_instantiate(c_id_, def);
         } else {
             return false;
         }
     } else {
         // 最後の未確定変数が x[j]
         size_t j = last_var_internal_idx;
+        auto j_id = var_ids_[j];
 
-        if (vars_[j]->is_assigned()) {
+        if (model.is_instantiated(j_id)) {
             // 既に確定: final check
             return on_final_instantiate();
         }
 
         // c は確定済みのはず
-        if (!vars_[n_]->is_assigned()) {
+        if (!model.is_instantiated(c_id_)) {
             // c もまだ未確定ならロジックエラーだが、安全のため propagate に任せる
             return propagate(model);
         }
 
-        auto cv = vars_[n_]->assigned_value().value();
+        auto cv = model.value(c_id_);
         auto remaining_needed = cv - static_cast<Domain::value_type>(definite_count_);
 
         if (remaining_needed == 0) {
@@ -261,12 +263,12 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                 if (vars_[j]->domain().size() == 1 && vars_[j]->domain().contains(target_)) {
                     return false;  // target しかない
                 }
-                model.enqueue_remove_value(vars_[j]->id(), target_);
+                model.enqueue_remove_value(j_id, target_);
             }
         } else if (remaining_needed == 1) {
             // x[j] は target でなければならない
             if (vars_[j]->domain().contains(target_)) {
-                model.enqueue_instantiate(vars_[j]->id(), target_);
+                model.enqueue_instantiate(j_id, target_);
             } else {
                 return false;
             }
@@ -372,8 +374,8 @@ void CountEqConstraint::save_trail_if_needed(Model& model, int save_point) {
 }
 
 bool CountEqConstraint::propagate(Model& model) {
-    auto c_min = model.var_min(vars_[n_]->id());
-    auto c_max = model.var_max(vars_[n_]->id());
+    auto c_min = model.var_min(c_id_);
+    auto c_max = model.var_max(c_id_);
     auto def = static_cast<Domain::value_type>(definite_count_);
     auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
 
@@ -384,10 +386,10 @@ bool CountEqConstraint::propagate(Model& model) {
 
     // Bounds propagation on c
     if (def > c_min) {
-        model.enqueue_set_min(vars_[n_]->id(), def);
+        model.enqueue_set_min(c_id_, def);
     }
     if (def_plus_poss < c_max) {
-        model.enqueue_set_max(vars_[n_]->id(), def_plus_poss);
+        model.enqueue_set_max(c_id_, def_plus_poss);
     }
 
     // Forward propagation
@@ -395,7 +397,7 @@ bool CountEqConstraint::propagate(Model& model) {
     if (c_max == def) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
-                model.enqueue_remove_value(vars_[i]->id(), target_);
+                model.enqueue_remove_value(var_ids_[i], target_);
             }
         }
     }
@@ -403,8 +405,8 @@ bool CountEqConstraint::propagate(Model& model) {
     // c.min == definite_count_ + possible_count_ → 残りの possible な x[i] を target に確定
     if (c_min == def_plus_poss) {
         for (size_t i = 0; i < n_; ++i) {
-            if (is_possible_[i] && !vars_[i]->is_assigned()) {
-                model.enqueue_instantiate(vars_[i]->id(), target_);
+            if (is_possible_[i] && !model.is_instantiated(var_ids_[i])) {
+                model.enqueue_instantiate(var_ids_[i], target_);
             }
         }
     }

@@ -78,6 +78,9 @@ IntElementConstraint::IntElementConstraint(VariablePtr index_var,
     var_ptr_to_idx_[index_var_.get()] = 0;
     var_ptr_to_idx_[result_var_.get()] = 1;
 
+    index_id_ = index_var_->id();
+    result_id_ = result_var_->id();
+
     // 初期整合性チェック
     check_initial_consistency();
 }
@@ -269,9 +272,9 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
                                            Domain::value_type /*prev_max*/) {
     // 確定した変数を特定
     Variable* assigned_var = nullptr;
-    if (index_var_->is_assigned() && index_var_->assigned_value().value() == value) {
+    if (model.is_instantiated(index_id_) && model.value(index_id_) == value) {
         assigned_var = index_var_.get();
-    } else if (result_var_->is_assigned() && result_var_->assigned_value().value() == value) {
+    } else if (model.is_instantiated(result_id_) && model.value(result_id_) == value) {
         assigned_var = result_var_.get();
     }
 
@@ -296,9 +299,9 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
 
         auto expected_result = array_[static_cast<size_t>(idx_0based)];
 
-        if (result_var_->is_assigned()) {
+        if (model.is_instantiated(result_id_)) {
             // result も確定済み -> 一致チェック
-            if (result_var_->assigned_value().value() != expected_result) {
+            if (model.value(result_id_) != expected_result) {
                 return false;
             }
         }
@@ -313,9 +316,9 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
 
         const auto& valid_indices = it_val->second;
 
-        if (index_var_->is_assigned()) {
+        if (model.is_instantiated(index_id_)) {
             // index も確定済み -> 一致チェック
-            auto idx = index_var_->assigned_value().value();
+            auto idx = model.value(index_id_);
             bool found = false;
             for (auto vi : valid_indices) {
                 if (vi == idx) {
@@ -352,7 +355,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
 
     if (last_var.get() == result_var_.get()) {
         // index は確定済み -> result を確定
-        auto idx = index_var_->assigned_value().value();
+        auto idx = model.value(index_id_);
         auto idx_0based = index_to_0based(idx);
 
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
@@ -361,19 +364,19 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
 
         auto expected_result = array_[static_cast<size_t>(idx_0based)];
 
-        if (result_var_->is_assigned()) {
-            return result_var_->assigned_value().value() == expected_result;
+        if (model.is_instantiated(result_id_)) {
+            return model.value(result_id_) == expected_result;
         }
 
         if (result_var_->domain().contains(expected_result)) {
-            model.enqueue_instantiate(result_var_->id(), expected_result);
+            model.enqueue_instantiate(result_id_, expected_result);
             return true;
         } else {
             return false;
         }
     } else if (last_var.get() == index_var_.get()) {
         // result は確定済み -> index の候補を探す
-        auto result_value = result_var_->assigned_value().value();
+        auto result_value = model.value(result_id_);
         auto it = value_to_indices_.find(result_value);
         if (it == value_to_indices_.end()) {
             return false;
@@ -381,8 +384,8 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
 
         const auto& valid_indices = it->second;
 
-        if (index_var_->is_assigned()) {
-            auto idx = index_var_->assigned_value().value();
+        if (model.is_instantiated(index_id_)) {
+            auto idx = model.value(index_id_);
             for (auto vi : valid_indices) {
                 if (vi == idx) {
                     return true;
@@ -403,7 +406,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
             return false;
         } else if (candidates.size() == 1) {
             // 候補が1つだけなら確定
-            model.enqueue_instantiate(index_var_->id(), candidates[0]);
+            model.enqueue_instantiate(index_id_, candidates[0]);
         }
         // 複数候補がある場合は選択を solver に任せる
     }
@@ -434,7 +437,7 @@ bool IntElementConstraint::on_set_min(
         // index.min が増加 → result の bounds を絞る
         auto lo_0 = index_to_0based(new_min);
         if (lo_0 < 0) lo_0 = 0;
-        auto idx_max = model.var_max(index_var_->id());
+        auto idx_max = model.var_max(index_id_);
         auto hi_0 = index_to_0based(idx_max);
         if (hi_0 < 0 || lo_0 >= static_cast<Domain::value_type>(n_)) return false;
         if (hi_0 >= static_cast<Domain::value_type>(n_)) hi_0 = static_cast<Domain::value_type>(n_) - 1;
@@ -443,17 +446,17 @@ bool IntElementConstraint::on_set_min(
         auto r_min = range_min(static_cast<size_t>(lo_0), static_cast<size_t>(hi_0));
         auto r_max = range_max(static_cast<size_t>(lo_0), static_cast<size_t>(hi_0));
 
-        if (r_min > model.var_min(result_var_->id())) {
-            model.enqueue_set_min(result_var_->id(), r_min);
+        if (r_min > model.var_min(result_id_)) {
+            model.enqueue_set_min(result_id_, r_min);
         }
-        if (r_max < model.var_max(result_var_->id())) {
-            model.enqueue_set_max(result_var_->id(), r_max);
+        if (r_max < model.var_max(result_id_)) {
+            model.enqueue_set_max(result_id_, r_max);
         }
     } else {
         // result.min が増加 → index の bounds を絞る (二分探索)
         auto r_lo = new_min;
-        auto idx_min = model.var_min(index_var_->id());
-        auto idx_max = model.var_max(index_var_->id());
+        auto idx_min = model.var_min(index_id_);
+        auto idx_max = model.var_max(index_id_);
         auto lo_0 = index_to_0based(idx_min);
         auto hi_0 = index_to_0based(idx_max);
         if (lo_0 < 0) lo_0 = 0;
@@ -480,7 +483,7 @@ bool IntElementConstraint::on_set_min(
             Domain::value_type new_idx_max = zero_based_ ? static_cast<Domain::value_type>(new_hi)
                                                           : static_cast<Domain::value_type>(new_hi) + 1;
             if (new_idx_max < idx_max) {
-                model.enqueue_set_max(index_var_->id(), new_idx_max);
+                model.enqueue_set_max(index_id_, new_idx_max);
             }
         }
 
@@ -503,7 +506,7 @@ bool IntElementConstraint::on_set_min(
             Domain::value_type new_idx_min = zero_based_ ? static_cast<Domain::value_type>(new_lo)
                                                           : static_cast<Domain::value_type>(new_lo) + 1;
             if (new_idx_min > idx_min) {
-                model.enqueue_set_min(index_var_->id(), new_idx_min);
+                model.enqueue_set_min(index_id_, new_idx_min);
             }
         }
     }
@@ -520,7 +523,7 @@ bool IntElementConstraint::on_set_max(
 
     if (internal_var_idx == 0) {
         // index.max が減少 → result の bounds を絞る
-        auto idx_min = model.var_min(index_var_->id());
+        auto idx_min = model.var_min(index_id_);
         auto lo_0 = index_to_0based(idx_min);
         auto hi_0 = index_to_0based(new_max);
         if (lo_0 < 0) lo_0 = 0;
@@ -530,17 +533,17 @@ bool IntElementConstraint::on_set_max(
         auto r_min = range_min(static_cast<size_t>(lo_0), static_cast<size_t>(hi_0));
         auto r_max = range_max(static_cast<size_t>(lo_0), static_cast<size_t>(hi_0));
 
-        if (r_min > model.var_min(result_var_->id())) {
-            model.enqueue_set_min(result_var_->id(), r_min);
+        if (r_min > model.var_min(result_id_)) {
+            model.enqueue_set_min(result_id_, r_min);
         }
-        if (r_max < model.var_max(result_var_->id())) {
-            model.enqueue_set_max(result_var_->id(), r_max);
+        if (r_max < model.var_max(result_id_)) {
+            model.enqueue_set_max(result_id_, r_max);
         }
     } else {
         // result.max が減少 → index の bounds を絞る (二分探索)
         auto r_hi = new_max;
-        auto idx_min = model.var_min(index_var_->id());
-        auto idx_max = model.var_max(index_var_->id());
+        auto idx_min = model.var_min(index_id_);
+        auto idx_max = model.var_max(index_id_);
         auto lo_0 = index_to_0based(idx_min);
         auto hi_0 = index_to_0based(idx_max);
         if (lo_0 < 0) lo_0 = 0;
@@ -566,7 +569,7 @@ bool IntElementConstraint::on_set_max(
             Domain::value_type new_idx_max = zero_based_ ? static_cast<Domain::value_type>(new_hi)
                                                           : static_cast<Domain::value_type>(new_hi) + 1;
             if (new_idx_max < idx_max) {
-                model.enqueue_set_max(index_var_->id(), new_idx_max);
+                model.enqueue_set_max(index_id_, new_idx_max);
             }
         }
 
@@ -589,7 +592,7 @@ bool IntElementConstraint::on_set_max(
             Domain::value_type new_idx_min = zero_based_ ? static_cast<Domain::value_type>(new_lo)
                                                           : static_cast<Domain::value_type>(new_lo) + 1;
             if (new_idx_min > idx_min) {
-                model.enqueue_set_min(index_var_->id(), new_idx_min);
+                model.enqueue_set_min(index_id_, new_idx_min);
             }
         }
     }

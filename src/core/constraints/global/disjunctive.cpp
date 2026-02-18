@@ -357,12 +357,12 @@ int DisjunctiveConstraint::find_prev_zero(int from) const {
 // ---------- Compulsory Part ----------
 
 bool DisjunctiveConstraint::update_compulsory_part(Model& model, int save_point, size_t task) {
-    int dur = task_dur_min(task);
+    int dur = static_cast<int>(model.var_min(var_ids_[n_ + task]));
     if (dur <= 0) return true;
     if (!strict_ && dur == 0) return true;
 
-    int est = static_cast<int>(vars_[task]->min()) - offset_;
-    int lst = static_cast<int>(vars_[task]->max()) - offset_;
+    int est = static_cast<int>(model.var_min(var_ids_[task])) - offset_;
+    int lst = static_cast<int>(model.var_max(var_ids_[task])) - offset_;
 
     int new_lo = lst;
     int new_hi = est + dur;
@@ -445,12 +445,19 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
     tasks.reserve(n_);
 
     for (size_t i = 0; i < n_; ++i) {
-        int dur = task_dur_min(i);
+        auto d_id = var_ids_[n_ + i];
+        int dur = direct ? task_dur_min(i) : static_cast<int>(model.var_min(d_id));
         if (dur <= 0) continue;
         if (!strict_ && dur == 0) continue;
 
-        int est = static_cast<int>(vars_[i]->min()) - offset_;
-        int lst = static_cast<int>(vars_[i]->max()) - offset_;
+        int est, lst;
+        if (direct) {
+            est = static_cast<int>(vars_[i]->min()) - offset_;
+            lst = static_cast<int>(vars_[i]->max()) - offset_;
+        } else {
+            est = static_cast<int>(model.var_min(var_ids_[i])) - offset_;
+            lst = static_cast<int>(model.var_max(var_ids_[i])) - offset_;
+        }
         tasks.push_back({i, est, lst, dur, est + dur, lst + dur});
     }
 
@@ -488,7 +495,8 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
 
         // Push tasks outside Theta
         for (size_t j = k + 1; j < m; ++j) {
-            if (vars_[tasks[j].idx]->is_assigned()) continue;
+            auto j_s_id = var_ids_[tasks[j].idx];
+            if (direct ? vars_[tasks[j].idx]->is_assigned() : model.is_instantiated(j_s_id)) continue;
 
             int dur_j = tasks[j].dur;
             int est_j = tasks[j].est;
@@ -513,7 +521,7 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
                     if (direct) {
                         if (!vars_[tasks[j].idx]->remove_below(new_min)) return false;
                     } else {
-                        model.enqueue_set_min(var_ids_[tasks[j].idx], new_min);
+                        model.enqueue_set_min(j_s_id, new_min);
                     }
                 }
             }
@@ -551,7 +559,8 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
 
         // Push tasks outside Theta
         for (size_t j = k + 1; j < m; ++j) {
-            if (vars_[tasks[j].idx]->is_assigned()) continue;
+            auto j_s_id = var_ids_[tasks[j].idx];
+            if (direct ? vars_[tasks[j].idx]->is_assigned() : model.is_instantiated(j_s_id)) continue;
 
             int dur_j = tasks[j].dur;
             int lct_j = tasks[j].lct;
@@ -576,7 +585,7 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
                     if (direct) {
                         if (!vars_[tasks[j].idx]->remove_above(new_max)) return false;
                     } else {
-                        model.enqueue_set_max(var_ids_[tasks[j].idx], new_max);
+                        model.enqueue_set_max(j_s_id, new_max);
                     }
                 }
             }
@@ -586,12 +595,19 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
     // dur=0 forcing (non-strict): if timeline is fully packed, force dur to 0
     if (!strict_) {
         for (size_t i = 0; i < n_; ++i) {
-            int dur_min_i = task_dur_min(i);
+            auto d_id = var_ids_[n_ + i];
+            int dur_min_i = direct ? task_dur_min(i) : static_cast<int>(model.var_min(d_id));
             if (dur_min_i != 0) continue;
-            if (vars_[n_ + i]->is_assigned()) continue;
+            if (direct ? vars_[n_ + i]->is_assigned() : model.is_instantiated(d_id)) continue;
 
-            int est = static_cast<int>(vars_[i]->min()) - offset_;
-            int lst = static_cast<int>(vars_[i]->max()) - offset_;
+            int est, lst;
+            if (direct) {
+                est = static_cast<int>(vars_[i]->min()) - offset_;
+                lst = static_cast<int>(vars_[i]->max()) - offset_;
+            } else {
+                est = static_cast<int>(model.var_min(var_ids_[i])) - offset_;
+                lst = static_cast<int>(model.var_max(var_ids_[i])) - offset_;
+            }
             // Check if there's any free slot for dur=1 in [est, lst]
             int first_free = find_next_zero(est);
             bool can_fit = (first_free >= 0 && first_free <= lst && first_free + 1 <= horizon_);
@@ -599,7 +615,7 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
                 if (direct) {
                     if (!vars_[n_ + i]->assign(0)) return false;
                 } else {
-                    model.enqueue_instantiate(var_ids_[n_ + i], 0);
+                    model.enqueue_instantiate(d_id, 0);
                 }
             }
         }
@@ -612,30 +628,32 @@ bool DisjunctiveConstraint::edge_finding(Model& model, bool direct) {
 
 bool DisjunctiveConstraint::propagate_bounds(Model& model) {
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) continue;
+        auto s_id = var_ids_[i];
+        auto d_id = var_ids_[n_ + i];
+        if (model.is_instantiated(s_id)) continue;
 
         int dur;
-        if (vars_[n_ + i]->is_assigned()) {
-            dur = task_dur(i);
+        if (model.is_instantiated(d_id)) {
+            dur = static_cast<int>(model.value(d_id));
         } else {
-            dur = task_dur_min(i);
+            dur = static_cast<int>(model.var_min(d_id));
         }
 
         if (dur == 0 && !strict_) {
             // dur_min=0: if no valid position for dur=1, force dur=0
-            if (!vars_[n_ + i]->is_assigned() && vars_[n_ + i]->domain().size() > 1) {
-                int lo = static_cast<int>(vars_[i]->min()) - offset_;
-                int hi = static_cast<int>(vars_[i]->max()) - offset_;
+            if (!model.is_instantiated(d_id) && vars_[n_ + i]->domain().size() > 1) {
+                int lo = static_cast<int>(model.var_min(s_id)) - offset_;
+                int hi = static_cast<int>(model.var_max(s_id)) - offset_;
                 if (find_first_valid_excluding(lo, hi, 1, i) == -1) {
-                    model.enqueue_instantiate(var_ids_[n_ + i], 0);
+                    model.enqueue_instantiate(d_id, 0);
                 }
             }
             continue;
         }
         if (dur <= 0) continue;
 
-        int lo = static_cast<int>(vars_[i]->min()) - offset_;  // est
-        int hi = static_cast<int>(vars_[i]->max()) - offset_;  // lst
+        int lo = static_cast<int>(model.var_min(s_id)) - offset_;  // est
+        int hi = static_cast<int>(model.var_max(s_id)) - offset_;  // lst
 
         int new_lo = find_first_valid_excluding(lo, hi, dur, i);
         int new_hi = find_last_valid_excluding(lo, hi, dur, i);
@@ -643,11 +661,11 @@ bool DisjunctiveConstraint::propagate_bounds(Model& model) {
         if (new_lo == -1 || new_hi == -1) return false;
 
         if (new_lo > lo) {
-            model.enqueue_set_min(var_ids_[i],
+            model.enqueue_set_min(s_id,
                                   static_cast<Domain::value_type>(new_lo + offset_));
         }
         if (new_hi < hi) {
-            model.enqueue_set_max(var_ids_[i],
+            model.enqueue_set_max(s_id,
                                   static_cast<Domain::value_type>(new_hi + offset_));
         }
     }
@@ -813,15 +831,15 @@ bool DisjunctiveConstraint::on_instantiate(
     if (!update_compulsory_part(model, save_point, task)) return false;
 
     // Both start and duration must be assigned to place the task fully
-    if (!task_fully_assigned(task)) {
+    if (!(model.is_instantiated(var_ids_[task]) && model.is_instantiated(var_ids_[n_ + task]))) {
         if (!has_uninstantiated()) {
             return on_final_instantiate();
         }
         return propagate_bounds(model);
     }
 
-    int s = task_start(task);
-    int d = task_dur(task);
+    int s = static_cast<int>(model.value(var_ids_[task]));
+    int d = static_cast<int>(model.value(var_ids_[n_ + task]));
 
     // Non-strict: zero-duration tasks don't occupy timeline
     if (!strict_ && d == 0) {

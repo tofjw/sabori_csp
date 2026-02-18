@@ -534,6 +534,8 @@ private:
     std::vector<Domain::value_type> array_;
     size_t n_;
     bool zero_based_;
+    size_t index_id_;
+    size_t result_id_;
 
     // CSR: 値 -> インデックスリスト（逆引き）
     std::unordered_map<Domain::value_type, std::vector<Domain::value_type>> value_to_indices_;
@@ -1338,6 +1340,7 @@ protected:
 private:
     Domain::value_type target_;
     size_t n_;  // 配列サイズ (x[] の要素数)
+    size_t c_id_;  // count 変数の ID キャッシュ
 
     // 内部カウンタ
     size_t definite_count_;   // x[i] == target で確定済みの数

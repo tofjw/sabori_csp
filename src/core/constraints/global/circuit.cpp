@@ -314,11 +314,11 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
 
 bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                   size_t last_var_internal_idx) {
-    auto& last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (last_var->is_assigned()) {
-        auto val = last_var->assigned_value().value();
+    if (model.is_instantiated(last_var_id)) {
+        auto val = model.value(last_var_id);
         // 値を内部インデックスに変換
         size_t j = static_cast<size_t>(val - base_offset_);
         if (j >= n_) {
@@ -334,7 +334,7 @@ bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
     if (pool_n_ == 1) {
         // プールには内部インデックスが格納されているので、元の値に戻す
         Domain::value_type remaining_value = pool_[0] + base_offset_;
-        model.enqueue_instantiate(last_var->id(), remaining_value);
+        model.enqueue_instantiate(last_var_id, remaining_value);
     }
     // 利用可能な値が0なら矛盾
     else if (pool_n_ == 0) {
