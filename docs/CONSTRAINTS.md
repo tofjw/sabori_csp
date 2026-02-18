@@ -174,6 +174,8 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `array_int_minimum` | `ArrayIntMinimumConstraint` | m = min(x[0], ..., x[n-1]) |
 | `table_int` | `TableConstraint` | 変数の値の組み合わせがタプル集合に含まれる |
 | `count_eq` | `CountEqConstraint` | count(x[i] == target) = c |
+| `fzn_diffn` | `DiffnConstraint` | n個の矩形が互いに重ならない（strict） |
+| `fzn_diffn_nonstrict` | `DiffnConstraint` | n個の矩形が互いに重ならない（サイズ0許可） |
 
 #### table_int 制約
 
