@@ -26,6 +26,8 @@ ArrayIntMaximumConstraint::ArrayIntMaximumConstraint(VariablePtr m, std::vector<
         var_ptr_to_idx_[x_[i].get()] = i + 1;
     }
 
+    m_id_ = m_->id();
+
     check_initial_consistency();
 }
 
@@ -114,23 +116,25 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
     if (internal_idx == 0) {
         // m が確定: 全 x[i].max を m 以下に制限し、少なくとも1つは m になれる必要あり
         bool can_achieve = false;
-        for (auto& var : x_) {
-            if (!var->is_assigned()) {
+        for (size_t i = 0; i < n_; ++i) {
+            auto x_id = var_ids_[1 + i];
+            if (!model.is_instantiated(x_id)) {
                 // x[i].max を m 以下に
-                auto var_max = model.var_max(var->id());
+                auto var_max = model.var_max(x_id);
                 if (var_max > value) {
-                    model.enqueue_set_max(var->id(), value);
+                    model.enqueue_set_max(x_id, value);
                 }
                 // m に等しくなれるか
-                if (var->domain().contains(value)) {
+                if (x_[i]->domain().contains(value)) {
                     can_achieve = true;
                 }
             } else {
                 // x[i] が確定済み
-                if (var->assigned_value().value() > value) {
+                auto x_val = model.value(x_id);
+                if (x_val > value) {
                     return false;  // x[i] > m は矛盾
                 }
-                if (var->assigned_value().value() == value) {
+                if (x_val == value) {
                     can_achieve = true;
                 }
             }
@@ -140,15 +144,15 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
         }
     } else {
         // x[i] が確定: m >= value を確認し、m.min を更新
-        if (m_->is_assigned()) {
-            if (m_->assigned_value().value() < value) {
+        if (model.is_instantiated(m_id_)) {
+            if (model.value(m_id_) < value) {
                 return false;  // x[i] > m は矛盾
             }
         } else {
             // m.min を更新
-            auto m_min = model.var_min(m_->id());
+            auto m_min = model.var_min(m_id_);
             if (m_min < value) {
-                model.enqueue_set_min(m_->id(), value);
+                model.enqueue_set_min(m_id_, value);
             }
         }
     }
@@ -173,36 +177,38 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
                                                          size_t last_var_internal_idx) {
     auto& last_var = vars_[last_var_internal_idx];
 
+    auto last_var_id = var_ids_[last_var_internal_idx];
+
     if (last_var.get() == m_.get()) {
         // m が最後: 全 x[i] の最大値を計算して m を確定
-        Domain::value_type max_val = x_[0]->assigned_value().value();
+        Domain::value_type max_val = model.value(var_ids_[1]);
         for (size_t i = 1; i < n_; ++i) {
-            max_val = std::max(max_val, x_[i]->assigned_value().value());
+            max_val = std::max(max_val, model.value(var_ids_[1 + i]));
         }
 
-        if (m_->is_assigned()) {
-            return m_->assigned_value().value() == max_val;
+        if (model.is_instantiated(m_id_)) {
+            return model.value(m_id_) == max_val;
         }
 
         if (m_->domain().contains(max_val)) {
-            model.enqueue_instantiate(m_->id(), max_val);
+            model.enqueue_instantiate(m_id_, max_val);
             return true;
         }
         return false;
     } else {
         // x[i] が最後: m は確定済み
-        auto m_val = m_->assigned_value().value();
+        auto m_val = model.value(m_id_);
 
         // 他の x[j] の最大値を計算
         Domain::value_type other_max = std::numeric_limits<Domain::value_type>::min();
-        for (const auto& var : x_) {
-            if (var.get() != last_var.get()) {
-                other_max = std::max(other_max, var->assigned_value().value());
+        for (size_t i = 0; i < n_; ++i) {
+            if (x_[i].get() != last_var.get()) {
+                other_max = std::max(other_max, model.value(var_ids_[1 + i]));
             }
         }
 
-        if (last_var->is_assigned()) {
-            auto val = last_var->assigned_value().value();
+        if (model.is_instantiated(last_var_id)) {
+            auto val = model.value(last_var_id);
             return std::max(other_max, val) == m_val;
         }
 
@@ -215,15 +221,15 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
         if (other_max < m_val) {
             // last_var == m_val でなければならない
             if (last_var->domain().contains(m_val)) {
-                model.enqueue_instantiate(last_var->id(), m_val);
+                model.enqueue_instantiate(last_var_id, m_val);
                 return true;
             }
             return false;
         } else if (other_max == m_val) {
             // last_var <= m_val であれば OK
-            auto var_max = model.var_max(last_var->id());
+            auto var_max = model.var_max(last_var_id);
             if (var_max > m_val) {
-                model.enqueue_set_max(last_var->id(), m_val);
+                model.enqueue_set_max(last_var_id, m_val);
             }
             return !last_var->domain().empty();
         } else {

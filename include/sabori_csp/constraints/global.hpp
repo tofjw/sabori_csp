@@ -614,6 +614,7 @@ private:
     VariablePtr m_;                // 最大値変数
     std::vector<VariablePtr> x_;   // 配列変数
     size_t n_;                     // 配列サイズ
+    size_t m_id_;                  // m_ の変数ID キャッシュ
 
     // 変数ポインタ → 内部インデックス (0: m, 1..n: x[0]..x[n-1])
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
@@ -651,6 +652,7 @@ private:
     VariablePtr m_;
     std::vector<VariablePtr> x_;
     size_t n_;
+    size_t m_id_;                  // m_ の変数ID キャッシュ
     std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 

@@ -25,6 +25,8 @@ ArrayIntMinimumConstraint::ArrayIntMinimumConstraint(VariablePtr m, std::vector<
         var_ptr_to_idx_[x_[i].get()] = i + 1;
     }
 
+    m_id_ = m_->id();
+
     check_initial_consistency();
 }
 
@@ -110,20 +112,22 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
     if (internal_idx == 0) {
         // m が確定: 全 x[i].min を m 以上に制限し、少なくとも1つは m になれる必要あり
         bool can_achieve = false;
-        for (auto& var : x_) {
-            if (!var->is_assigned()) {
-                auto var_min = model.var_min(var->id());
+        for (size_t i = 0; i < n_; ++i) {
+            auto x_id = var_ids_[1 + i];
+            if (!model.is_instantiated(x_id)) {
+                auto var_min = model.var_min(x_id);
                 if (var_min < value) {
-                    model.enqueue_set_min(var->id(), value);
+                    model.enqueue_set_min(x_id, value);
                 }
-                if (var->domain().contains(value)) {
+                if (x_[i]->domain().contains(value)) {
                     can_achieve = true;
                 }
             } else {
-                if (var->assigned_value().value() < value) {
+                auto x_val = model.value(x_id);
+                if (x_val < value) {
                     return false;  // x[i] < m は矛盾
                 }
-                if (var->assigned_value().value() == value) {
+                if (x_val == value) {
                     can_achieve = true;
                 }
             }
@@ -133,14 +137,14 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
         }
     } else {
         // x[i] が確定: m <= value を確認し、m.max を更新
-        if (m_->is_assigned()) {
-            if (m_->assigned_value().value() > value) {
+        if (model.is_instantiated(m_id_)) {
+            if (model.value(m_id_) > value) {
                 return false;
             }
         } else {
-            auto m_max = model.var_max(m_->id());
+            auto m_max = model.var_max(m_id_);
             if (m_max > value) {
-                model.enqueue_set_max(m_->id(), value);
+                model.enqueue_set_max(m_id_, value);
             }
         }
     }
@@ -165,50 +169,52 @@ bool ArrayIntMinimumConstraint::on_last_uninstantiated(Model& model, int /*save_
                                                          size_t last_var_internal_idx) {
     auto& last_var = vars_[last_var_internal_idx];
 
+    auto last_var_id = var_ids_[last_var_internal_idx];
+
     if (last_var.get() == m_.get()) {
         // m が最後: 全 x[i] の最小値を計算して m を確定
-        Domain::value_type min_val = x_[0]->assigned_value().value();
+        Domain::value_type min_val = model.value(var_ids_[1]);
         for (size_t i = 1; i < n_; ++i) {
-            min_val = std::min(min_val, x_[i]->assigned_value().value());
+            min_val = std::min(min_val, model.value(var_ids_[1 + i]));
         }
 
-        if (m_->is_assigned()) {
-            return m_->assigned_value().value() == min_val;
+        if (model.is_instantiated(m_id_)) {
+            return model.value(m_id_) == min_val;
         }
 
         if (m_->domain().contains(min_val)) {
-            model.enqueue_instantiate(m_->id(), min_val);
+            model.enqueue_instantiate(m_id_, min_val);
             return true;
         }
         return false;
     } else {
         // x[i] が最後
-        auto m_val = m_->assigned_value().value();
+        auto m_val = model.value(m_id_);
 
         Domain::value_type other_min = std::numeric_limits<Domain::value_type>::max();
-        for (const auto& var : x_) {
-            if (var.get() != last_var.get()) {
-                other_min = std::min(other_min, var->assigned_value().value());
+        for (size_t i = 0; i < n_; ++i) {
+            if (x_[i].get() != last_var.get()) {
+                other_min = std::min(other_min, model.value(var_ids_[1 + i]));
             }
         }
 
-        if (last_var->is_assigned()) {
-            auto val = last_var->assigned_value().value();
+        if (model.is_instantiated(last_var_id)) {
+            auto val = model.value(last_var_id);
             return std::min(other_min, val) == m_val;
         }
 
         if (other_min > m_val) {
             // last_var == m_val でなければならない
             if (last_var->domain().contains(m_val)) {
-                model.enqueue_instantiate(last_var->id(), m_val);
+                model.enqueue_instantiate(last_var_id, m_val);
                 return true;
             }
             return false;
         } else if (other_min == m_val) {
             // last_var >= m_val であれば OK
-            auto var_min = model.var_min(last_var->id());
+            auto var_min = model.var_min(last_var_id);
             if (var_min < m_val) {
-                model.enqueue_set_min(last_var->id(), m_val);
+                model.enqueue_set_min(last_var_id, m_val);
             }
             return !last_var->domain().empty();
         } else {
