@@ -593,7 +593,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             auto b = get_var(decl.args[1]);
             constraint = std::make_shared<BoolNotConstraint>(a, b);
 #endif
-        } else if (decl.name == "array_int_element" || decl.name == "int_element") {
+        } else if (decl.name == "array_int_element" || decl.name == "int_element" || decl.name == "array_bool_element") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_element requires 3 arguments (index, array, result)");
             }

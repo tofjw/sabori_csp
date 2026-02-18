@@ -168,6 +168,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_ne_reif` | `IntLinNeReifConstraint` | Σ(coeffs[i] * vars[i]) != target <-> b |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
+| `array_bool_element` | `IntElementConstraint` | bool定数配列版（int版を流用） |
 | `array_var_int_element` | `ArrayVarIntElementConstraint` | array[index] = result（配列が変数） |
 | `array_var_bool_element` | `ArrayVarIntElementConstraint` | bool配列版（int版を流用） |
 | `array_int_maximum` | `ArrayIntMaximumConstraint` | m = max(x[0], ..., x[n-1]) |
