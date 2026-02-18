@@ -26,6 +26,7 @@ add_library(sabori_csp_core
   constraints/global/table.cpp
   constraints/global/count_eq.cpp
   constraints/global/disjunctive.cpp
+  constraints/global/diffn.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC

@@ -917,6 +917,23 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             } else {
                 throw std::runtime_error("set_in_reif requires range or set argument");
             }
+        } else if (decl.name == "fzn_diffn" || decl.name == "fzn_diffn_nonstrict") {
+            if (decl.args.size() != 4) {
+                throw std::runtime_error(decl.name + " requires 4 arguments (x, y, dx, dy)");
+            }
+            const auto x_names  = resolve_var_array(decl.args[0]);
+            const auto y_names  = resolve_var_array(decl.args[1]);
+            const auto dx_names = resolve_var_array(decl.args[2]);
+            const auto dy_names = resolve_var_array(decl.args[3]);
+            std::vector<VariablePtr> x_vars, y_vars, dx_vars, dy_vars;
+            for (const auto& name : x_names)  x_vars.push_back(get_var_by_name(name));
+            for (const auto& name : y_names)  y_vars.push_back(get_var_by_name(name));
+            for (const auto& name : dx_names) dx_vars.push_back(get_var_by_name(name));
+            for (const auto& name : dy_names) dy_vars.push_back(get_var_by_name(name));
+            bool strict = (decl.name == "fzn_diffn");
+            constraint = std::make_shared<DiffnConstraint>(
+                std::move(x_vars), std::move(y_vars),
+                std::move(dx_vars), std::move(dy_vars), strict);
         } else if (decl.name == "fzn_disjunctive" || decl.name == "fzn_disjunctive_strict") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error(decl.name + " requires 2 arguments (starts, durations)");

@@ -1456,6 +1456,52 @@ private:
     bool edge_finding(Model& model, bool direct);
 };
 
+/**
+ * @brief diffn 制約: 非重複矩形配置
+ *
+ * n 個の矩形 (x[i], y[i]) を原点、(dx[i], dy[i]) をサイズとし、
+ * 任意の 2 矩形が重ならないことを保証する。
+ * strict=false の場合、サイズ 0 の矩形は他と重複可能。
+ */
+class DiffnConstraint : public Constraint {
+public:
+    DiffnConstraint(std::vector<VariablePtr> x, std::vector<VariablePtr> y,
+                    std::vector<VariablePtr> dx, std::vector<VariablePtr> dy,
+                    bool strict = true);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+
+    void rewind_to(int save_point) override;
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    size_t n_;      // 矩形数
+    bool strict_;   // strict diffn かどうか
+
+    // vars_ レイアウト: [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
+
+    bool propagate_pairwise(Model& model);
+    bool propagate_pairwise_direct();
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP
