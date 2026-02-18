@@ -1075,6 +1075,8 @@ private:
     VariablePtr result_;
     size_t n_;  // array size
     bool zero_based_;
+    size_t index_id_;
+    size_t result_id_;
 
     // Bounds support tracking
     // result の下限をサポートするインデックス（array[i].min が最小のもの）
