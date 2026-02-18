@@ -504,15 +504,88 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_instantiate(y_id_, abs_x);
     }
 
-    // y が確定したら x のバウンドを制限
+    // y が確定したら x を |x| = y に制約
     if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_)) {
         auto y_val = model.value(y_id_);
-        // x は [-y_val, y_val] の範囲に制限
-        model.enqueue_set_min(x_id_, -y_val);
-        model.enqueue_set_max(x_id_, y_val);
+        if (y_val == 0) {
+            if (!x_->domain().contains(0)) {
+                return false;
+            }
+            model.enqueue_instantiate(x_id_, 0);
+        } else {
+            bool has_pos = x_->domain().contains(y_val);
+            bool has_neg = x_->domain().contains(-y_val);
+            if (!has_pos && !has_neg) {
+                return false;
+            }
+            if (has_pos && !has_neg) {
+                model.enqueue_instantiate(x_id_, y_val);
+            } else if (!has_pos && has_neg) {
+                model.enqueue_instantiate(x_id_, -y_val);
+            } else {
+                // 両方可能: bounds を絞り、中間値を除去
+                model.enqueue_set_min(x_id_, -y_val);
+                model.enqueue_set_max(x_id_, y_val);
+                for (auto v = -y_val + 1; v < y_val; ++v) {
+                    model.enqueue_remove_value(x_id_, v);
+                }
+            }
+        }
+    }
+
+    // 両方確定: 整合性チェック（基底クラスの2WLが2変数制約で
+    // on_final_instantiate を呼ばないため、ここで検査する）
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+        auto x_val = model.value(x_id_);
+        auto y_val = model.value(y_id_);
+        if ((x_val >= 0 ? x_val : -x_val) != y_val) {
+            return false;
+        }
     }
 
     return true;
+}
+
+bool IntAbsConstraint::on_set_min(Model& model, int /*save_point*/,
+                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   Domain::value_type /*new_min*/,
+                                   Domain::value_type /*old_min*/) {
+    auto x_min = model.var_min(x_id_);
+    auto x_max = model.var_max(x_id_);
+    auto y_min = model.var_min(y_id_);
+    auto y_max = model.var_max(y_id_);
+
+    // x → y: y = |x|
+    auto abs_x_min = (x_min >= 0) ? x_min : -x_min;
+    auto abs_x_max = (x_max >= 0) ? x_max : -x_max;
+    model.enqueue_set_max(y_id_, std::max(abs_x_min, abs_x_max));
+    if (x_min > 0 || x_max < 0) {
+        // x が 0 を含まない → y_min = min(|x_min|, |x_max|)
+        model.enqueue_set_min(y_id_, std::min(abs_x_min, abs_x_max));
+    }
+
+    // y → x: -y_max <= x <= y_max
+    model.enqueue_set_min(x_id_, -y_max);
+    model.enqueue_set_max(x_id_, y_max);
+
+    // |x| >= y_min のバウンド伝播
+    if (x_min >= 0) {
+        // x >= 0 なので |x| = x >= y_min
+        model.enqueue_set_min(x_id_, y_min);
+    } else if (x_max <= 0) {
+        // x <= 0 なので |x| = -x >= y_min → x <= -y_min
+        model.enqueue_set_max(x_id_, -y_min);
+    }
+
+    return true;
+}
+
+bool IntAbsConstraint::on_set_max(Model& model, int save_point,
+                                   size_t var_idx, size_t internal_var_idx,
+                                   Domain::value_type new_max,
+                                   Domain::value_type /*old_max*/) {
+    // |x| = y は全変数の境界が相互に影響するため on_set_min と同一のロジック
+    return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
 }
 
 bool IntAbsConstraint::on_final_instantiate() {

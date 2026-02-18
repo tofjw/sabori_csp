@@ -2482,6 +2482,158 @@ TEST_CASE("ArrayIntMinimumConstraint solver integration", "[constraint][array_in
 }
 
 // ============================================================================
+// IntAbsConstraint tests
+// ============================================================================
+
+TEST_CASE("IntAbsConstraint solve_all: positive x", "[constraint][int_abs]") {
+    // x ∈ [1,5], y ∈ [0,10], |x| = y
+    // 期待: (1,1),(2,2),(3,3),(4,4),(5,5) の 5 解
+    Model model;
+    auto x = model.create_variable("x", 1, 5);
+    auto y = model.create_variable("y", 0, 10);
+    model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+    Solver solver;
+    size_t count = solver.solve_all(model, [](const Solution& sol) {
+        auto x_val = sol.at("x");
+        auto y_val = sol.at("y");
+        REQUIRE(x_val >= 0);
+        REQUIRE(y_val == x_val);
+        return true;
+    });
+    REQUIRE(count == 5);
+}
+
+TEST_CASE("IntAbsConstraint solve_all: negative x", "[constraint][int_abs]") {
+    // x ∈ [-5,-1], y ∈ [0,10], |x| = y
+    // 期待: (-5,5),(-4,4),(-3,3),(-2,2),(-1,1) の 5 解
+    Model model;
+    auto x = model.create_variable("x", -5, -1);
+    auto y = model.create_variable("y", 0, 10);
+    model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+    Solver solver;
+    size_t count = solver.solve_all(model, [](const Solution& sol) {
+        auto x_val = sol.at("x");
+        auto y_val = sol.at("y");
+        REQUIRE(x_val <= 0);
+        REQUIRE(y_val == -x_val);
+        return true;
+    });
+    REQUIRE(count == 5);
+}
+
+TEST_CASE("IntAbsConstraint solve_all: x spans zero", "[constraint][int_abs]") {
+    // x ∈ [-3,3], y ∈ [0,5], |x| = y
+    // 期待: (-3,3),(-2,2),(-1,1),(0,0),(1,1),(2,2),(3,3) の 7 解
+    Model model;
+    auto x = model.create_variable("x", -3, 3);
+    auto y = model.create_variable("y", 0, 5);
+    model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+    Solver solver;
+    std::set<std::pair<int,int>> solutions;
+    size_t count = solver.solve_all(model, [&](const Solution& sol) {
+        auto x_val = sol.at("x");
+        auto y_val = sol.at("y");
+        auto abs_x = (x_val >= 0) ? x_val : -x_val;
+        REQUIRE(y_val == abs_x);
+        solutions.insert({x_val, y_val});
+        return true;
+    });
+    REQUIRE(count == 7);
+    // 各解が含まれていることを確認
+    REQUIRE(solutions.count({-3, 3}) == 1);
+    REQUIRE(solutions.count({0, 0}) == 1);
+    REQUIRE(solutions.count({3, 3}) == 1);
+}
+
+TEST_CASE("IntAbsConstraint solve_all: x spans zero, y constrained", "[constraint][int_abs]") {
+    // x ∈ [-4,4], y ∈ [2,3], |x| = y
+    // y_min=2 により |x|>=2 → x ∈ {-4,-3,-2,2,3,4}
+    // y_max=3 により |x|<=3 → x ∈ {-3,-2,2,3}
+    // 期待: (-3,3),(-2,2),(2,2),(3,3) の 4 解
+    Model model;
+    auto x = model.create_variable("x", -4, 4);
+    auto y = model.create_variable("y", 2, 3);
+    model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+    Solver solver;
+    std::set<std::pair<int,int>> solutions;
+    size_t count = solver.solve_all(model, [&](const Solution& sol) {
+        auto x_val = sol.at("x");
+        auto y_val = sol.at("y");
+        auto abs_x = (x_val >= 0) ? x_val : -x_val;
+        REQUIRE(y_val == abs_x);
+        solutions.insert({x_val, y_val});
+        return true;
+    });
+    REQUIRE(count == 4);
+    REQUIRE(solutions.count({-3, 3}) == 1);
+    REQUIRE(solutions.count({-2, 2}) == 1);
+    REQUIRE(solutions.count({2, 2}) == 1);
+    REQUIRE(solutions.count({3, 3}) == 1);
+}
+
+TEST_CASE("IntAbsConstraint bounds propagation", "[constraint][int_abs]") {
+    SECTION("y fixed propagates x bounds") {
+        // x ∈ [-10,10], y = 5, |x| = y → x ∈ {-5, 5}
+        Model model;
+        auto x = model.create_variable("x", -10, 10);
+        auto y = model.create_variable("y", 5);
+        model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+        Solver solver;
+        std::set<int> x_vals;
+        solver.solve_all(model, [&](const Solution& sol) {
+            x_vals.insert(sol.at("x"));
+            return true;
+        });
+        REQUIRE(x_vals.size() == 2);
+        REQUIRE(x_vals.count(-5) == 1);
+        REQUIRE(x_vals.count(5) == 1);
+    }
+
+    SECTION("x positive fixed propagates y") {
+        // x = 7, y ∈ [0,10], |x| = y → y = 7
+        Model model;
+        auto x = model.create_variable("x", 7);
+        auto y = model.create_variable("y", 0, 10);
+        model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("y") == 7);
+    }
+
+    SECTION("x negative fixed propagates y") {
+        // x = -4, y ∈ [0,10], |x| = y → y = 4
+        Model model;
+        auto x = model.create_variable("x", -4);
+        auto y = model.create_variable("y", 0, 10);
+        model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("y") == 4);
+    }
+
+    SECTION("unsatisfiable: y range too small") {
+        // x ∈ [-5,-3], y ∈ [0,1], |x| = y → |x| ∈ [3,5] but y ∈ [0,1]: 矛盾
+        Model model;
+        auto x = model.create_variable("x", -5, -3);
+        auto y = model.create_variable("y", 0, 1);
+        model.add_constraint(std::make_shared<IntAbsConstraint>(x, y));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE_FALSE(solution.has_value());
+    }
+}
+
+// ============================================================================
 // IntTimesConstraint tests
 // ============================================================================
 
