@@ -221,8 +221,8 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
     auto& last_var = vars_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (last_var->is_assigned()) {
-        int64_t actual = last_var->assigned_value().value();
+    if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
+        int64_t actual = model.value(var_ids_[last_var_internal_idx]);
         return (last_coeff * actual == remaining);
     }
 
@@ -231,7 +231,7 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
         int64_t required_value = remaining / last_coeff;
 
         if (last_var->domain().contains(required_value)) {
-            model.enqueue_instantiate(last_var->id(), required_value);
+            model.enqueue_instantiate(var_ids_[last_var_internal_idx], required_value);
         } else {
             // 確定する値がドメインに含まれない
             return false;
@@ -337,7 +337,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!vars_[j]->is_assigned()) {
-            size_t var_id = vars_[j]->id();
+            size_t var_id = var_ids_[j];
             int64_t c = coeffs_[j];
             if (c > 0) {
                 auto cur_min = model.var_min(var_id);
@@ -371,7 +371,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     for (size_t j = 0; j < vars_.size(); ++j) {
         if (j == skip_idx || vars_[j]->is_assigned()) continue;
 
-        size_t var_id = vars_[j]->id();
+        size_t var_id = var_ids_[j];
         int64_t c = coeffs_[j];
 
         if (c > 0) {
@@ -411,7 +411,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     if (vars_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!vars_[j]->is_assigned()) {
-            size_t var_id = vars_[j]->id();
+            size_t var_id = var_ids_[j];
             int64_t c = coeffs_[j];
             if (c > 0) {
                 auto cur_min = model.var_min(var_id);
@@ -445,7 +445,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     for (size_t j = 0; j < vars_.size(); ++j) {
         if (j == skip_idx || vars_[j]->is_assigned()) continue;
 
-        size_t var_id = vars_[j]->id();
+        size_t var_id = var_ids_[j];
         int64_t c = coeffs_[j];
 
         if (c > 0) {

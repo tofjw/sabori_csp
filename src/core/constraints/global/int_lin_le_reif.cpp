@@ -334,14 +334,14 @@ bool IntLinLeReifConstraint::on_set_min(Model& model, int save_point,
     int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1 && min_sum > bound_) return false;
-        if (b_->assigned_value().value() == 0 && max_sum <= bound_) return false;
+    if (model.is_instantiated(b_id_)) {
+        if (model.value(b_id_) == 1 && min_sum > bound_) return false;
+        if (model.value(b_id_) == 0 && max_sum <= bound_) return false;
     } else {
         if (max_sum <= bound_) {
-            model.enqueue_instantiate(b_->id(), 1);
+            model.enqueue_instantiate(b_id_, 1);
         } else if (min_sum > bound_) {
-            model.enqueue_instantiate(b_->id(), 0);
+            model.enqueue_instantiate(b_id_, 0);
         }
     }
     return true;
@@ -366,14 +366,14 @@ bool IntLinLeReifConstraint::on_set_max(Model& model, int save_point,
     int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1 && min_sum > bound_) return false;
-        if (b_->assigned_value().value() == 0 && max_sum <= bound_) return false;
+    if (model.is_instantiated(b_id_)) {
+        if (model.value(b_id_) == 1 && min_sum > bound_) return false;
+        if (model.value(b_id_) == 0 && max_sum <= bound_) return false;
     } else {
         if (max_sum <= bound_) {
-            model.enqueue_instantiate(b_->id(), 1);
+            model.enqueue_instantiate(b_id_, 1);
         } else if (min_sum > bound_) {
-            model.enqueue_instantiate(b_->id(), 0);
+            model.enqueue_instantiate(b_id_, 0);
         }
     }
     return true;

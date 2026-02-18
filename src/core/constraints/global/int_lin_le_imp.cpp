@@ -241,7 +241,7 @@ bool IntLinLeImpConstraint::on_set_min(Model& model, int save_point,
         save_trail_if_needed(model, save_point);
         min_rem_potential_ += c * (new_min - old_min);
 
-        if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+        if (model.is_instantiated(b_id_) && model.value(b_id_) == 1) {
             if (current_fixed_sum_ + min_rem_potential_ > bound_) {
                 return false;
             }
@@ -263,7 +263,7 @@ bool IntLinLeImpConstraint::on_set_max(Model& model, int save_point,
         save_trail_if_needed(model, save_point);
         min_rem_potential_ += c * (new_max - old_max);
 
-        if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+        if (model.is_instantiated(b_id_) && model.value(b_id_) == 1) {
             if (current_fixed_sum_ + min_rem_potential_ > bound_) {
                 return false;
             }

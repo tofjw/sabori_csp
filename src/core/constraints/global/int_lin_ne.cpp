@@ -112,8 +112,8 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
     auto& last_var = vars_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (last_var->is_assigned()) {
-        int64_t actual = last_var->assigned_value().value();
+    if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
+        int64_t actual = model.value(var_ids_[last_var_internal_idx]);
         return (last_coeff * actual != remaining);
     }
 
@@ -124,7 +124,7 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
         // 禁止値がドメインに含まれている場合は除外
         // Model 経由で Trail に記録し、バックトラック時に復元可能にする
         if (last_var->domain().contains(forbidden_value)) {
-	    model.enqueue_remove_value(last_var->id(), forbidden_value);
+	    model.enqueue_remove_value(var_ids_[last_var_internal_idx], forbidden_value);
         }
     }
     // 割り切れない場合は自動的に制約を満たす
