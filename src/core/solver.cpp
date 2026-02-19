@@ -92,20 +92,7 @@ std::optional<Solution> Solver::solve(Model& model) {
     stats_ = SolverStats{};
 
     // presolve: 初期伝播 + 内部構造の構築
-    if (verbose_) {
-        size_t max_cpc = 0;
-        size_t total_cpc = 0;
-        for (size_t i = 0; i < variables.size(); ++i) {
-            size_t c = model.constraints_for_var(i).size();
-            total_cpc += c;
-            if (c > max_cpc) max_cpc = c;
-        }
-        double avg_cpc = variables.empty() ? 0.0 : static_cast<double>(total_cpc) / variables.size();
-        std::cerr << "% [verbose] presolve start: " << model.constraints().size()
-                  << " constraints, " << variables.size() << " variables"
-                  << " (avg " << std::fixed << std::setprecision(1) << avg_cpc
-                  << " constraints/var, max " << max_cpc << ")\n";
-    }
+    if (verbose_) log_presolve_start(model);
     if (!presolve(model)) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return std::nullopt;  // UNSAT
@@ -169,20 +156,7 @@ std::optional<Solution> Solver::solve_optimize(
     current_decision_ = 0;
     stats_ = SolverStats{};
 
-    if (verbose_) {
-        size_t max_cpc = 0;
-        size_t total_cpc = 0;
-        for (size_t i = 0; i < variables.size(); ++i) {
-            size_t c = model.constraints_for_var(i).size();
-            total_cpc += c;
-            if (c > max_cpc) max_cpc = c;
-        }
-        double avg_cpc = variables.empty() ? 0.0 : static_cast<double>(total_cpc) / variables.size();
-        std::cerr << "% [verbose] presolve start: " << model.constraints().size()
-                  << " constraints, " << variables.size() << " variables"
-                  << " (avg " << std::fixed << std::setprecision(1) << avg_cpc
-                  << " constraints/var, max " << max_cpc << ")\n";
-    }
+    if (verbose_) log_presolve_start(model);
     if (!presolve(model)) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         optimizing_ = false;
@@ -230,9 +204,12 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     stats_ = SolverStats{};
 
     // presolve: 初期伝播 + 内部構造の構築
+    if (verbose_) log_presolve_start(model);
     if (!presolve(model)) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return 0;  // UNSAT
     }
+    if (verbose_) std::cerr << "% [verbose] presolve done\n";
     init_var_order_tracking(model);
 
     size_t count = 0;
@@ -1018,6 +995,22 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             }
         }
     }
+}
+
+void Solver::log_presolve_start(const Model& model) const {
+    const auto& variables = model.variables();
+    size_t max_cpc = 0;
+    size_t total_cpc = 0;
+    for (size_t i = 0; i < variables.size(); ++i) {
+        size_t c = model.constraints_for_var(i).size();
+        total_cpc += c;
+        if (c > max_cpc) max_cpc = c;
+    }
+    double avg_cpc = variables.empty() ? 0.0 : static_cast<double>(total_cpc) / variables.size();
+    std::cerr << "% [verbose] presolve start: " << model.constraints().size()
+              << " constraints, " << variables.size() << " variables"
+              << " (avg " << std::fixed << std::setprecision(1) << avg_cpc
+              << " constraints/var, max " << max_cpc << ")\n";
 }
 
 bool Solver::presolve(Model& model) {
