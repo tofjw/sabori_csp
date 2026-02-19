@@ -1,6 +1,7 @@
 #include "sabori_csp/fzn/model.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace sabori_csp {
 namespace fzn {
@@ -214,6 +215,15 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         throw std::runtime_error("Invalid constraint argument");
     };
 
+    // FlatZinc アノテーション由来の is_defined_var 集合を記録
+    // （ヒューリスティックで追加したものと区別するため）
+    std::unordered_set<size_t> original_defined_vars;
+    for (size_t i = 0; i < model->variables().size(); ++i) {
+        if (model->is_defined_var(i)) {
+            original_defined_vars.insert(i);
+        }
+    }
+
     // Create constraints
     for (const auto& decl : constraint_decls_) {
         ConstraintPtr constraint;
@@ -313,6 +323,43 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+            // すべての変数が is_defined_var でなければ、係数の絶対値が1で
+            // 配列に2回以上出現しない変数を1つ選んで探索候補から除外
+            // 既に defined_var になっている変数はスキップ
+            {
+                bool any_defined = false;
+                for (const auto& v : vars) {
+                    if (original_defined_vars.count(v->id())) {
+                        any_defined = true;
+                        break;
+                    }
+                }
+                if (!any_defined && !vars.empty()) {
+                    size_t n = vars.size();
+                    size_t best = n;  // sentinel
+                    size_t best_size = 0;
+                    for (size_t i = 0; i < n; ++i) {
+                        if (std::abs(coeffs[i]) != 1) continue;
+                        if (model->is_defined_var(vars[i]->id())) continue;
+                        bool duplicate = false;
+                        for (size_t j = 0; j < n; ++j) {
+                            if (i != j && vars[i]->id() == vars[j]->id()) {
+                                duplicate = true;
+                                break;
+                            }
+                        }
+                        if (duplicate) continue;
+                        size_t ds = vars[i]->domain().size();
+                        if (ds > best_size) {
+                            best_size = ds;
+                            best = i;
+                        }
+                    }
+                    if (best < n) {
+                        model->set_defined_var(vars[best]->id());
+                    }
+                }
+            }
 #endif
         } else if (decl.name == "int_lin_le") {
             if (decl.args.size() != 3) {
@@ -656,6 +703,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
 
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+
+            // index が決まれば result は一意に決まるため、探索候補から除外
+            if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
+                model->set_defined_var(result_var->id());
+            }
         } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
 #if 1 /* broken */
             // array_var_int_element(index, array, result) where array contains variables
@@ -679,6 +731,20 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<ArrayVarIntElementConstraint>(
                 index_var, array_vars, result_var, false);
+
+            // index と配列要素が決まれば result は一意に決まるため、探索候補から除外
+            if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
+                bool any_array_defined = false;
+                for (const auto& av : array_vars) {
+                    if (model->is_defined_var(av->id())) {
+                        any_array_defined = true;
+                        break;
+                    }
+                }
+                if (!any_array_defined) {
+                    model->set_defined_var(result_var->id());
+                }
+            }
 #endif
         } else if (decl.name == "array_int_maximum") {
             // array_int_maximum(m, [x1, x2, ...]) means m = max(x1, x2, ...)

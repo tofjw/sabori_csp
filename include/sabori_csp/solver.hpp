@@ -248,6 +248,8 @@ public:
     void set_bisection_threshold(size_t threshold) { bisection_threshold_ = threshold; }
 
 private:
+    void log_presolve_start(const Model& model) const;
+
     std::atomic<bool> stopped_{false};
     bool verbose_ = false;
     // ===== 探索 =====
