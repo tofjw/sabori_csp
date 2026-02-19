@@ -747,8 +747,9 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             // モード判定
             auto& domain = variables[var_idx]->domain();
             auto domain_range = static_cast<size_t>(prev_max - prev_min + 1);
-            bool use_bisect = domain.is_bounds_only() ||
-                              (bisection_threshold_ > 0 && domain_range > bisection_threshold_);
+            bool use_bisect = (domain.is_bounds_only() ||
+                              (bisection_threshold_ > 0 && domain_range > bisection_threshold_))
+                              && !model.is_no_bisect(var_idx);
 
             if (use_bisect) {
                 // Bisect モード

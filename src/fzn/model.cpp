@@ -704,6 +704,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
 
+            // index変数はbisectよりenumerateが効果的
+            model->set_no_bisect(index_var->id());
+
             // index が決まれば result は一意に決まるため、探索候補から除外
             if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
                 model->set_defined_var(result_var->id());
@@ -731,6 +734,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             // FlatZinc uses 1-based indexing by default
             constraint = std::make_shared<ArrayVarIntElementConstraint>(
                 index_var, array_vars, result_var, false);
+
+            // index変数はbisectよりenumerateが効果的
+            model->set_no_bisect(index_var->id());
 
             // index と配列要素が決まれば result は一意に決まるため、探索候補から除外
             if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {

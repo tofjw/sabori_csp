@@ -28,6 +28,7 @@ struct VarData {
     Domain::value_type support_value;
     int last_saved_level = -1;
     bool is_defined_var = false;
+    bool no_bisect = false;
 };
 
 /**
@@ -219,6 +220,16 @@ public:
      * @brief 変数を is_defined_var としてマーク
      */
     void set_defined_var(size_t var_idx);
+
+    /**
+     * @brief 変数が no_bisect（bisect対象外）か
+     */
+    bool is_no_bisect(size_t var_idx) const { return var_data_[var_idx].no_bisect; }
+
+    /**
+     * @brief 変数を no_bisect としてマーク
+     */
+    void set_no_bisect(size_t var_idx) { var_data_[var_idx].no_bisect = true; }
 
     // ===== ドメイン操作（Trail 付き） =====
 

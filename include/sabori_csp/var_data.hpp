@@ -25,6 +25,7 @@ struct VarData {
     int64_t support_value;
     int last_saved_level = -1;
     bool is_defined_var = false;
+    bool no_bisect = false;
 };
 
 /**
