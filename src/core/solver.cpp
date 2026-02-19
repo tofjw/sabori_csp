@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <limits>
 #include <numeric>
+#include <iomanip>
 #include <iostream>
 
 namespace sabori_csp {
@@ -92,8 +93,18 @@ std::optional<Solution> Solver::solve(Model& model) {
 
     // presolve: 初期伝播 + 内部構造の構築
     if (verbose_) {
+        size_t max_cpc = 0;
+        size_t total_cpc = 0;
+        for (size_t i = 0; i < variables.size(); ++i) {
+            size_t c = model.constraints_for_var(i).size();
+            total_cpc += c;
+            if (c > max_cpc) max_cpc = c;
+        }
+        double avg_cpc = variables.empty() ? 0.0 : static_cast<double>(total_cpc) / variables.size();
         std::cerr << "% [verbose] presolve start: " << model.constraints().size()
-                  << " constraints, " << variables.size() << " variables\n";
+                  << " constraints, " << variables.size() << " variables"
+                  << " (avg " << std::fixed << std::setprecision(1) << avg_cpc
+                  << " constraints/var, max " << max_cpc << ")\n";
     }
     if (!presolve(model)) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
@@ -159,8 +170,18 @@ std::optional<Solution> Solver::solve_optimize(
     stats_ = SolverStats{};
 
     if (verbose_) {
+        size_t max_cpc = 0;
+        size_t total_cpc = 0;
+        for (size_t i = 0; i < variables.size(); ++i) {
+            size_t c = model.constraints_for_var(i).size();
+            total_cpc += c;
+            if (c > max_cpc) max_cpc = c;
+        }
+        double avg_cpc = variables.empty() ? 0.0 : static_cast<double>(total_cpc) / variables.size();
         std::cerr << "% [verbose] presolve start: " << model.constraints().size()
-                  << " constraints, " << variables.size() << " variables\n";
+                  << " constraints, " << variables.size() << " variables"
+                  << " (avg " << std::fixed << std::setprecision(1) << avg_cpc
+                  << " constraints/var, max " << max_cpc << ")\n";
     }
     if (!presolve(model)) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
