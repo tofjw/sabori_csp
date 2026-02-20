@@ -1,0 +1,6 @@
+% Non-decreasing array with duplicates, all solutions
+var 1..6: idx :: output_var;
+var 1..100: result :: output_var;
+constraint int_eq(result, 20);
+constraint array_int_element(idx, [10, 20, 20, 20, 30, 40], result);
+solve satisfy;

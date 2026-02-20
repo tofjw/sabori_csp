@@ -571,6 +571,68 @@ private:
 };
 
 /**
+ * @brief 単調配列用 array_int_element 制約の特殊化
+ *
+ * 配列が非減少または非増加の場合、Sparse Table や value_to_indices マップが不要になり、
+ * O(n) メモリ + O(log n) 二分探索で伝播できる。
+ *
+ * 伝播ルール (非減少の場合):
+ * - index bounds 変更 → result bounds = a[index_min], a[index_max] (O(1))
+ * - result bounds 変更 → index bounds = lower_bound/upper_bound (O(log n))
+ */
+class IntElementMonotonicConstraint : public Constraint {
+public:
+    enum class Monotonicity { NON_DECREASING, NON_INCREASING };
+
+    IntElementMonotonicConstraint(VariablePtr index_var,
+                                   std::vector<Domain::value_type> array,
+                                   VariablePtr result_var,
+                                   Monotonicity mono,
+                                   bool zero_based = false);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr index_var_;
+    VariablePtr result_var_;
+    std::vector<Domain::value_type> array_;  // 元配列そのまま (O(n))
+    size_t n_;
+    bool zero_based_;
+    Monotonicity mono_;
+    size_t index_id_;
+    size_t result_id_;
+
+    Domain::value_type index_to_0based(Domain::value_type idx) const;
+};
+
+/**
  * @brief array_int_maximum制約: m = max(x[0], x[1], ..., x[n-1])
  *
  * 変数 m は配列 x の最大値と等しい。

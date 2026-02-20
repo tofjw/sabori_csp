@@ -701,11 +701,29 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_element: third argument must be a variable or integer");
             }
 
-            // FlatZinc uses 1-based indexing by default
-            constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+            // 単調性チェック: 単調配列なら特殊化制約を使用
+            bool non_decreasing = true, non_increasing = true;
+            for (size_t i = 1; i < array.size(); ++i) {
+                if (array[i] < array[i-1]) non_decreasing = false;
+                if (array[i] > array[i-1]) non_increasing = false;
+                if (!non_decreasing && !non_increasing) break;
+            }
 
-            // index変数はbisectよりenumerateが効果的
-            model->set_no_bisect(index_var->id());
+            // FlatZinc uses 1-based indexing by default
+            if ((non_decreasing || non_increasing) && array.size() > 1) {
+                auto mono = non_decreasing
+                    ? IntElementMonotonicConstraint::Monotonicity::NON_DECREASING
+                    : IntElementMonotonicConstraint::Monotonicity::NON_INCREASING;
+                constraint = std::make_shared<IntElementMonotonicConstraint>(
+                    index_var, array, result_var, mono, false);
+            } else {
+                constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+            }
+
+            if (!((non_decreasing || non_increasing) && array.size() > 1)) {
+                // 非単調配列ではindex変数はbisectよりenumerateが効果的
+                model->set_no_bisect(index_var->id());
+            }
 
             // index が決まれば result は一意に決まるため、探索候補から除外
             if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {

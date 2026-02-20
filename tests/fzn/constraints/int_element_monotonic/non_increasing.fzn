@@ -1,0 +1,6 @@
+% int_element with non-increasing array, result fixed
+var 1..5: idx :: output_var;
+var 1..100: result :: output_var;
+constraint int_eq(result, 30);
+constraint array_int_element(idx, [50, 40, 30, 20, 10], result);
+solve satisfy;
