@@ -26,10 +26,12 @@ void print_usage(const char* program) {
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
+    std::cerr << "  -N      Disable nogood learning\n";
 }
 
 bool g_print_stats = false;
 bool g_verbose = false;
+bool g_no_nogood = false;
 
 void print_stats(const sabori_csp::Solver& solver) {
     if (!g_print_stats) return;
@@ -40,10 +42,21 @@ void print_stats(const sabori_csp::Solver& solver) {
               << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
               << " nogoods=" << s.nogoods_size
               << " unit_nogoods=" << s.unit_nogoods_size
-              << " nogood_prune=" << s.nogood_prune_count
+              << " ng_check=" << s.nogood_check_count
+              << " ng_domain=" << s.nogood_domain_count
+              << " ng_prune=" << s.nogood_prune_count
+              << " ng_noop=" << (s.nogood_check_count - s.nogood_domain_count - s.nogood_prune_count)
               << " bisect=" << s.bisect_count
               << " enumerate=" << s.enumerate_count
               << "\n";
+    auto dist = solver.nogood_length_distribution();
+    if (!dist.empty()) {
+        std::cerr << "% NG length distribution:";
+        for (const auto& [len, count] : dist) {
+            std::cerr << " " << len << ":" << count;
+        }
+        std::cerr << "\n";
+    }
 }
 
 void print_value(int64_t value, bool is_bool) {
@@ -115,6 +128,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
+    if (g_no_nogood) solver.set_nogood_learning(false);
     g_current_solver = &solver;
 
     if (find_all) {
@@ -157,6 +171,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
+    if (g_no_nogood) solver.set_nogood_learning(false);
     g_current_solver = &solver;
 
     // 目的変数のインデックスを検索
@@ -219,6 +234,8 @@ int main(int argc, char* argv[]) {
             timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
             bisection_threshold = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-N") == 0) {
+            g_no_nogood = true;
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);

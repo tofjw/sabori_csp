@@ -85,7 +85,7 @@ struct NoGood {
     std::vector<Literal> literals;
     size_t w1 = 0;  // 監視リテラル1
     size_t w2 = 0;  // 監視リテラル2
-    size_t last_active = 0;  // 最後に prune を起こした時点のカウンタ値
+    size_t last_active = 0;  // 最後に発火（矛盾 or ドメイン削除）したリスタート番号
     bool permanent = false;  // trueならメンテナンスで削除しない（解NG用）
 
     NoGood(std::vector<Literal> lits)
@@ -163,6 +163,21 @@ public:
      * @brief NoGood 学習を有効/無効にする
      */
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
+
+    /**
+     * @brief NoGood の長さ分布を取得（デバッグ用）
+     */
+    std::map<size_t, size_t> nogood_length_distribution() const {
+        std::map<size_t, size_t> dist;
+        for (size_t len = 1; len <= unit_nogoods_.size(); ++len) {
+            // unit nogoods are length 1
+        }
+        if (!unit_nogoods_.empty()) dist[1] += unit_nogoods_.size();
+        for (const auto& ng : nogoods_) {
+            dist[ng->literals.size()]++;
+        }
+        return dist;
+    }
 
     /**
      * @brief リスタートを有効/無効にする
@@ -423,7 +438,7 @@ private:
     std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
     std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_geq_watches_;
     static constexpr size_t max_nogoods_ = 100000;
-    size_t ng_use_counter_ = 0;  // prune 発生ごとにインクリメント
+    size_t nogood_inactive_restart_limit_ = 10;  // この回数リスタートしても非活性なNGを削除
 
     // 部分解（最良の1つだけ保持）
     size_t best_num_instantiated_ = 0;

@@ -331,6 +331,19 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
 
+            // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
+            nogoods_.erase(
+                std::remove_if(nogoods_.begin(), nogoods_.end(),
+                    [&](const auto& ng) {
+                        if (ng->permanent) return false;
+                        if (stats_.restart_count - ng->last_active >= nogood_inactive_restart_limit_) {
+                            remove_nogood(ng.get());
+                            return true;
+                        }
+                        return false;
+                    }),
+                nogoods_.end());
+
             // NG を有用度順にソート: permanent を先頭、次に last_active が大きいものを優先
             std::stable_sort(nogoods_.begin(), nogoods_.end(),
                 [](const auto& a, const auto& b) {
@@ -569,6 +582,19 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
+
+            // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
+            nogoods_.erase(
+                std::remove_if(nogoods_.begin(), nogoods_.end(),
+                    [&](const auto& ng) {
+                        if (ng->permanent) return false;
+                        if (stats_.restart_count - ng->last_active >= nogood_inactive_restart_limit_) {
+                            remove_nogood(ng.get());
+                            return true;
+                        }
+                        return false;
+                    }),
+                nogoods_.end());
 
             // NG を有用度順にソート
             std::stable_sort(nogoods_.begin(), nogoods_.end(),
@@ -1083,7 +1109,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
                 for (auto* ng : std::vector<NoGood*>(it2->second)) {
                     stats_.nogood_check_count++;
                     if (!propagate_nogood(model, ng, {var_idx, val, Literal::Type::Eq})) {
-                        ng->last_active = ++ng_use_counter_;
+                        ng->last_active = stats_.restart_count;
                         stats_.nogood_prune_count++;
                         size_t n = ng->literals.size();
                         for (const auto& lit : ng->literals) {
@@ -1405,6 +1431,8 @@ void Solver::add_nogood(const std::vector<Literal>& literals) {
         }
     };
 
+    ng_ptr->last_active = stats_.restart_count;
+
     register_watch(ng_ptr->literals[ng_ptr->w1], ng_ptr);
     if (ng_ptr->w1 != ng_ptr->w2) {
         register_watch(ng_ptr->literals[ng_ptr->w2], ng_ptr);
@@ -1527,6 +1555,7 @@ bool Solver::propagate_nogood(Model& model, NoGood* ng, const Literal& triggered
     }
 
     // Unit propagation: other_lit の否定を強制
+    ng->last_active = stats_.restart_count;
     stats_.nogood_domain_count++;
     switch (other_lit.type) {
     case Literal::Type::Eq:
@@ -1559,7 +1588,7 @@ bool Solver::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower
                 if (current_min >= threshold) {
                     stats_.nogood_check_count++;
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Geq})) {
-                        ng->last_active = ++ng_use_counter_;
+                        ng->last_active = stats_.restart_count;
                         stats_.nogood_prune_count++;
                         size_t n = ng->literals.size();
                         for (const auto& lit : ng->literals) {
@@ -1580,7 +1609,7 @@ bool Solver::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower
                 if (current_max <= threshold) {
                     stats_.nogood_check_count++;
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Leq})) {
-                        ng->last_active = ++ng_use_counter_;
+                        ng->last_active = stats_.restart_count;
                         stats_.nogood_prune_count++;
                         size_t n = ng->literals.size();
                         for (const auto& lit : ng->literals) {
