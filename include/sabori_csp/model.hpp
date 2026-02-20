@@ -16,6 +16,17 @@
 namespace sabori_csp {
 
 /**
+ * @brief 128-bit ブルームフィルタ（NoGood 変数選択タイブレーク用）
+ */
+struct Bloom128 {
+    uint64_t lo = 0, hi = 0;
+    Bloom128& operator|=(const Bloom128& o) { lo |= o.lo; hi |= o.hi; return *this; }
+    Bloom128 operator&(const Bloom128& o) const { return {lo & o.lo, hi & o.hi}; }
+    int popcount() const { return __builtin_popcountll(lo) + __builtin_popcountll(hi); }
+    bool empty() const { return lo == 0 && hi == 0; }
+};
+
+/**
  * @brief 変数データ（AoS 構造体）
  *
  * 同一変数の min/max/size を同一キャッシュラインに配置する。
@@ -372,6 +383,9 @@ private:
     std::vector<PendingUpdate> pending_updates_;
     size_t pending_read_idx_ = 0;
 
+    // NoGood ブルームフィルタ（変数選択タイブレーク用）
+    std::vector<Bloom128> var_ng_bloom_;
+
     // 制約 raw ポインタ配列（shared_ptr デリファレンス回避）
     std::vector<Constraint*> constraint_ptrs_;
 
@@ -383,6 +397,13 @@ private:
     std::vector<std::vector<WatchEntry>> var_to_constraint_indices_;
 
 public:
+    // ===== NoGood ブルームフィルタ =====
+
+    const Bloom128& var_ng_bloom(size_t var_idx) const { return var_ng_bloom_[var_idx]; }
+    void or_var_ng_bloom(size_t var_idx, const Bloom128& bits) { var_ng_bloom_[var_idx] |= bits; }
+    void resize_var_ng_bloom(size_t n) { var_ng_bloom_.assign(n, Bloom128{}); }
+    void clear_var_ng_blooms() { std::fill(var_ng_bloom_.begin(), var_ng_bloom_.end(), Bloom128{}); }
+
     /**
      * @brief 変数に関連する制約インデックスを取得
      */

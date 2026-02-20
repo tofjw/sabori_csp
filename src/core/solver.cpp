@@ -37,6 +37,29 @@ Literal Literal::negate() const {
     return *this;
 }
 
+Bloom128 Solver::ng_bloom_bits(size_t ng_id) {
+    constexpr uint64_t k1 = 11400714819323198485ULL;
+    constexpr uint64_t k2 = 7046029254386353131ULL;
+    Bloom128 b;
+    uint64_t h1 = ng_id * k1;
+    uint64_t h2 = ng_id * k2;
+    unsigned pos1 = h1 >> 57;  // 0..127
+    unsigned pos2 = h2 >> 57;
+    if (pos1 < 64) b.lo |= 1ULL << pos1; else b.hi |= 1ULL << (pos1 - 64);
+    if (pos2 < 64) b.lo |= 1ULL << pos2; else b.hi |= 1ULL << (pos2 - 64);
+    return b;
+}
+
+void Solver::rebuild_var_ng_blooms(Model& model) {
+    model.clear_var_ng_blooms();
+    for (const auto& ng : nogoods_) {
+        auto bits = ng_bloom_bits(ng->id);
+        for (const auto& lit : ng->literals) {
+            model.or_var_ng_bloom(lit.var_idx, bits);
+        }
+    }
+}
+
 bool Solver::apply_unit_nogoods(Model& model) {
     if (unit_nogoods_.empty()) return true;
     for (const auto& lit : unit_nogoods_) {
@@ -90,6 +113,9 @@ std::optional<Solution> Solver::solve(Model& model) {
     current_best_assignment_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
+    model.resize_var_ng_bloom(variables.size());
+    ng_usage_bloom_ = Bloom128{};
+    ng_id_counter_ = 0;
 
     // presolve: 初期伝播 + 内部構造の構築
     if (verbose_) log_presolve_start(model);
@@ -155,6 +181,9 @@ std::optional<Solution> Solver::solve_optimize(
     current_best_assignment_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
+    model.resize_var_ng_bloom(variables.size());
+    ng_usage_bloom_ = Bloom128{};
+    ng_id_counter_ = 0;
 
     if (verbose_) log_presolve_start(model);
     if (!presolve(model)) {
@@ -202,6 +231,9 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     current_best_assignment_.clear();
     current_decision_ = 0;
     stats_ = SolverStats{};
+    model.resize_var_ng_bloom(variables.size());
+    ng_usage_bloom_ = Bloom128{};
+    ng_id_counter_ = 0;
 
     // presolve: 初期伝播 + 内部構造の構築
     if (verbose_) log_presolve_start(model);
@@ -330,6 +362,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
+            ng_usage_bloom_ = Bloom128{};
 
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
@@ -360,6 +393,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
             // Activity 減衰
             decay_activities();
+
+            // NoGood ブルームフィルタを再構築
+            rebuild_var_ng_blooms(model);
 
             // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
             std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
@@ -515,6 +551,8 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 model.clear_pending_updates();
                 backtrack(model, root_point);
                 current_decision_ = root_point;
+                ng_usage_bloom_ = Bloom128{};
+                rebuild_var_ng_blooms(model);
 
                 // unit nogood をドメインに適用
                 for (const auto& lit : unit_nogoods_) {
@@ -582,6 +620,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             stats_.restart_count++;
             current_best_assignment_ = select_best_assignment();
+            ng_usage_bloom_ = Bloom128{};
 
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
@@ -612,6 +651,9 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             // Activity 減衰
             decay_activities();
+
+            // NoGood ブルームフィルタを再構築
+            rebuild_var_ng_blooms(model);
 
             // スキャン順シャッフル
             std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng_);
@@ -911,7 +953,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     continue;
                 }
 
-                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_});
+                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_, ng_usage_bloom_});
+                ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
                 bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                            frame.prev_min, frame.prev_max);
@@ -966,7 +1009,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             while (frame.branch < 2) {
                 frame.branch++;
                 current_decision_++;
-                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_});
+                unassigned_trail_.push_back({current_decision_, decision_unassigned_end_, defined_unassigned_end_, ng_usage_bloom_});
+                ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
                 // right_first なら branch==1 で右、branch==2 で左
                 bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
@@ -1132,8 +1176,9 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 void Solver::backtrack(Model& model, int save_point) {
     model.rewind_to(save_point);
     model.rewind_dirty_constraints(save_point);
-    // パーティション境界を復元
+    // パーティション境界とブルームフィルタを復元
     while (!unassigned_trail_.empty() && unassigned_trail_.back().level > save_point) {
+        ng_usage_bloom_ = unassigned_trail_.back().ng_usage_bloom;
         decision_unassigned_end_ = unassigned_trail_.back().dec_end;
         defined_unassigned_end_ = unassigned_trail_.back().def_end;
         unassigned_trail_.pop_back();
@@ -1225,6 +1270,8 @@ size_t Solver::select_variable(const Model& model) {
     size_t best_idx = SIZE_MAX;
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
+    int best_ng_overlap = -1;
+    bool use_bloom = !ng_usage_bloom_.empty();
 
     auto scan_range = [&](size_t begin, size_t end) {
         size_t n = end - begin;
@@ -1256,10 +1303,24 @@ size_t Solver::select_variable(const Model& model) {
                 }
             }
 
+            if (tied && use_bloom) {
+                int ng_overlap = (model.var_ng_bloom(i) & ng_usage_bloom_).popcount();
+                if (ng_overlap > best_ng_overlap) {
+                    better = true;
+                    tied = false;
+                } else if (ng_overlap < best_ng_overlap) {
+                    tied = false;  // current best is better
+                }
+                // ng_overlap == best_ng_overlap → still tied → reservoir sampling
+            }
+
             if (better) {
                 best_idx = i;
                 min_domain_size = domain_size;
                 best_activity = activity_[i];
+                if (use_bloom) {
+                    best_ng_overlap = (model.var_ng_bloom(i) & ng_usage_bloom_).popcount();
+                }
                 tie_count = 1;
             } else if (tied) {
                 ++tie_count;
@@ -1415,6 +1476,7 @@ void Solver::set_hint_solution(const Solution& hint, const Model& model) {
 void Solver::add_nogood(const std::vector<Literal>& literals) {
     auto ng = std::make_unique<NoGood>(literals);
     auto* ng_ptr = ng.get();
+    ng_ptr->id = ng_id_counter_++;
 
     // Watch 登録（Literal::Type でディスパッチ）
     auto register_watch = [this](const Literal& lit, NoGood* ng) {

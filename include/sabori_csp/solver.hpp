@@ -86,6 +86,7 @@ struct NoGood {
     size_t w1 = 0;  // 監視リテラル1
     size_t w2 = 0;  // 監視リテラル2
     size_t last_active = 0;  // 最後に発火（矛盾 or ドメイン削除）したリスタート番号
+    size_t id = 0;  // ブルームフィルタ用通し番号
     bool permanent = false;  // trueならメンテナンスで削除しない（解NG用）
 
     NoGood(std::vector<Literal> lits)
@@ -391,6 +392,16 @@ private:
      */
     bool propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound);
 
+    /**
+     * @brief NoGood ID からブルームフィルタのビットパターンを生成
+     */
+    static Bloom128 ng_bloom_bits(size_t ng_id);
+
+    /**
+     * @brief 全 NoGood から変数ごとのブルームフィルタを再構築
+     */
+    void rebuild_var_ng_blooms(Model& model);
+
     // ===== 部分解管理 =====
 
     /**
@@ -432,6 +443,8 @@ private:
     std::vector<Literal> decision_trail_;
 
     // NoGood
+    size_t ng_id_counter_ = 0;       // NG 通し番号ジェネレータ
+    Bloom128 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況
     std::vector<Literal> unit_nogoods_;  // 長さ1のNG（リスタート時にドメイン削減に使う）
     std::vector<std::unique_ptr<NoGood>> nogoods_;
     std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
@@ -478,6 +491,7 @@ private:
         int level;
         size_t dec_end;
         size_t def_end;
+        Bloom128 ng_usage_bloom;
     };
     std::vector<UnassignedTrailEntry> unassigned_trail_;
 
