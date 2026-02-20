@@ -1,0 +1,7 @@
+% array_bool_element test: array[index] = result with bool constant array
+var 1..4: idx :: output_var;
+var 0..1: result :: output_var;
+array [1..4] of int: arr = [1, 0, 1, 0];
+constraint array_bool_element(idx, arr, result);
+constraint int_eq(idx, 2);
+solve satisfy;
