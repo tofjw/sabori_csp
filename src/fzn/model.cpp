@@ -725,9 +725,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 model->set_no_bisect(index_var->id());
             }
 
-            // index が決まれば result は一意に決まるため、探索候補から除外
-            if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
-                model->set_defined_var(result_var->id());
+            // 単調配列では index が決まれば result は一意に決まるため、探索候補から除外
+            if ((non_decreasing || non_increasing) && array.size() > 1) {
+                if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
+                    model->set_defined_var(result_var->id());
+                }
             }
         } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
 #if 1 /* broken */
