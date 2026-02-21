@@ -11,6 +11,7 @@
 
 std::atomic<bool> g_timeout_flag{false};
 sabori_csp::Solver* g_current_solver = nullptr;
+int g_timeout_sec = 0;
 
 void timeout_handler(int) {
     g_timeout_flag = true;
@@ -130,6 +131,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
     g_current_solver = &solver;
+    if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
     if (find_all) {
         size_t count = solver.solve_all(*model, [&fzn_model](const sabori_csp::Solution& sol) {
@@ -173,6 +175,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
     g_current_solver = &solver;
+    if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
     // 目的変数のインデックスを検索
     size_t obj_var_idx = model->find_variable_index(objective_var_name);
@@ -251,10 +254,10 @@ int main(int argc, char* argv[]) {
 
     g_bisection_threshold = bisection_threshold;
 
-    // Setup timeout
+    // Setup timeout (alarm is deferred until solver is created)
+    g_timeout_sec = timeout_sec;
     if (timeout_sec > 0) {
         std::signal(SIGALRM, timeout_handler);
-        alarm(timeout_sec);
     }
 
     if (!filename) {
