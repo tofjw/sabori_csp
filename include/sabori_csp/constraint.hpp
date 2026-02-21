@@ -57,6 +57,11 @@ public:
     virtual std::vector<VariablePtr> variables() const = 0;
 
     /**
+     * @brief 基底クラスの vars_ への const 参照を返す（コピーなし）
+     */
+    const std::vector<VariablePtr>& var_ptrs() const { return vars_; }
+
+    /**
      * @brief 制約が満たされているか確認
      * @return 満たされていればtrue、違反していればfalse、
      *         未確定ならstd::nullopt

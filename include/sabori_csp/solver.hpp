@@ -351,8 +351,9 @@ private:
      */
     inline void bump_activity(const Model& model, size_t constraint_idx) {
         const auto& constraint = model.constraints()[constraint_idx];
-        size_t n = constraint->variables().size();
-        for (const auto& v : constraint->variables()) {
+        const auto& vars = constraint->var_ptrs();
+        size_t n = vars.size();
+        for (const auto& v : vars) {
             if (v->is_assigned()) {
                 activity_[v->id()] += 1.0 / n;
             }

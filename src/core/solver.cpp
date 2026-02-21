@@ -1095,9 +1095,10 @@ bool Solver::presolve(Model& model) {
         while (changed) {
             changed = false;
             for (const auto& constraint : constraints) {
+                const auto& vars = constraint->var_ptrs();
                 size_t total_size_before = 0;
                 int64_t total_range_before = 0;
-                for (const auto& var : constraint->variables()) {
+                for (const auto& var : vars) {
                     total_size_before += var->domain().size();
                     total_range_before += var->max() - var->min();
                 }
@@ -1108,7 +1109,7 @@ bool Solver::presolve(Model& model) {
 
                 size_t total_size_after = 0;
                 int64_t total_range_after = 0;
-                for (const auto& var : constraint->variables()) {
+                for (const auto& var : vars) {
                     total_size_after += var->domain().size();
                     total_range_after += var->max() - var->min();
                 }

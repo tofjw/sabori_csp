@@ -626,7 +626,7 @@ void Model::build_constraint_watch_list() {
 
     for (size_t c_idx = 0; c_idx < constraints_.size(); ++c_idx) {
         const auto& constraint = constraints_[c_idx];
-        const auto& vars = constraint->variables();
+        const auto& vars = constraint->var_ptrs();
 
         for (size_t i = 0; i < vars.size(); ++i) {
             // 変数の ID を直接インデックスとして使用
