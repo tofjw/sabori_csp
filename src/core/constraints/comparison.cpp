@@ -34,27 +34,42 @@ std::optional<bool> IntEqConstraint::is_satisfied() const {
 }
 
 bool IntEqConstraint::presolve(Model& model) {
-    // Intersect domains
-    auto x_vals = x_->domain().values();
-    auto y_vals = y_->domain().values();
+    auto& x_dom = x_->domain();
+    auto& y_dom = y_->domain();
 
-    std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
-    std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
-    // Remove values from x that are not in y
-    for (auto v : x_vals) {
-        if (y_set.count(v) == 0) {
-            if (!x_->remove(v)) {
-                return false;
+    if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
+        // bounds intersection
+        auto new_min = std::max(x_->min(), y_->min());
+        auto new_max = std::min(x_->max(), y_->max());
+        if (new_min > new_max) return false;
+        if (new_min > x_->min()) {
+            x_dom.remove_below(new_min);
+            if (x_dom.empty()) return false;
+        }
+        if (new_max < x_->max()) {
+            x_dom.remove_above(new_max);
+            if (x_dom.empty()) return false;
+        }
+        if (new_min > y_->min()) {
+            y_dom.remove_below(new_min);
+            if (y_dom.empty()) return false;
+        }
+        if (new_max < y_->max()) {
+            y_dom.remove_above(new_max);
+            if (y_dom.empty()) return false;
+        }
+    } else {
+        // sparse set: use contains() to avoid set construction
+        auto x_vals = x_dom.values();
+        for (auto v : x_vals) {
+            if (!y_dom.contains(v)) {
+                if (!x_->remove(v)) return false;
             }
         }
-    }
-
-    // Remove values from y that are not in x
-    for (auto v : y_vals) {
-        if (x_set.count(v) == 0) {
-            if (!y_->remove(v)) {
-                return false;
+        auto y_vals = y_dom.values();
+        for (auto v : y_vals) {
+            if (!x_dom.contains(v)) {
+                if (!y_->remove(v)) return false;
             }
         }
     }
@@ -208,22 +223,42 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
 bool IntEqReifConstraint::presolve(Model& model) {
     // If b is fixed to 1, enforce x == y
     if (b_->is_assigned() && b_->assigned_value().value() == 1) {
-        auto x_vals = x_->domain().values();
-        auto y_vals = y_->domain().values();
-        std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
-        std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+        auto& x_dom = x_->domain();
+        auto& y_dom = y_->domain();
 
-        for (auto v : x_vals) {
-            if (y_set.count(v) == 0) {
-                if (!x_->remove(v)) {
-                    return false;
+        if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
+            // bounds intersection: [max(x_min,y_min), min(x_max,y_max)]
+            auto new_min = std::max(x_->min(), y_->min());
+            auto new_max = std::min(x_->max(), y_->max());
+            if (new_min > new_max) return false;
+            if (new_min > x_->min()) {
+                x_dom.remove_below(new_min);
+                if (x_dom.empty()) return false;
+            }
+            if (new_max < x_->max()) {
+                x_dom.remove_above(new_max);
+                if (x_dom.empty()) return false;
+            }
+            if (new_min > y_->min()) {
+                y_dom.remove_below(new_min);
+                if (y_dom.empty()) return false;
+            }
+            if (new_max < y_->max()) {
+                y_dom.remove_above(new_max);
+                if (y_dom.empty()) return false;
+            }
+        } else {
+            // sparse set: use contains() to avoid set construction
+            auto x_vals = x_dom.values();
+            for (auto v : x_vals) {
+                if (!y_dom.contains(v)) {
+                    if (!x_->remove(v)) return false;
                 }
             }
-        }
-        for (auto v : y_vals) {
-            if (x_set.count(v) == 0) {
-                if (!y_->remove(v)) {
-                    return false;
+            auto y_vals = y_dom.values();
+            for (auto v : y_vals) {
+                if (!x_dom.contains(v)) {
+                    if (!y_->remove(v)) return false;
                 }
             }
         }
@@ -597,22 +632,40 @@ bool IntNeReifConstraint::presolve(Model& model) {
 
     // If b is fixed to 0, enforce x == y
     if (b_->is_assigned() && b_->assigned_value().value() == 0) {
-        auto x_vals = x_->domain().values();
-        auto y_vals = y_->domain().values();
-        std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
-        std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
+        auto& x_dom = x_->domain();
+        auto& y_dom = y_->domain();
 
-        for (auto v : x_vals) {
-            if (y_set.count(v) == 0) {
-                if (!x_->remove(v)) {
-                    return false;
+        if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
+            auto new_min = std::max(x_->min(), y_->min());
+            auto new_max = std::min(x_->max(), y_->max());
+            if (new_min > new_max) return false;
+            if (new_min > x_->min()) {
+                x_dom.remove_below(new_min);
+                if (x_dom.empty()) return false;
+            }
+            if (new_max < x_->max()) {
+                x_dom.remove_above(new_max);
+                if (x_dom.empty()) return false;
+            }
+            if (new_min > y_->min()) {
+                y_dom.remove_below(new_min);
+                if (y_dom.empty()) return false;
+            }
+            if (new_max < y_->max()) {
+                y_dom.remove_above(new_max);
+                if (y_dom.empty()) return false;
+            }
+        } else {
+            auto x_vals = x_dom.values();
+            for (auto v : x_vals) {
+                if (!y_dom.contains(v)) {
+                    if (!x_->remove(v)) return false;
                 }
             }
-        }
-        for (auto v : y_vals) {
-            if (x_set.count(v) == 0) {
-                if (!y_->remove(v)) {
-                    return false;
+            auto y_vals = y_dom.values();
+            for (auto v : y_vals) {
+                if (!x_dom.contains(v)) {
+                    if (!y_->remove(v)) return false;
                 }
             }
         }

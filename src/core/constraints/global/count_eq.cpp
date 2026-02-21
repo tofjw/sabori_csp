@@ -111,14 +111,7 @@ bool CountEqConstraint::presolve(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i] && !vars_[i]->is_assigned()) {
                 if (!vars_[i]->domain().contains(target_)) return false;
-                // Presolve 中は直接ドメインを操作
-                auto vals = vars_[i]->domain().values();
-                for (auto v : vals) {
-                    if (v != target_) {
-                        vars_[i]->domain().remove(v);
-                    }
-                }
-                if (vars_[i]->domain().empty()) return false;
+                if (!vars_[i]->assign(target_)) return false;
                 // 確定した
                 definite_count_++;
                 is_possible_[i] = false;
