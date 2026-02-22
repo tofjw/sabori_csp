@@ -115,7 +115,7 @@ public:
     /**
      * @brief FlatZincモデルをコアモデルに変換
      */
-    std::unique_ptr<sabori_csp::Model> to_model() const;
+    std::unique_ptr<sabori_csp::Model> to_model(bool verbose = false) const;
 
     /**
      * @brief 出力変数名を取得

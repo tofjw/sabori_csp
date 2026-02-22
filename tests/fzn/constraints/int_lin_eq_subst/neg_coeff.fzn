@@ -1,0 +1,10 @@
+% int_lin_eq substitution: negative unit coefficient
+% -z + 2y = 6 => z = 2y - 6 (cx=-1)
+% Then z + x <= 10 => (2y-6) + x <= 10 => x + 2y <= 16
+% x in 1..5, y in 4..8, z in 1..10
+var 1..5: x :: output_var;
+var 4..8: y :: output_var;
+var 1..10: z :: is_defined_var;
+constraint int_lin_eq([-1, 2], [z, y], 6);
+constraint int_lin_le([1, 1], [z, x], 10);
+solve satisfy;

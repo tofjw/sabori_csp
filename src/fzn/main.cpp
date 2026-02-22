@@ -125,7 +125,7 @@ void print_solution(const sabori_csp::Solution& sol,
 int g_bisection_threshold = 8;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
-    auto model = fzn_model.to_model();
+    auto model = fzn_model.to_model(g_verbose);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
@@ -169,7 +169,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
 void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minimize) {
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
-    auto model = fzn_model.to_model();
+    auto model = fzn_model.to_model(g_verbose);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);

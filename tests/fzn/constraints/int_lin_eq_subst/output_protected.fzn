@@ -1,0 +1,9 @@
+% int_lin_eq substitution: output var must NOT be eliminated
+% z is output_var so it should not be substituted away
+% z + y = 5, z + x <= 8 — z must remain visible
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: z :: output_var;
+constraint int_lin_eq([1, 1], [z, y], 5);
+constraint int_lin_le([1, 1], [z, x], 8);
+solve satisfy;

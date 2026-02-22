@@ -1,0 +1,10 @@
+% int_lin_eq substitution: basic case
+% z = 10 - 2*y (defined by int_lin_eq), then z is eliminated from int_lin_le
+% int_lin_le becomes: (10-2y) + x <= 15 => x - 2y <= 5
+% With x in 1..5, y in 1..5: first solution should be found
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..10: z :: is_defined_var;
+constraint int_lin_eq([1, 2], [z, y], 10);
+constraint int_lin_le([1, 1], [z, x], 15);
+solve satisfy;

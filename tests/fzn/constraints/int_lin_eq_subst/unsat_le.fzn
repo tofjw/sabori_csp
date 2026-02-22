@@ -1,0 +1,8 @@
+% int_lin_eq substitution: UNSAT via int_lin_le
+% z = 10 - y (def), then z + y <= 5 => (10-y)+y <= 5 => 10 <= 5: UNSAT
+var 1..10: x :: output_var;
+var 1..10: y :: output_var;
+var 1..20: z :: is_defined_var;
+constraint int_lin_eq([1, 1], [z, y], 10);
+constraint int_lin_le([1, 1], [z, y], 5);
+solve satisfy;

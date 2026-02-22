@@ -1,0 +1,8 @@
+% int_lin_eq substitution: UNSAT via contradictory equations
+% z = 5 - y (def), then z + y = 7 => (5-y) + y = 7 => 5 = 7: UNSAT
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..10: z :: is_defined_var;
+constraint int_lin_eq([1, 1], [z, y], 5);
+constraint int_lin_eq([1, 1], [z, y], 7);
+solve satisfy;

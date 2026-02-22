@@ -1,5 +1,7 @@
 #include "sabori_csp/fzn/model.hpp"
 #include <algorithm>
+#include <iostream>
+#include <numeric>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -66,7 +68,7 @@ bool Model::set_var_lower_bound(const std::string& name, Domain::value_type lb) 
     return true;
 }
 
-std::unique_ptr<sabori_csp::Model> Model::to_model() const {
+std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
     auto model = std::make_unique<sabori_csp::Model>();
     std::map<std::string, VariablePtr> var_map;
 
@@ -119,6 +121,157 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             var_map[alias_name] = it->second;
             model->add_variable_alias(alias_name, it->second->id());
         }
+    }
+
+    // Phase 2: 2変数 int_lin_eq の代入マップ構築
+    struct SubstInfo {
+        std::string y_name;
+        int64_t cx, cy, rhs;
+    };
+    std::map<std::string, SubstInfo> subst_map;
+    std::unordered_set<size_t> defining_constraint_indices;
+    std::unordered_set<std::string> subst_y_vars;  // 連鎖防止
+
+    // 出力変数・目的関数変数は消去禁止
+    std::unordered_set<std::string> protected_vars;
+    for (const auto& [name, vdecl] : var_decls_) {
+        if (vdecl.is_output) protected_vars.insert(name);
+    }
+    if (solve_decl_.kind != SolveKind::Satisfy && !solve_decl_.objective_var.empty()) {
+        protected_vars.insert(solve_decl_.objective_var);
+    }
+    for (const auto& [arr_name, arr_decl] : array_decls_) {
+        if (arr_decl.is_output) {
+            for (const auto& elem : arr_decl.elements) protected_vars.insert(elem);
+        }
+    }
+
+    for (size_t ci = 0; ci < constraint_decls_.size(); ++ci) {
+        const auto& cdecl = constraint_decls_[ci];
+        if (cdecl.name != "int_lin_eq" || cdecl.args.size() != 3) continue;
+        if (!std::holds_alternative<Domain::value_type>(cdecl.args[2])) continue;
+
+        // 係数と変数名を取得
+        std::vector<int64_t> cs;
+        std::vector<std::string> vns;
+        if (std::holds_alternative<std::vector<Domain::value_type>>(cdecl.args[0])) {
+            for (auto v : std::get<std::vector<Domain::value_type>>(cdecl.args[0]))
+                cs.push_back(v);
+        } else continue;
+        if (std::holds_alternative<std::vector<std::string>>(cdecl.args[1])) {
+            vns = std::get<std::vector<std::string>>(cdecl.args[1]);
+        } else if (std::holds_alternative<std::string>(cdecl.args[1])) {
+            const auto& aname = std::get<std::string>(cdecl.args[1]);
+            auto ait = array_decls_.find(aname);
+            if (ait != array_decls_.end()) vns = ait->second.elements;
+            else continue;
+        } else continue;
+
+        if (cs.size() != vns.size()) continue;
+
+        // 非固定変数だけ集める
+        std::vector<size_t> non_fixed;
+        for (size_t i = 0; i < vns.size(); ++i) {
+            auto vit = var_decls_.find(vns[i]);
+            if (vit != var_decls_.end() && vit->second.fixed_value) continue;
+            // alias の解決先も確認
+            if (alias_map.count(vns[i])) {
+                auto ait2 = var_decls_.find(alias_map.at(vns[i]));
+                if (ait2 != var_decls_.end() && ait2->second.fixed_value) continue;
+            }
+            non_fixed.push_back(i);
+        }
+        if (non_fixed.size() != 2) continue;
+
+        size_t i0 = non_fixed[0], i1 = non_fixed[1];
+        int64_t c0 = cs[i0], c1 = cs[i1];
+        const std::string& n0 = vns[i0];
+        const std::string& n1 = vns[i1];
+
+        // 固定変数の寄与をRHSから引く
+        int64_t rhs_val = std::get<Domain::value_type>(cdecl.args[2]);
+        for (size_t i = 0; i < vns.size(); ++i) {
+            if (i == i0 || i == i1) continue;
+            auto vit = var_decls_.find(vns[i]);
+            std::string resolved = vns[i];
+            if (alias_map.count(vns[i])) resolved = alias_map.at(vns[i]);
+            auto rit = var_decls_.find(resolved);
+            if (rit != var_decls_.end() && rit->second.fixed_value) {
+                rhs_val -= cs[i] * (*rit->second.fixed_value);
+            }
+        }
+
+        // GCD 正規化: c0, c1, rhs_val を GCD で割る
+        {
+            int64_t g = std::gcd(std::abs(c0), std::abs(c1));
+            if (rhs_val != 0) g = std::gcd(g, std::abs(rhs_val));
+            if (g > 1) {
+                if (rhs_val % g != 0) continue;  // 整数解なし
+                c0 /= g; cs[i0] = c0;
+                c1 /= g; cs[i1] = c1;
+                rhs_val /= g;
+            }
+        }
+
+        // X の選択: |Cx|=1 の側を X にする
+        // 両方 |coeff|=1 の場合は is_defined_var アノテーション優先、次にドメインサイズ大きい方
+        size_t x_idx = SIZE_MAX, y_idx = SIZE_MAX;
+        bool abs0_is_1 = (std::abs(c0) == 1);
+        bool abs1_is_1 = (std::abs(c1) == 1);
+        if (abs0_is_1 && !abs1_is_1) {
+            x_idx = i0; y_idx = i1;
+        } else if (!abs0_is_1 && abs1_is_1) {
+            x_idx = i1; y_idx = i0;
+        } else if (abs0_is_1 && abs1_is_1) {
+            // 両方 |coeff|=1
+            auto vit0 = var_decls_.find(n0);
+            auto vit1 = var_decls_.find(n1);
+            bool def0 = (vit0 != var_decls_.end() && vit0->second.is_defined_var);
+            bool def1 = (vit1 != var_decls_.end() && vit1->second.is_defined_var);
+            if (def0 && !def1) {
+                x_idx = i0; y_idx = i1;
+            } else if (!def0 && def1) {
+                x_idx = i1; y_idx = i0;
+            } else {
+                // ドメインサイズで判断
+                size_t ds0 = 0, ds1 = 0;
+                auto mit0 = var_map.find(n0);
+                auto mit1 = var_map.find(n1);
+                if (mit0 != var_map.end()) ds0 = mit0->second->domain().size();
+                if (mit1 != var_map.end()) ds1 = mit1->second->domain().size();
+                if (ds0 >= ds1) { x_idx = i0; y_idx = i1; }
+                else { x_idx = i1; y_idx = i0; }
+            }
+        } else {
+            continue;  // どちらも |coeff|!=1
+        }
+
+        const std::string& x_name = vns[x_idx];
+        const std::string& y_name = vns[y_idx];
+        int64_t cx = cs[x_idx];
+        int64_t cy = cs[y_idx];
+
+        // 安全条件チェック
+        if (protected_vars.count(x_name)) continue;
+        if (subst_map.count(x_name)) continue;
+        if (subst_y_vars.count(x_name)) continue;
+        if (subst_map.count(y_name)) continue;  // 連鎖防止
+        if (alias_map.count(x_name)) continue;
+
+        subst_map[x_name] = SubstInfo{y_name, cx, cy, rhs_val};
+        defining_constraint_indices.insert(ci);
+        subst_y_vars.insert(y_name);
+
+        // X を defined_var としてマーク
+        auto xit = var_map.find(x_name);
+        if (xit != var_map.end()) {
+            model->set_defined_var(xit->second->id());
+        }
+    }
+
+    if (verbose && !subst_map.empty()) {
+        std::cerr << "% [verbose] int_lin_eq substitution: eliminated "
+                  << subst_map.size() << " variable(s)\n";
     }
 
     // Build a map of constant arrays (arrays of par int)
@@ -215,6 +368,53 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
         throw std::runtime_error("Invalid constraint argument");
     };
 
+    // apply_substitutions: int_lin_* の係数・変数名・RHS を書き換える
+    auto apply_substitutions = [&](
+        std::vector<int64_t>& coeffs,
+        std::vector<std::string>& vnames,
+        int64_t& rhs_val) -> bool
+    {
+        bool changed = false;
+        for (size_t i = 0; i < vnames.size(); ) {
+            auto it = subst_map.find(vnames[i]);
+            if (it == subst_map.end()) { ++i; continue; }
+            changed = true;
+            const auto& info = it->second;
+            int64_t ck = coeffs[i];
+            int64_t y_coeff_add = -ck * info.cx * info.cy;
+            rhs_val -= ck * info.cx * info.rhs;
+            // X の項を除去
+            coeffs.erase(coeffs.begin() + i);
+            vnames.erase(vnames.begin() + i);
+            // Y の項をマージ
+            bool found_y = false;
+            for (size_t j = 0; j < vnames.size(); ++j) {
+                if (vnames[j] == info.y_name) {
+                    coeffs[j] += y_coeff_add;
+                    found_y = true;
+                    break;
+                }
+            }
+            if (!found_y && y_coeff_add != 0) {
+                coeffs.push_back(y_coeff_add);
+                vnames.push_back(info.y_name);
+            }
+            // i は進めない（新しい要素も代入対象の可能性）
+        }
+        // 係数 0 の項を除去
+        if (changed) {
+            size_t w = 0;
+            for (size_t r = 0; r < coeffs.size(); ++r) {
+                if (coeffs[r] != 0) {
+                    if (w != r) { coeffs[w] = coeffs[r]; vnames[w] = vnames[r]; }
+                    ++w;
+                }
+            }
+            coeffs.resize(w); vnames.resize(w);
+        }
+        return changed;
+    };
+
     // FlatZinc アノテーション由来の is_defined_var 集合を記録
     // （ヒューリスティックで追加したものと区別するため）
     std::unordered_set<size_t> original_defined_vars;
@@ -225,7 +425,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
     }
 
     // Create constraints
-    for (const auto& decl : constraint_decls_) {
+    for (size_t constraint_idx = 0; constraint_idx < constraint_decls_.size(); ++constraint_idx) {
+        const bool is_defining = defining_constraint_indices.count(constraint_idx) > 0;
+
+        const auto& decl = constraint_decls_[constraint_idx];
         ConstraintPtr constraint;
 
         if (decl.name == "int_eq") {
@@ -314,12 +517,24 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_eq: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto sum = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            if (!is_defining) {
+                apply_substitutions(coeffs, var_names_mut, sum);
+
+                if (var_names_mut.empty()) {
+                    // 退化: 0 == sum
+                    if (sum != 0) {
+                        throw std::runtime_error("int_lin_eq: UNSAT after substitution (0 != " + std::to_string(sum) + ")");
+                    }
+                    continue;  // trivially satisfied
+                }
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
@@ -329,7 +544,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
             {
                 bool any_defined = false;
                 for (const auto& v : vars) {
-                    if (original_defined_vars.count(v->id())) {
+                    if (model->is_defined_var(v->id())) {
                         any_defined = true;
                         break;
                     }
@@ -369,12 +584,22 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_le: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto bound = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, bound);
+
+            if (var_names_mut.empty()) {
+                // 退化: 0 <= bound
+                if (0 > bound) {
+                    throw std::runtime_error("int_lin_le: UNSAT after substitution (0 > " + std::to_string(bound) + ")");
+                }
+                continue;  // trivially satisfied
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
@@ -387,13 +612,25 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_eq_reif: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto target = std::get<Domain::value_type>(decl.args[2]);
             auto b = get_var(decl.args[3]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, target);
+
+            if (var_names_mut.empty()) {
+                // 退化: b = (target == 0)
+                if (target == 0) {
+                    b->domain().remove(0);
+                } else {
+                    b->domain().remove(1);
+                }
+                continue;
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
@@ -406,13 +643,25 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_ne_reif: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto target = std::get<Domain::value_type>(decl.args[2]);
             auto b = get_var(decl.args[3]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, target);
+
+            if (var_names_mut.empty()) {
+                // 退化: b = (target != 0)
+                if (target != 0) {
+                    b->domain().remove(0);
+                } else {
+                    b->domain().remove(1);
+                }
+                continue;
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinNeReifConstraint>(coeffs, vars, target, b);
@@ -424,13 +673,25 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_le_reif: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto bound = std::get<Domain::value_type>(decl.args[2]);
             auto b = get_var(decl.args[3]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, bound);
+
+            if (var_names_mut.empty()) {
+                // 退化: b = (0 <= bound)
+                if (0 <= bound) {
+                    b->domain().remove(0);
+                } else {
+                    b->domain().remove(1);
+                }
+                continue;
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeReifConstraint>(coeffs, vars, bound, b);
@@ -442,13 +703,23 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_le_imp: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto bound = std::get<Domain::value_type>(decl.args[2]);
             auto b = get_var(decl.args[3]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, bound);
+
+            if (var_names_mut.empty()) {
+                // 退化: 0 <= bound → trivial, else b=0
+                if (0 > bound) {
+                    b->domain().remove(1);
+                }
+                continue;
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinLeImpConstraint>(coeffs, vars, bound, b);
@@ -460,12 +731,22 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("int_lin_ne: third argument must be an integer");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
             auto target = std::get<Domain::value_type>(decl.args[2]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
+            apply_substitutions(coeffs, var_names_mut, target);
+
+            if (var_names_mut.empty()) {
+                // 退化: 0 != target
+                if (target == 0) {
+                    throw std::runtime_error("int_lin_ne: UNSAT after substitution (0 == 0)");
+                }
+                continue;  // trivially satisfied
+            }
+
             std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
+            for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinNeConstraint>(coeffs, vars, target);
@@ -544,20 +825,31 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("bool_lin_eq requires 3 arguments");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-            std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
-                vars.push_back(get_var_by_name(name));
-            }
             // 3rd arg can be par int or var int
             if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 auto sum = std::get<Domain::value_type>(decl.args[2]);
+                apply_substitutions(coeffs, var_names_mut, sum);
+                if (var_names_mut.empty()) {
+                    if (sum != 0) {
+                        throw std::runtime_error("bool_lin_eq: UNSAT after substitution");
+                    }
+                    continue;
+                }
+                std::vector<VariablePtr> vars;
+                for (const auto& name : var_names_mut) {
+                    vars.push_back(get_var_by_name(name));
+                }
                 constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
             } else {
                 // var int: rewrite sum(c[i]*x[i]) = y as sum(c[i]*x[i]) + (-1)*y = 0
                 auto rhs_var = get_var(decl.args[2]);
+                std::vector<VariablePtr> vars;
+                for (const auto& name : var_names_mut) {
+                    vars.push_back(get_var_by_name(name));
+                }
                 coeffs.push_back(-1);
                 vars.push_back(rhs_var);
                 constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, 0);
@@ -568,20 +860,31 @@ std::unique_ptr<sabori_csp::Model> Model::to_model() const {
                 throw std::runtime_error("bool_lin_le requires 3 arguments");
             }
             const auto coeffs_raw = resolve_int_array(decl.args[0]);
-            const auto var_names = resolve_var_array(decl.args[1]);
+            auto var_names_mut = resolve_var_array(decl.args[1]);
 
             std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-            std::vector<VariablePtr> vars;
-            for (const auto& name : var_names) {
-                vars.push_back(get_var_by_name(name));
-            }
             // 3rd arg can be par int or var int
             if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
                 auto bound = std::get<Domain::value_type>(decl.args[2]);
+                apply_substitutions(coeffs, var_names_mut, bound);
+                if (var_names_mut.empty()) {
+                    if (0 > bound) {
+                        throw std::runtime_error("bool_lin_le: UNSAT after substitution");
+                    }
+                    continue;
+                }
+                std::vector<VariablePtr> vars;
+                for (const auto& name : var_names_mut) {
+                    vars.push_back(get_var_by_name(name));
+                }
                 constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
             } else {
                 // var int: rewrite sum(c[i]*x[i]) <= y as sum(c[i]*x[i]) + (-1)*y <= 0
                 auto rhs_var = get_var(decl.args[2]);
+                std::vector<VariablePtr> vars;
+                for (const auto& name : var_names_mut) {
+                    vars.push_back(get_var_by_name(name));
+                }
                 coeffs.push_back(-1);
                 vars.push_back(rhs_var);
                 constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, 0);

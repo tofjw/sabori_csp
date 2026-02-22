@@ -1,0 +1,9 @@
+% int_lin_eq substitution: reif degenerates to b=false
+% z = 5 - y (def), then (z + y == 7) <=> b => (5 == 7) <=> b => b = 0
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..10: z :: is_defined_var;
+var bool: b :: output_var;
+constraint int_lin_eq([1, 1], [z, y], 5);
+constraint int_lin_eq_reif([1, 1], [z, y], 7, b);
+solve satisfy;
