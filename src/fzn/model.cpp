@@ -1185,26 +1185,25 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 x_vars.push_back(get_var_by_name(vname));
             }
 
-            // target (y): 定数値を取得
-            Domain::value_type target_val;
+            // target (y): 定数 or 変数
+            auto c_var = get_var(decl.args[2]);
+
             if (std::holds_alternative<Domain::value_type>(decl.args[1])) {
-                target_val = std::get<Domain::value_type>(decl.args[1]);
+                auto target_val = std::get<Domain::value_type>(decl.args[1]);
+                constraint = std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
             } else if (std::holds_alternative<std::string>(decl.args[1])) {
-                // 変数参照 → singleton ならその値を使う
                 auto y_var = get_var(decl.args[1]);
                 if (y_var->is_assigned()) {
-                    target_val = y_var->assigned_value().value();
+                    // singleton → 定数版を使用
+                    auto target_val = y_var->assigned_value().value();
+                    constraint = std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
                 } else {
-                    throw std::runtime_error("fzn_count_eq: target (y) must be a constant or singleton variable");
+                    // 変数 → variable target 版を使用
+                    constraint = std::make_shared<CountEqVarTargetConstraint>(x_vars, y_var, c_var);
                 }
             } else {
                 throw std::runtime_error("fzn_count_eq: target (y) must be an integer or variable");
             }
-
-            // count variable (c)
-            auto c_var = get_var(decl.args[2]);
-
-            constraint = std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
         } else if (decl.name == "set_in") {
             // set_in(x, lb..ub) means x must be in range [lb, ub]
             if (decl.args.size() != 2) {

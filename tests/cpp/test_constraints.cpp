@@ -1575,3 +1575,155 @@ TEST_CASE("IntNeReifConstraint solver with bounds propagation", "[constraint][in
         }
     }
 }
+
+// ============================================================================
+// IntModConstraint solver integration tests
+// ============================================================================
+
+TEST_CASE("IntModConstraint solve_all basic", "[constraint][int_mod][solver]") {
+    SECTION("x mod 3 = z, x in [0,8]") {
+        // x in [0,8], y = 3, z in [0,2]
+        // Solutions: (0,0),(1,1),(2,2),(3,0),(4,1),(5,2),(6,0),(7,1),(8,2) = 9
+        Model model;
+        auto x = model.create_variable("x", 0, 8);
+        auto y = model.create_variable("y", 3, 3);
+        auto z = model.create_variable("z", 0, 2);
+        model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 9);
+        for (const auto& sol : solutions) {
+            REQUIRE(sol.at("x") % sol.at("y") == sol.at("z"));
+        }
+    }
+
+    SECTION("variable y: x mod y = z") {
+        // x in [1,12], y in [3,4], z in [0,3]
+        // y=3: z∈{0,1,2}, x∈{3,6,9,12,1,4,7,10,2,5,8,11} → 12
+        // y=4: z∈{0,1,2,3}, x∈{4,8,12,1,5,9,2,6,10,3,7,11} → 12
+        // Total = 24
+        Model model;
+        auto x = model.create_variable("x", 1, 12);
+        auto y = model.create_variable("y", 3, 4);
+        auto z = model.create_variable("z", 0, 3);
+        model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        REQUIRE(count == 24);
+        for (const auto& sol : solutions) {
+            auto y_val = sol.at("y");
+            REQUIRE(y_val != 0);
+            REQUIRE(sol.at("x") % y_val == sol.at("z"));
+        }
+    }
+}
+
+TEST_CASE("IntModConstraint with int_lin_eq propagation chain", "[constraint][int_mod][solver]") {
+    // x in [5,9], y in [2,5], z in [0,4]
+    // Constraints: x % y = z AND x - z = 5 (i.e., x = z + 5)
+    // This forces a propagation chain: assigning z → int_lin_eq propagates x → int_mod propagates
+    // Solutions: (z+5) % y = z for z∈[0,4], y∈[2,5]:
+    //   z=0,x=5: 5%y=0 → y=5 → (5,5,0)
+    //   z=1,x=6: 6%y=1 → y=5 → (6,5,1)
+    //   z=2,x=7: 7%y=2 → y=5 → (7,5,2)
+    //   z=3,x=8: 8%y=3 → y=5 → (8,5,3)
+    //   z=4,x=9: 9%y=4 → y=5 → (9,5,4)
+    // Total: 5 solutions
+    Model model;
+    auto x = model.create_variable("x", 5, 9);
+    auto y = model.create_variable("y", 2, 5);
+    auto z = model.create_variable("z", 0, 4);
+    model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+    // x - z = 5 → coeffs=[1,-1], vars=[x,z], rhs=5
+    model.add_constraint(std::make_shared<IntLinEqConstraint>(
+        std::vector<int64_t>{1, -1}, std::vector<VariablePtr>{x, z}, 5));
+
+    Solver solver;
+    std::vector<Solution> solutions;
+    size_t count = solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    REQUIRE(count == 5);
+    for (const auto& sol : solutions) {
+        REQUIRE(sol.at("x") % sol.at("y") == sol.at("z"));
+        REQUIRE(sol.at("x") - sol.at("z") == 5);
+    }
+}
+
+TEST_CASE("IntModConstraint multiple int_mod sharing y", "[constraint][int_mod][solver]") {
+    // Two int_mod constraints sharing y:
+    //   x1 % y = z1  AND  x2 % y = z2
+    // x1=10 (fixed), x2=6 (fixed), y in [3,5], z1 in [0,4], z2 in [0,4]
+    //   y=3: 10%3=1, 6%3=0 → (z1=1, z2=0)
+    //   y=4: 10%4=2, 6%4=2 → (z1=2, z2=2)
+    //   y=5: 10%5=0, 6%5=1 → (z1=0, z2=1)
+    // Total: 3 solutions
+    // This tests the case where one int_mod's propagation affects y's domain,
+    // and the second int_mod must see the updated y state.
+    Model model;
+    auto x1 = model.create_variable("x1", 10, 10);
+    auto x2 = model.create_variable("x2", 6, 6);
+    auto y = model.create_variable("y", 3, 5);
+    auto z1 = model.create_variable("z1", 0, 4);
+    auto z2 = model.create_variable("z2", 0, 4);
+    model.add_constraint(std::make_shared<IntModConstraint>(x1, y, z1));
+    model.add_constraint(std::make_shared<IntModConstraint>(x2, y, z2));
+
+    Solver solver;
+    std::vector<Solution> solutions;
+    size_t count = solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    REQUIRE(count == 3);
+    for (const auto& sol : solutions) {
+        auto y_val = sol.at("y");
+        REQUIRE(sol.at("x1") % y_val == sol.at("z1"));
+        REQUIRE(sol.at("x2") % y_val == sol.at("z2"));
+    }
+}
+
+TEST_CASE("IntModConstraint with int_eq on y", "[constraint][int_mod][solver]") {
+    // int_mod(x, y, z) AND int_eq(y, w)
+    // x=7 (fixed), y in [2,6], z in [0,5], w in [2,6]
+    // int_mod: 7%y=z → y=2:z=1, y=3:z=1, y=4:z=3, y=5:z=2, y=6:z=1
+    // int_eq: y=w
+    // 5 solutions, w must equal y
+    // Tests that domain changes to y (via int_mod filtering) are properly
+    // propagated to constraints on y (int_eq).
+    Model model;
+    auto x = model.create_variable("x", 7, 7);
+    auto y = model.create_variable("y", 2, 6);
+    auto z = model.create_variable("z", 0, 5);
+    auto w = model.create_variable("w", 2, 6);
+    model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+    model.add_constraint(std::make_shared<IntEqConstraint>(y, w));
+
+    Solver solver;
+    std::vector<Solution> solutions;
+    size_t count = solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    REQUIRE(count == 5);
+    for (const auto& sol : solutions) {
+        REQUIRE(sol.at("x") % sol.at("y") == sol.at("z"));
+        REQUIRE(sol.at("y") == sol.at("w"));
+    }
+}

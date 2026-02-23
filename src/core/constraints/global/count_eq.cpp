@@ -407,4 +407,459 @@ bool CountEqConstraint::propagate(Model& model) {
     return true;
 }
 
+// ============================================================================
+// CountEqVarTargetConstraint implementation
+// ============================================================================
+
+CountEqVarTargetConstraint::CountEqVarTargetConstraint(
+    std::vector<VariablePtr> x_vars,
+    VariablePtr y_var,
+    VariablePtr count_var)
+    : Constraint(std::vector<VariablePtr>())
+    , n_(x_vars.size())
+    , target_known_(false)
+    , target_(0)
+    , definite_count_(0)
+    , possible_count_(0) {
+    // vars_ = [x[0], ..., x[n-1], y, c]
+    vars_.reserve(n_ + 2);
+    for (auto& v : x_vars) {
+        vars_.push_back(std::move(v));
+    }
+    vars_.push_back(std::move(y_var));
+    vars_.push_back(std::move(count_var));
+
+    is_possible_.resize(n_, false);
+
+    update_var_ids();
+    y_id_ = vars_[n_]->id();
+    c_id_ = vars_[n_ + 1]->id();
+}
+
+std::string CountEqVarTargetConstraint::name() const {
+    return "count_eq_var";
+}
+
+std::vector<VariablePtr> CountEqVarTargetConstraint::variables() const {
+    return vars_;
+}
+
+std::optional<bool> CountEqVarTargetConstraint::is_satisfied() const {
+    for (const auto& var : vars_) {
+        if (!var->is_assigned()) {
+            return std::nullopt;
+        }
+    }
+    auto y_val = vars_[n_]->assigned_value().value();
+    int64_t count = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        if (vars_[i]->assigned_value().value() == y_val) {
+            count++;
+        }
+    }
+    return count == vars_[n_ + 1]->assigned_value().value();
+}
+
+void CountEqVarTargetConstraint::initialize_counts(Model& model) {
+    definite_count_ = 0;
+    possible_count_ = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        if (vars_[i]->is_assigned()) {
+            if (vars_[i]->assigned_value().value() == target_) {
+                definite_count_++;
+            }
+            is_possible_[i] = false;
+        } else if (vars_[i]->domain().contains(target_)) {
+            is_possible_[i] = true;
+            possible_count_++;
+        } else {
+            is_possible_[i] = false;
+        }
+    }
+}
+
+bool CountEqVarTargetConstraint::presolve(Model& model) {
+    if (vars_[n_]->is_assigned()) {
+        // y が既に確定
+        target_known_ = true;
+        target_ = vars_[n_]->assigned_value().value();
+        initialize_counts(model);
+
+        // c の bounds を絞り込む
+        auto& c_var = vars_[n_ + 1];
+        auto c_min = c_var->min();
+        auto c_max = c_var->max();
+        auto new_min = static_cast<Domain::value_type>(definite_count_);
+        auto new_max = static_cast<Domain::value_type>(definite_count_ + possible_count_);
+
+        if (new_min > c_max || new_max < c_min) return false;
+        if (new_min > c_min) {
+            if (!c_var->remove_below(new_min)) return false;
+        }
+        if (new_max < c_max) {
+            if (!c_var->remove_above(new_max)) return false;
+        }
+
+        // Forward propagation
+        c_min = c_var->min();
+        c_max = c_var->max();
+
+        if (c_max == static_cast<Domain::value_type>(definite_count_)) {
+            for (size_t i = 0; i < n_; ++i) {
+                if (is_possible_[i]) {
+                    vars_[i]->domain().remove(target_);
+                    if (vars_[i]->domain().empty()) return false;
+                    is_possible_[i] = false;
+                    possible_count_--;
+                }
+            }
+        }
+
+        if (c_min == static_cast<Domain::value_type>(definite_count_ + possible_count_)) {
+            for (size_t i = 0; i < n_; ++i) {
+                if (is_possible_[i] && !vars_[i]->is_assigned()) {
+                    if (!vars_[i]->domain().contains(target_)) return false;
+                    if (!vars_[i]->assign(target_)) return false;
+                    definite_count_++;
+                    is_possible_[i] = false;
+                    possible_count_--;
+                }
+            }
+        }
+    } else {
+        // y 未確定: 弱い bounds のみ
+        auto& c_var = vars_[n_ + 1];
+        auto n_val = static_cast<Domain::value_type>(n_);
+        if (c_var->min() > n_val) return false;
+        if (0 > c_var->max()) return false;
+        if (c_var->min() < 0) {
+            if (!c_var->remove_below(0)) return false;
+        }
+        if (c_var->max() > n_val) {
+            if (!c_var->remove_above(n_val)) return false;
+        }
+    }
+    return true;
+}
+
+bool CountEqVarTargetConstraint::prepare_propagation(Model& model) {
+    if (vars_[n_]->is_assigned()) {
+        target_known_ = true;
+        target_ = vars_[n_]->assigned_value().value();
+        initialize_counts(model);
+    } else {
+        target_known_ = false;
+        target_ = 0;
+        definite_count_ = 0;
+        possible_count_ = 0;
+        std::fill(is_possible_.begin(), is_possible_.end(), false);
+    }
+
+    init_watches();
+    trail_.clear();
+
+    if (target_known_) {
+        auto c_min = vars_[n_ + 1]->min();
+        auto c_max = vars_[n_ + 1]->max();
+        auto def = static_cast<Domain::value_type>(definite_count_);
+        auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
+        if (def > c_max || def_plus_poss < c_min) return false;
+    }
+
+    return true;
+}
+
+bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
+                                                  size_t var_idx, size_t internal_var_idx,
+                                                  Domain::value_type value,
+                                                  Domain::value_type prev_min,
+                                                  Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+        return false;
+    }
+
+    save_trail_if_needed(model, save_point);
+
+    if (internal_var_idx == n_) {
+        // y が確定した
+        target_known_ = true;
+        target_ = value;
+        // initialize_counts の代わりに、差分を trail に記録しながら再計算
+        definite_count_ = 0;
+        possible_count_ = 0;
+        for (size_t i = 0; i < n_; ++i) {
+            bool new_val;
+            if (vars_[i]->is_assigned()) {
+                if (vars_[i]->assigned_value().value() == target_) {
+                    definite_count_++;
+                }
+                new_val = false;
+            } else if (vars_[i]->domain().contains(target_)) {
+                new_val = true;
+                possible_count_++;
+            } else {
+                new_val = false;
+            }
+            if (is_possible_[i] != new_val) {
+                trail_.back().second.is_possible_changes.push_back({i, is_possible_[i]});
+                is_possible_[i] = new_val;
+            }
+        }
+    } else if (internal_var_idx < n_ && target_known_) {
+        // x[i] が確定した（target 既知の場合のみ更新）
+        if (is_possible_[internal_var_idx]) {
+            trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
+            is_possible_[internal_var_idx] = false;
+            possible_count_--;
+            if (value == target_) {
+                definite_count_++;
+            }
+        }
+    }
+    // c が確定 or target 未知の x[i] 確定 → propagate で処理
+
+    // 残り変数チェック
+    if (has_uninstantiated()) {
+        size_t last_idx = find_last_uninstantiated();
+        if (last_idx != SIZE_MAX) {
+            if (!on_last_uninstantiated(model, save_point, last_idx)) {
+                return false;
+            }
+            return true;
+        }
+    } else {
+        return on_final_instantiate();
+    }
+
+    if (!target_known_) {
+        // y 未確定: 弱い bounds のみ
+        auto n_val = static_cast<Domain::value_type>(n_);
+        auto c_min = model.var_min(c_id_);
+        auto c_max = model.var_max(c_id_);
+        if (c_min < 0) model.enqueue_set_min(c_id_, 0);
+        if (c_max > n_val) model.enqueue_set_max(c_id_, n_val);
+        return true;
+    }
+
+    return propagate(model);
+}
+
+bool CountEqVarTargetConstraint::on_final_instantiate() {
+    auto y_val = vars_[n_]->assigned_value().value();
+    int64_t count = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        if (vars_[i]->assigned_value().value() == y_val) {
+            count++;
+        }
+    }
+    return count == vars_[n_ + 1]->assigned_value().value();
+}
+
+bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
+                                                          size_t last_var_internal_idx) {
+    if (!target_known_) {
+        // y 未確定: 弱い bounds のみ
+        auto n_val = static_cast<Domain::value_type>(n_);
+        auto c_min = model.var_min(c_id_);
+        auto c_max = model.var_max(c_id_);
+        if (c_min < 0) model.enqueue_set_min(c_id_, 0);
+        if (c_max > n_val) model.enqueue_set_max(c_id_, n_val);
+        return true;
+    }
+
+    if (last_var_internal_idx == n_ + 1) {
+        // 最後の未確定が c
+        auto def = static_cast<Domain::value_type>(definite_count_);
+        if (model.is_instantiated(c_id_)) {
+            return model.value(c_id_) == def;
+        }
+        if (vars_[n_ + 1]->domain().contains(def)) {
+            model.enqueue_instantiate(c_id_, def);
+        } else {
+            return false;
+        }
+    } else if (last_var_internal_idx == n_) {
+        // 最後の未確定が y → 弱い bounds
+        auto n_val = static_cast<Domain::value_type>(n_);
+        auto c_min = model.var_min(c_id_);
+        auto c_max = model.var_max(c_id_);
+        if (c_min < 0) model.enqueue_set_min(c_id_, 0);
+        if (c_max > n_val) model.enqueue_set_max(c_id_, n_val);
+    } else {
+        // 最後の未確定が x[j]
+        size_t j = last_var_internal_idx;
+        auto j_id = var_ids_[j];
+
+        if (model.is_instantiated(j_id)) {
+            return on_final_instantiate();
+        }
+
+        if (!model.is_instantiated(c_id_)) {
+            return propagate(model);
+        }
+
+        auto cv = model.value(c_id_);
+        auto remaining_needed = cv - static_cast<Domain::value_type>(definite_count_);
+
+        if (remaining_needed == 0) {
+            if (is_possible_[j]) {
+                if (vars_[j]->domain().size() == 1 && vars_[j]->domain().contains(target_)) {
+                    return false;
+                }
+                model.enqueue_remove_value(j_id, target_);
+            }
+        } else if (remaining_needed == 1) {
+            if (vars_[j]->domain().contains(target_)) {
+                model.enqueue_instantiate(j_id, target_);
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool CountEqVarTargetConstraint::on_set_min(Model& model, int save_point,
+                                              size_t var_idx, size_t internal_var_idx,
+                                              Domain::value_type new_min,
+                                              Domain::value_type old_min) {
+    if (!target_known_) return true;
+
+    if (internal_var_idx < n_) {
+        if (is_possible_[internal_var_idx] && target_ < new_min) {
+            save_trail_if_needed(model, save_point);
+            trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
+            is_possible_[internal_var_idx] = false;
+            possible_count_--;
+            return propagate(model);
+        }
+    } else if (internal_var_idx == n_ + 1) {
+        // c の下限更新
+        save_trail_if_needed(model, save_point);
+        return propagate(model);
+    }
+    return true;
+}
+
+bool CountEqVarTargetConstraint::on_set_max(Model& model, int save_point,
+                                              size_t var_idx, size_t internal_var_idx,
+                                              Domain::value_type new_max,
+                                              Domain::value_type old_max) {
+    if (!target_known_) return true;
+
+    if (internal_var_idx < n_) {
+        if (is_possible_[internal_var_idx] && target_ > new_max) {
+            save_trail_if_needed(model, save_point);
+            trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
+            is_possible_[internal_var_idx] = false;
+            possible_count_--;
+            return propagate(model);
+        }
+    } else if (internal_var_idx == n_ + 1) {
+        // c の上限更新
+        save_trail_if_needed(model, save_point);
+        return propagate(model);
+    }
+    return true;
+}
+
+bool CountEqVarTargetConstraint::on_remove_value(Model& model, int save_point,
+                                                    size_t var_idx, size_t internal_var_idx,
+                                                    Domain::value_type removed_value) {
+    if (!target_known_) return true;
+
+    if (internal_var_idx < n_ && removed_value == target_ && is_possible_[internal_var_idx]) {
+        save_trail_if_needed(model, save_point);
+        trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
+        is_possible_[internal_var_idx] = false;
+        possible_count_--;
+        return propagate(model);
+    }
+    return true;
+}
+
+void CountEqVarTargetConstraint::check_initial_consistency() {
+    if (target_known_) {
+        auto c_min = vars_[n_ + 1]->min();
+        auto c_max = vars_[n_ + 1]->max();
+        auto def = static_cast<Domain::value_type>(definite_count_);
+        auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
+        if (def > c_max || def_plus_poss < c_min) {
+            set_initially_inconsistent(true);
+        }
+    } else {
+        auto c_min = vars_[n_ + 1]->min();
+        auto c_max = vars_[n_ + 1]->max();
+        auto n_val = static_cast<Domain::value_type>(n_);
+        if (0 > c_max || n_val < c_min) {
+            set_initially_inconsistent(true);
+        }
+    }
+}
+
+void CountEqVarTargetConstraint::rewind_to(int save_point) {
+    while (!trail_.empty() && trail_.back().first > save_point) {
+        const auto& entry = trail_.back().second;
+        // is_possible_ の変更を巻き戻す
+        for (auto it = entry.is_possible_changes.rbegin();
+             it != entry.is_possible_changes.rend(); ++it) {
+            is_possible_[it->first] = it->second;
+        }
+        target_known_ = entry.target_known;
+        target_ = entry.target;
+        definite_count_ = entry.definite_count;
+        possible_count_ = entry.possible_count;
+        trail_.pop_back();
+    }
+}
+
+void CountEqVarTargetConstraint::save_trail_if_needed(Model& model, int save_point) {
+    if (trail_.empty() || trail_.back().first != save_point) {
+        trail_.push_back({save_point, {target_known_, target_, definite_count_, possible_count_, {}}});
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+}
+
+bool CountEqVarTargetConstraint::propagate(Model& model) {
+    auto c_min = model.var_min(c_id_);
+    auto c_max = model.var_max(c_id_);
+    auto def = static_cast<Domain::value_type>(definite_count_);
+    auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
+
+    if (def > c_max || def_plus_poss < c_min) {
+        return false;
+    }
+
+    // Bounds propagation on c
+    if (def > c_min) {
+        model.enqueue_set_min(c_id_, def);
+    }
+    if (def_plus_poss < c_max) {
+        model.enqueue_set_max(c_id_, def_plus_poss);
+    }
+
+    // c.max == definite_count_ → 残りの possible な x[i] から target を除去
+    if (c_max == def) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (is_possible_[i]) {
+                model.enqueue_remove_value(var_ids_[i], target_);
+            }
+        }
+    }
+
+    // c.min == definite_count_ + possible_count_ → 残りの possible な x[i] を target に確定
+    if (c_min == def_plus_poss) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (is_possible_[i] && !model.is_instantiated(var_ids_[i])) {
+                model.enqueue_instantiate(var_ids_[i], target_);
+            }
+        }
+    }
+
+    return true;
+}
+
 }  // namespace sabori_csp

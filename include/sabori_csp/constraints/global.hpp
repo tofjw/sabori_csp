@@ -1429,6 +1429,97 @@ private:
 };
 
 /**
+ * @brief count_eq制約（variable target）: 配列 x[] の中で y に等しい要素の数 = c
+ *
+ * y が変数（非定数）の場合に使用する。
+ * y 未確定の間は弱い bounds 伝播のみ行い、y 確定時に full propagation を開始する。
+ *
+ * 変数配置: vars_[0..n-1] = x[], vars_[n] = y, vars_[n+1] = c
+ */
+class CountEqVarTargetConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param x_vars 配列変数
+     * @param y_var ターゲット変数
+     * @param count_var カウント変数
+     */
+    CountEqVarTargetConstraint(std::vector<VariablePtr> x_vars,
+                                VariablePtr y_var,
+                                VariablePtr count_var);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
+    bool presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    size_t n_;  // 配列サイズ (x[] の要素数)
+    size_t y_id_;  // y 変数の ID キャッシュ
+    size_t c_id_;  // count 変数の ID キャッシュ
+
+    // target の状態
+    bool target_known_;           // y が確定済みか
+    Domain::value_type target_;   // y の確定値（target_known_ == true のとき有効）
+
+    // 内部カウンタ（target_known_ == true のときのみ有効）
+    size_t definite_count_;
+    size_t possible_count_;
+    std::vector<bool> is_possible_;
+
+    // Trail
+    struct TrailEntry {
+        bool target_known;
+        Domain::value_type target;
+        size_t definite_count;
+        size_t possible_count;
+        std::vector<std::pair<size_t, bool>> is_possible_changes;
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief y 確定後の full propagation
+     */
+    bool propagate(Model& model);
+
+    /**
+     * @brief y 確定時に counts を初期化
+     */
+    void initialize_counts(Model& model);
+};
+
+/**
  * @brief Disjunctive (unary resource) 制約
  *
  * 各タスク i は開始時刻 s[i]、実行時間 d[i] を持ち、
