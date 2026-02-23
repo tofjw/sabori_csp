@@ -49,6 +49,7 @@ ConnectedConstraint::ConnectedConstraint(
         uf_parent_[i] = i;
     }
 
+    update_var_ids();
     check_initial_consistency();
 }
 
@@ -256,13 +257,13 @@ bool ConnectedConstraint::on_instantiate(Model& model, int save_point,
 
             // 既に確定辺で隣接ノードと接続済みならUF union
             for (size_t e_idx : adj_[n]) {
-                if (!vars_[n_nodes_ + e_idx]->is_assigned()) continue;
-                if (vars_[n_nodes_ + e_idx]->assigned_value().value() != 1) continue;
+                if (!model.is_instantiated(var_ids_[n_nodes_ + e_idx])) continue;
+                if (model.value(var_ids_[n_nodes_ + e_idx]) != 1) continue;
                 size_t other = (static_cast<size_t>(from_[e_idx]) == n)
                     ? static_cast<size_t>(to_[e_idx])
                     : static_cast<size_t>(from_[e_idx]);
                 // other も選択済みであること
-                if (!vars_[other]->is_assigned() || vars_[other]->assigned_value().value() != 1) continue;
+                if (!model.is_instantiated(var_ids_[other]) || model.value(var_ids_[other]) != 1) continue;
                 size_t ra = uf_find(n);
                 size_t rb = uf_find(other);
                 if (ra != rb) {
@@ -277,8 +278,8 @@ bool ConnectedConstraint::on_instantiate(Model& model, int save_point,
         } else {
             // ノード n が非選択 → 隣接辺を全て非選択に
             for (size_t e_idx : adj_[n]) {
-                if (!vars_[n_nodes_ + e_idx]->is_assigned()) {
-                    model.enqueue_instantiate(vars_[n_nodes_ + e_idx]->id(), 0);
+                if (!model.is_instantiated(var_ids_[n_nodes_ + e_idx])) {
+                    model.enqueue_instantiate(var_ids_[n_nodes_ + e_idx], 0);
                 }
             }
         }
@@ -289,20 +290,20 @@ bool ConnectedConstraint::on_instantiate(Model& model, int save_point,
 
         if (value == 1) {
             // 辺 e が選択 → 両端点を選択に
-            if (!vars_[u]->is_assigned()) {
-                model.enqueue_instantiate(vars_[u]->id(), 1);
-            } else if (vars_[u]->assigned_value().value() != 1) {
+            if (!model.is_instantiated(var_ids_[u])) {
+                model.enqueue_instantiate(var_ids_[u], 1);
+            } else if (model.value(var_ids_[u]) != 1) {
                 return false;  // 端点が非選択なのに辺が選択 → 矛盾
             }
-            if (!vars_[v]->is_assigned()) {
-                model.enqueue_instantiate(vars_[v]->id(), 1);
-            } else if (vars_[v]->assigned_value().value() != 1) {
+            if (!model.is_instantiated(var_ids_[v])) {
+                model.enqueue_instantiate(var_ids_[v], 1);
+            } else if (model.value(var_ids_[v]) != 1) {
                 return false;
             }
 
             // 両端点が選択済みなら UF union
-            bool u_selected = vars_[u]->is_assigned() && vars_[u]->assigned_value().value() == 1;
-            bool v_selected = vars_[v]->is_assigned() && vars_[v]->assigned_value().value() == 1;
+            bool u_selected = model.is_instantiated(var_ids_[u]) && model.value(var_ids_[u]) == 1;
+            bool v_selected = model.is_instantiated(var_ids_[v]) && model.value(var_ids_[v]) == 1;
             if (u_selected && v_selected) {
                 size_t ra = uf_find(u);
                 size_t rb = uf_find(v);

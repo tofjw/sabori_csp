@@ -93,7 +93,7 @@ bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
     w1_ = SIZE_MAX;
     w2_ = SIZE_MAX;
     for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned() || vars_[i]->assigned_value().value() == 0) {
+        if (!model.is_instantiated(var_ids_[i]) || model.value(var_ids_[i]) == 0) {
             if (w1_ == SIZE_MAX) {
                 w1_ = i;
             } else if (w2_ == SIZE_MAX) {
@@ -112,19 +112,19 @@ bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
 
     // 初期整合性チェック
     // r = 1 だが bi = 0 が存在する場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
-        for (const auto& var : vars_) {
-            if (var->is_assigned() && var->assigned_value().value() == 0) {
+    if (model.is_instantiated(r_id_) && model.value(r_id_) == 1) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.is_instantiated(var_ids_[i]) && model.value(var_ids_[i]) == 0) {
                 return false;
             }
         }
     }
 
     // r = 0 だが全ての bi = 1 の場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
+    if (model.is_instantiated(r_id_) && model.value(r_id_) == 0) {
         bool all_one = true;
-        for (const auto& var : vars_) {
-            if (!var->is_assigned() || var->assigned_value().value() != 1) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (!model.is_instantiated(var_ids_[i]) || model.value(var_ids_[i]) != 1) {
                 all_one = false;
                 break;
             }
@@ -363,32 +363,32 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
     if (last_var_internal_idx == n_) {
         // r が最後の未確定変数
         bool all_one = true;
-        for (const auto& var : vars_) {
-            if (var->assigned_value().value() == 0) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.value(var_ids_[i]) == 0) {
                 all_one = false;
                 break;
             }
         }
-        model.enqueue_instantiate(r_->id(), all_one ? 1 : 0);
+        model.enqueue_instantiate(r_id_, all_one ? 1 : 0);
     } else {
         // bi が最後の未確定変数
-        if (r_->is_assigned()) {
-            if (r_->assigned_value().value() == 1) {
+        if (model.is_instantiated(r_id_)) {
+            if (model.value(r_id_) == 1) {
                 // r = 1 なら bi = 1
-                model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 1);
+                model.enqueue_instantiate(var_ids_[last_var_internal_idx], 1);
             } else {
                 // r = 0 で他の全ての bj = 1 なら bi = 0
                 bool others_all_one = true;
                 for (size_t i = 0; i < n_; ++i) {
                     if (i != last_var_internal_idx) {
-                        if (vars_[i]->assigned_value().value() == 0) {
+                        if (model.value(var_ids_[i]) == 0) {
                             others_all_one = false;
                             break;
                         }
                     }
                 }
                 if (others_all_one) {
-                    model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 0);
+                    model.enqueue_instantiate(var_ids_[last_var_internal_idx], 0);
                 }
             }
         }
@@ -741,29 +741,29 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
 
     if (last_var_internal_idx == n_) {
         bool has_one = false;
-        for (const auto& var : vars_) {
-            if (var->assigned_value().value() == 1) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.value(var_ids_[i]) == 1) {
                 has_one = true;
                 break;
             }
         }
-        model.enqueue_instantiate(r_->id(), has_one ? 1 : 0);
+        model.enqueue_instantiate(r_id_, has_one ? 1 : 0);
     } else {
-        if (r_->is_assigned()) {
-            if (r_->assigned_value().value() == 0) {
-                model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 0);
+        if (model.is_instantiated(r_id_)) {
+            if (model.value(r_id_) == 0) {
+                model.enqueue_instantiate(var_ids_[last_var_internal_idx], 0);
             } else {
                 bool others_have_one = false;
                 for (size_t i = 0; i < n_; ++i) {
                     if (i != last_var_internal_idx) {
-                        if (vars_[i]->assigned_value().value() == 1) {
+                        if (model.value(var_ids_[i]) == 1) {
                             others_have_one = true;
                             break;
                         }
                     }
                 }
                 if (!others_have_one) {
-                    model.enqueue_instantiate(vars_[last_var_internal_idx]->id(), 1);
+                    model.enqueue_instantiate(var_ids_[last_var_internal_idx], 1);
                 }
             }
         }
@@ -1073,7 +1073,7 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
                                                     size_t last_var_internal_idx) {
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (is_satisfied_by(i)) {
+        if (is_satisfied_by(model, i)) {
             return true;
         }
     }

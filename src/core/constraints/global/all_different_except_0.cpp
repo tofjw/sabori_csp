@@ -54,6 +54,8 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
         }
     }
 
+    update_var_ids();
+
     // 初期整合性チェック
     check_initial_consistency();
 }
@@ -190,10 +192,10 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
     if (value == 0) {
         if (unfixed_count_ <= 1) {
             size_t last_idx = SIZE_MAX;
-            if (!vars_[watch1()]->is_assigned()) {
+            if (!model.is_instantiated(var_ids_[watch1()])) {
                 last_idx = watch1();
             }
-            if (!vars_[watch2()]->is_assigned()) {
+            if (!model.is_instantiated(var_ids_[watch2()])) {
                 last_idx = watch2();
             }
 
@@ -228,10 +230,10 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
 
     if (unfixed_count_ <= 1) {
         size_t last_var_idx = SIZE_MAX;
-        if (!vars_[watch1()]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[watch1()])) {
             last_var_idx = watch1();
         }
-        if (!vars_[watch2()]->is_assigned()) {
+        if (!model.is_instantiated(var_ids_[watch2()])) {
             last_var_idx = watch2();
         }
 
@@ -250,8 +252,8 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
     auto& last_var = vars_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (last_var->is_assigned()) {
-        auto val = last_var->assigned_value().value();
+    if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
+        auto val = model.value(var_ids_[last_var_internal_idx]);
         if (val == 0) return true;  // 0は常にOK
         // その値がプールに残っているか
         auto it = pool_sparse_.find(val);
