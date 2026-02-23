@@ -1,0 +1,6 @@
+% int_mod all solutions test: x mod 3 = z, x in 0..8
+var 0..8: x :: output_var;
+var 3..3: y :: output_var;
+var 0..2: z :: output_var;
+constraint int_mod(x, y, z);
+solve satisfy;

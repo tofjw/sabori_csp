@@ -1125,6 +1125,19 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             if (!model->is_defined_var(z->id())) {
                 model->set_defined_var(z->id());
             }
+        } else if (decl.name == "int_mod") {
+            // int_mod(x, y, z) means x mod y = z
+            if (decl.args.size() != 3) {
+                throw std::runtime_error("int_mod requires 3 arguments (x, y, z)");
+            }
+            auto x = get_var(decl.args[0]);
+            auto y = get_var(decl.args[1]);
+            auto z = get_var(decl.args[2]);
+            constraint = std::make_shared<IntModConstraint>(x, y, z);
+            // x,y が決まれば z は一意に決まる
+            if (!model->is_defined_var(z->id())) {
+                model->set_defined_var(z->id());
+            }
         } else if (decl.name == "int_abs") {
             // int_abs(x, y) means |x| = y
             if (decl.args.size() != 2) {

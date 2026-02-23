@@ -20,6 +20,7 @@
 | 制約名 | クラス | 説明 |
 |--------|--------|------|
 | `int_times` | `IntTimesConstraint` | x * y = z |
+| `int_mod` | `IntModConstraint` | x mod y = z (truncated division) |
 | `int_abs` | `IntAbsConstraint` | \|x\| = y |
 
 #### int_times 制約
@@ -44,6 +45,34 @@ auto z = make_var("z", 1, 25);
 IntTimesConstraint c(x, y, z);
 
 // x=3, y=4 の場合 → z=12
+```
+
+#### int_mod 制約
+
+剰余制約 `x mod y = z`。truncated division セマンティクス（C++ の `%` と同じ）。
+結果の符号は x の符号に従う。
+
+**引数:**
+- `x`: 被除数
+- `y`: 除数（0 以外）
+- `z`: 剰余
+
+**伝播ロジック:**
+- y != 0 を強制
+- |z| < |y| は常に成立
+- x >= 0 なら z >= 0、x <= 0 なら z <= 0
+- z の bounds は x の bounds でも制限
+- 2変数確定時: 残りの1変数のドメインをフィルタ
+
+**例:**
+```cpp
+auto x = make_var("x", -10, 10);
+auto y = make_var("y", 1, 5);
+auto z = make_var("z", -4, 4);
+IntModConstraint c(x, y, z);
+
+// x=7, y=3 → z=1
+// x=-7, y=3 → z=-1
 ```
 
 #### int_abs 制約

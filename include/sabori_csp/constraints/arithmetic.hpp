@@ -137,6 +137,74 @@ private:
     bool propagate_bounds(Model& model);
 };
 
+/**
+ * @brief int_mod制約: x mod y = z (truncated division)
+ *
+ * 剰余制約。結果の符号は x の符号に従う（C++ の % と同じ）。
+ *
+ * 伝播ルール:
+ * - y != 0（ゼロ除算は未定義）
+ * - |z| < |y| は常に成立
+ * - x >= 0 なら z >= 0、x <= 0 なら z <= 0
+ * - z の bounds は x の bounds でも制限
+ * - x, y 確定時: z = x % y を計算
+ */
+class IntModConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param x 被除数
+     * @param y 除数
+     * @param z 剰余 (x mod y = z)
+     */
+    IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+    bool on_final_instantiate() override;
+
+    /**
+     * @brief 残り1変数になった時の伝播
+     */
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                size_t last_var_internal_idx) override;
+
+    /**
+     * @brief 指定セーブポイントまで状態を巻き戻す（状態を持たないので空実装）
+     */
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    VariablePtr x_;  // 被除数
+    VariablePtr y_;  // 除数
+    VariablePtr z_;  // 剰余
+    size_t x_id_, y_id_, z_id_;
+
+    /**
+     * @brief bounds propagation を実行
+     * @return 矛盾がなければ true
+     */
+    bool propagate_bounds(Model& model);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_ARITHMETIC_HPP

@@ -618,4 +618,288 @@ void IntAbsConstraint::check_initial_consistency() {
     }
 }
 
+// ============================================================================
+// IntModConstraint implementation
+// ============================================================================
+
+IntModConstraint::IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z)
+    : Constraint({x, y, z})
+    , x_(std::move(x))
+    , y_(std::move(y))
+    , z_(std::move(z))
+    , x_id_(x_->id())
+    , y_id_(y_->id())
+    , z_id_(z_->id()) {
+    check_initial_consistency();
+}
+
+std::string IntModConstraint::name() const {
+    return "int_mod";
+}
+
+std::vector<VariablePtr> IntModConstraint::variables() const {
+    return {x_, y_, z_};
+}
+
+std::optional<bool> IntModConstraint::is_satisfied() const {
+    if (x_->is_assigned() && y_->is_assigned() && z_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        if (y_val == 0) return false;
+        return x_->assigned_value().value() % y_val == z_->assigned_value().value();
+    }
+    return std::nullopt;
+}
+
+bool IntModConstraint::presolve(Model& model) {
+    // y != 0 を強制
+    if (y_->domain().contains(0)) {
+        if (!y_->remove(0)) return false;
+    }
+    if (!propagate_bounds(model)) return false;
+
+    // x, y 両方確定 → z を直接計算
+    if (x_->is_assigned() && y_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        if (y_val == 0) return false;
+        auto z_val = x_->assigned_value().value() % y_val;
+        if (!z_->domain().contains(z_val)) return false;
+        if (!z_->assign(z_val)) return false;
+    } else if (y_->is_assigned()) {
+        // y のみ確定 → z の bounds を |z| < |y| で制限 + x のドメインをフィルタ
+        auto y_val = y_->assigned_value().value();
+        if (y_val == 0) return false;
+    }
+
+    return true;
+}
+
+bool IntModConstraint::propagate_bounds(Model& model) {
+    auto x_min = model.var_min(x_id_);
+    auto x_max = model.var_max(x_id_);
+    auto y_min = model.var_min(y_id_);
+    auto y_max = model.var_max(y_id_);
+
+    // |y| の最大値を計算
+    auto abs_y_max = std::max(std::abs(y_min), std::abs(y_max));
+
+    // z の bounds を計算
+    // |z| < |y| は常に成立、かつ sign(z) = sign(x) (or z=0)
+    // また、x >= 0 → 0 <= z <= x, x <= 0 → x <= z <= 0
+    Domain::value_type z_lo, z_hi;
+
+    if (x_min >= 0) {
+        // x は常に非負 → z in [0, min(|y_max|-1, x_max)]
+        z_lo = 0;
+        z_hi = std::min(abs_y_max - 1, x_max);
+    } else if (x_max <= 0) {
+        // x は常に非正 → z in [max(-(|y_max|-1), x_min), 0]
+        z_lo = std::max(-(abs_y_max - 1), x_min);
+        z_hi = 0;
+    } else {
+        // x が正負にまたがる → z in [max(-(|y_max|-1), x_min), min(|y_max|-1, x_max)]
+        z_lo = std::max(-(abs_y_max - 1), x_min);
+        z_hi = std::min(abs_y_max - 1, x_max);
+    }
+
+    if (!z_->remove_below(z_lo)) return false;
+    if (!z_->remove_above(z_hi)) return false;
+
+    return true;
+}
+
+bool IntModConstraint::on_instantiate(Model& model, int save_point,
+                                       size_t var_idx, size_t internal_var_idx,
+                                       Domain::value_type value,
+                                       Domain::value_type prev_min,
+                                       Domain::value_type prev_max) {
+    // 基底クラスの 2WL 処理
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    // y != 0 を強制
+    if (y_->domain().contains(0)) {
+        if (!y_->remove(0)) return false;
+    }
+
+    // x と y が確定 → z = x % y
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
+        auto x_val = model.value(x_id_);
+        auto y_val = model.value(y_id_);
+        if (y_val == 0) return false;
+        auto z_val = x_val % y_val;
+        if (!z_->domain().contains(z_val)) return false;
+        model.enqueue_instantiate(z_id_, z_val);
+    }
+
+    // x と z が確定 → y のドメインをフィルタ
+    if (model.is_instantiated(x_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(y_id_)) {
+        auto x_val = model.value(x_id_);
+        auto z_val = model.value(z_id_);
+        // x % y = z → x - z = k * y for some integer k
+        auto diff = x_val - z_val;
+        if (diff == 0) {
+            // x = z → x % y = x → |x| < |y| が必要
+            // y のドメインから |y| <= |x| の値を除去
+            auto abs_x = std::abs(x_val);
+            if (!y_->remove_below(-model.var_max(y_id_))) return false; // no-op, just for safety
+            // y の各値をフィルタ: |y| > |x| が必要
+            auto y_vals = y_->domain().values();
+            for (auto yv : y_vals) {
+                if (std::abs(yv) <= abs_x) {
+                    if (!y_->remove(yv)) return false;
+                }
+            }
+        } else {
+            // y は diff の約数（y | diff かつ x % y = z）
+            auto y_vals = y_->domain().values();
+            for (auto yv : y_vals) {
+                if (yv == 0 || x_val % yv != z_val) {
+                    if (!y_->remove(yv)) return false;
+                }
+            }
+        }
+    }
+
+    // y と z が確定 → x のドメインをフィルタ
+    if (model.is_instantiated(y_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(x_id_)) {
+        auto y_val = model.value(y_id_);
+        auto z_val = model.value(z_id_);
+        if (y_val == 0) return false;
+        // x = k * y + z for some integer k, and x % y = z
+        auto x_vals = x_->domain().values();
+        for (auto xv : x_vals) {
+            if (xv % y_val != z_val) {
+                if (!x_->remove(xv)) return false;
+            }
+        }
+    }
+
+    // x のみ確定 → z の bounds を制限
+    if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
+        auto x_val = model.value(x_id_);
+        auto abs_y_max = std::max(std::abs(model.var_min(y_id_)), std::abs(model.var_max(y_id_)));
+        Domain::value_type z_lo, z_hi;
+        if (x_val >= 0) {
+            z_lo = 0;
+            z_hi = std::min(x_val, abs_y_max - 1);
+        } else {
+            z_lo = std::max(x_val, -(abs_y_max - 1));
+            z_hi = 0;
+        }
+        model.enqueue_set_min(z_id_, z_lo);
+        model.enqueue_set_max(z_id_, z_hi);
+    }
+
+    // y のみ確定 → z の bounds を制限 (|z| < |y|)
+    if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_) && !model.is_instantiated(z_id_)) {
+        auto y_val = model.value(y_id_);
+        if (y_val == 0) return false;
+        auto abs_y = std::abs(y_val);
+        auto x_min = model.var_min(x_id_);
+        auto x_max = model.var_max(x_id_);
+        Domain::value_type z_lo = -(abs_y - 1);
+        Domain::value_type z_hi = abs_y - 1;
+        if (x_min >= 0) z_lo = 0;
+        if (x_max <= 0) z_hi = 0;
+        z_lo = std::max(z_lo, x_min);
+        z_hi = std::min(z_hi, x_max);
+        model.enqueue_set_min(z_id_, z_lo);
+        model.enqueue_set_max(z_id_, z_hi);
+    }
+
+    return true;
+}
+
+bool IntModConstraint::on_set_min(Model& model, int /*save_point*/,
+                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   Domain::value_type /*new_min*/,
+                                   Domain::value_type /*old_min*/) {
+    return propagate_bounds(model);
+}
+
+bool IntModConstraint::on_set_max(Model& model, int save_point,
+                                   size_t var_idx, size_t internal_var_idx,
+                                   Domain::value_type new_max,
+                                   Domain::value_type /*old_max*/) {
+    return propagate_bounds(model);
+}
+
+bool IntModConstraint::on_final_instantiate() {
+    auto y_val = y_->assigned_value().value();
+    if (y_val == 0) return false;
+    return x_->assigned_value().value() % y_val == z_->assigned_value().value();
+}
+
+bool IntModConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
+                                               size_t last_var_internal_idx) {
+    if (last_var_internal_idx == 0) {
+        // x が未確定、y と z は確定
+        auto y_val = model.value(y_id_);
+        auto z_val = model.value(z_id_);
+        if (y_val == 0) return false;
+        // x = k * y + z (k は整数) かつ x のドメイン内
+        auto x_vals = x_->domain().values();
+        for (auto xv : x_vals) {
+            if (xv % y_val != z_val) {
+                if (!x_->remove(xv)) return false;
+            }
+        }
+    } else if (last_var_internal_idx == 1) {
+        // y が未確定、x と z は確定
+        auto x_val = model.value(x_id_);
+        auto z_val = model.value(z_id_);
+        auto y_vals = y_->domain().values();
+        for (auto yv : y_vals) {
+            if (yv == 0 || x_val % yv != z_val) {
+                if (!y_->remove(yv)) return false;
+            }
+        }
+    } else if (last_var_internal_idx == 2) {
+        // z が未確定、x と y は確定
+        auto x_val = model.value(x_id_);
+        auto y_val = model.value(y_id_);
+        if (y_val == 0) return false;
+        auto z_val = x_val % y_val;
+        if (!z_->domain().contains(z_val)) return false;
+        model.enqueue_instantiate(z_id_, z_val);
+    }
+
+    return true;
+}
+
+void IntModConstraint::rewind_to(int /*save_point*/) {
+    // 状態を持たないので何もしない
+}
+
+void IntModConstraint::check_initial_consistency() {
+    // y == 0 のみの場合は矛盾
+    if (y_->is_assigned() && y_->assigned_value().value() == 0) {
+        set_initially_inconsistent(true);
+        return;
+    }
+
+    // 全て確定している場合、等式を確認
+    if (x_->is_assigned() && y_->is_assigned() && z_->is_assigned()) {
+        auto y_val = y_->assigned_value().value();
+        if (y_val == 0 || x_->assigned_value().value() % y_val != z_->assigned_value().value()) {
+            set_initially_inconsistent(true);
+            return;
+        }
+    }
+
+    // bounds の簡易チェック: |z| < |y| が可能か
+    auto y_min = y_->min();
+    auto y_max = y_->max();
+    auto z_min = z_->min();
+    auto z_max = z_->max();
+
+    auto abs_y_max = std::max(std::abs(y_min), std::abs(y_max));
+    // z の可能な範囲は -(abs_y_max-1) .. (abs_y_max-1)
+    if (z_min > abs_y_max - 1 || z_max < -(abs_y_max - 1)) {
+        set_initially_inconsistent(true);
+    }
+}
+
 } // namespace sabori_csp
