@@ -108,7 +108,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
         } else {
             var = model->create_variable(name, decl.lb, decl.ub);
         }
-        if (decl.is_defined_var) {
+        if (decl.is_defined_var && !decl.fixed_value) {
             model->set_defined_var(var->id());
         }
         var_map[name] = var;
@@ -246,12 +246,20 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             continue;  // どちらも |coeff|!=1
         }
 
+        // 安全条件チェック（X が不適格なら X/Y スワップを試みる）
+        if (protected_vars.count(vns[x_idx]) || subst_map.count(vns[x_idx]) ||
+            subst_y_vars.count(vns[x_idx]) || alias_map.count(vns[x_idx])) {
+            // X が不適格 → Y が |coeff|=1 ならスワップ
+            if (std::abs(cs[y_idx]) == 1) {
+                std::swap(x_idx, y_idx);
+            } else {
+                continue;
+            }
+        }
         const std::string& x_name = vns[x_idx];
         const std::string& y_name = vns[y_idx];
         int64_t cx = cs[x_idx];
         int64_t cy = cs[y_idx];
-
-        // 安全条件チェック
         if (protected_vars.count(x_name)) continue;
         if (subst_map.count(x_name)) continue;
         if (subst_y_vars.count(x_name)) continue;
@@ -538,9 +546,8 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
-            // すべての変数が is_defined_var でなければ、係数の絶対値が1で
-            // 配列に2回以上出現しない変数を1つ選んで探索候補から除外
-            // 既に defined_var になっている変数はスキップ
+            // 制約内に既に defined_var がなければ、係数の絶対値が1で
+            // 配列に2回以上出現しない未定義変数を1つ選んで探索候補から除外
             {
                 bool any_defined = false;
                 for (const auto& v : vars) {
@@ -549,31 +556,31 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                         break;
                     }
                 }
-                if (!any_defined && !vars.empty()) {
-                    size_t n = vars.size();
-                    size_t best = n;  // sentinel
-                    size_t best_size = 0;
-                    for (size_t i = 0; i < n; ++i) {
-                        if (std::abs(coeffs[i]) != 1) continue;
-                        if (model->is_defined_var(vars[i]->id())) continue;
-                        bool duplicate = false;
-                        for (size_t j = 0; j < n; ++j) {
-                            if (i != j && vars[i]->id() == vars[j]->id()) {
-                                duplicate = true;
-                                break;
-                            }
-                        }
-                        if (duplicate) continue;
-                        size_t ds = vars[i]->domain().size();
-                        if (ds > best_size) {
-                            best_size = ds;
-                            best = i;
+            if (!any_defined && !vars.empty()) {
+                size_t n = vars.size();
+                size_t best = n;  // sentinel
+                size_t best_size = 0;
+                for (size_t i = 0; i < n; ++i) {
+                    if (std::abs(coeffs[i]) != 1) continue;
+                    if (model->is_defined_var(vars[i]->id())) continue;
+                    bool duplicate = false;
+                    for (size_t j = 0; j < n; ++j) {
+                        if (i != j && vars[i]->id() == vars[j]->id()) {
+                            duplicate = true;
+                            break;
                         }
                     }
-                    if (best < n) {
-                        model->set_defined_var(vars[best]->id());
+                    if (duplicate) continue;
+                    size_t ds = vars[i]->domain().size();
+                    if (ds > best_size) {
+                        best_size = ds;
+                        best = i;
                     }
                 }
+                if (best < n) {
+                    model->set_defined_var(vars[best]->id());
+                }
+            }
             }
 #endif
         } else if (decl.name == "int_lin_le") {
@@ -766,6 +773,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 auto b = get_var(decl.args[0]);
                 auto i = get_var(decl.args[1]);
                 constraint = std::make_shared<IntEqConstraint>(b, i);
+                // b が決まれば i は一意に決まる
+                if (!model->is_defined_var(i->id())) {
+                    model->set_defined_var(i->id());
+                }
             }
         } else if (decl.name == "bool_eq") {
             // bool_eq(a, b) is equivalent to int_eq(a, b) for 0-1 variables
@@ -1028,11 +1039,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 model->set_no_bisect(index_var->id());
             }
 
-            // 単調配列では index が決まれば result は一意に決まるため、探索候補から除外
-            if ((non_decreasing || non_increasing) && array.size() > 1) {
-                if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
-                    model->set_defined_var(result_var->id());
-                }
+            // 定数配列では index が決まれば result は一意に決まるため、探索候補から除外
+            if (!model->is_defined_var(result_var->id())) {
+                model->set_defined_var(result_var->id());
             }
         } else if (decl.name == "array_var_int_element" || decl.name == "array_var_bool_element") {
 #if 1 /* broken */
@@ -1062,17 +1071,8 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             model->set_no_bisect(index_var->id());
 
             // index と配列要素が決まれば result は一意に決まるため、探索候補から除外
-            if (!model->is_defined_var(index_var->id()) && !model->is_defined_var(result_var->id())) {
-                bool any_array_defined = false;
-                for (const auto& av : array_vars) {
-                    if (model->is_defined_var(av->id())) {
-                        any_array_defined = true;
-                        break;
-                    }
-                }
-                if (!any_array_defined) {
-                    model->set_defined_var(result_var->id());
-                }
+            if (!model->is_defined_var(result_var->id())) {
+                model->set_defined_var(result_var->id());
             }
 #endif
         } else if (decl.name == "array_int_maximum") {
@@ -1108,6 +1108,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto y = get_var(decl.args[1]);
             auto m = get_var(decl.args[2]);
             constraint = std::make_shared<IntMinConstraint>(x, y, m);
+            // x,y が決まれば m は一意に決まる
+            if (!model->is_defined_var(m->id())) {
+                model->set_defined_var(m->id());
+            }
         } else if (decl.name == "int_times") {
             // int_times(x, y, z) means x * y = z
             if (decl.args.size() != 3) {
@@ -1117,6 +1121,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto y = get_var(decl.args[1]);
             auto z = get_var(decl.args[2]);
             constraint = std::make_shared<IntTimesConstraint>(x, y, z);
+            // x,y が決まれば z は一意に決まる
+            if (!model->is_defined_var(z->id())) {
+                model->set_defined_var(z->id());
+            }
         } else if (decl.name == "int_abs") {
             // int_abs(x, y) means |x| = y
             if (decl.args.size() != 2) {
@@ -1125,6 +1133,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             constraint = std::make_shared<IntAbsConstraint>(x, y);
+            // x が決まれば y は一意に決まる
+            if (!model->is_defined_var(y->id())) {
+                model->set_defined_var(y->id());
+            }
         } else if (decl.name == "int_max") {
             // int_max(x, y, m) means max(x, y) = m
             if (decl.args.size() != 3) {
@@ -1134,6 +1146,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto y = get_var(decl.args[1]);
             auto m = get_var(decl.args[2]);
             constraint = std::make_shared<IntMaxConstraint>(x, y, m);
+            // x,y が決まれば m は一意に決まる
+            if (!model->is_defined_var(m->id())) {
+                model->set_defined_var(m->id());
+            }
         } else if (decl.name == "table_int" || decl.name == "sabori_table_int") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error("table_int requires 2 arguments (vars, tuples)");
