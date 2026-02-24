@@ -146,6 +146,31 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
         }
     }
 
+    // 変数ごとの制約出現回数を事前カウント
+    constexpr size_t kMaxConstraintCountForElimination = 2;
+    std::unordered_map<std::string, size_t> var_constraint_count;
+    for (const auto& cdecl : constraint_decls_) {
+        for (const auto& arg : cdecl.args) {
+            if (std::holds_alternative<std::string>(arg)) {
+                const auto& s = std::get<std::string>(arg);
+                if (var_decls_.count(s)) {
+                    ++var_constraint_count[s];
+                } else {
+                    auto ait = array_decls_.find(s);
+                    if (ait != array_decls_.end()) {
+                        for (const auto& elem : ait->second.elements) {
+                            ++var_constraint_count[elem];
+                        }
+                    }
+                }
+            } else if (std::holds_alternative<std::vector<std::string>>(arg)) {
+                for (const auto& elem : std::get<std::vector<std::string>>(arg)) {
+                    ++var_constraint_count[elem];
+                }
+            }
+        }
+    }
+
     for (size_t ci = 0; ci < constraint_decls_.size(); ++ci) {
         const auto& cdecl = constraint_decls_[ci];
         if (cdecl.name != "int_lin_eq" || cdecl.args.size() != 3) continue;
@@ -265,6 +290,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
         if (subst_y_vars.count(x_name)) continue;
         if (subst_map.count(y_name)) continue;  // 連鎖防止
         if (alias_map.count(x_name)) continue;
+        // X の制約出現数が上限を超える場合はスキップ
+        {
+            auto cit = var_constraint_count.find(x_name);
+            if (cit != var_constraint_count.end() && cit->second > kMaxConstraintCountForElimination) continue;
+        }
 
         subst_map[x_name] = SubstInfo{y_name, cx, cy, rhs_val};
         defining_constraint_indices.insert(ci);
