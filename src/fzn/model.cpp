@@ -506,6 +506,16 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 vars.push_back(get_var_by_name(name));
             }
             constraint = std::make_shared<AllDifferentConstraint>(vars);
+        } else if (decl.name == "alldifferent_except_0" || decl.name == "fzn_alldifferent_except_0") {
+            if (decl.args.size() != 1) {
+                throw std::runtime_error("alldifferent_except_0 requires 1 argument (array)");
+            }
+            const auto var_names = resolve_var_array(decl.args[0]);
+            std::vector<VariablePtr> vars;
+            for (const auto& name : var_names) {
+                vars.push_back(get_var_by_name(name));
+            }
+            constraint = std::make_shared<AllDifferentExcept0Constraint>(vars);
         } else if (decl.name == "circuit" || decl.name == "fzn_circuit") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("circuit requires 1 argument (array)");

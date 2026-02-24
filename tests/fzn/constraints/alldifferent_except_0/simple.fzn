@@ -1,0 +1,4 @@
+var 0..2: x1 :: output_var;
+var 0..2: x2 :: output_var;
+constraint fzn_alldifferent_except_0([x1, x2]);
+solve satisfy;

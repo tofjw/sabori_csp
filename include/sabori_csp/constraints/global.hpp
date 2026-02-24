@@ -84,6 +84,48 @@ private:
 };
 
 /**
+ * @brief alldifferent_except_0制約: 非0値は全て異なる、0は重複可
+ *
+ * 非0値の一意性をSparse Setプールで管理。
+ */
+class AllDifferentExcept0Constraint : public Constraint {
+public:
+    explicit AllDifferentExcept0Constraint(std::vector<VariablePtr> vars);
+
+    std::string name() const override;
+    std::vector<VariablePtr> variables() const override;
+    std::optional<bool> is_satisfied() const override;
+    bool prepare_propagation(Model& model) override;
+    bool presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate() override;
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+    void rewind_to(int save_point);
+
+protected:
+    void check_initial_consistency() override;
+
+private:
+    std::vector<Domain::value_type> pool_values_;
+    std::unordered_map<Domain::value_type, size_t> pool_sparse_;
+    size_t pool_n_;
+    size_t unfixed_count_;
+
+    struct TrailEntry {
+        size_t old_pool_n;
+        size_t old_unfixed_count;
+    };
+    std::vector<std::pair<int, TrailEntry>> pool_trail_;
+
+    bool remove_from_pool(int save_point, Domain::value_type value);
+};
+
+/**
  * @brief int_lin_eq制約: Σ(coeffs[i] * vars[i]) == target_sum
  *
  * O(1) の差分更新で bounds consistency を維持。
