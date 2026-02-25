@@ -21,10 +21,11 @@ void timeout_handler(int) {
 }
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-t SEC] [-b N] <file.fzn>\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
+    std::cerr << "  -c      Community analysis (print VIG/community/locality stats)\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -N      Disable nogood learning\n";
@@ -33,6 +34,7 @@ void print_usage(const char* program) {
 bool g_print_stats = false;
 bool g_verbose = false;
 bool g_no_nogood = false;
+bool g_community_analysis = false;
 
 void print_stats(const sabori_csp::Solver& solver) {
     if (!g_print_stats) return;
@@ -130,6 +132,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
@@ -174,6 +177,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
@@ -237,6 +241,8 @@ int main(int argc, char* argv[]) {
             timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
             bisection_threshold = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-c") == 0) {
+            g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
         } else if (std::strcmp(argv[i], "-h") == 0 ||

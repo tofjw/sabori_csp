@@ -124,6 +124,11 @@ std::optional<Solution> Solver::solve(Model& model) {
         return std::nullopt;  // UNSAT
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    if (community_analysis_.is_enabled()) {
+        community_analysis_.build_vig(model);
+        community_analysis_.detect_communities(rng_);
+        community_analysis_.print_static_report(std::cerr);
+    }
     init_var_order_tracking(model);
 
     // リスタート有効時は専用ループを使用
@@ -192,6 +197,11 @@ std::optional<Solution> Solver::solve_optimize(
         return std::nullopt;
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    if (community_analysis_.is_enabled()) {
+        community_analysis_.build_vig(model);
+        community_analysis_.detect_communities(rng_);
+        community_analysis_.print_static_report(std::cerr);
+    }
     init_var_order_tracking(model);
 
     auto result = search_with_restart_optimize(model, on_improve);
@@ -242,6 +252,11 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
         return 0;  // UNSAT
     }
     if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    if (community_analysis_.is_enabled()) {
+        community_analysis_.build_vig(model);
+        community_analysis_.detect_communities(rng_);
+        community_analysis_.print_static_report(std::cerr);
+    }
     init_var_order_tracking(model);
 
     size_t count = 0;
@@ -361,6 +376,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             }
 
             stats_.restart_count++;
+            if (community_analysis_.is_enabled()) {
+                community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
+                community_analysis_.reset_stats();
+            }
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom128{};
 
@@ -438,6 +457,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         }
     }
 
+    if (community_analysis_.is_enabled()) {
+        community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
+    }
     if (verbose_) {
         std::cerr << "% [verbose] search stopped (timeout)\n";
     }
@@ -619,6 +641,10 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             }
 
             stats_.restart_count++;
+            if (community_analysis_.is_enabled()) {
+                community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
+                community_analysis_.reset_stats();
+            }
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom128{};
 
@@ -718,6 +744,9 @@ std::optional<Solution> Solver::search_with_restart_optimize(
         }
     }
 
+    if (community_analysis_.is_enabled()) {
+        community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
+    }
     if (verbose_) {
         std::cerr << "% [verbose] search stopped (timeout)\n";
     }
@@ -963,6 +992,10 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     queue_ok = process_queue(model);
                     if (queue_ok) {
                         decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
+                        if (community_analysis_.is_enabled()) {
+                            community_analysis_.on_decision(frame.var_idx);
+                            propagation_source_ = frame.var_idx;
+                        }
                         ascending = false;
                         found_value = true;
                         break;
@@ -1030,6 +1063,10 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 ok = process_queue(model);
                 if (ok) {
                     decision_trail_.push_back(decision_lit);
+                    if (community_analysis_.is_enabled()) {
+                        community_analysis_.on_decision(frame.var_idx);
+                        propagation_source_ = frame.var_idx;
+                    }
                     ascending = false;
                     found_branch = true;
                     break;
@@ -1140,7 +1177,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
         if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
 						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
 
-            bump_activity(model, w.constraint_idx);
+            // bump_activity(model, w.constraint_idx);
             return false;
         }
     }
@@ -1742,6 +1779,9 @@ bool Solver::process_queue(Model& model) {
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return false;
             }
+            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+                community_analysis_.on_propagation(var_idx, propagation_source_);
+            }
             if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
                 return false;
             }
@@ -1751,6 +1791,9 @@ bool Solver::process_queue(Model& model) {
             if (update.value <= prev_min) continue;  // 変化なし
             if (!model.set_min(current_decision_, var_idx, update.value)) {
                 return false;
+            }
+            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+                community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_min
             if (!was_instantiated && model.is_instantiated(var_idx)) {
@@ -1764,7 +1807,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
-                        bump_activity(model, w.constraint_idx);
+                        // bump_activity(model, w.constraint_idx);
                         return false;
                     }
                 }
@@ -1780,6 +1823,9 @@ bool Solver::process_queue(Model& model) {
             if (!model.set_max(current_decision_, var_idx, update.value)) {
                 return false;
             }
+            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+                community_analysis_.on_propagation(var_idx, propagation_source_);
+            }
             // 確定した場合は on_instantiate、そうでなければ on_set_max
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
@@ -1792,7 +1838,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
-                        bump_activity(model, w.constraint_idx);
+                        // bump_activity(model, w.constraint_idx);
                         return false;
                     }
                 }
@@ -1809,6 +1855,9 @@ bool Solver::process_queue(Model& model) {
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return false;
             }
+            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+                community_analysis_.on_propagation(var_idx, propagation_source_);
+            }
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
                     return false;
@@ -1823,7 +1872,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_min, prev_min)) {
-                            bump_activity(model, w.constraint_idx);
+                            // bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }
@@ -1837,7 +1886,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_max, prev_max)) {
-                            bump_activity(model, w.constraint_idx);
+                            // bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }
@@ -1851,7 +1900,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                   var_idx, w.internal_var_idx, removed_value)) {
-                            bump_activity(model, w.constraint_idx);
+                            // bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }

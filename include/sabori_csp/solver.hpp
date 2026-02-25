@@ -6,6 +6,7 @@
 #define SABORI_CSP_SOLVER_HPP
 
 #include "sabori_csp/model.hpp"
+#include "sabori_csp/community_analysis.hpp"
 #include <functional>
 #include <map>
 #include <unordered_map>
@@ -258,6 +259,11 @@ public:
     void set_verbose(bool enabled) { verbose_ = enabled; }
 
     /**
+     * @brief コミュニティ分析を有効/無効にする
+     */
+    void set_community_analysis(bool enabled) { community_analysis_.set_enabled(enabled); }
+
+    /**
      * @brief 二分割探索の閾値を設定
      * @param threshold ドメインサイズがこの値を超えたら二分割（0=無効）
      */
@@ -501,6 +507,10 @@ private:
 
     // 乱数
     std::mt19937 rng_;
+
+    // コミュニティ分析
+    CommunityAnalysis community_analysis_;
+    size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
 };
 
 } // namespace sabori_csp
