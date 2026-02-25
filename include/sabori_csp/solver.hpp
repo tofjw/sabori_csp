@@ -402,7 +402,7 @@ private:
     /**
      * @brief NoGood ID からブルームフィルタのビットパターンを生成
      */
-    static Bloom128 ng_bloom_bits(size_t ng_id);
+    static Bloom512 ng_bloom_bits(size_t ng_id);
 
     /**
      * @brief 全 NoGood から変数ごとのブルームフィルタを再構築
@@ -451,7 +451,7 @@ private:
 
     // NoGood
     size_t ng_id_counter_ = 0;       // NG 通し番号ジェネレータ
-    Bloom128 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況
+    Bloom512 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況
     std::vector<Literal> unit_nogoods_;  // 長さ1のNG（リスタート時にドメイン削減に使う）
     std::vector<std::unique_ptr<NoGood>> nogoods_;
     std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
@@ -498,7 +498,7 @@ private:
         int level;
         size_t dec_end;
         size_t def_end;
-        Bloom128 ng_usage_bloom;
+        Bloom512 ng_usage_bloom;
     };
     std::vector<UnassignedTrailEntry> unassigned_trail_;
 

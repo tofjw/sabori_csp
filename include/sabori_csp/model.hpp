@@ -16,14 +16,28 @@
 namespace sabori_csp {
 
 /**
- * @brief 128-bit ブルームフィルタ（NoGood 変数選択タイブレーク用）
+ * @brief 512-bit ブルームフィルタ（NoGood 変数選択タイブレーク用）
  */
-struct Bloom128 {
-    uint64_t lo = 0, hi = 0;
-    Bloom128& operator|=(const Bloom128& o) { lo |= o.lo; hi |= o.hi; return *this; }
-    Bloom128 operator&(const Bloom128& o) const { return {lo & o.lo, hi & o.hi}; }
-    int popcount() const { return __builtin_popcountll(lo) + __builtin_popcountll(hi); }
-    bool empty() const { return lo == 0 && hi == 0; }
+struct Bloom512 {
+    uint64_t w[8] = {};
+    Bloom512& operator|=(const Bloom512& o) {
+        for (int i = 0; i < 8; ++i) w[i] |= o.w[i];
+        return *this;
+    }
+    Bloom512 operator&(const Bloom512& o) const {
+        Bloom512 r;
+        for (int i = 0; i < 8; ++i) r.w[i] = w[i] & o.w[i];
+        return r;
+    }
+    int popcount() const {
+        int c = 0;
+        for (int i = 0; i < 8; ++i) c += __builtin_popcountll(w[i]);
+        return c;
+    }
+    bool empty() const {
+        for (int i = 0; i < 8; ++i) if (w[i]) return false;
+        return true;
+    }
 };
 
 /**
@@ -384,7 +398,7 @@ private:
     size_t pending_read_idx_ = 0;
 
     // NoGood ブルームフィルタ（変数選択タイブレーク用）
-    std::vector<Bloom128> var_ng_bloom_;
+    std::vector<Bloom512> var_ng_bloom_;
 
     // 制約 raw ポインタ配列（shared_ptr デリファレンス回避）
     std::vector<Constraint*> constraint_ptrs_;
@@ -399,10 +413,10 @@ private:
 public:
     // ===== NoGood ブルームフィルタ =====
 
-    const Bloom128& var_ng_bloom(size_t var_idx) const { return var_ng_bloom_[var_idx]; }
-    void or_var_ng_bloom(size_t var_idx, const Bloom128& bits) { var_ng_bloom_[var_idx] |= bits; }
-    void resize_var_ng_bloom(size_t n) { var_ng_bloom_.assign(n, Bloom128{}); }
-    void clear_var_ng_blooms() { std::fill(var_ng_bloom_.begin(), var_ng_bloom_.end(), Bloom128{}); }
+    const Bloom512& var_ng_bloom(size_t var_idx) const { return var_ng_bloom_[var_idx]; }
+    void or_var_ng_bloom(size_t var_idx, const Bloom512& bits) { var_ng_bloom_[var_idx] |= bits; }
+    void resize_var_ng_bloom(size_t n) { var_ng_bloom_.assign(n, Bloom512{}); }
+    void clear_var_ng_blooms() { std::fill(var_ng_bloom_.begin(), var_ng_bloom_.end(), Bloom512{}); }
 
     /**
      * @brief 変数に関連する制約インデックスを取得

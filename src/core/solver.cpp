@@ -37,16 +37,16 @@ Literal Literal::negate() const {
     return *this;
 }
 
-Bloom128 Solver::ng_bloom_bits(size_t ng_id) {
+Bloom512 Solver::ng_bloom_bits(size_t ng_id) {
     constexpr uint64_t k1 = 11400714819323198485ULL;
     constexpr uint64_t k2 = 7046029254386353131ULL;
-    Bloom128 b;
+    Bloom512 b;
     uint64_t h1 = ng_id * k1;
     uint64_t h2 = ng_id * k2;
-    unsigned pos1 = h1 >> 57;  // 0..127
-    unsigned pos2 = h2 >> 57;
-    if (pos1 < 64) b.lo |= 1ULL << pos1; else b.hi |= 1ULL << (pos1 - 64);
-    if (pos2 < 64) b.lo |= 1ULL << pos2; else b.hi |= 1ULL << (pos2 - 64);
+    unsigned pos1 = h1 >> 55;  // 0..511
+    unsigned pos2 = h2 >> 55;
+    b.w[pos1 / 64] |= 1ULL << (pos1 % 64);
+    b.w[pos2 / 64] |= 1ULL << (pos2 % 64);
     return b;
 }
 
@@ -114,7 +114,7 @@ std::optional<Solution> Solver::solve(Model& model) {
     current_decision_ = 0;
     stats_ = SolverStats{};
     model.resize_var_ng_bloom(variables.size());
-    ng_usage_bloom_ = Bloom128{};
+    ng_usage_bloom_ = Bloom512{};
     ng_id_counter_ = 0;
 
     // presolve: 初期伝播 + 内部構造の構築
@@ -187,7 +187,7 @@ std::optional<Solution> Solver::solve_optimize(
     current_decision_ = 0;
     stats_ = SolverStats{};
     model.resize_var_ng_bloom(variables.size());
-    ng_usage_bloom_ = Bloom128{};
+    ng_usage_bloom_ = Bloom512{};
     ng_id_counter_ = 0;
 
     if (verbose_) log_presolve_start(model);
@@ -242,7 +242,7 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     current_decision_ = 0;
     stats_ = SolverStats{};
     model.resize_var_ng_bloom(variables.size());
-    ng_usage_bloom_ = Bloom128{};
+    ng_usage_bloom_ = Bloom512{};
     ng_id_counter_ = 0;
 
     // presolve: 初期伝播 + 内部構造の構築
@@ -381,7 +381,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                 community_analysis_.reset_stats();
             }
             current_best_assignment_ = select_best_assignment();
-            ng_usage_bloom_ = Bloom128{};
+            ng_usage_bloom_ = Bloom512{};
 
             // コミュニティローテーション: 上位コミュニティから最初の変数を選択
             community_first_var_ = SIZE_MAX;
@@ -596,7 +596,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 model.clear_pending_updates();
                 backtrack(model, root_point);
                 current_decision_ = root_point;
-                ng_usage_bloom_ = Bloom128{};
+                ng_usage_bloom_ = Bloom512{};
                 rebuild_var_ng_blooms(model);
 
                 // unit nogood をドメインに適用
@@ -669,7 +669,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 community_analysis_.reset_stats();
             }
             current_best_assignment_ = select_best_assignment();
-            ng_usage_bloom_ = Bloom128{};
+            ng_usage_bloom_ = Bloom512{};
 
             // コミュニティローテーション: 上位コミュニティから最初の変数を選択
             community_first_var_ = SIZE_MAX;
