@@ -383,6 +383,29 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom128{};
 
+            // コミュニティローテーション: 上位コミュニティから最初の変数を選択
+            community_first_var_ = SIZE_MAX;
+            if (community_analysis_.is_enabled()) {
+                const auto& tops = community_analysis_.top_communities(5);
+                if (!tops.empty()) {
+                    size_t target_comm = tops[stats_.restart_count % tops.size()];
+                    const auto& vars = community_analysis_.community_vars(target_comm);
+                    // MRV → activity で未割当変数を1つ選ぶ
+                    size_t best_size = SIZE_MAX;
+                    double best_act = -1.0;
+                    for (size_t v : vars) {
+                        if (!model.is_instantiated(v)) {
+                            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+                            if (ds < best_size || (ds == best_size && activity_[v] > best_act)) {
+                                best_size = ds;
+                                best_act = activity_[v];
+                                community_first_var_ = v;
+                            }
+                        }
+                    }
+                }
+            }
+
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
                 std::remove_if(nogoods_.begin(), nogoods_.end(),
@@ -647,6 +670,26 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             }
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom128{};
+
+            // コミュニティローテーション: 上位コミュニティから最初の変数を選択
+            community_first_var_ = SIZE_MAX;
+            if (community_analysis_.is_enabled()) {
+                const auto& tops = community_analysis_.top_communities(5);
+                if (!tops.empty()) {
+                    size_t target_comm = tops[stats_.restart_count % tops.size()];
+                    const auto& vars = community_analysis_.community_vars(target_comm);
+                    size_t best_size = SIZE_MAX;
+                    for (size_t v : vars) {
+                        if (!model.is_instantiated(v)) {
+                            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+                            if (ds < best_size) {
+                                best_size = ds;
+                                community_first_var_ = v;
+                            }
+                        }
+                    }
+                }
+            }
 
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
@@ -1305,6 +1348,15 @@ void Solver::mark_variable_assigned(size_t var_idx) {
 }
 
 size_t Solver::select_variable(const Model& model) {
+    // コミュニティローテーション: リスタート後の最初の1回だけ優先変数を使用
+    if (community_first_var_ != SIZE_MAX) {
+        size_t var = community_first_var_;
+        community_first_var_ = SIZE_MAX;
+        if (!model.is_instantiated(var)) {
+            return var;
+        }
+    }
+
     size_t best_idx = SIZE_MAX;
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;

@@ -109,12 +109,20 @@ public:
 
     const CommunityStructure& structure() const { return structure_; }
 
+    /// サイズ上位 N コミュニティの ID リストを返す
+    const std::vector<size_t>& top_communities(size_t n) const;
+
+    /// 指定コミュニティの変数 ID リストを返す
+    const std::vector<size_t>& community_vars(size_t community_id) const;
+
 private:
     bool enabled_ = false;
     VIG vig_;
     CommunityStructure structure_;
     LocalityStats stats_;
     size_t last_decision_var_ = SIZE_MAX;
+    std::vector<std::vector<size_t>> community_vars_;  ///< community_id → [var_idx, ...]
+    std::vector<size_t> top_communities_;               ///< サイズ降順の上位コミュニティID
 };
 
 } // namespace sabori_csp

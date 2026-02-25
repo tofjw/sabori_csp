@@ -511,6 +511,7 @@ private:
     // コミュニティ分析
     CommunityAnalysis community_analysis_;
     size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
+    size_t community_first_var_ = SIZE_MAX; ///< リスタート後、最初に選ぶべき変数
 };
 
 } // namespace sabori_csp
