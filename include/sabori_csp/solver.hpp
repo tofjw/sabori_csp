@@ -356,20 +356,43 @@ private:
      * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
      */
     inline void bump_activity(const Model& model, size_t constraint_idx) {
+        if (!bump_activity_enabled_) return;
         const auto& constraint = model.constraints()[constraint_idx];
         const auto& vars = constraint->var_ptrs();
         size_t n = vars.size();
+        bool need_rescale = false;
         for (const auto& v : vars) {
             if (v->is_assigned()) {
-                activity_[v->id()] += 1.0 / n;
+                activity_[v->id()] += activity_inc_ / n;
+                if (activity_[v->id()] > 10000.0) {
+                    need_rescale = true;
+                }
             }
+        }
+        if (need_rescale) {
+            rescale_activities();
         }
     }
 
     /**
-     * @brief Activity を減衰
+     * @brief Activity を減衰（リスタート時に呼ぶ）
      */
     void decay_activities();
+
+    /**
+     * @brief Activity をスケーリング（最大値が100になるように）
+     */
+    void rescale_activities();
+
+    /**
+     * @brief コミュニティ構造に基づいて bump_activity の有効/無効を判定
+     */
+    void update_bump_activity_flag();
+
+    /**
+     * @brief リスタート後に起点変数を選択（探索多様化）
+     */
+    void select_restart_pivot(const Model& model);
 
     /**
      * @brief Unit nogood をドメインに適用し、process_queue を実行
@@ -447,6 +470,7 @@ private:
     // 状態
     int current_decision_ = 0;
     std::vector<double> activity_;
+    double activity_inc_ = 1.0;
     std::vector<Literal> decision_trail_;
 
     // NoGood
@@ -512,6 +536,7 @@ private:
     CommunityAnalysis community_analysis_;
     size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
     size_t community_first_var_ = SIZE_MAX; ///< リスタート後、最初に選ぶべき変数
+    bool bump_activity_enabled_ = true;     ///< コミュニティ構造が弱い場合は無効化
 };
 
 } // namespace sabori_csp

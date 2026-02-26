@@ -128,6 +128,7 @@ std::optional<Solution> Solver::solve(Model& model) {
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);
         community_analysis_.print_static_report(std::cerr);
+        update_bump_activity_flag();
     }
     init_var_order_tracking(model);
 
@@ -201,6 +202,7 @@ std::optional<Solution> Solver::solve_optimize(
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);
         community_analysis_.print_static_report(std::cerr);
+        update_bump_activity_flag();
     }
     init_var_order_tracking(model);
 
@@ -256,6 +258,7 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);
         community_analysis_.print_static_report(std::cerr);
+        update_bump_activity_flag();
     }
     init_var_order_tracking(model);
 
@@ -383,28 +386,8 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom512{};
 
-            // コミュニティローテーション: 上位コミュニティから最初の変数を選択
-            community_first_var_ = SIZE_MAX;
-            if (community_analysis_.is_enabled()) {
-                const auto& tops = community_analysis_.top_communities(5);
-                if (!tops.empty()) {
-                    size_t target_comm = tops[stats_.restart_count % tops.size()];
-                    const auto& vars = community_analysis_.community_vars(target_comm);
-                    // MRV → activity で未割当変数を1つ選ぶ
-                    size_t best_size = SIZE_MAX;
-                    double best_act = -1.0;
-                    for (size_t v : vars) {
-                        if (!model.is_instantiated(v)) {
-                            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-                            if (ds < best_size || (ds == best_size && activity_[v] > best_act)) {
-                                best_size = ds;
-                                best_act = activity_[v];
-                                community_first_var_ = v;
-                            }
-                        }
-                    }
-                }
-            }
+            // リスタート後の起点変数を選択（探索多様化）
+            select_restart_pivot(model);
 
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
@@ -671,25 +654,8 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom512{};
 
-            // コミュニティローテーション: 上位コミュニティから最初の変数を選択
-            community_first_var_ = SIZE_MAX;
-            if (community_analysis_.is_enabled()) {
-                const auto& tops = community_analysis_.top_communities(5);
-                if (!tops.empty()) {
-                    size_t target_comm = tops[stats_.restart_count % tops.size()];
-                    const auto& vars = community_analysis_.community_vars(target_comm);
-                    size_t best_size = SIZE_MAX;
-                    for (size_t v : vars) {
-                        if (!model.is_instantiated(v)) {
-                            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-                            if (ds < best_size) {
-                                best_size = ds;
-                                community_first_var_ = v;
-                            }
-                        }
-                    }
-                }
-            }
+            // リスタート後の起点変数を選択（探索多様化）
+            select_restart_pivot(model);
 
             // 非活性NGの削除: N回リスタートで一度も発火しなかったNGを除去
             nogoods_.erase(
@@ -1219,8 +1185,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     for (const auto& w : constraint_indices) {
         if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
 						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
-
-            // bump_activity(model, w.constraint_idx);
+            bump_activity(model, w.constraint_idx);
             return false;
         }
     }
@@ -1430,11 +1395,101 @@ size_t Solver::select_variable(const Model& model) {
 }
 
 void Solver::decay_activities() {
-    for (auto& a : activity_) {
-        a *= activity_decay_;
-        // activity is expired. use random selection
-        if (a < 0.0001)
-            a = 0;
+    activity_inc_ /= activity_decay_;
+    if (activity_inc_ > 10000.0) {
+        rescale_activities();
+    }
+}
+
+void Solver::rescale_activities() {
+    double max_act = 0.0;
+    for (const auto& a : activity_) {
+        if (a > max_act) max_act = a;
+    }
+    if (max_act > 0.0) {
+        double scale = 100.0 / max_act;
+        for (auto& a : activity_) {
+            a *= scale;
+        }
+    }
+    activity_inc_ = activity_decay_;
+}
+
+void Solver::update_bump_activity_flag() {
+    const auto& s = community_analysis_.structure();
+    // modularity が小さい → クラスタ構造が弱い
+    if (s.modularity < 0.3) {
+        bump_activity_enabled_ = false;
+        if (verbose_) {
+            std::cerr << "% [verbose] bump_activity disabled (modularity="
+                      << s.modularity << " < 0.3)\n";
+        }
+        return;
+    }
+    // 最大クラスタが2番目の5倍を超える → 実質1クラスタ
+    const auto& tops = community_analysis_.top_communities(2);
+    if (tops.size() >= 2) {
+        size_t largest = community_analysis_.community_vars(tops[0]).size();
+        size_t second = community_analysis_.community_vars(tops[1]).size();
+        if (second > 0 && largest > second * 5) {
+            bump_activity_enabled_ = false;
+            if (verbose_) {
+                std::cerr << "% [verbose] bump_activity disabled (largest_cluster="
+                          << largest << " > 5 * second=" << second << ")\n";
+            }
+            return;
+        }
+    }
+    bump_activity_enabled_ = true;
+    if (verbose_) {
+        std::cerr << "% [verbose] bump_activity enabled (modularity="
+                  << s.modularity << ")\n";
+    }
+}
+
+void Solver::select_restart_pivot(const Model& model) {
+    community_first_var_ = SIZE_MAX;
+
+    if (community_analysis_.is_enabled()) {
+        // コミュニティベースのローテーション
+        const auto& tops = community_analysis_.top_communities(5);
+        if (!tops.empty()) {
+            size_t target_comm = tops[stats_.restart_count % tops.size()];
+            const auto& vars = community_analysis_.community_vars(target_comm);
+            size_t best_size = SIZE_MAX;
+            double best_act = -1.0;
+            for (size_t v : vars) {
+                if (!model.is_instantiated(v)) {
+                    size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+                    if (ds < best_size || (ds == best_size && activity_[v] > best_act)) {
+                        best_size = ds;
+                        best_act = activity_[v];
+                        community_first_var_ = v;
+                    }
+                }
+            }
+        }
+    } else if (decision_var_end_ > 0) {
+        // コミュニティ分析なし: var_order_ を均等グループに分割してローテーション
+        constexpr size_t num_groups = 5;
+        size_t group_size = (decision_var_end_ + num_groups - 1) / num_groups;
+        size_t group_idx = stats_.restart_count % num_groups;
+        size_t begin = group_idx * group_size;
+        size_t end = std::min(begin + group_size, decision_var_end_);
+
+        size_t best_size = SIZE_MAX;
+        double best_act = -1.0;
+        for (size_t k = begin; k < end; ++k) {
+            size_t v = var_order_[k];
+            if (!model.is_instantiated(v)) {
+                size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+                if (ds < best_size || (ds == best_size && activity_[v] > best_act)) {
+                    best_size = ds;
+                    best_act = activity_[v];
+                    community_first_var_ = v;
+                }
+            }
+        }
     }
 }
 
@@ -1859,7 +1914,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
-                        // bump_activity(model, w.constraint_idx);
+                        bump_activity(model, w.constraint_idx);
                         return false;
                     }
                 }
@@ -1890,7 +1945,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
-                        // bump_activity(model, w.constraint_idx);
+                        bump_activity(model, w.constraint_idx);
                         return false;
                     }
                 }
@@ -1924,7 +1979,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_min, prev_min)) {
-                            // bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }
@@ -1938,7 +1993,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_max, prev_max)) {
-                            // bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }
@@ -1952,7 +2007,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                   var_idx, w.internal_var_idx, removed_value)) {
-                            // bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx);
                             return false;
                         }
                     }
