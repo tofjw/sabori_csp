@@ -1412,7 +1412,7 @@ void Solver::rescale_activities() {
             a *= scale;
         }
     }
-    activity_inc_ = activity_decay_;
+    activity_inc_ = 1.0;
 }
 
 void Solver::update_bump_activity_flag() {
