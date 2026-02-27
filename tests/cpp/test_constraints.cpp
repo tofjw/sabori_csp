@@ -538,8 +538,10 @@ TEST_CASE("Constraint watches initialization", "[constraint][2wl]") {
         auto y = make_var("y", 1, 3);
         IntEqConstraint c(x, y);
 
-        // x は確定済みなので y を監視
-        REQUIRE(c.watch1() == 1);
+        // init_watches はデフォルト w1=0, w2=1 を設定
+        // refine_watches(Model&) が後で適切に再配置する
+        REQUIRE(c.watch1() == 0);
+        REQUIRE(c.watch2() == 1);
     }
 
     SECTION("both assigned variables") {
