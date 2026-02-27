@@ -11,7 +11,7 @@ DiffnConstraint::DiffnConstraint(
     std::vector<VariablePtr> x, std::vector<VariablePtr> y,
     std::vector<VariablePtr> dx, std::vector<VariablePtr> dy,
     bool strict)
-    : Constraint(std::vector<VariablePtr>())
+    : Constraint()
     , n_(x.size())
     , strict_(strict)
 {
@@ -22,7 +22,7 @@ DiffnConstraint::DiffnConstraint(
     for (auto& v : dx) vars_.push_back(std::move(v));
     for (auto& v : dy) vars_.push_back(std::move(v));
 
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     check_initial_consistency();
 }
 

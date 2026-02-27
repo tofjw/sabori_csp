@@ -10,17 +10,18 @@ namespace sabori_csp {
 // ============================================================================
 
 AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<VariablePtr> vars)
-    : Constraint(vars)
+    : Constraint(extract_var_ids(vars))
+    , vars_(std::move(vars))
     , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築（値0を除外）
     std::set<Domain::value_type> all_values;
-    for (const auto& var : vars) {
-        for (auto v : var->domain().values()) {
+    for (const auto& var : vars_) {
+        var->domain().for_each_value([&](auto v) {
             if (v != 0) {
                 all_values.insert(v);
             }
-        }
+        });
     }
 
     pool_values_.assign(all_values.begin(), all_values.end());
@@ -30,7 +31,7 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
     }
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
-    for (const auto& var : vars) {
+    for (const auto& var : vars_) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             if (val != 0) {
@@ -53,8 +54,6 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
             ++unfixed_count_;
         }
     }
-
-    update_var_ids();
 
     // 初期整合性チェック
     check_initial_consistency();

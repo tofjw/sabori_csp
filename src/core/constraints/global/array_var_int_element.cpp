@@ -32,7 +32,7 @@ ArrayVarIntElementConstraint::ArrayVarIntElementConstraint(
     }
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     index_id_ = index_->id();
     result_id_ = result_->id();
 
@@ -108,7 +108,8 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point
     Domain::value_type new_result_min = std::numeric_limits<Domain::value_type>::max();
     Domain::value_type new_result_max = std::numeric_limits<Domain::value_type>::min();
 
-    auto index_values = index_->domain().values();
+    std::vector<Domain::value_type> index_values;
+    index_->domain().copy_values_to(index_values);
     for (auto idx : index_values) {
         auto idx_0based = index_to_0based(idx);
         if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
@@ -155,7 +156,7 @@ bool ArrayVarIntElementConstraint::propagate_bounds(Model& model, int save_point
     auto result_min = model.var_min(result_->id());
     auto result_max = model.var_max(result_->id());
 
-    index_values = index_->domain().values();  // 再取得
+    index_->domain().copy_values_to(index_values);  // 再取得
     auto& index_domain = index_->domain();
 
     for (auto idx : index_values) {
@@ -260,14 +261,14 @@ bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     // 初期整合性チェック
     // index のドメインが全て範囲外の場合
     bool has_valid_index = false;
-    auto index_values = index_->domain().values();
-    for (auto idx : index_values) {
-        auto idx_0based = index_to_0based(idx);
-        if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-            has_valid_index = true;
-            break;
+    index_->domain().for_each_value([&](auto idx) {
+        if (!has_valid_index) {
+            auto idx_0based = index_to_0based(idx);
+            if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+                has_valid_index = true;
+            }
         }
-    }
+    });
     if (!has_valid_index) {
         return false;
     }
@@ -287,14 +288,14 @@ bool ArrayVarIntElementConstraint::presolve(Model& model) {
 void ArrayVarIntElementConstraint::check_initial_consistency() {
     // index のドメインが全て範囲外の場合
     bool has_valid_index = false;
-    auto index_values = index_->domain().values();
-    for (auto idx : index_values) {
-        auto idx_0based = index_to_0based(idx);
-        if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-            has_valid_index = true;
-            break;
+    index_->domain().for_each_value([&](auto idx) {
+        if (!has_valid_index) {
+            auto idx_0based = index_to_0based(idx);
+            if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
+                has_valid_index = true;
+            }
         }
-    }
+    });
     if (!has_valid_index) {
         set_initially_inconsistent(true);
         return;

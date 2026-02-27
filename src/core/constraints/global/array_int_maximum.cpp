@@ -12,9 +12,9 @@ namespace sabori_csp {
 
 ArrayIntMaximumConstraint::ArrayIntMaximumConstraint(VariablePtr m, std::vector<VariablePtr> vars)
     : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = {m};
-        all_vars.insert(all_vars.end(), vars.begin(), vars.end());
-        return all_vars;
+        std::vector<size_t> ids = {m->id()};
+        for (const auto& v : vars) ids.push_back(v->id());
+        return ids;
     }())
     , m_(std::move(m))
     , x_(std::move(vars))
@@ -175,11 +175,9 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
 
 bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                          size_t last_var_internal_idx) {
-    auto& last_var = vars_[last_var_internal_idx];
-
     auto last_var_id = var_ids_[last_var_internal_idx];
 
-    if (last_var.get() == m_.get()) {
+    if (last_var_id == m_id_) {
         // m が最後: 全 x[i] の最大値を計算して m を確定
         Domain::value_type max_val = model.value(var_ids_[1]);
         for (size_t i = 1; i < n_; ++i) {
@@ -202,7 +200,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
         // 他の x[j] の最大値を計算
         Domain::value_type other_max = std::numeric_limits<Domain::value_type>::min();
         for (size_t i = 0; i < n_; ++i) {
-            if (x_[i].get() != last_var.get()) {
+            if (var_ids_[1 + i] != last_var_id) {
                 other_max = std::max(other_max, model.value(var_ids_[1 + i]));
             }
         }
@@ -231,7 +229,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
             if (var_max > m_val) {
                 model.enqueue_set_max(last_var_id, m_val);
             }
-            return !last_var->domain().empty();
+            return true;
         } else {
             // other_max > m_val は既にエラーのはず
             return false;

@@ -17,6 +17,16 @@ namespace sabori_csp {
 class Model;
 
 /**
+ * @brief VariablePtr のリストから変数IDリストを抽出するヘルパー
+ */
+inline std::vector<size_t> extract_var_ids(const std::vector<VariablePtr>& vars) {
+    std::vector<size_t> ids;
+    ids.reserve(vars.size());
+    for (const auto& v : vars) ids.push_back(v->id());
+    return ids;
+}
+
+/**
  * @brief 制約の基底クラス
  *
  * 2-Watched Literal (2WL) による効率的な伝播監視を提供する。
@@ -55,11 +65,6 @@ public:
      * @brief 制約が関係する変数を取得
      */
     virtual std::vector<VariablePtr> variables() const = 0;
-
-    /**
-     * @brief 基底クラスの vars_ への const 参照を返す（コピーなし）
-     */
-    const std::vector<VariablePtr>& var_ptrs() const { return vars_; }
 
     /**
      * @brief 変数IDリストへの const 参照を返す（shared_ptr デリファレンス回避）
@@ -274,9 +279,9 @@ protected:
      *
      * サブクラスから呼び出す。IDを自動付与し、2WLを初期化する。
      *
-     * @param vars 制約に関与する変数リスト
+     * @param var_ids 制約に関与する変数のIDリスト
      */
-    explicit Constraint(const std::vector<VariablePtr>& vars);
+    explicit Constraint(std::vector<size_t> var_ids);
 
     /**
      * @brief デフォルトコンストラクタ（後方互換性用）
@@ -284,9 +289,9 @@ protected:
     Constraint();
 
     /**
-     * @brief 変数リストを設定（遅延初期化用）
+     * @brief 変数IDリストを設定（遅延初期化用）
      */
-    void set_variables(const std::vector<VariablePtr>& vars);
+    void set_var_ids(std::vector<size_t> var_ids);
 
     /**
      * @brief 初期矛盾フラグを設定
@@ -310,10 +315,7 @@ protected:
      */
     virtual void check_initial_consistency();
 
-    // 制約に関与する変数（サブクラスで管理してもよい）
-    std::vector<VariablePtr> vars_;
-
-    // 変数のModel内ID（vars_と同じ順序）
+    // 変数のModel内ID
     std::vector<size_t> var_ids_;
 
     /**
@@ -322,17 +324,6 @@ protected:
      */
     size_t var_id(size_t internal_idx) const {
         return var_ids_[internal_idx];
-    }
-
-    /**
-     * @brief 変数IDキャッシュを更新
-     */
-    void update_var_ids() {
-        var_ids_.clear();
-        var_ids_.reserve(vars_.size());
-        for (const auto& var : vars_) {
-            var_ids_.push_back(var->id());
-        }
     }
 
 private:

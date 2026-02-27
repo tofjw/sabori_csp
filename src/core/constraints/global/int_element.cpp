@@ -14,7 +14,7 @@ IntElementConstraint::IntElementConstraint(VariablePtr index_var,
                                            std::vector<Domain::value_type> array,
                                            VariablePtr result_var,
                                            bool zero_based)
-    : Constraint({index_var, result_var})
+    : Constraint(extract_var_ids({index_var, result_var}))
     , index_var_(std::move(index_var))
     , result_var_(std::move(result_var))
     , array_(std::move(array))
@@ -140,8 +140,9 @@ bool IntElementConstraint::presolve(Model& model) {
         // index のドメインを valid_indices に絞る
         const auto& valid_indices = it->second;
         auto& idx_domain = index_var_->domain();
-        auto idx_values = idx_domain.values();
-        for (auto v : idx_values) {
+        std::vector<Domain::value_type> buf;
+        idx_domain.copy_values_to(buf);
+        for (auto v : buf) {
             bool found = false;
             for (auto vi : valid_indices) {
                 if (v == vi) {
@@ -162,18 +163,18 @@ bool IntElementConstraint::presolve(Model& model) {
 
     // 1. index のドメインから result の取りうる値を計算
     std::set<Domain::value_type> valid_results;
-    auto idx_values = index_var_->domain().values();
-    for (auto idx : idx_values) {
+    index_var_->domain().for_each_value([&](auto idx) {
         auto idx_0based = index_to_0based(idx);
         if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
             valid_results.insert(array_[static_cast<size_t>(idx_0based)]);
         }
-    }
+    });
 
     // 2. result のドメインを絞る
     auto& result_domain = result_var_->domain();
-    auto result_values = result_domain.values();
-    for (auto v : result_values) {
+    std::vector<Domain::value_type> buf;
+    result_domain.copy_values_to(buf);
+    for (auto v : buf) {
         if (valid_results.find(v) == valid_results.end()) {
             if (!result_domain.remove(v)) {
                 return false;
@@ -183,20 +184,19 @@ bool IntElementConstraint::presolve(Model& model) {
 
     // 3. result のドメインから index の有効な値を計算
     std::set<Domain::value_type> valid_indices;
-    result_values = result_domain.values();  // 更新後
-    for (auto v : result_values) {
+    result_domain.for_each_value([&](auto v) {
         auto it = value_to_indices_.find(v);
         if (it != value_to_indices_.end()) {
             for (auto vi : it->second) {
                 valid_indices.insert(vi);
             }
         }
-    }
+    });
 
     // 4. index のドメインを絞る
     auto& idx_domain = index_var_->domain();
-    idx_values = idx_domain.values();  // 更新後
-    for (auto v : idx_values) {
+    idx_domain.copy_values_to(buf);
+    for (auto v : buf) {
         if (valid_indices.find(v) == valid_indices.end()) {
             if (!idx_domain.remove(v)) {
                 return false;
@@ -351,9 +351,9 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
 
 bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                     size_t last_var_internal_idx) {
-    auto& last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_[last_var_internal_idx];
 
-    if (last_var.get() == result_var_.get()) {
+    if (last_var_id == result_id_) {
         // index は確定済み -> result を確定
         auto idx = model.value(index_id_);
         auto idx_0based = index_to_0based(idx);
@@ -374,7 +374,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
         } else {
             return false;
         }
-    } else if (last_var.get() == index_var_.get()) {
+    } else if (last_var_id == index_id_) {
         // result は確定済み -> index の候補を探す
         auto result_value = model.value(result_id_);
         auto it = value_to_indices_.find(result_value);

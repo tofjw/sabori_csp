@@ -10,9 +10,9 @@ namespace sabori_csp {
 
 ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, VariablePtr r)
     : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = vars;
-        all_vars.push_back(r);
-        return all_vars;
+        auto ids = extract_var_ids(vars);
+        ids.push_back(r->id());
+        return ids;
     }())
     , vars_(std::move(vars))
     , r_(std::move(r))
@@ -465,9 +465,9 @@ void ArrayBoolAndConstraint::move_watch(Model& model, int /*save_point*/, int wh
 
 ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, VariablePtr r)
     : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = vars;
-        all_vars.push_back(r);
-        return all_vars;
+        auto ids = extract_var_ids(vars);
+        ids.push_back(r->id());
+        return ids;
     }())
     , vars_(std::move(vars))
     , r_(std::move(r))
@@ -836,9 +836,10 @@ void ArrayBoolOrConstraint::move_watch(Model& model, int /*save_point*/, int whi
 
 BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::vector<VariablePtr> neg)
     : Constraint([&]() {
-        std::vector<VariablePtr> all_vars = pos;
-        all_vars.insert(all_vars.end(), neg.begin(), neg.end());
-        return all_vars;
+        auto ids = extract_var_ids(pos);
+        auto neg_ids = extract_var_ids(neg);
+        ids.insert(ids.end(), neg_ids.begin(), neg_ids.end());
+        return ids;
     }())
     , pos_(std::move(pos))
     , neg_(std::move(neg))
@@ -1079,26 +1080,16 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
     }
 
     // 最後の未確定変数を充足方向に確定
-    VariablePtr last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_ref()[last_var_internal_idx];
     size_t last_lit = SIZE_MAX;
 
-    for (size_t i = 0; i < n_pos_; ++i) {
-        if (pos_[i] == last_var) {
-            last_lit = i;
-            break;
-        }
-    }
-    if (last_lit == SIZE_MAX) {
-        for (size_t i = 0; i < n_neg_; ++i) {
-            if (neg_[i] == last_var) {
-                last_lit = n_pos_ + i;
-                break;
-            }
-        }
+    auto it = var_id_to_lit_idx_.find(last_var_id);
+    if (it != var_id_to_lit_idx_.end()) {
+        last_lit = it->second;
     }
 
     if (last_lit != SIZE_MAX) {
-        model.enqueue_instantiate(last_var->id(), satisfying_value(last_lit));
+        model.enqueue_instantiate(last_var_id, satisfying_value(last_lit));
     }
 
     return true;
@@ -1204,7 +1195,7 @@ void BoolClauseConstraint::move_watch(Model& model, int /*save_point*/, int whic
 // ============================================================================
 
 BoolNotConstraint::BoolNotConstraint(VariablePtr a, VariablePtr b)
-    : Constraint({a, b})
+    : Constraint(extract_var_ids({a, b}))
     , a_(std::move(a))
     , b_(std::move(b))
     , a_id_(a_->id())

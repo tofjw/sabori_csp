@@ -15,7 +15,7 @@ IntElementMonotonicConstraint::IntElementMonotonicConstraint(
     VariablePtr result_var,
     Monotonicity mono,
     bool zero_based)
-    : Constraint({index_var, result_var})
+    : Constraint(extract_var_ids({index_var, result_var}))
     , index_var_(std::move(index_var))
     , result_var_(std::move(result_var))
     , array_(std::move(array))
@@ -348,9 +348,9 @@ bool IntElementMonotonicConstraint::on_instantiate(
 bool IntElementMonotonicConstraint::on_last_uninstantiated(
     Model& model, int /*save_point*/, size_t last_var_internal_idx) {
 
-    auto& last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_[last_var_internal_idx];
 
-    if (last_var.get() == result_var_.get()) {
+    if (last_var_id == result_id_) {
         // index は確定済み -> result を確定
         auto idx = model.value(index_id_);
         auto idx_0based = index_to_0based(idx);
@@ -371,7 +371,7 @@ bool IntElementMonotonicConstraint::on_last_uninstantiated(
         } else {
             return false;
         }
-    } else if (last_var.get() == index_var_.get()) {
+    } else if (last_var_id == index_id_) {
         // result は確定済み -> index の候補を二分探索で特定
         auto result_value = model.value(result_id_);
 

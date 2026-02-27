@@ -1,7 +1,6 @@
 #include "sabori_csp/constraints/comparison.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
-#include <set>
 
 namespace sabori_csp {
 
@@ -10,7 +9,7 @@ namespace sabori_csp {
 // ============================================================================
 
 IntEqConstraint::IntEqConstraint(VariablePtr x, VariablePtr y)
-    : Constraint({x, y})
+    : Constraint(extract_var_ids({x, y}))
     , x_(std::move(x))
     , y_(std::move(y))
     , x_id_(x_->id())
@@ -70,14 +69,15 @@ bool IntEqConstraint::presolve(Model& model) {
         }
     } else {
         // sparse set: use contains() to avoid set construction
-        auto x_vals = x_dom.values();
-        for (auto v : x_vals) {
+        std::vector<Domain::value_type> buf;
+        x_dom.copy_values_to(buf);
+        for (auto v : buf) {
             if (!y_dom.contains(v)) {
                 if (!x_var.remove(v)) return false;
             }
         }
-        auto y_vals = y_dom.values();
-        for (auto v : y_vals) {
+        y_dom.copy_values_to(buf);
+        for (auto v : buf) {
             if (!x_dom.contains(v)) {
                 if (!y_var.remove(v)) return false;
             }
@@ -146,17 +146,12 @@ bool IntEqConstraint::on_final_instantiate(const Model& model) {
 
 void IntEqConstraint::check_initial_consistency() {
     // x == y: ドメインに共通の値がなければ矛盾
-    auto x_vals = x_->domain().values();
-    auto y_vals = y_->domain().values();
-    std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
     bool has_common = false;
-    for (auto v : x_vals) {
-        if (y_set.count(v) > 0) {
+    x_->domain().for_each_value([&](Domain::value_type v) {
+        if (!has_common && y_->domain().contains(v)) {
             has_common = true;
-            break;
         }
-    }
+    });
 
     if (!has_common) {
         set_initially_inconsistent(true);
@@ -168,7 +163,7 @@ void IntEqConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntEqReifConstraint::IntEqReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b)
-    : Constraint({x, y, b})
+    : Constraint(extract_var_ids({x, y, b}))
     , x_(std::move(x))
     , y_(std::move(y))
     , b_(std::move(b))
@@ -204,17 +199,12 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
     if (model.is_instantiated(b_id_)) {
         if (model.value(b_id_) == 1) {
             // x == y を満たす共通値が必要
-            auto x_vals = x_->domain().values();  // NOTE: no model equivalent for domain().values()
-            auto y_vals = y_->domain().values();   // NOTE: no model equivalent for domain().values()
-            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
             bool has_common = false;
-            for (auto v : x_vals) {
-                if (y_set.count(v) > 0) {
+            x_->domain().for_each_value([&](Domain::value_type v) {
+                if (!has_common && y_->domain().contains(v)) {
                     has_common = true;
-                    break;
                 }
-            }
+            });
             if (!has_common) {
                 return false;
             }
@@ -259,14 +249,15 @@ bool IntEqReifConstraint::presolve(Model& model) {
             }
         } else {
             // sparse set: use contains() to avoid set construction
-            auto x_vals = x_dom.values();
-            for (auto v : x_vals) {
+            std::vector<Domain::value_type> buf;
+            x_dom.copy_values_to(buf);
+            for (auto v : buf) {
                 if (!y_dom.contains(v)) {
                     if (!x_->remove(v)) return false;
                 }
             }
-            auto y_vals = y_dom.values();
-            for (auto v : y_vals) {
+            y_dom.copy_values_to(buf);
+            for (auto v : buf) {
                 if (!x_dom.contains(v)) {
                     if (!y_->remove(v)) return false;
                 }
@@ -459,17 +450,12 @@ void IntEqReifConstraint::check_initial_consistency() {
     if (b_->is_assigned()) {
         if (b_->assigned_value().value() == 1) {
             // x == y を満たす共通値が必要
-            auto x_vals = x_->domain().values();
-            auto y_vals = y_->domain().values();
-            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
             bool has_common = false;
-            for (auto v : x_vals) {
-                if (y_set.count(v) > 0) {
+            x_->domain().for_each_value([&](Domain::value_type v) {
+                if (!has_common && y_->domain().contains(v)) {
                     has_common = true;
-                    break;
                 }
-            }
+            });
             if (!has_common) {
                 set_initially_inconsistent(true);
             }
@@ -488,7 +474,7 @@ void IntEqReifConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntNeConstraint::IntNeConstraint(VariablePtr x, VariablePtr y)
-    : Constraint({x, y})
+    : Constraint(extract_var_ids({x, y}))
     , x_(std::move(x))
     , y_(std::move(y))
     , x_id_(x_->id())
@@ -564,7 +550,7 @@ void IntNeConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntNeReifConstraint::IntNeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b)
-    : Constraint({x, y, b})
+    : Constraint(extract_var_ids({x, y, b}))
     , x_(std::move(x))
     , y_(std::move(y))
     , b_(std::move(b))
@@ -605,17 +591,12 @@ bool IntNeReifConstraint::prepare_propagation(Model& model) {
             }
         } else {
             // x == y を満たす共通値が必要
-            auto x_vals = x_->domain().values();  // NOTE: no model equivalent for domain().values()
-            auto y_vals = y_->domain().values();   // NOTE: no model equivalent for domain().values()
-            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
             bool has_common = false;
-            for (auto v : x_vals) {
-                if (y_set.count(v) > 0) {
+            x_->domain().for_each_value([&](Domain::value_type v) {
+                if (!has_common && y_->domain().contains(v)) {
                     has_common = true;
-                    break;
                 }
-            }
+            });
             if (!has_common) {
                 return false;
             }
@@ -666,14 +647,15 @@ bool IntNeReifConstraint::presolve(Model& model) {
                 if (y_dom.empty()) return false;
             }
         } else {
-            auto x_vals = x_dom.values();
-            for (auto v : x_vals) {
+            std::vector<Domain::value_type> buf;
+            x_dom.copy_values_to(buf);
+            for (auto v : buf) {
                 if (!y_dom.contains(v)) {
                     if (!x_->remove(v)) return false;
                 }
             }
-            auto y_vals = y_dom.values();
-            for (auto v : y_vals) {
+            y_dom.copy_values_to(buf);
+            for (auto v : buf) {
                 if (!x_dom.contains(v)) {
                     if (!y_->remove(v)) return false;
                 }
@@ -856,17 +838,12 @@ void IntNeReifConstraint::check_initial_consistency() {
             }
         } else {
             // x == y を満たす共通値が必要
-            auto x_vals = x_->domain().values();
-            auto y_vals = y_->domain().values();
-            std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-
             bool has_common = false;
-            for (auto v : x_vals) {
-                if (y_set.count(v) > 0) {
+            x_->domain().for_each_value([&](Domain::value_type v) {
+                if (!has_common && y_->domain().contains(v)) {
                     has_common = true;
-                    break;
                 }
-            }
+            });
             if (!has_common) {
                 set_initially_inconsistent(true);
             }
@@ -879,7 +856,7 @@ void IntNeReifConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntLtConstraint::IntLtConstraint(VariablePtr x, VariablePtr y)
-    : Constraint({x, y})
+    : Constraint(extract_var_ids({x, y}))
     , x_(std::move(x))
     , y_(std::move(y))
     , x_id_(x_->id())
@@ -986,7 +963,7 @@ void IntLtConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntLeConstraint::IntLeConstraint(VariablePtr x, VariablePtr y)
-    : Constraint({x, y})
+    : Constraint(extract_var_ids({x, y}))
     , x_(std::move(x))
     , y_(std::move(y))
     , x_id_(x_->id())
@@ -1088,7 +1065,7 @@ void IntLeConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntLeReifConstraint::IntLeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b)
-    : Constraint({x, y, b})
+    : Constraint(extract_var_ids({x, y, b}))
     , x_(std::move(x))
     , y_(std::move(y))
     , b_(std::move(b))
@@ -1317,7 +1294,7 @@ void IntLeReifConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntMaxConstraint::IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m)
-    : Constraint({x, y, m})
+    : Constraint(extract_var_ids({x, y, m}))
     , x_(std::move(x))
     , y_(std::move(y))
     , m_(std::move(m))
@@ -1523,7 +1500,7 @@ void IntMaxConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntMinConstraint::IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m)
-    : Constraint({x, y, m})
+    : Constraint(extract_var_ids({x, y, m}))
     , x_(std::move(x))
     , y_(std::move(y))
     , m_(std::move(m))

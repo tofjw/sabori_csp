@@ -12,7 +12,7 @@ namespace sabori_csp {
 IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t target_sum)
-    : Constraint(std::vector<VariablePtr>())  // 後で設定
+    : Constraint()
     , target_sum_(target_sum)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
@@ -45,7 +45,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     }
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
 
     // 注意: 内部状態（current_fixed_sum_ 等）は presolve() で初期化
     // コンストラクタでは変数の状態を参照しない

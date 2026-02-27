@@ -21,19 +21,17 @@ Constraint::Constraint()
     , w2_(-1)
     , is_initially_inconsistent_(false) {}
 
-Constraint::Constraint(const std::vector<VariablePtr>& vars)
+Constraint::Constraint(std::vector<size_t> var_ids)
     : id_(next_id_++)
-    , vars_(vars)
+    , var_ids_(std::move(var_ids))
     , w1_(-1)
     , w2_(-1)
     , is_initially_inconsistent_(false) {
-    update_var_ids();
     init_watches();
 }
 
-void Constraint::set_variables(const std::vector<VariablePtr>& vars) {
-    vars_ = vars;
-    update_var_ids();
+void Constraint::set_var_ids(std::vector<size_t> var_ids) {
+    var_ids_ = std::move(var_ids);
     init_watches();
 }
 
@@ -52,26 +50,9 @@ void Constraint::init_watches() {
         return;
     }
 
-    // vars_ が利用可能なら未確定の2変数を探す
-    if (!vars_.empty()) {
-        for (size_t i = 0; i < n; ++i) {
-            if (!vars_[i]->is_assigned()) {
-                if (w1_ < 0) {
-                    w1_ = static_cast<int>(i);
-                    w2_ = static_cast<int>((i + 1) % n);
-                } else {
-                    w2_ = static_cast<int>(i);
-                    break;
-                }
-            }
-        }
-    }
-
     // デフォルト: 先頭2変数を監視（refine_watches で修正される）
-    if (w1_ < 0) {
-        w1_ = 0;
-        w2_ = 1;
-    }
+    w1_ = 0;
+    w2_ = 1;
 }
 
 void Constraint::refine_watches(const Model& model) {

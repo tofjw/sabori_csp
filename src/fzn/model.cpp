@@ -1264,7 +1264,8 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
                 const auto& values = std::get<std::vector<Domain::value_type>>(decl.args[1]);
                 // Remove values from x's domain that are not in the set
-                auto domain_vals = x->domain().values();
+                std::vector<Domain::value_type> domain_vals;
+                x->domain().copy_values_to(domain_vals);
                 for (auto v : domain_vals) {
                     if (std::find(values.begin(), values.end(), v) == values.end()) {
                         x->domain().remove(v);

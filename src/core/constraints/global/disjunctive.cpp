@@ -13,7 +13,7 @@ DisjunctiveConstraint::DisjunctiveConstraint(
     std::vector<VariablePtr> starts,
     std::vector<VariablePtr> durations,
     bool strict)
-    : Constraint(std::vector<VariablePtr>())
+    : Constraint()
     , n_(starts.size())
     , strict_(strict)
 {
@@ -43,7 +43,7 @@ DisjunctiveConstraint::DisjunctiveConstraint(
     cp_lo_.assign(n_, 0);
     cp_hi_.assign(n_, 0);
 
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     check_initial_consistency();
 }
 

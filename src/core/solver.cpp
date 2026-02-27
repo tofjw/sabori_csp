@@ -633,7 +633,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 // Enumerate モード
                 stats_.enumerate_count++;
                 auto& domain = variables[var_idx]->domain();
-                auto values = domain.values();
+                domain.copy_values_to(value_buffer_);
+                auto& values = value_buffer_;
 
                 // 疑似勾配ヒント（対象変数のみ）
                 if (var_idx == gradient_var_idx_ && gradient_direction_ != 0) {
@@ -695,6 +696,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             decision_trail_.pop_back();
 
             if (result == SearchResult::SAT) {
+                value_buffer_ = std::move(stack.back().values);
                 stack.pop_back();
                 continue;  // SAT を上へ伝播
             }
@@ -702,6 +704,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             if (result == SearchResult::UNKNOWN || frame.remaining_cl <= 1) {
                 current_decision_--;
                 backtrack(model, frame.save_point);
+                value_buffer_ = std::move(stack.back().values);
                 stack.pop_back();
                 result = SearchResult::UNKNOWN;
                 continue;
@@ -777,6 +780,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     nogood_mgr_.learn_from_conflict(decision_trail_, activity_, stats_.restart_count);
                 }
 
+                value_buffer_ = std::move(stack.back().values);
                 stack.pop_back();
                 result = SearchResult::UNSAT;
                 ascending = true;

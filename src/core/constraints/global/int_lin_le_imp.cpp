@@ -14,7 +14,7 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
                                                std::vector<VariablePtr> vars,
                                                int64_t bound,
                                                VariablePtr b)
-    : Constraint(std::vector<VariablePtr>())  // 後で設定
+    : Constraint()
     , bound_(bound)
     , b_(std::move(b))
     , current_fixed_sum_(0)
@@ -41,7 +41,7 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
     // 全ての係数が0になった場合: presolve で処理
     if (coeffs_.empty()) {
         vars_.push_back(b_);
-        update_var_ids();
+        var_ids_ = extract_var_ids(vars_);
         b_id_ = b_->id();
         return;
     }
@@ -50,7 +50,7 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
     vars_.push_back(b_);
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     b_id_ = b_->id();
 
     // 注意: 内部状態は presolve() で初期化

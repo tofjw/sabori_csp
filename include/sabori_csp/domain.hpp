@@ -104,6 +104,41 @@ public:
     std::vector<value_type> values() const;
 
     /**
+     * @brief ゼロアロケーション反復（コールバックは void(value_type)）
+     */
+    template<typename F>
+    void for_each_value(F&& f) const {
+        if (bounds_only_) {
+            for (value_type v = min_; v <= max_; ++v) {
+                if (removed_set_.find(v) == removed_set_.end()) {
+                    f(v);
+                }
+            }
+        } else {
+            for (size_t i = 0; i < n_; ++i) {
+                f(values_[i]);
+            }
+        }
+    }
+
+    /**
+     * @brief 既存バッファへコピー（ヒープ再確保を回避）
+     */
+    void copy_values_to(std::vector<value_type>& out) const {
+        out.clear();
+        if (bounds_only_) {
+            out.reserve(n_);
+            for (value_type v = min_; v <= max_; ++v) {
+                if (removed_set_.find(v) == removed_set_.end()) {
+                    out.push_back(v);
+                }
+            }
+        } else {
+            out.assign(values_.data(), values_.data() + n_);
+        }
+    }
+
+    /**
      * @brief 単一値に固定されているか
      */
     bool is_singleton() const { return n_ > 0 && min_ == max_; }

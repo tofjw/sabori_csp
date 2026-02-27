@@ -15,12 +15,12 @@ ConnectedConstraint::ConnectedConstraint(
     std::vector<VariablePtr> ns,
     std::vector<VariablePtr> es)
     : Constraint([&]() {
-        // vars_ = ns ++ es
-        std::vector<VariablePtr> all;
-        all.reserve(ns.size() + es.size());
-        all.insert(all.end(), ns.begin(), ns.end());
-        all.insert(all.end(), es.begin(), es.end());
-        return all;
+        // var_ids = ns ++ es
+        std::vector<size_t> ids;
+        ids.reserve(ns.size() + es.size());
+        for (const auto& v : ns) ids.push_back(v->id());
+        for (const auto& v : es) ids.push_back(v->id());
+        return ids;
     }())
     , n_nodes_(ns.size())
     , n_edges_(es.size())
@@ -49,7 +49,7 @@ ConnectedConstraint::ConnectedConstraint(
         uf_parent_[i] = i;
     }
 
-    update_var_ids();
+    // Note: vars_ would need to be built here if this file is compiled
     check_initial_consistency();
 }
 

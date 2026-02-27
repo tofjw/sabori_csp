@@ -10,15 +10,14 @@ namespace sabori_csp {
 // ============================================================================
 
 AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
-    : Constraint(vars)
+    : Constraint(extract_var_ids(vars))
+    , vars_(std::move(vars))
     , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築
     std::set<Domain::value_type> all_values;
-    for (const auto& var : vars) {
-        for (auto v : var->domain().values()) {
-            all_values.insert(v);
-        }
+    for (const auto& var : vars_) {
+        var->domain().for_each_value([&](auto v) { all_values.insert(v); });
     }
 
     pool_values_.assign(all_values.begin(), all_values.end());
@@ -28,7 +27,7 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     }
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
-    for (const auto& var : vars) {
+    for (const auto& var : vars_) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             auto it = pool_sparse_.find(val);

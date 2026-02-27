@@ -11,8 +11,9 @@ namespace sabori_csp {
 // ============================================================================
 
 CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
-    : Constraint(vars)
-    , n_(vars.size())
+    : Constraint(extract_var_ids(vars))
+    , vars_(std::move(vars))
+    , n_(vars_.size())
     , base_offset_(0)
     , head_(n_)
     , tail_(n_)
@@ -22,9 +23,9 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     , pool_n_(n_) {
     // ベースオフセットを検出（全変数の値域のグローバル最小値から）
     // FlatZinc の circuit は通常 1-based（値の範囲は 1..n）
-    if (!vars.empty()) {
+    if (!vars_.empty()) {
         Domain::value_type global_min = std::numeric_limits<Domain::value_type>::max();
-        for (const auto& v : vars) {
+        for (const auto& v : vars_) {
             if (!v->domain().empty()) {
                 global_min = std::min(global_min, v->min());
             }

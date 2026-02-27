@@ -11,7 +11,7 @@ namespace sabori_csp {
 CountEqConstraint::CountEqConstraint(std::vector<VariablePtr> x_vars,
                                        Domain::value_type target,
                                        VariablePtr count_var)
-    : Constraint(std::vector<VariablePtr>())  // 後で設定
+    : Constraint()
     , target_(target)
     , n_(x_vars.size())
     , definite_count_(0)
@@ -26,7 +26,7 @@ CountEqConstraint::CountEqConstraint(std::vector<VariablePtr> x_vars,
     is_possible_.resize(n_, false);
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     c_id_ = vars_[n_]->id();
 }
 
@@ -415,7 +415,7 @@ CountEqVarTargetConstraint::CountEqVarTargetConstraint(
     std::vector<VariablePtr> x_vars,
     VariablePtr y_var,
     VariablePtr count_var)
-    : Constraint(std::vector<VariablePtr>())
+    : Constraint()
     , n_(x_vars.size())
     , target_known_(false)
     , target_(0)
@@ -431,7 +431,7 @@ CountEqVarTargetConstraint::CountEqVarTargetConstraint(
 
     is_possible_.resize(n_, false);
 
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     y_id_ = vars_[n_]->id();
     c_id_ = vars_[n_ + 1]->id();
 }

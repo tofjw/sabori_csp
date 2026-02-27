@@ -14,7 +14,7 @@ IntLinEqReifConstraint::IntLinEqReifConstraint(std::vector<int64_t> coeffs,
                                                  std::vector<VariablePtr> vars,
                                                  int64_t target,
                                                  VariablePtr b)
-    : Constraint(std::vector<VariablePtr>())  // 後で設定
+    : Constraint()
     , target_(target)
     , b_(b)
     , current_fixed_sum_(0)
@@ -44,7 +44,7 @@ IntLinEqReifConstraint::IntLinEqReifConstraint(std::vector<int64_t> coeffs,
     // この場合は presolve で b を確定させる
     if (coeffs_.empty()) {
         vars_.push_back(b_);
-        update_var_ids();
+        var_ids_ = extract_var_ids(vars_);
         b_id_ = b_->id();
         return;
     }
@@ -53,7 +53,7 @@ IntLinEqReifConstraint::IntLinEqReifConstraint(std::vector<int64_t> coeffs,
     vars_.push_back(b_);
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
     b_id_ = b_->id();
 
     // 注意: 内部状態（current_fixed_sum_, unfixed_count_ 等）は presolve() で初期化

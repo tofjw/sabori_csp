@@ -35,7 +35,7 @@ Domain::value_type div_ceil_int(Domain::value_type a, Domain::value_type b) {
 // ============================================================================
 
 IntTimesConstraint::IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr z)
-    : Constraint({x, y, z})
+    : Constraint(extract_var_ids({x, y, z}))
     , x_(std::move(x))
     , y_(std::move(y))
     , z_(std::move(z))
@@ -385,7 +385,7 @@ void IntTimesConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntAbsConstraint::IntAbsConstraint(VariablePtr x, VariablePtr y)
-    : Constraint({x, y})
+    : Constraint(extract_var_ids({x, y}))
     , x_(std::move(x))
     , y_(std::move(y))
     , x_id_(x_->id())
@@ -455,10 +455,11 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
     if (!x_->remove_above(y_max)) return false;
 
     // x のドメインから、対応する |x| が y のドメインにない値を削除
-    auto x_vals = x_->domain().values();
-    auto y_vals = y_->domain().values();
-    std::set<Domain::value_type> y_set(y_vals.begin(), y_vals.end());
-    for (auto v : x_vals) {
+    std::vector<Domain::value_type> buf;
+    std::set<Domain::value_type> y_set;
+    y_->domain().for_each_value([&](auto v) { y_set.insert(v); });
+    x_->domain().copy_values_to(buf);
+    for (auto v : buf) {
         auto abs_v = (v >= 0) ? v : -v;
         if (y_set.count(abs_v) == 0) {
             if (!x_->remove(v)) {
@@ -468,10 +469,10 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
     }
 
     // y のドメインから、対応する x が x のドメインにない値を削除
-    x_vals = x_->domain().values();
-    std::set<Domain::value_type> x_set(x_vals.begin(), x_vals.end());
-    auto y_vals2 = y_->domain().values();
-    for (auto v : y_vals2) {
+    std::set<Domain::value_type> x_set;
+    x_->domain().for_each_value([&](auto v) { x_set.insert(v); });
+    y_->domain().copy_values_to(buf);
+    for (auto v : buf) {
         // v = |x| となる x は v または -v
         if (x_set.count(v) == 0 && x_set.count(-v) == 0) {
             if (!y_->remove(v)) {
@@ -622,7 +623,7 @@ void IntAbsConstraint::check_initial_consistency() {
 // ============================================================================
 
 IntModConstraint::IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z)
-    : Constraint({x, y, z})
+    : Constraint(extract_var_ids({x, y, z}))
     , x_(std::move(x))
     , y_(std::move(y))
     , z_(std::move(z))

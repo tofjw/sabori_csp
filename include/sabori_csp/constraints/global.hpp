@@ -62,6 +62,8 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
+
     // 値プール（Sparse Set）
     std::vector<Domain::value_type> pool_values_;  // Dense 配列
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス
@@ -111,6 +113,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<Domain::value_type> pool_values_;
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;
     size_t pool_n_;
@@ -207,6 +210,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_sum_;
 
@@ -302,6 +306,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
     int64_t current_fixed_sum_;
@@ -382,6 +387,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     size_t n_;  // ノード数
     Domain::value_type base_offset_;  // 1-based インデックスのオフセット（通常は1）
 
@@ -482,6 +488,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
 
@@ -825,6 +832,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
     VariablePtr b_;
@@ -911,6 +919,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
     VariablePtr b_;
@@ -997,6 +1006,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
     VariablePtr b_;
@@ -1089,6 +1099,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
     VariablePtr b_;  // 含意変数
@@ -1178,6 +1189,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     VariablePtr index_;
     std::vector<VariablePtr> array_;
     VariablePtr result_;
@@ -1300,6 +1312,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     size_t arity_;
     size_t num_tuples_;
     size_t num_words_;
@@ -1442,6 +1455,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     Domain::value_type target_;
     size_t n_;  // 配列サイズ (x[] の要素数)
     size_t c_id_;  // count 変数の ID キャッシュ
@@ -1525,6 +1539,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     size_t n_;  // 配列サイズ (x[] の要素数)
     size_t y_id_;  // y 変数の ID キャッシュ
     size_t c_id_;  // count 変数の ID キャッシュ
@@ -1598,6 +1613,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     size_t n_;          // タスク数
     bool strict_;       // strict disjunctive かどうか
     int offset_;        // 時間軸オフセット (min_start)
@@ -1688,6 +1704,7 @@ protected:
     void check_initial_consistency() override;
 
 private:
+    std::vector<VariablePtr> vars_;
     size_t n_;      // 矩形数
     bool strict_;   // strict diffn かどうか
 

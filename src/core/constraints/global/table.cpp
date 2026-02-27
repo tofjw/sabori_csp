@@ -10,8 +10,9 @@ namespace sabori_csp {
 
 TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
                                  std::vector<Domain::value_type> flat_tuples)
-    : Constraint(vars)
-    , arity_(vars.size())
+    : Constraint(extract_var_ids(vars))
+    , vars_(std::move(vars))
+    , arity_(vars_.size())
     , flat_tuples_(std::move(flat_tuples))
     , num_tuples_(0)
     , num_words_(0) {

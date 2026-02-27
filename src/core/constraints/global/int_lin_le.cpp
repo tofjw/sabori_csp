@@ -13,7 +13,7 @@ namespace sabori_csp {
 IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t bound)
-    : Constraint(std::vector<VariablePtr>())  // 後で設定
+    : Constraint()
     , bound_(bound)
     , current_fixed_sum_(0)
     , min_rem_potential_(0) {
@@ -42,7 +42,7 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
     }
 
     // 変数IDキャッシュを構築
-    update_var_ids();
+    var_ids_ = extract_var_ids(vars_);
 
     // 注意: 内部状態は presolve() で初期化
 }
