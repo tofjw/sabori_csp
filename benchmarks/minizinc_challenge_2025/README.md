@@ -28,7 +28,7 @@ benchmarks/minizinc_challenge_2025/
 ### 正しい実行方法
 
 ```bash
-cd /home/tofjw/develop/cp/sabori_csp/benchmarks/minizinc_challenge_2025
+cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
 
 # Sabori で実行
 ./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" \
@@ -64,7 +64,7 @@ timeout 30 ./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" ...
   "id": "org.sabori.sabori_csp",
   "name": "Sabori CSP",
   "mznlib": "../sabori_csp",
-  "executable": "/home/tofjw/develop/cp/sabori_csp/build/src/fzn/fzn_sabori",
+  "executable": "/path/to/sabori_csp/build/src/fzn/fzn_sabori",
   ...
 }
 ```
@@ -136,7 +136,7 @@ include "nosets.mzn";
 個別の問題をデバッグ・テストするためのスクリプト。
 
 ```bash
-cd /home/tofjw/develop/cp/sabori_csp/benchmarks/minizinc_challenge_2025
+cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
 
 # 基本: 最小インスタンスを両ソルバーで実行
 ./run_single.py atsp
