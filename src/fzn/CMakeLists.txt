@@ -9,6 +9,8 @@ ADD_FLEX_BISON_DEPENDENCY(FznLexer FznParser)
 add_executable(fzn_sabori
   main.cpp
   model.cpp
+  fzn_build_context.cpp
+  constraint_registry.cpp
   fzn_parser.cpp
   ${BISON_FznParser_OUTPUTS}
   ${FLEX_FznLexer_OUTPUTS}
