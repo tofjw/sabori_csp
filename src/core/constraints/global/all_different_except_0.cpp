@@ -94,9 +94,9 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
     unfixed_count_ = 0;
     pool_trail_.clear();
 
-    for (const auto& var : vars_) {
-        if (var->is_assigned()) {
-            auto val = var->assigned_value().value();
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (model.is_instantiated(var_ids_[i])) {
+            auto val = model.value(var_ids_[i]);
             if (val != 0) {
                 auto it = pool_sparse_.find(val);
                 if (it != pool_sparse_.end() && it->second < pool_n_) {
@@ -200,7 +200,7 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
             }
 
             if (last_idx == SIZE_MAX) {
-                return on_final_instantiate();
+                return on_final_instantiate(model);
             } else {
                 return on_last_uninstantiated(model, save_point, last_idx);
             }
@@ -238,7 +238,7 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
         }
 
         if (last_var_idx == SIZE_MAX) {
-            return on_final_instantiate();
+            return on_final_instantiate(model);
         } else {
             return on_last_uninstantiated(model, save_point, last_var_idx);
         }
@@ -262,15 +262,15 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
 
     if (pool_n_ == 0) {
         // 全ての非0値が使用済み。変数は0しか取れない
-        if (last_var->domain().contains(0)) {
+        if (model.contains(var_ids_[last_var_internal_idx], 0)) {
             model.enqueue_instantiate(last_var->id(), 0);
         } else {
             return false;
         }
-    } else if (pool_n_ == 1 && !last_var->domain().contains(0)) {
+    } else if (pool_n_ == 1 && !model.contains(var_ids_[last_var_internal_idx], 0)) {
         // 0がドメインにない場合のみ、残りの非0値で確定
         Domain::value_type remaining_value = pool_values_[0];
-        if (last_var->domain().contains(remaining_value)) {
+        if (model.contains(var_ids_[last_var_internal_idx], remaining_value)) {
             model.enqueue_instantiate(last_var->id(), remaining_value);
         } else {
             return false;
@@ -300,11 +300,11 @@ void AllDifferentExcept0Constraint::check_initial_consistency() {
     // 鳩の巣原理は適用不可（unfixed変数は0を取れる）
 }
 
-bool AllDifferentExcept0Constraint::on_final_instantiate() {
+bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {
     // 非0値のみユニークチェック
     std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        auto val = var->assigned_value().value();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto val = model.value(var_ids_[i]);
         if (val != 0) {
             if (used_values.count(val) > 0) {
                 return false;

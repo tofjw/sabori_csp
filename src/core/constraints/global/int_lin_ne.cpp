@@ -94,12 +94,12 @@ bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,
 
     // 残り1変数になったら on_last_uninstantiated を呼び出す
     if (unfixed_count_ == 1) {
-        size_t last_idx = find_last_uninstantiated();
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             return on_last_uninstantiated(model, save_point, last_idx);
         }
     } else if (unfixed_count_ == 0) {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -109,7 +109,6 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                   size_t last_var_internal_idx) {
     int64_t last_coeff = coeffs_[last_var_internal_idx];
     int64_t remaining = target_ - current_fixed_sum_;
-    auto& last_var = vars_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
     if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
@@ -123,7 +122,7 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
 
         // 禁止値がドメインに含まれている場合は除外
         // Model 経由で Trail に記録し、バックトラック時に復元可能にする
-        if (last_var->domain().contains(forbidden_value)) {
+        if (model.contains(var_ids_[last_var_internal_idx], forbidden_value)) {
 	    model.enqueue_remove_value(var_ids_[last_var_internal_idx], forbidden_value);
         }
     }
@@ -141,10 +140,10 @@ void IntLinNeConstraint::check_initial_consistency() {
     }
 }
 
-bool IntLinNeConstraint::on_final_instantiate() {
+bool IntLinNeConstraint::on_final_instantiate(const Model& model) {
     int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        sum += coeffs_[i] * model.value(var_ids_[i]);
     }
     return sum != target_;
 }
@@ -171,8 +170,8 @@ bool IntLinNeConstraint::prepare_propagation(Model& model) {
     for (size_t i = 0; i < vars_.size(); ++i) {
         int64_t c = coeffs_[i];
 
-        if (vars_[i]->is_assigned()) {
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        if (model.is_instantiated(var_ids_[i])) {
+            current_fixed_sum_ += c * model.value(var_ids_[i]);
         } else {
             ++unfixed_count_;
         }

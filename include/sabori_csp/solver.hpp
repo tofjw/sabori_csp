@@ -6,12 +6,15 @@
 #define SABORI_CSP_SOLVER_HPP
 
 #include "sabori_csp/model.hpp"
+#include "sabori_csp/nogood_manager.hpp"
+#include "sabori_csp/variable_selector.hpp"
+#include "sabori_csp/restart_controller.hpp"
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
 #include <map>
-#include <unordered_map>
 #include <random>
 #include <atomic>
+#include <limits>
 
 namespace sabori_csp {
 
@@ -170,15 +173,7 @@ public:
      * @brief NoGood の長さ分布を取得（デバッグ用）
      */
     std::map<size_t, size_t> nogood_length_distribution() const {
-        std::map<size_t, size_t> dist;
-        for (size_t len = 1; len <= unit_nogoods_.size(); ++len) {
-            // unit nogoods are length 1
-        }
-        if (!unit_nogoods_.empty()) dist[1] += unit_nogoods_.size();
-        for (const auto& ng : nogoods_) {
-            dist[ng->literals.size()]++;
-        }
-        return dist;
+        return nogood_mgr_.length_distribution();
     }
 
     /**
@@ -292,15 +287,16 @@ private:
         Model& model, SolutionCallback callback);
 
     /**
-     * @brief 現在の完全割当を永続NoGoodとして追加
-     */
-    void add_solution_nogood(const Model& model);
-
-    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,
                             SolutionCallback callback, bool find_all);
+
+    /**
+     * @brief 探索共通の初期化（build_constraint_watch_list → presolve → community 分析）
+     * @return presolve 成功なら true、矛盾検出なら false
+     */
+    bool init_search(Model& model);
 
     /**
      * @brief presolve（探索前の初期伝播）
@@ -338,33 +334,18 @@ private:
     // ===== 変数選択 =====
 
     /**
-     * @brief 次に割り当てる変数を選択
-     */
-    size_t select_variable(const Model& model);
-
-    /**
-     * @brief var_order_ のパーティション追跡を初期化
-     */
-    void init_var_order_tracking(const Model& model);
-
-    /**
-     * @brief 変数を割当済みセクションへ移動
-     */
-    void mark_variable_assigned(size_t var_idx);
-
-    /**
      * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
      */
     inline void bump_activity(const Model& model, size_t constraint_idx) {
         if (!bump_activity_enabled_) return;
         const auto& constraint = model.constraints()[constraint_idx];
-        const auto& vars = constraint->var_ptrs();
-        size_t n = vars.size();
+        const auto& var_ids = constraint->var_ids_ref();
+        size_t n = var_ids.size();
         bool need_rescale = false;
-        for (const auto& v : vars) {
-            if (v->is_assigned()) {
-                activity_[v->id()] += activity_inc_ / n;
-                if (activity_[v->id()] > 10000.0) {
+        for (size_t vid : var_ids) {
+            if (model.is_instantiated(vid)) {
+                activity_[vid] += activity_inc_ / n;
+                if (activity_[vid] > 10000.0) {
                     need_rescale = true;
                 }
             }
@@ -390,47 +371,10 @@ private:
     void update_bump_activity_flag();
 
     /**
-     * @brief リスタート後に起点変数を選択（探索多様化）
-     */
-    void select_restart_pivot(const Model& model);
-
-    /**
      * @brief Unit nogood をドメインに適用し、process_queue を実行
      * @return false なら UNSAT
      */
     bool apply_unit_nogoods(Model& model);
-
-    // ===== NoGood 学習 =====
-
-    /**
-     * @brief NoGood を追加
-     */
-    void add_nogood(const std::vector<Literal>& literals);
-
-    /**
-     * @brief NoGood を削除
-     */
-    void remove_nogood(NoGood* ng);
-
-    /**
-     * @brief NoGood 伝播
-     */
-    bool propagate_nogood(Model& model, NoGood* ng, const Literal& triggered);
-
-    /**
-     * @brief 境界変更時の NoGood 伝播
-     */
-    bool propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound);
-
-    /**
-     * @brief NoGood ID からブルームフィルタのビットパターンを生成
-     */
-    static Bloom512 ng_bloom_bits(size_t ng_id);
-
-    /**
-     * @brief 全 NoGood から変数ごとのブルームフィルタを再構築
-     */
-    void rebuild_var_ng_blooms(Model& model);
 
     // ===== 部分解管理 =====
 
@@ -442,7 +386,7 @@ private:
     /**
      * @brief リスタート時に使用する割り当てを選択
      */
-    std::unordered_map<size_t, Domain::value_type> select_best_assignment();
+    const std::vector<Domain::value_type>& select_best_assignment();
 
     // ===== 伝播キュー =====
 
@@ -450,6 +394,11 @@ private:
      * @brief 伝播キューを処理
      */
     bool process_queue(Model& model);
+
+    /**
+     * @brief NoGoodManager の統計を SolverStats に同期
+     */
+    void sync_nogood_stats();
 
     // ===== メンバ変数 =====
 
@@ -473,50 +422,33 @@ private:
     double activity_inc_ = 1.0;
     std::vector<Literal> decision_trail_;
 
-    // NoGood
-    size_t ng_id_counter_ = 0;       // NG 通し番号ジェネレータ
-    Bloom512 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況
-    std::vector<Literal> unit_nogoods_;  // 長さ1のNG（リスタート時にドメイン削減に使う）
-    std::vector<std::unique_ptr<NoGood>> nogoods_;
-    std::unordered_map<size_t, std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
-    std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
-    std::unordered_map<size_t, std::vector<std::pair<Domain::value_type, NoGood*>>> ng_geq_watches_;
-    static constexpr size_t max_nogoods_ = 100000;
+    // NoGood 管理
+    NoGoodManager nogood_mgr_;
+    Bloom512 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況（探索状態なので Solver 側で管理）
     size_t nogood_inactive_restart_limit_ = 10;  // この回数リスタートしても非活性なNGを削除
 
     // 部分解（最良の1つだけ保持）
+    // INT64_MIN をセンチネル値として使用（値なし）
+    static constexpr Domain::value_type kNoValue = std::numeric_limits<Domain::value_type>::min();
     size_t best_num_instantiated_ = 0;
-    std::unordered_map<size_t, Domain::value_type> best_assignment_;
-    std::unordered_map<size_t, Domain::value_type> current_best_assignment_;
+    std::vector<Domain::value_type> best_assignment_;
+    std::vector<Domain::value_type> current_best_assignment_;
 
     // 疑似勾配（最適化用）
-    std::unordered_map<size_t, Domain::value_type> prev_improving_solution_;
-    std::unordered_map<size_t, double> gradient_ema_;  // 移動平均
+    std::vector<Domain::value_type> prev_improving_solution_;
+    std::vector<double> gradient_ema_;  // 移動平均
     size_t gradient_var_idx_ = SIZE_MAX;
     int gradient_direction_ = 0;
     Domain::value_type gradient_ref_val_ = 0;
 
     // リスタート（Adaptive Restart）
-    double initial_conflict_limit_ = 2.0;
-    double inner_ratio_ = 1.01;
-    double initial_outer_ceiling_ = 4.0;
-    double outer_min_ = 3.0;
-    double outer_max_ = 10000.0;
-    double outer_grow_factor_ = 1.2;
-    double outer_shrink_factor_ = 0.99;
-    double activity_decay_ = 0.99;
+    RestartController restart_ctrl_;
 
     // 統計
     SolverStats stats_;
 
-    // 変数スキャン順序（リスタートごとにシャッフル）
-    std::vector<size_t> var_order_;
-    size_t decision_var_end_ = 0;  // var_order_ 内の decision/defined 境界
-
-    // 変数選択の高速化（未割当/割当済パーティション）
-    std::vector<size_t> var_position_;       // var_idx → var_order_ 内の位置
-    size_t decision_unassigned_end_ = 0;     // [0, decision_unassigned_end_): 未割当 decision vars
-    size_t defined_unassigned_end_ = 0;      // [decision_var_end_, defined_unassigned_end_): 未割当 defined vars
+    // 変数選択
+    VariableSelector var_selector_;
 
     struct UnassignedTrailEntry {
         int level;
@@ -535,7 +467,6 @@ private:
     // コミュニティ分析
     CommunityAnalysis community_analysis_;
     size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
-    size_t community_first_var_ = SIZE_MAX; ///< リスタート後、最初に選ぶべき変数
     bool bump_activity_enabled_ = true;     ///< コミュニティ構造が弱い場合は無効化
 };
 

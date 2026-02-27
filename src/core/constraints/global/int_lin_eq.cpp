@@ -199,8 +199,8 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // 残り変数が 1 or 0 の時
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
@@ -208,7 +208,7 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
         }
     }
     else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -256,7 +256,7 @@ void IntLinEqConstraint::check_initial_consistency() {
 }
 
 // constraint の親クラスからは呼ばない場合も、verify で使うので実装
-bool IntLinEqConstraint::on_final_instantiate() {
+bool IntLinEqConstraint::on_final_instantiate(const Model& /*model*/) {
     int64_t sum = 0;
     for (size_t i = 0; i < vars_.size(); ++i) {
         sum += coeffs_[i] * vars_[i]->assigned_value().value();

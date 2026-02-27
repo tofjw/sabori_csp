@@ -115,25 +115,6 @@ bool Model::contains(size_t var_idx, Domain::value_type val) const {
     return variables_[var_idx]->domain().sparse_contains(val);
 }
 
-void Model::save_var_state(int save_point, size_t var_idx) {
-    // TODO: イベントごとに保存する内容を変えて、push_back内容を減らす
-    // 同じレベルで既に保存済みならスキップ
-    auto& vd = var_data_[var_idx];
-    if (vd.last_saved_level == save_point) {
-        return;
-    }
-    vd.last_saved_level = save_point;
-
-    VarTrailEntry entry;
-    entry.var_idx = var_idx;
-    entry.old_min = vd.min;
-    entry.old_max = vd.max;
-    entry.old_n = vd.size;
-    auto& domain = variables_[var_idx]->domain();
-    entry.old_removed_count = domain.is_bounds_only() ? domain.removed_count() : 0;
-    var_trail_.push_back({save_point, entry});
-}
-
 bool Model::set_min(int save_point, size_t var_idx, Domain::value_type new_min) {
     auto& vd = var_data_[var_idx];
     if (new_min <= vd.min) {
@@ -455,56 +436,7 @@ bool Model::remove_value(int save_point, size_t var_idx, Domain::value_type val)
     return true;
 }
 
-bool Model::instantiate(int save_point, size_t var_idx, Domain::value_type val) {
-    auto& domain = variables_[var_idx]->domain();
-
-    if (domain.is_bounds_only()) {
-        if (!domain.contains(val)) return false;
-
-        auto& vd = var_data_[var_idx];
-        bool was_not_instantiated = (vd.min != vd.max);
-        save_var_state(save_point, var_idx);
-
-        domain.set_min_cache(val);
-        domain.set_max_cache(val);
-        domain.set_n(1);
-
-        vd.min = val;
-        vd.max = val;
-        vd.size = 1;
-        vd.support_value = val;
-
-        if (was_not_instantiated) {
-            instantiated_count_++;
-        }
-        return true;
-    }
-
-    size_t idx = domain.index_of(val);
-
-    if (idx == SIZE_MAX) {
-        return false;  // ドメインに無い
-    }
-
-    auto& vd = var_data_[var_idx];
-    bool was_not_instantiated = (vd.min != vd.max);
-    save_var_state(save_point, var_idx);
-
-    domain.swap_at(idx, 0);
-    domain.set_n(1);
-    domain.set_min_cache(val);
-    domain.set_max_cache(val);
-
-    vd.min = val;
-    vd.max = val;
-    vd.size = 1;
-    vd.support_value = val;
-
-    if (was_not_instantiated) {
-        instantiated_count_++;
-    }
-    return true;
-}
+// Model::instantiate is now inline in model.hpp
 
 void Model::rewind_to(int save_point) {
     // 変数ドメインの復元
@@ -552,10 +484,6 @@ void Model::rewind_to(int save_point) {
     }
 }
 
-void Model::mark_constraint_dirty(size_t constraint_idx, int save_point) {
-    dirty_constraint_trail_.push_back({save_point, constraint_idx});
-}
-
 void Model::rewind_dirty_constraints(int save_point) {
     while (!dirty_constraint_trail_.empty() &&
            dirty_constraint_trail_.back().first > save_point) {
@@ -598,22 +526,6 @@ void Model::sync_to_domains() {
     // 現在は Domain 側が正の情報源なので、特に処理しない
 }
 
-void Model::enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-    pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
-}
-
-void Model::enqueue_set_min(size_t var_idx, Domain::value_type new_min) {
-    pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min});
-}
-
-void Model::enqueue_set_max(size_t var_idx, Domain::value_type new_max) {
-    pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max});
-}
-
-void Model::enqueue_remove_value(size_t var_idx, Domain::value_type value) {
-    pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
-}
-
 void Model::clear_pending_updates() {
     pending_updates_.clear();
     pending_read_idx_ = 0;
@@ -626,16 +538,15 @@ void Model::build_constraint_watch_list() {
 
     for (size_t c_idx = 0; c_idx < constraints_.size(); ++c_idx) {
         const auto& constraint = constraints_[c_idx];
-        const auto& vars = constraint->var_ptrs();
+        const auto& var_ids = constraint->var_ids_ref();
 
-        for (size_t i = 0; i < vars.size(); ++i) {
-            // 変数の ID を直接インデックスとして使用
-            size_t v_idx = vars[i]->id();
+        for (size_t i = 0; i < var_ids.size(); ++i) {
+            size_t v_idx = var_ids[i];
             if (v_idx < var_to_constraint_indices_.size()) {
                 var_to_constraint_indices_[v_idx].push_back({c_idx, i});
             } else {
-                std::cerr << "% [watchlist] WARNING: var " << vars[i]->name()
-                          << " id=" << v_idx << " >= variables_.size()=" << variables_.size()
+                std::cerr << "% [watchlist] WARNING: var id=" << v_idx
+                          << " >= variables_.size()=" << variables_.size()
                           << " in constraint #" << c_idx << " (" << constraint->name() << ")\n";
             }
         }
@@ -653,6 +564,8 @@ bool Model::prepare_propagation() {
         if (!constraint->prepare_propagation(*this)) {
             return false;  // 矛盾検出
         }
+        // 2WL 監視変数を Model の状態に基づいて再設定
+        constraint->refine_watches(*this);
     }
 
     // prepare_propagation 後にデータを同期

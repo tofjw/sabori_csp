@@ -128,12 +128,12 @@ bool CountEqConstraint::prepare_propagation(Model& model) {
     definite_count_ = 0;
     possible_count_ = 0;
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) {
-            if (vars_[i]->assigned_value().value() == target_) {
+        if (model.is_instantiated(var_ids_[i])) {
+            if (model.value(var_ids_[i]) == target_) {
                 definite_count_++;
             }
             is_possible_[i] = false;
-        } else if (vars_[i]->domain().contains(target_)) {
+        } else if (model.contains(var_ids_[i], target_)) {
             is_possible_[i] = true;
             possible_count_++;
         } else {
@@ -148,8 +148,8 @@ bool CountEqConstraint::prepare_propagation(Model& model) {
     trail_.clear();
 
     // 初期整合性チェック
-    auto c_min = vars_[n_]->min();
-    auto c_max = vars_[n_]->max();
+    auto c_min = model.var_min(c_id_);
+    auto c_max = model.var_max(c_id_);
     auto def = static_cast<Domain::value_type>(definite_count_);
     auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
 
@@ -192,8 +192,8 @@ bool CountEqConstraint::on_instantiate(Model& model, int save_point,
     // else: c が確定した → propagate で処理
 
     // 残り変数が 1 or 0 の時
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
@@ -201,20 +201,20 @@ bool CountEqConstraint::on_instantiate(Model& model, int save_point,
             return true;
         }
     } else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return propagate(model);
 }
 
-bool CountEqConstraint::on_final_instantiate() {
+bool CountEqConstraint::on_final_instantiate(const Model& model) {
     int64_t count = 0;
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->assigned_value().value() == target_) {
+        if (model.value(var_ids_[i]) == target_) {
             count++;
         }
     }
-    return count == vars_[n_]->assigned_value().value();
+    return count == model.value(var_ids_[n_]);
 }
 
 bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
@@ -226,7 +226,7 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         if (model.is_instantiated(c_id_)) {
             return model.value(c_id_) == def;
         }
-        if (vars_[n_]->domain().contains(def)) {
+        if (model.contains(c_id_, def)) {
             model.enqueue_instantiate(c_id_, def);
         } else {
             return false;
@@ -238,7 +238,7 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 
         if (model.is_instantiated(j_id)) {
             // 既に確定: final check
-            return on_final_instantiate();
+            return on_final_instantiate(model);
         }
 
         // c は確定済みのはず
@@ -253,14 +253,14 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         if (remaining_needed == 0) {
             // x[j] は target 以外の値を取る必要がある
             if (is_possible_[j]) {
-                if (vars_[j]->domain().size() == 1 && vars_[j]->domain().contains(target_)) {
+                if (model.is_instantiated(j_id) && model.value(j_id) == target_) {
                     return false;  // target しかない
                 }
                 model.enqueue_remove_value(j_id, target_);
             }
         } else if (remaining_needed == 1) {
             // x[j] は target でなければならない
-            if (vars_[j]->domain().contains(target_)) {
+            if (model.contains(j_id, target_)) {
                 model.enqueue_instantiate(j_id, target_);
             } else {
                 return false;
@@ -464,12 +464,12 @@ void CountEqVarTargetConstraint::initialize_counts(Model& model) {
     definite_count_ = 0;
     possible_count_ = 0;
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) {
-            if (vars_[i]->assigned_value().value() == target_) {
+        if (model.is_instantiated(var_ids_[i])) {
+            if (model.value(var_ids_[i]) == target_) {
                 definite_count_++;
             }
             is_possible_[i] = false;
-        } else if (vars_[i]->domain().contains(target_)) {
+        } else if (model.contains(var_ids_[i], target_)) {
             is_possible_[i] = true;
             possible_count_++;
         } else {
@@ -543,9 +543,9 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
 }
 
 bool CountEqVarTargetConstraint::prepare_propagation(Model& model) {
-    if (vars_[n_]->is_assigned()) {
+    if (model.is_instantiated(y_id_)) {
         target_known_ = true;
-        target_ = vars_[n_]->assigned_value().value();
+        target_ = model.value(y_id_);
         initialize_counts(model);
     } else {
         target_known_ = false;
@@ -559,8 +559,8 @@ bool CountEqVarTargetConstraint::prepare_propagation(Model& model) {
     trail_.clear();
 
     if (target_known_) {
-        auto c_min = vars_[n_ + 1]->min();
-        auto c_max = vars_[n_ + 1]->max();
+        auto c_min = model.var_min(c_id_);
+        auto c_max = model.var_max(c_id_);
         auto def = static_cast<Domain::value_type>(definite_count_);
         auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
         if (def > c_max || def_plus_poss < c_min) return false;
@@ -589,12 +589,12 @@ bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
         possible_count_ = 0;
         for (size_t i = 0; i < n_; ++i) {
             bool new_val;
-            if (vars_[i]->is_assigned()) {
-                if (vars_[i]->assigned_value().value() == target_) {
+            if (model.is_instantiated(var_ids_[i])) {
+                if (model.value(var_ids_[i]) == target_) {
                     definite_count_++;
                 }
                 new_val = false;
-            } else if (vars_[i]->domain().contains(target_)) {
+            } else if (model.contains(var_ids_[i], target_)) {
                 new_val = true;
                 possible_count_++;
             } else {
@@ -619,8 +619,8 @@ bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
     // c が確定 or target 未知の x[i] 確定 → propagate で処理
 
     // 残り変数チェック
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
@@ -628,7 +628,7 @@ bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
             return true;
         }
     } else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     if (!target_known_) {
@@ -644,15 +644,15 @@ bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
     return propagate(model);
 }
 
-bool CountEqVarTargetConstraint::on_final_instantiate() {
-    auto y_val = vars_[n_]->assigned_value().value();
+bool CountEqVarTargetConstraint::on_final_instantiate(const Model& model) {
+    auto y_val = model.value(var_ids_[n_]);
     int64_t count = 0;
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->assigned_value().value() == y_val) {
+        if (model.value(var_ids_[i]) == y_val) {
             count++;
         }
     }
-    return count == vars_[n_ + 1]->assigned_value().value();
+    return count == model.value(var_ids_[n_ + 1]);
 }
 
 bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
@@ -673,7 +673,7 @@ bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save
         if (model.is_instantiated(c_id_)) {
             return model.value(c_id_) == def;
         }
-        if (vars_[n_ + 1]->domain().contains(def)) {
+        if (model.contains(c_id_, def)) {
             model.enqueue_instantiate(c_id_, def);
         } else {
             return false;
@@ -691,7 +691,7 @@ bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save
         auto j_id = var_ids_[j];
 
         if (model.is_instantiated(j_id)) {
-            return on_final_instantiate();
+            return on_final_instantiate(model);
         }
 
         if (!model.is_instantiated(c_id_)) {
@@ -703,13 +703,13 @@ bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save
 
         if (remaining_needed == 0) {
             if (is_possible_[j]) {
-                if (vars_[j]->domain().size() == 1 && vars_[j]->domain().contains(target_)) {
+                if (model.is_instantiated(j_id) && model.value(j_id) == target_) {
                     return false;
                 }
                 model.enqueue_remove_value(j_id, target_);
             }
         } else if (remaining_needed == 1) {
-            if (vars_[j]->domain().contains(target_)) {
+            if (model.contains(j_id, target_)) {
                 model.enqueue_instantiate(j_id, target_);
             } else {
                 return false;

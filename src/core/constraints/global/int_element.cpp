@@ -334,8 +334,8 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // 残り変数が 1 or 0 の時
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
@@ -343,7 +343,7 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
         }
     }
     else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -368,7 +368,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
             return model.value(result_id_) == expected_result;
         }
 
-        if (result_var_->domain().contains(expected_result)) {
+        if (model.contains(result_id_, expected_result)) {
             model.enqueue_instantiate(result_id_, expected_result);
             return true;
         } else {
@@ -397,7 +397,7 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
         // 有効なインデックスのうち、index_var のドメインに含まれるものを収集
         std::vector<Domain::value_type> candidates;
         for (auto vi : valid_indices) {
-            if (index_var_->domain().contains(vi)) {
+            if (model.contains(index_id_, vi)) {
                 candidates.push_back(vi);
             }
         }
@@ -414,16 +414,16 @@ bool IntElementConstraint::on_last_uninstantiated(Model& model, int /*save_point
     return true;
 }
 
-bool IntElementConstraint::on_final_instantiate() {
+bool IntElementConstraint::on_final_instantiate(const Model& model) {
     // 全ての変数が確定したときの最終確認: array[index] = result
-    auto idx = index_var_->assigned_value().value();
+    auto idx = model.value(index_id_);
     auto idx_0based = index_to_0based(idx);
 
     if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
         return false;
     }
 
-    return array_[static_cast<size_t>(idx_0based)] == result_var_->assigned_value().value();
+    return array_[static_cast<size_t>(idx_0based)] == model.value(result_id_);
 }
 
 bool IntElementConstraint::on_set_min(

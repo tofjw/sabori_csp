@@ -281,14 +281,77 @@ public:
      * @brief 変数を特定の値に固定
      * @return 成功（値がドメインに存在）したらtrue
      */
-    bool instantiate(int save_point, size_t var_idx, Domain::value_type value);
+    bool instantiate(int save_point, size_t var_idx, Domain::value_type val) {
+        auto& domain = variables_[var_idx]->domain();
+
+        if (domain.is_bounds_only()) {
+            if (!domain.contains(val)) return false;
+
+            auto& vd = var_data_[var_idx];
+            bool was_not_instantiated = (vd.min != vd.max);
+            save_var_state(save_point, var_idx);
+
+            domain.set_min_cache(val);
+            domain.set_max_cache(val);
+            domain.set_n(1);
+
+            vd.min = val;
+            vd.max = val;
+            vd.size = 1;
+            vd.support_value = val;
+
+            if (was_not_instantiated) {
+                instantiated_count_++;
+            }
+            return true;
+        }
+
+        size_t idx = domain.index_of(val);
+        if (idx == SIZE_MAX) {
+            return false;
+        }
+
+        auto& vd = var_data_[var_idx];
+        bool was_not_instantiated = (vd.min != vd.max);
+        save_var_state(save_point, var_idx);
+
+        domain.swap_at(idx, 0);
+        domain.set_n(1);
+        domain.set_min_cache(val);
+        domain.set_max_cache(val);
+
+        vd.min = val;
+        vd.max = val;
+        vd.size = 1;
+        vd.support_value = val;
+
+        if (was_not_instantiated) {
+            instantiated_count_++;
+        }
+        return true;
+    }
 
     // ===== Trail 管理 =====
 
     /**
      * @brief 変数状態を Trail に保存
      */
-    void save_var_state(int save_point, size_t var_idx);
+    void save_var_state(int save_point, size_t var_idx) {
+        auto& vd = var_data_[var_idx];
+        if (vd.last_saved_level == save_point) {
+            return;
+        }
+        vd.last_saved_level = save_point;
+
+        VarTrailEntry entry;
+        entry.var_idx = var_idx;
+        entry.old_min = vd.min;
+        entry.old_max = vd.max;
+        entry.old_n = vd.size;
+        auto& domain = variables_[var_idx]->domain();
+        entry.old_removed_count = domain.is_bounds_only() ? domain.removed_count() : 0;
+        var_trail_.push_back({save_point, entry});
+    }
 
     /**
      * @brief 制約状態を Trail に保存
@@ -306,7 +369,9 @@ public:
      * @param constraint_idx 制約のインデックス
      * @param save_point 変更時のセーブポイント
      */
-    void mark_constraint_dirty(size_t constraint_idx, int save_point);
+    void mark_constraint_dirty(size_t constraint_idx, int save_point) {
+        dirty_constraint_trail_.push_back({save_point, constraint_idx});
+    }
 
     /**
      * @brief dirty な制約の rewind_to を呼び出し
@@ -336,27 +401,54 @@ public:
      */
     void sync_to_domains();
 
+    // ===== フェーズ管理 =====
+
+    /**
+     * @brief presolve フェーズかどうかを設定
+     *
+     * presolve フェーズ中は Variable の直接ドメイン操作（assign/remove 等）が許可される。
+     * propagation コールバック中は enqueue_* を使うべきで、直接操作はバグの原因になる。
+     */
+    void set_presolve_phase(bool v) { presolve_phase_ = v; }
+
+    /**
+     * @brief 現在 presolve フェーズかどうか
+     */
+    bool in_presolve_phase() const { return presolve_phase_; }
+
     // ===== 伝播キュー =====
 
     /**
      * @brief 変数の確定をキューに追加（制約から呼び出される）
      */
-    void enqueue_instantiate(size_t var_idx, Domain::value_type value);
+    void enqueue_instantiate(size_t var_idx, Domain::value_type value) {
+        pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
+    }
 
     /**
-     * @brief 下限設定をキューに追加
+     * @brief 下限設定をキューに追加（no-op フィルタ付き）
      */
-    void enqueue_set_min(size_t var_idx, Domain::value_type new_min);
+    void enqueue_set_min(size_t var_idx, Domain::value_type new_min) {
+        if (new_min > var_data_[var_idx].min) {
+            pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min});
+        }
+    }
 
     /**
-     * @brief 上限設定をキューに追加
+     * @brief 上限設定をキューに追加（no-op フィルタ付き）
      */
-    void enqueue_set_max(size_t var_idx, Domain::value_type new_max);
+    void enqueue_set_max(size_t var_idx, Domain::value_type new_max) {
+        if (new_max < var_data_[var_idx].max) {
+            pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max});
+        }
+    }
 
     /**
      * @brief 値除去をキューに追加
      */
-    void enqueue_remove_value(size_t var_idx, Domain::value_type value);
+    void enqueue_remove_value(size_t var_idx, Domain::value_type value) {
+        pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
+    }
 
     /**
      * @brief 保留中の更新操作があるか
@@ -392,6 +484,9 @@ private:
 
     // instantiated 変数カウンタ（O(1) 参照用）
     size_t instantiated_count_ = 0;
+
+    // フェーズフラグ（デフォルト true: 構築・presolve 中は直接ドメイン操作可能）
+    bool presolve_phase_ = true;
 
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
     std::vector<PendingUpdate> pending_updates_;

@@ -555,7 +555,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("IntEqConstraint - violated") {
@@ -563,7 +563,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 
     SECTION("IntNeConstraint - satisfied") {
@@ -571,7 +571,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("IntNeConstraint - violated") {
@@ -579,7 +579,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 
     SECTION("IntLtConstraint - satisfied") {
@@ -587,7 +587,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("IntLtConstraint - violated (equal)") {
@@ -595,7 +595,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 
     SECTION("IntLeConstraint - satisfied (equal)") {
@@ -603,7 +603,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("IntLeConstraint - violated") {
@@ -611,7 +611,7 @@ TEST_CASE("Constraint on_final_instantiate", "[constraint][2wl]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 }
 
@@ -772,7 +772,7 @@ TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("satisfied - x > y and b=0") {
@@ -781,7 +781,7 @@ TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("violated - x <= y but b=0") {
@@ -790,7 +790,7 @@ TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 
     SECTION("violated - x > y but b=1") {
@@ -799,7 +799,7 @@ TEST_CASE("IntLeReifConstraint on_final_instantiate", "[constraint][int_le_reif]
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(dummy_model) == false);
     }
 }
 

@@ -331,15 +331,15 @@ bool IntElementMonotonicConstraint::on_instantiate(
     }
 
     // 残り変数が 1 or 0 の時
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
             }
         }
     } else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -365,7 +365,7 @@ bool IntElementMonotonicConstraint::on_last_uninstantiated(
             return model.value(result_id_) == expected_result;
         }
 
-        if (result_var_->domain().contains(expected_result)) {
+        if (model.contains(result_id_, expected_result)) {
             model.enqueue_instantiate(result_id_, expected_result);
             return true;
         } else {
@@ -410,7 +410,7 @@ bool IntElementMonotonicConstraint::on_last_uninstantiated(
         std::vector<Domain::value_type> candidates;
         for (size_t i = first; i <= last; ++i) {
             auto idx_val = static_cast<Domain::value_type>(i) + offset;
-            if (index_var_->domain().contains(idx_val)) {
+            if (model.contains(index_id_, idx_val)) {
                 candidates.push_back(idx_val);
             }
         }
@@ -425,15 +425,15 @@ bool IntElementMonotonicConstraint::on_last_uninstantiated(
     return true;
 }
 
-bool IntElementMonotonicConstraint::on_final_instantiate() {
-    auto idx = index_var_->assigned_value().value();
+bool IntElementMonotonicConstraint::on_final_instantiate(const Model& model) {
+    auto idx = model.value(index_id_);
     auto idx_0based = index_to_0based(idx);
 
     if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
         return false;
     }
 
-    return array_[static_cast<size_t>(idx_0based)] == result_var_->assigned_value().value();
+    return array_[static_cast<size_t>(idx_0based)] == model.value(result_id_);
 }
 
 bool IntElementMonotonicConstraint::on_set_min(

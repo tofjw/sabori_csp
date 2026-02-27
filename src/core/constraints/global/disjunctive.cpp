@@ -641,7 +641,7 @@ bool DisjunctiveConstraint::propagate_bounds(Model& model) {
 
         if (dur == 0 && !strict_) {
             // dur_min=0: if no valid position for dur=1, force dur=0
-            if (!model.is_instantiated(d_id) && vars_[n_ + i]->domain().size() > 1) {
+            if (!model.is_instantiated(d_id)) {
                 int lo = static_cast<int>(model.var_min(s_id)) - offset_;
                 int hi = static_cast<int>(model.var_max(s_id)) - offset_;
                 if (find_first_valid_excluding(lo, hi, 1, i) == -1) {
@@ -785,11 +785,13 @@ bool DisjunctiveConstraint::prepare_propagation(Model& model) {
 
     // Set bits for fully assigned tasks
     for (size_t i = 0; i < n_; ++i) {
-        if (!task_fully_assigned(i)) continue;
-        int d = task_dur(i);
+        auto s_id = var_ids_[i];
+        auto d_id = var_ids_[n_ + i];
+        if (!(model.is_instantiated(s_id) && model.is_instantiated(d_id))) continue;
+        int d = static_cast<int>(model.value(d_id));
         if (!strict_ && d == 0) continue;
         if (d <= 0) continue;
-        int pos = task_start(i) - offset_;
+        int pos = static_cast<int>(model.value(s_id)) - offset_;
         if (check_conflict(pos, d)) return false;
         set_bits_direct(pos, d);
         cp_lo_[i] = pos;
@@ -798,8 +800,29 @@ bool DisjunctiveConstraint::prepare_propagation(Model& model) {
 
     // Set compulsory parts for unassigned tasks
     for (size_t i = 0; i < n_; ++i) {
-        if (task_fully_assigned(i)) continue;
-        if (!update_compulsory_part_direct(i)) return false;
+        auto s_id = var_ids_[i];
+        auto d_id = var_ids_[n_ + i];
+        if (model.is_instantiated(s_id) && model.is_instantiated(d_id)) continue;
+
+        int dur = static_cast<int>(model.var_min(d_id));
+        if (dur <= 0) continue;
+        if (!strict_ && dur == 0) continue;
+
+        int est = static_cast<int>(model.var_min(s_id)) - offset_;
+        int lst = static_cast<int>(model.var_max(s_id)) - offset_;
+
+        int new_lo = lst;
+        int new_hi = est + dur;
+
+        // No compulsory part
+        if (new_lo >= new_hi) continue;
+
+        // Check for conflict (exclude own CP bits, but during prepare CP was 0,0)
+        if (check_conflict_excluding(new_lo, new_hi - new_lo, i)) return false;
+
+        set_bits_direct(new_lo, new_hi - new_lo);
+        cp_lo_[i] = new_lo;
+        cp_hi_[i] = new_hi;
     }
 
     return true;
@@ -832,8 +855,8 @@ bool DisjunctiveConstraint::on_instantiate(
 
     // Both start and duration must be assigned to place the task fully
     if (!(model.is_instantiated(var_ids_[task]) && model.is_instantiated(var_ids_[n_ + task]))) {
-        if (!has_uninstantiated()) {
-            return on_final_instantiate();
+        if (!has_uninstantiated(model)) {
+            return on_final_instantiate(model);
         }
         return propagate_bounds(model);
     }
@@ -843,15 +866,15 @@ bool DisjunctiveConstraint::on_instantiate(
 
     // Non-strict: zero-duration tasks don't occupy timeline
     if (!strict_ && d == 0) {
-        if (!has_uninstantiated()) {
-            return on_final_instantiate();
+        if (!has_uninstantiated(model)) {
+            return on_final_instantiate(model);
         }
         return propagate_bounds(model);
     }
 
     if (d <= 0) {
-        if (!has_uninstantiated()) {
-            return on_final_instantiate();
+        if (!has_uninstantiated(model)) {
+            return on_final_instantiate(model);
         }
         return propagate_bounds(model);
     }
@@ -871,14 +894,15 @@ bool DisjunctiveConstraint::on_instantiate(
         cp_hi_[task] = pos + d;
     }
 
-    if (!has_uninstantiated()) {
-        return on_final_instantiate();
+    if (!has_uninstantiated(model)) {
+        return on_final_instantiate(model);
     }
 
     return propagate_bounds(model);
 }
 
-bool DisjunctiveConstraint::on_final_instantiate() {
+bool DisjunctiveConstraint::on_final_instantiate(const Model& model) {
+    (void)model;
     auto result = is_satisfied();
     return result.has_value() && result.value();
 }

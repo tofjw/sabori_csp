@@ -141,7 +141,7 @@ bool ConnectedConstraint::prepare_propagation(Model& model) {
 
     // 確定済みノードを処理
     for (size_t n = 0; n < n_nodes_; ++n) {
-        if (vars_[n]->is_assigned() && vars_[n]->assigned_value().value() == 1) {
+        if (model.is_instantiated(var_ids_[n]) && model.value(var_ids_[n]) == 1) {
             ++n_selected_nodes_;
             ++n_selected_components_;
         }
@@ -149,11 +149,11 @@ bool ConnectedConstraint::prepare_propagation(Model& model) {
 
     // 確定済み辺を処理: 選択辺で UF union（両端点が選択済みの場合のみ）
     for (size_t e = 0; e < n_edges_; ++e) {
-        if (vars_[n_nodes_ + e]->is_assigned() && vars_[n_nodes_ + e]->assigned_value().value() == 1) {
+        if (model.is_instantiated(var_ids_[n_nodes_ + e]) && model.value(var_ids_[n_nodes_ + e]) == 1) {
             size_t u = static_cast<size_t>(from_[e]);
             size_t v = static_cast<size_t>(to_[e]);
-            bool u_selected = vars_[u]->is_assigned() && vars_[u]->assigned_value().value() == 1;
-            bool v_selected = vars_[v]->is_assigned() && vars_[v]->assigned_value().value() == 1;
+            bool u_selected = model.is_instantiated(var_ids_[u]) && model.value(var_ids_[u]) == 1;
+            bool v_selected = model.is_instantiated(var_ids_[v]) && model.value(var_ids_[v]) == 1;
             if (u_selected && v_selected) {
                 if (uf_union(u, v)) {
                     --n_selected_components_;
@@ -164,8 +164,8 @@ bool ConnectedConstraint::prepare_propagation(Model& model) {
 
     // 全変数が確定済みなら連結性チェック（2WL が起動しないため）
     bool all_assigned = true;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        if (!model.is_instantiated(var_ids_[i])) {
             all_assigned = false;
             break;
         }
@@ -322,7 +322,8 @@ bool ConnectedConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool ConnectedConstraint::on_final_instantiate() {
+bool ConnectedConstraint::on_final_instantiate(const Model& model) {
+    (void)model;
     // 全変数確定時: BFS で連結性を検証
     auto result = is_satisfied();
     return result.has_value() && result.value();

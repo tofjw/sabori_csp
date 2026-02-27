@@ -135,7 +135,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
     if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
         // x と y が確定したら z を確定
         auto product = model.value(x_id_) * model.value(y_id_);
-        if (!z_->domain().contains(product)) {
+        if (!model.contains(z_id_, product)) {
             return false;
         }
         model.enqueue_instantiate(z_id_, product);
@@ -157,7 +157,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
                 return false;
             }
             auto y_val = z_val / x_val;
-            if (!y_->domain().contains(y_val)) {
+            if (!model.contains(y_id_, y_val)) {
                 return false;
             }
             model.enqueue_instantiate(y_id_, y_val);
@@ -180,7 +180,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
                 return false;
             }
             auto x_val = z_val / y_val;
-            if (!x_->domain().contains(x_val)) {
+            if (!model.contains(x_id_, x_val)) {
                 return false;
             }
             model.enqueue_instantiate(x_id_, x_val);
@@ -192,7 +192,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         auto x_val = model.value(x_id_);
         if (x_val == 0) {
             // z = 0 に確定
-            if (!z_->domain().contains(0)) {
+            if (!model.contains(z_id_, 0)) {
                 return false;
             }
             model.enqueue_instantiate(z_id_, 0);
@@ -217,7 +217,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         auto y_val = model.value(y_id_);
         if (y_val == 0) {
             // z = 0 に確定
-            if (!z_->domain().contains(0)) {
+            if (!model.contains(z_id_, 0)) {
                 return false;
             }
             model.enqueue_instantiate(z_id_, 0);
@@ -285,9 +285,8 @@ bool IntTimesConstraint::on_set_max(Model& model, int save_point,
     return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
 }
 
-bool IntTimesConstraint::on_final_instantiate() {
-    return x_->assigned_value().value() * y_->assigned_value().value()
-           == z_->assigned_value().value();
+bool IntTimesConstraint::on_final_instantiate(const Model& model) {
+    return model.value(x_id_) * model.value(y_id_) == model.value(z_id_);
 }
 
 bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
@@ -306,7 +305,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
                 return false;
             }
             auto x_val = z_val / y_val;
-            if (!x_->domain().contains(x_val)) {
+            if (!model.contains(x_id_, x_val)) {
                 return false;
             }
             model.enqueue_instantiate(x_id_, x_val);
@@ -325,7 +324,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
                 return false;
             }
             auto y_val = z_val / x_val;
-            if (!y_->domain().contains(y_val)) {
+            if (!model.contains(y_id_, y_val)) {
                 return false;
             }
             model.enqueue_instantiate(y_id_, y_val);
@@ -333,7 +332,7 @@ bool IntTimesConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
     } else if (last_var_internal_idx == 2) {
         // z が未確定、x と y は確定
         auto product = model.value(x_id_) * model.value(y_id_);
-        if (!z_->domain().contains(product)) {
+        if (!model.contains(z_id_, product)) {
             return false;
         }
         model.enqueue_instantiate(z_id_, product);
@@ -498,7 +497,7 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
     if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_)) {
         auto x_val = model.value(x_id_);
         auto abs_x = (x_val >= 0) ? x_val : -x_val;
-        if (!y_->domain().contains(abs_x)) {
+        if (!model.contains(y_id_, abs_x)) {
             return false;
         }
         model.enqueue_instantiate(y_id_, abs_x);
@@ -508,13 +507,13 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
     if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_)) {
         auto y_val = model.value(y_id_);
         if (y_val == 0) {
-            if (!x_->domain().contains(0)) {
+            if (!model.contains(x_id_, 0)) {
                 return false;
             }
             model.enqueue_instantiate(x_id_, 0);
         } else {
-            bool has_pos = x_->domain().contains(y_val);
-            bool has_neg = x_->domain().contains(-y_val);
+            bool has_pos = model.contains(x_id_, y_val);
+            bool has_neg = model.contains(x_id_, -y_val);
             if (!has_pos && !has_neg) {
                 return false;
             }
@@ -588,9 +587,9 @@ bool IntAbsConstraint::on_set_max(Model& model, int save_point,
     return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
 }
 
-bool IntAbsConstraint::on_final_instantiate() {
-    auto x_val = x_->assigned_value().value();
-    auto y_val = y_->assigned_value().value();
+bool IntAbsConstraint::on_final_instantiate(const Model& model) {
+    auto x_val = model.value(x_id_);
+    auto y_val = model.value(y_id_);
     return (x_val >= 0 ? x_val : -x_val) == y_val;
 }
 
@@ -736,7 +735,7 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // y != 0 を強制
-    if (y_->domain().contains(0)) {
+    if (model.contains(y_id_, 0)) {
         model.enqueue_remove_value(y_id_, 0);
     }
 
@@ -746,7 +745,7 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
         auto y_val = model.value(y_id_);
         if (y_val == 0) return false;
         auto z_val = x_val % y_val;
-        if (!z_->domain().contains(z_val)) return false;
+        if (!model.contains(z_id_, z_val)) return false;
         model.enqueue_instantiate(z_id_, z_val);
         return true;
     }
@@ -758,17 +757,17 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
         auto diff = x_val - z_val;
         if (diff == 0) {
             auto abs_x = std::abs(x_val);
-            auto y_vals = y_->domain().values();
-            for (auto yv : y_vals) {
-                if (std::abs(yv) <= abs_x) {
-                    model.enqueue_remove_value(y_id_, yv);
+            const auto& y_dom = y_->domain();
+            for (auto it = y_dom.begin(); it != y_dom.end(); ++it) {
+                if (std::abs(*it) <= abs_x) {
+                    model.enqueue_remove_value(y_id_, *it);
                 }
             }
         } else {
-            auto y_vals = y_->domain().values();
-            for (auto yv : y_vals) {
-                if (yv == 0 || x_val % yv != z_val) {
-                    model.enqueue_remove_value(y_id_, yv);
+            const auto& y_dom = y_->domain();
+            for (auto it = y_dom.begin(); it != y_dom.end(); ++it) {
+                if (*it == 0 || x_val % *it != z_val) {
+                    model.enqueue_remove_value(y_id_, *it);
                 }
             }
         }
@@ -780,10 +779,10 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
         auto y_val = model.value(y_id_);
         auto z_val = model.value(z_id_);
         if (y_val == 0) return false;
-        auto x_vals = x_->domain().values();
-        for (auto xv : x_vals) {
-            if (xv % y_val != z_val) {
-                model.enqueue_remove_value(x_id_, xv);
+        const auto& x_dom = x_->domain();
+        for (auto it = x_dom.begin(); it != x_dom.end(); ++it) {
+            if (*it % y_val != z_val) {
+                model.enqueue_remove_value(x_id_, *it);
             }
         }
         return true;
@@ -838,10 +837,10 @@ bool IntModConstraint::on_set_max(Model& model, int save_point,
     return propagate_bounds(model);
 }
 
-bool IntModConstraint::on_final_instantiate() {
-    auto y_val = y_->assigned_value().value();
+bool IntModConstraint::on_final_instantiate(const Model& model) {
+    auto y_val = model.value(y_id_);
     if (y_val == 0) return false;
-    return x_->assigned_value().value() % y_val == z_->assigned_value().value();
+    return model.value(x_id_) % y_val == model.value(z_id_);
 }
 
 bool IntModConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
@@ -852,20 +851,20 @@ bool IntModConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         auto z_val = model.value(z_id_);
         if (y_val == 0) return false;
         // x = k * y + z (k は整数) かつ x のドメイン内
-        auto x_vals = x_->domain().values();
-        for (auto xv : x_vals) {
-            if (xv % y_val != z_val) {
-                model.enqueue_remove_value(x_id_, xv);
+        const auto& x_dom = x_->domain();
+        for (auto it = x_dom.begin(); it != x_dom.end(); ++it) {
+            if (*it % y_val != z_val) {
+                model.enqueue_remove_value(x_id_, *it);
             }
         }
     } else if (last_var_internal_idx == 1) {
         // y が未確定、x と z は確定
         auto x_val = model.value(x_id_);
         auto z_val = model.value(z_id_);
-        auto y_vals = y_->domain().values();
-        for (auto yv : y_vals) {
-            if (yv == 0 || x_val % yv != z_val) {
-                model.enqueue_remove_value(y_id_, yv);
+        const auto& y_dom = y_->domain();
+        for (auto it = y_dom.begin(); it != y_dom.end(); ++it) {
+            if (*it == 0 || x_val % *it != z_val) {
+                model.enqueue_remove_value(y_id_, *it);
             }
         }
     } else if (last_var_internal_idx == 2) {
@@ -874,7 +873,7 @@ bool IntModConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         auto y_val = model.value(y_id_);
         if (y_val == 0) return false;
         auto z_val = x_val % y_val;
-        if (!z_->domain().contains(z_val)) return false;
+        if (!model.contains(z_id_, z_val)) return false;
         model.enqueue_instantiate(z_id_, z_val);
     }
 

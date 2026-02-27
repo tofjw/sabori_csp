@@ -8,6 +8,7 @@
 #include "sabori_csp/domain.hpp"
 #include <string>
 #include <memory>
+#include <cassert>
 
 namespace sabori_csp {
 

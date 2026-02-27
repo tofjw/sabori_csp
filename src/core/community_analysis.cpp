@@ -21,17 +21,17 @@ void CommunityAnalysis::build_vig(const Model& model) {
     std::unordered_map<size_t, size_t> edge_weights;
 
     for (const auto& constraint : constraints) {
-        const auto& vars = constraint->var_ptrs();
+        const auto& var_ids = constraint->var_ids_ref();
 
         // アリティ > 200 の制約はスキップ（O(n^2) ペア生成を回避）
-        if (vars.size() > 200) continue;
+        if (var_ids.size() > 200) continue;
 
         // 確定済みでない変数のIDを収集
         std::vector<size_t> active_vars;
-        active_vars.reserve(vars.size());
-        for (const auto& v : vars) {
-            if (!v->is_assigned()) {
-                active_vars.push_back(v->id());
+        active_vars.reserve(var_ids.size());
+        for (size_t vid : var_ids) {
+            if (!model.is_instantiated(vid)) {
+                active_vars.push_back(vid);
             }
         }
 

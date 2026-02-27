@@ -41,22 +41,51 @@ void Constraint::init_watches() {
     w1_ = -1;
     w2_ = -1;
 
-    if (vars_.empty()) {
+    size_t n = var_ids_.size();
+    if (n == 0) {
         return;
     }
 
-    if (vars_.size() == 1) {
+    if (n == 1) {
         w1_ = 0;
         w2_ = 0;
         return;
     }
 
-    // 未確定の2変数を探す
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (!vars_[i]->is_assigned()) {
+    // vars_ が利用可能なら未確定の2変数を探す
+    if (!vars_.empty()) {
+        for (size_t i = 0; i < n; ++i) {
+            if (!vars_[i]->is_assigned()) {
+                if (w1_ < 0) {
+                    w1_ = static_cast<int>(i);
+                    w2_ = static_cast<int>((i + 1) % n);
+                } else {
+                    w2_ = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    // デフォルト: 先頭2変数を監視（refine_watches で修正される）
+    if (w1_ < 0) {
+        w1_ = 0;
+        w2_ = 1;
+    }
+}
+
+void Constraint::refine_watches(const Model& model) {
+    size_t n = var_ids_.size();
+    if (n <= 1) return;
+
+    w1_ = -1;
+    w2_ = -1;
+
+    for (size_t i = 0; i < n; ++i) {
+        if (!model.is_instantiated(var_ids_[i])) {
             if (w1_ < 0) {
                 w1_ = static_cast<int>(i);
-                w2_ = static_cast<int>((i + 1) % vars_.size());
+                w2_ = static_cast<int>((i + 1) % n);
             } else {
                 w2_ = static_cast<int>(i);
                 break;
@@ -64,10 +93,9 @@ void Constraint::init_watches() {
         }
     }
 
-    // 全て確定している場合
     if (w1_ < 0) {
         w1_ = 0;
-        w2_ = (vars_.size() > 1) ? 1 : 0;
+        w2_ = 1;
     }
 }
 
@@ -77,7 +105,7 @@ bool Constraint::on_instantiate(Model& model, int save_point,
                                  Domain::value_type /*prev_min*/,
                                  Domain::value_type /*prev_max*/) {
     // 確定した変数が監視変数でなければ何もしない
-    if (w1_ < 0 || vars_.empty()) {
+    if (w1_ < 0 || var_ids_.empty()) {
         return true;
     }
 
@@ -115,9 +143,9 @@ bool Constraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool Constraint::on_final_instantiate() {
-    // デフォルトでは is_satisfied() を使用
-    auto result = is_satisfied();
+bool Constraint::on_final_instantiate(const Model& model) {
+    // Model ベースの is_satisfied を使用
+    auto result = is_satisfied(model);
     return result.value_or(true);
 }
 
@@ -165,33 +193,33 @@ void Constraint::check_initial_consistency() {
     }
 }
 
-bool Constraint::has_uninstantiated() const {
+bool Constraint::has_uninstantiated(const Model& model) const {
     if (w1_ < 0) {
         return false;
     }
 
-    if (!vars_[w1_]->is_assigned()) {
+    if (!model.is_instantiated(var_ids_[w1_])) {
         return true;
     }
 
-    if (!vars_[w2_]->is_assigned()) {
+    if (!model.is_instantiated(var_ids_[w2_])) {
         return true;
     }
 
     return false;
 }
 
-size_t Constraint::find_last_uninstantiated() const {
+size_t Constraint::find_last_uninstantiated(const Model& model) const {
     if (w1_ < 0) {
         return SIZE_MAX;
     }
 
-    if (vars_[w1_]->is_assigned()) {
-        if (!vars_[w2_]->is_assigned()) {
-	    return w2_;    
-	}
+    if (model.is_instantiated(var_ids_[w1_])) {
+        if (!model.is_instantiated(var_ids_[w2_])) {
+            return w2_;
+        }
     }
-    else if (vars_[w2_]->is_assigned()) {
+    else if (model.is_instantiated(var_ids_[w2_])) {
         return w1_;
     }
 

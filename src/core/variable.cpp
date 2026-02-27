@@ -19,24 +19,32 @@ const Domain& Variable::domain() const {
 }
 
 bool Variable::assign(Domain::value_type value) {
+    assert((!model_ || model_->in_presolve_phase()) &&
+           "Variable::assign() called outside presolve — use model.enqueue_instantiate() instead");
     bool ok = domain_.assign(value);
     if (ok) sync_soa();
     return ok;
 }
 
 bool Variable::remove(Domain::value_type value) {
+    assert((!model_ || model_->in_presolve_phase()) &&
+           "Variable::remove() called outside presolve — use model.enqueue_remove_value() instead");
     bool ok = domain_.remove(value);
     if (ok) sync_soa();
     return ok;
 }
 
 bool Variable::remove_below(Domain::value_type threshold) {
+    assert((!model_ || model_->in_presolve_phase()) &&
+           "Variable::remove_below() called outside presolve — use model.enqueue_set_min() instead");
     bool ok = domain_.remove_below(threshold);
     if (ok) sync_soa();
     return ok;
 }
 
 bool Variable::remove_above(Domain::value_type threshold) {
+    assert((!model_ || model_->in_presolve_phase()) &&
+           "Variable::remove_above() called outside presolve — use model.enqueue_set_max() instead");
     bool ok = domain_.remove_above(threshold);
     if (ok) sync_soa();
     return ok;

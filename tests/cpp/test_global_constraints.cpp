@@ -68,12 +68,13 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
 
 TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
     SECTION("remove assigned values from others") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));  // assigned
-        auto y = std::make_shared<Variable>("y", Domain(1, 3));
-        auto z = std::make_shared<Variable>("z", Domain(1, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);  // assigned
+        auto y = model.create_variable("y", 1, 3);
+        auto z = model.create_variable("z", 1, 3);
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.presolve(dummy_model) == true);
+        REQUIRE(c.presolve(model) == true);
         REQUIRE_FALSE(y->domain().contains(2));
         REQUIRE_FALSE(z->domain().contains(2));
     }
@@ -94,16 +95,13 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
     }
 
     SECTION("infeasible via propagation") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));  // assigned to 2
-        auto y = std::make_shared<Variable>("y", Domain(2, 2));  // domain {2}
-        auto z = std::make_shared<Variable>("z", Domain(2, 3));  // domain {2, 3}
+        Model model;
+        auto x = model.create_variable("x", 2, 2);  // assigned to 2
+        auto y = model.create_variable("y", 2, 2);  // domain {2}
+        auto z = model.create_variable("z", 2, 3);  // domain {2, 3}
         AllDifferentConstraint c({x, y, z});
 
-        // y only has value 2, which x already uses
-        // propagate should remove 2 from y, making it empty
-        // But y is a singleton (assigned), so the check is !other->is_assigned()
-        // We need on_final_instantiate to detect this
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -120,20 +118,22 @@ TEST_CASE("AllDifferentConstraint pool management", "[constraint][all_different]
 
 TEST_CASE("AllDifferentConstraint on_final_instantiate", "[constraint][all_different]") {
     SECTION("satisfied") {
-        auto x = std::make_shared<Variable>("x", Domain(1, 1));
-        auto y = std::make_shared<Variable>("y", Domain(2, 2));
-        auto z = std::make_shared<Variable>("z", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 1, 1);
+        auto y = model.create_variable("y", 2, 2);
+        auto z = model.create_variable("z", 3, 3);
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("violated") {
-        auto x = std::make_shared<Variable>("x", Domain(1, 1));
-        auto y = std::make_shared<Variable>("y", Domain(1, 1));
+        Model model;
+        auto x = model.create_variable("x", 1, 1);
+        auto y = model.create_variable("y", 1, 1);
         AllDifferentConstraint c({x, y});
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -216,19 +216,21 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
 
 TEST_CASE("IntLinEqConstraint on_final_instantiate", "[constraint][int_lin_eq]") {
     SECTION("satisfied") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);
+        auto y = model.create_variable("y", 3, 3);
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("violated") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);
+        auto y = model.create_variable("y", 3, 3);
         IntLinEqConstraint c({1, 1}, {x, y}, 6);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -272,7 +274,7 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
     c.on_instantiate(model, 2, 1, 0, 4, 1, 5);
 
     // Verify final state
-    REQUIRE(c.on_final_instantiate() == true);  // 2 + 4 = 6
+    REQUIRE(c.on_final_instantiate(model) == true);  // 2 + 4 = 6
 
     // Rewind to level 0 and try different values
     c.rewind_to(0);
@@ -330,27 +332,30 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
 
 TEST_CASE("IntLinLeConstraint on_final_instantiate", "[constraint][int_lin_le]") {
     SECTION("satisfied - equal") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);
+        auto y = model.create_variable("y", 3, 3);
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("satisfied - less than") {
-        auto x = std::make_shared<Variable>("x", Domain(1, 1));
-        auto y = std::make_shared<Variable>("y", Domain(2, 2));
+        Model model;
+        auto x = model.create_variable("x", 1, 1);
+        auto y = model.create_variable("y", 2, 2);
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("violated") {
-        auto x = std::make_shared<Variable>("x", Domain(3, 3));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 3, 3);
+        auto y = model.create_variable("y", 3, 3);
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -405,19 +410,21 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
 
 TEST_CASE("IntLinNeConstraint on_final_instantiate", "[constraint][int_lin_ne]") {
     SECTION("satisfied - not equal") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);
+        auto y = model.create_variable("y", 3, 3);
         IntLinNeConstraint c({1, 1}, {x, y}, 4);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("violated - equal") {
-        auto x = std::make_shared<Variable>("x", Domain(2, 2));
-        auto y = std::make_shared<Variable>("y", Domain(3, 3));
+        Model model;
+        auto x = model.create_variable("x", 2, 2);
+        auto y = model.create_variable("y", 3, 3);
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -911,7 +918,7 @@ TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
         auto x2 = std::make_shared<Variable>("x2", Domain(0, 0));
         CircuitConstraint c({x0, x1, x2});
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 
     SECTION("valid circuit reversed") {
@@ -921,7 +928,7 @@ TEST_CASE("CircuitConstraint on_final_instantiate", "[constraint][circuit]") {
         auto x2 = std::make_shared<Variable>("x2", Domain(1, 1));
         CircuitConstraint c({x0, x1, x2});
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(dummy_model) == true);
     }
 }
 
@@ -1177,21 +1184,23 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
 
 TEST_CASE("IntElementConstraint on_final_instantiate", "[constraint][int_element]") {
     SECTION("satisfied") {
-        auto index = std::make_shared<Variable>("index", Domain(1, 1));  // index = 1 -> array[0] = 10
-        auto result = std::make_shared<Variable>("result", Domain(10, 10));
+        Model model;
+        auto index = model.create_variable("index", 1, 1);  // index = 1 -> array[0] = 10
+        auto result = model.create_variable("result", 10, 10);
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("violated") {
-        auto index = std::make_shared<Variable>("index", Domain(1, 1));  // index = 1 -> array[0] = 10
-        auto result = std::make_shared<Variable>("result", Domain(20, 20));  // wrong
+        Model model;
+        auto index = model.create_variable("index", 1, 1);  // index = 1 -> array[0] = 10
+        auto result = model.create_variable("result", 20, 20);  // wrong
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.on_final_instantiate() == false);
+        REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
@@ -1888,21 +1897,23 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
 
 TEST_CASE("ArrayBoolAndConstraint on_final_instantiate", "[constraint][array_bool_and]") {
     SECTION("all true - r=1") {
-        auto b1 = std::make_shared<Variable>("b1", Domain(1, 1));
-        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
-        auto r = std::make_shared<Variable>("r", Domain(1, 1));
+        Model model;
+        auto b1 = model.create_variable("b1", 1, 1);
+        auto b2 = model.create_variable("b2", 1, 1);
+        auto r = model.create_variable("r", 1, 1);
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 
     SECTION("one false - r=0") {
-        auto b1 = std::make_shared<Variable>("b1", Domain(0, 0));
-        auto b2 = std::make_shared<Variable>("b2", Domain(1, 1));
-        auto r = std::make_shared<Variable>("r", Domain(0, 0));
+        Model model;
+        auto b1 = model.create_variable("b1", 0, 0);
+        auto b2 = model.create_variable("b2", 1, 1);
+        auto r = model.create_variable("r", 0, 0);
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE(c.on_final_instantiate() == true);
+        REQUIRE(c.on_final_instantiate(model) == true);
     }
 }
 

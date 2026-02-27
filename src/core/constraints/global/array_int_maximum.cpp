@@ -125,7 +125,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
                     model.enqueue_set_max(x_id, value);
                 }
                 // m に等しくなれるか
-                if (x_[i]->domain().contains(value)) {
+                if (model.contains(var_ids_[1 + i], value)) {
                     can_achieve = true;
                 }
             } else {
@@ -158,8 +158,8 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // 残り変数が 1 or 0 の時
-    if (has_uninstantiated()) {
-        size_t last_idx = find_last_uninstantiated();
+    if (has_uninstantiated(model)) {
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
@@ -167,7 +167,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
         }
     }
     else {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -190,7 +190,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
             return model.value(m_id_) == max_val;
         }
 
-        if (m_->domain().contains(max_val)) {
+        if (model.contains(m_id_, max_val)) {
             model.enqueue_instantiate(m_id_, max_val);
             return true;
         }
@@ -220,7 +220,7 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
 
         if (other_max < m_val) {
             // last_var == m_val でなければならない
-            if (last_var->domain().contains(m_val)) {
+            if (model.contains(last_var_id, m_val)) {
                 model.enqueue_instantiate(last_var_id, m_val);
                 return true;
             }
@@ -239,11 +239,12 @@ bool ArrayIntMaximumConstraint::on_last_uninstantiated(Model& model, int /*save_
     }
 }
 
-bool ArrayIntMaximumConstraint::on_final_instantiate() {
-    auto m_val = m_->assigned_value().value();
-    Domain::value_type max_val = x_[0]->assigned_value().value();
-    for (size_t i = 1; i < n_; ++i) {
-        max_val = std::max(max_val, x_[i]->assigned_value().value());
+bool ArrayIntMaximumConstraint::on_final_instantiate(const Model& model) {
+    auto m_val = model.value(m_id_);
+    // base var_ids_ layout: [m, x[0], ..., x[n-1]]
+    Domain::value_type max_val = model.value(var_ids_[1]);
+    for (size_t i = 2; i <= n_; ++i) {
+        max_val = std::max(max_val, model.value(var_ids_[i]));
     }
     return m_val == max_val;
 }

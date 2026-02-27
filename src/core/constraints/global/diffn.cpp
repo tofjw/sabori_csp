@@ -214,14 +214,15 @@ bool DiffnConstraint::on_instantiate(
         return false;
     }
 
-    if (!has_uninstantiated()) {
-        return on_final_instantiate();
+    if (!has_uninstantiated(model)) {
+        return on_final_instantiate(model);
     }
 
     return propagate_pairwise(model);
 }
 
-bool DiffnConstraint::on_final_instantiate() {
+bool DiffnConstraint::on_final_instantiate(const Model& model) {
+    (void)model;
     auto result = is_satisfied();
     return result.has_value() && result.value();
 }

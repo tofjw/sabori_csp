@@ -48,7 +48,7 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
-    bool on_final_instantiate() override;
+    bool on_final_instantiate(const Model& model) override;
 
     /**
      * @brief 残り1変数になった時の伝播
@@ -120,7 +120,7 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
-    bool on_final_instantiate() override;
+    bool on_final_instantiate(const Model& model) override;
 
 protected:
     void check_initial_consistency() override;
@@ -176,7 +176,7 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
-    bool on_final_instantiate() override;
+    bool on_final_instantiate(const Model& model) override;
 
     /**
      * @brief 残り1変数になった時の伝播

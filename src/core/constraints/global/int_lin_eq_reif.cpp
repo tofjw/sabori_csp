@@ -169,7 +169,7 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
 
         // 全線形変数が既に確定している場合は最終チェック
         if (unfixed_count_ == 0) {
-            return on_final_instantiate();
+            return on_final_instantiate(model);
         }
         return true;
     }
@@ -219,13 +219,13 @@ bool IntLinEqReifConstraint::on_instantiate(Model& model, int save_point,
 
     // 全線形変数が確定し、かつ b も確定している場合は最終チェック
     if (unfixed_count_ == 0 && b_->is_assigned()) {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
 }
 
-bool IntLinEqReifConstraint::on_final_instantiate() {
+bool IntLinEqReifConstraint::on_final_instantiate(const Model& /*model*/) {
     int64_t sum = 0;
     for (size_t i = 0; i < vars_.size() - 1; ++i) {
         if (!vars_[i]->is_assigned()) {

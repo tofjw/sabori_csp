@@ -345,15 +345,15 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool ArrayBoolAndConstraint::on_final_instantiate() {
+bool ArrayBoolAndConstraint::on_final_instantiate(const Model& model) {
     bool and_result = true;
-    for (const auto& var : vars_) {
-        if (var->assigned_value().value() == 0) {
+    for (size_t i = 0; i < n_; ++i) {
+        if (model.value(var_ids_[i]) == 0) {
             and_result = false;
             break;
         }
     }
-    return and_result == (r_->assigned_value().value() == 1);
+    return and_result == (model.value(r_id_) == 1);
 }
 
 bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point,
@@ -724,15 +724,15 @@ bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool ArrayBoolOrConstraint::on_final_instantiate() {
+bool ArrayBoolOrConstraint::on_final_instantiate(const Model& model) {
     bool or_result = false;
-    for (const auto& var : vars_) {
-        if (var->assigned_value().value() == 1) {
+    for (size_t i = 0; i < n_; ++i) {
+        if (model.value(var_ids_[i]) == 1) {
             or_result = true;
             break;
         }
     }
-    return or_result == (r_->assigned_value().value() == 1);
+    return or_result == (model.value(r_id_) == 1);
 }
 
 bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
@@ -923,7 +923,7 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
     w1_ = SIZE_MAX;
     w2_ = SIZE_MAX;
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
+        if (can_satisfy(model, i)) {
             if (w1_ == SIZE_MAX) {
                 w1_ = i;
             } else if (w2_ == SIZE_MAX) {
@@ -945,7 +945,7 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
     // 初期整合性チェック: 全てのリテラルが充足不可能なら矛盾
     bool has_satisfiable = false;
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
+        if (can_satisfy(model, i)) {
             has_satisfiable = true;
             break;
         }
@@ -1058,13 +1058,13 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool BoolClauseConstraint::on_final_instantiate() {
+bool BoolClauseConstraint::on_final_instantiate(const Model& model) {
     // いずれかのリテラルが充足しているか
     for (size_t i = 0; i < n_pos_; ++i) {
-        if (pos_[i]->is_assigned() && pos_[i]->assigned_value().value() == 1) return true;
+        if (model.value(pos_ids_[i]) == 1) return true;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
-        if (neg_[i]->is_assigned() && neg_[i]->assigned_value().value() == 0) return true;
+        if (model.value(neg_ids_[i]) == 0) return true;
     }
     return false;
 }
@@ -1263,7 +1263,7 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
     // a が確定したら b を決定（キューイング）
     if (model.is_instantiated(a_id_) && !model.is_instantiated(b_id_)) {
         auto val = 1 - model.value(a_id_);
-        if (!b_->domain().contains(val)) {
+        if (!model.contains(b_id_, val)) {
             return false;
         }
         model.enqueue_instantiate(b_id_, val);
@@ -1272,7 +1272,7 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
     // b が確定したら a を決定（キューイング）
     if (model.is_instantiated(b_id_) && !model.is_instantiated(a_id_)) {
         auto val = 1 - model.value(b_id_);
-        if (!a_->domain().contains(val)) {
+        if (!model.contains(a_id_, val)) {
             return false;
         }
         model.enqueue_instantiate(a_id_, val);
@@ -1281,9 +1281,9 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool BoolNotConstraint::on_final_instantiate() {
+bool BoolNotConstraint::on_final_instantiate(const Model& model) {
     // a + b = 1 を確認
-    return a_->assigned_value().value() != b_->assigned_value().value();
+    return model.value(a_id_) != model.value(b_id_);
 }
 
 void BoolNotConstraint::check_initial_consistency() {

@@ -85,9 +85,10 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
     unfixed_count_ = 0;
     pool_trail_.clear();
 
-    for (const auto& var : vars_) {
-        if (var->is_assigned()) {
-            auto val = var->assigned_value().value();
+    for (size_t i = 0; i < vars_.size(); ++i) {
+        auto vid = var_ids_[i];
+        if (model.is_instantiated(vid)) {
+            auto val = model.value(vid);
             auto it = pool_sparse_.find(val);
             if (it != pool_sparse_.end() && it->second < pool_n_) {
                 size_t idx = it->second;
@@ -206,7 +207,7 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
       }
 
       if (last_idx == SIZE_MAX) {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
       }
       else {
 	// 残り1変数になったら on_last_uninstantiated を呼び出す
@@ -264,11 +265,11 @@ void AllDifferentConstraint::check_initial_consistency() {
     }
 }
 
-bool AllDifferentConstraint::on_final_instantiate() {
+bool AllDifferentConstraint::on_final_instantiate(const Model& model) {
     // 全変数が異なる値を持つか確認
     std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        auto val = var->assigned_value().value();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto val = model.value(var_ids_[i]);
         if (used_values.count(val) > 0) {
             return false;
         }

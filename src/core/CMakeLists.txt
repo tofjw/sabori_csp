@@ -4,6 +4,8 @@ add_library(sabori_csp_core
   variable.cpp
   constraint.cpp
   solver.cpp
+  nogood_manager.cpp
+  variable_selector.cpp
   model.cpp
   community_analysis.cpp
   # Constraints

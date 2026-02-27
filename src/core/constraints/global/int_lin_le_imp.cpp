@@ -141,7 +141,7 @@ bool IntLinLeImpConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool IntLinLeImpConstraint::on_final_instantiate() {
+bool IntLinLeImpConstraint::on_final_instantiate(const Model& /*model*/) {
     // b = 0 なら常に充足
     if (b_->assigned_value().value() == 0) {
         return true;

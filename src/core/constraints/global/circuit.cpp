@@ -153,8 +153,8 @@ bool CircuitConstraint::prepare_propagation(Model& model) {
     trail_.clear();
 
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) {
-            auto val = vars_[i]->assigned_value().value();
+        if (model.is_instantiated(var_ids_[i])) {
+            auto val = model.value(var_ids_[i]);
             size_t j = static_cast<size_t>(val - base_offset_);
             if (j >= n_) return false;
             if (in_degree_[j] > 0) return false;
@@ -257,14 +257,14 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
 
         // 残り1変数チェック（O(1)）
         if (unfixed_count_ == 1) {
-            size_t last_idx = find_last_uninstantiated();
+            size_t last_idx = find_last_uninstantiated(model);
             if (last_idx != SIZE_MAX) {
                 if (!on_last_uninstantiated(model, save_point, last_idx)) {
                     return false;
                 }
             }
         } else if (unfixed_count_ == 0) {
-            return on_final_instantiate();
+            return on_final_instantiate(model);
         }
 
         return true;
@@ -299,14 +299,14 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
 
     // 残り1変数チェック（O(1)）
     if (unfixed_count_ == 1) {
-        size_t last_idx = find_last_uninstantiated();
+        size_t last_idx = find_last_uninstantiated(model);
         if (last_idx != SIZE_MAX) {
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
             }
         }
     } else if (unfixed_count_ == 0) {
-        return on_final_instantiate();
+        return on_final_instantiate(model);
     }
 
     return true;
@@ -344,7 +344,8 @@ bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
     return true;
 }
 
-bool CircuitConstraint::on_final_instantiate() {
+bool CircuitConstraint::on_final_instantiate(const Model& model) {
+    (void)model;
     // 全ての変数が確定したときの最終確認: 単一のハミルトン閉路を形成しているか
     // ノード 0 を含むパスの root を取得し、そのサイズが n であれば OK
     size_t h0 = find(0);

@@ -111,6 +111,9 @@ void print_solution(const sabori_csp::Solution& sol,
                             is_bool = (var_it != model.var_decls().end() && var_it->second.is_bool);
                         }
                         print_value(elem_it->second, is_bool);
+                    } else {
+                        // Variable not in solution (should not happen); print 0 as fallback
+                        std::cout << 0;
                     }
                 }
             }

@@ -161,7 +161,21 @@ public:
      * @brief 値のインデックスを返す（無ければ SIZE_MAX）
      * bounds-only: contains() なら 0、なければ SIZE_MAX
      */
-    size_t index_of(value_type val) const;
+    size_t index_of(value_type val) const {
+        if (bounds_only_) {
+            return contains(val) ? 0 : SIZE_MAX;
+        }
+        if (val < min_ || val > max_) return SIZE_MAX;
+        auto idx_val = static_cast<size_t>(val - offset_);
+        if (idx_val >= sparse_.size()) {
+            return SIZE_MAX;
+        }
+        size_t idx = sparse_[idx_val];
+        if (idx >= n_) {
+            return SIZE_MAX;
+        }
+        return idx;
+    }
 
     /**
      * @brief Dense 配列の有効範囲の先頭ポインタ
@@ -181,22 +195,31 @@ public:
     /**
      * @brief 有効サイズを設定（バックトラック用）
      */
-    void set_n(size_t n);
+    void set_n(size_t n) { n_ = n; }
 
     /**
      * @brief 最小値をキャッシュに設定
      */
-    void set_min_cache(value_type min);
+    void set_min_cache(value_type min) { min_ = min; }
 
     /**
      * @brief 最大値をキャッシュに設定
      */
-    void set_max_cache(value_type max);
+    void set_max_cache(value_type max) { max_ = max; }
 
     /**
      * @brief Sparse Set 内でスワップ（bounds-only では no-op）
      */
-    void swap_at(size_t i, size_t j);
+    void swap_at(size_t i, size_t j) {
+        if (bounds_only_) return;
+        if (i == j) return;
+        value_type vi = values_[i];
+        value_type vj = values_[j];
+        values_[i] = vj;
+        values_[j] = vi;
+        sparse_[static_cast<size_t>(vi - offset_)] = j;
+        sparse_[static_cast<size_t>(vj - offset_)] = i;
+    }
 
     /**
      * @brief 現在の有効な値から min/max を再計算（bounds-only では no-op）

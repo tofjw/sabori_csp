@@ -231,13 +231,8 @@ std::vector<Domain::value_type> Domain::values() const {
         }
         return result;
     }
-    std::vector<value_type> result;
-    for (size_t i = 0; i < n_; ++i) {
-        if (values_[i] >= min_ && values_[i] <= max_) {
-            result.push_back(values_[i]);
-        }
-    }
-    return result;
+    // Sparse set: values_[0..n_-1] are the active values
+    return std::vector<value_type>(values_.data(), values_.data() + n_);
 }
 
 std::vector<Domain::value_type>& Domain::values_ref() {
@@ -250,48 +245,7 @@ const std::vector<Domain::value_type>& Domain::values_ref() const {
     return values_;
 }
 
-size_t Domain::index_of(value_type val) const {
-    if (bounds_only_) {
-        return contains(val) ? 0 : SIZE_MAX;
-    }
-    if (val < min_ || val > max_) return SIZE_MAX;
-    auto idx_val = static_cast<size_t>(val - offset_);
-    if (idx_val >= sparse_.size()) {
-        return SIZE_MAX;
-    }
-    size_t idx = sparse_[idx_val];
-    if (idx >= n_) {
-        return SIZE_MAX;
-    }
-    return idx;
-}
-
-void Domain::set_n(size_t n) {
-    n_ = n;
-}
-
-void Domain::set_min_cache(value_type min) {
-    min_ = min;
-}
-
-void Domain::set_max_cache(value_type max) {
-    max_ = max;
-}
-
-void Domain::swap_at(size_t i, size_t j) {
-    if (bounds_only_) return;  // no-op
-    assert(i < values_.size() && "swap_at: index i out of bounds");
-    assert(j < values_.size() && "swap_at: index j out of bounds");
-    if (i == j) return;
-    value_type vi = values_[i];
-    value_type vj = values_[j];
-    assert(static_cast<size_t>(vi - offset_) < sparse_.size() && "swap_at: vi out of sparse range");
-    assert(static_cast<size_t>(vj - offset_) < sparse_.size() && "swap_at: vj out of sparse range");
-    values_[i] = vj;
-    values_[j] = vi;
-    sparse_[static_cast<size_t>(vi - offset_)] = j;
-    sparse_[static_cast<size_t>(vj - offset_)] = i;
-}
+// index_of, set_n, set_min_cache, set_max_cache, swap_at are now inline in domain.hpp
 
 void Domain::update_bounds() {
     if (bounds_only_) return;  // no-op

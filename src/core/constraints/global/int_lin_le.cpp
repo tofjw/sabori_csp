@@ -97,7 +97,7 @@ bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool IntLinLeConstraint::on_final_instantiate() {
+bool IntLinLeConstraint::on_final_instantiate(const Model& /*model*/) {
     int64_t sum = 0;
     for (size_t i = 0; i < vars_.size(); ++i) {
         sum += coeffs_[i] * vars_[i]->assigned_value().value();

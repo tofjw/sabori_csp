@@ -168,18 +168,18 @@ bool TableConstraint::prepare_propagation(Model& model) {
 
     for (size_t v = 0; v < arity_; ++v) {
         // この変数のドメインに残っている値のsupportsをunion
-        // bounds-only 対応: テーブルの値範囲で反復し、dom.contains() でチェック
+        // bounds-only 対応: テーブルの値範囲で反復し、model.contains() でチェック
         std::vector<uint64_t> var_union(num_words_, 0ULL);
-        const auto& dom = vars_[v]->domain();
+        auto v_id = var_ids_[v];
         const auto& info = var_support_info_[v];
-        auto dom_min = dom.min().value_or(0);
-        auto dom_max = dom.max().value_or(0);
+        auto dom_min = model.var_min(v_id);
+        auto dom_max = model.var_max(v_id);
         for (size_t i = 0; i < info.range_size; ++i) {
             size_t offset = supports_offsets_flat_[info.flat_offset + i];
             if (offset == NO_SUPPORT) continue;
             auto val = info.min_val + static_cast<Domain::value_type>(i);
             if (val < dom_min || val > dom_max) continue;
-            if (!dom.contains(val)) continue;
+            if (!model.contains(v_id, val)) continue;
             for (size_t w = 0; w < num_words_; ++w) {
                 var_union[w] |= supports_data_[offset + w];
             }
@@ -245,7 +245,8 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
     return filter_domains(model, static_cast<int>(internal_idx));
 }
 
-bool TableConstraint::on_final_instantiate() {
+bool TableConstraint::on_final_instantiate(const Model& model) {
+    (void)model;
     auto result = is_satisfied();
     return result.has_value() && result.value();
 }
@@ -260,14 +261,13 @@ bool TableConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 
     // 最後の未確定変数のドメインをフィルタリング
     // bounds-only 対応: テーブルの値範囲で反復
-    const auto& dom = vars_[last_var_internal_idx]->domain();
     const auto& info = var_support_info_[last_var_internal_idx];
     auto dom_min = model.var_min(last_var_id);
     auto dom_max = model.var_max(last_var_id);
     for (size_t i = 0; i < info.range_size; ++i) {
         auto val = info.min_val + static_cast<Domain::value_type>(i);
         if (val < dom_min || val > dom_max) continue;
-        if (!dom.contains(val)) continue;
+        if (!model.contains(last_var_id, val)) continue;
         if (!has_support(last_var_internal_idx, val)) {
             model.enqueue_remove_value(last_var_id, val);
         }
@@ -430,16 +430,15 @@ bool TableConstraint::filter_domains(Model& model, int skip_var_idx) {
         auto v_id = var_ids_[v];
         if (model.is_instantiated(v_id)) continue;
 
-        const auto& dom = vars_[v]->domain();
         const auto& info = var_support_info_[v];
 
-        // bounds-only 対応: テーブルの値範囲で反復し、dom.contains() でチェック
+        // bounds-only 対応: テーブルの値範囲で反復し、model.contains() でチェック
         auto dom_min = model.var_min(v_id);
         auto dom_max = model.var_max(v_id);
         for (size_t i = 0; i < info.range_size; ++i) {
             auto val = info.min_val + static_cast<Domain::value_type>(i);
             if (val < dom_min || val > dom_max) continue;
-            if (!dom.contains(val)) continue;
+            if (!model.contains(v_id, val)) continue;
 
             size_t flat_idx = info.flat_offset + i;
             size_t offset = supports_offsets_flat_[flat_idx];

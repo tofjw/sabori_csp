@@ -62,11 +62,27 @@ public:
     const std::vector<VariablePtr>& var_ptrs() const { return vars_; }
 
     /**
+     * @brief 変数IDリストへの const 参照を返す（shared_ptr デリファレンス回避）
+     */
+    const std::vector<size_t>& var_ids_ref() const { return var_ids_; }
+
+    /**
      * @brief 制約が満たされているか確認
      * @return 満たされていればtrue、違反していればfalse、
      *         未確定ならstd::nullopt
      */
     virtual std::optional<bool> is_satisfied() const = 0;
+
+    /**
+     * @brief 制約が満たされているか確認（Model ベース）
+     *
+     * VariablePtr なしで動作する。デフォルトでは is_satisfied() に委譲。
+     * 制約を ID-only に移行する際にオーバーライドする。
+     */
+    virtual std::optional<bool> is_satisfied(const Model& model) const {
+        (void)model;
+        return is_satisfied();
+    }
 
     /**
      * @brief イベント伝播の準備（内部構造の初期化）
@@ -124,7 +140,7 @@ public:
      *
      * @return 制約が満たされていればtrue
      */
-    virtual bool on_final_instantiate();
+    virtual bool on_final_instantiate(const Model& model);
 
     /**
      * @brief 残り1変数になった時に呼ばれる
@@ -224,15 +240,23 @@ public:
     void init_watches();
 
     /**
+     * @brief 2WL を Model の状態に基づいて再設定
+     *
+     * prepare_propagation の後に呼ばれ、var_ids_ + Model API で
+     * 正しい未確定変数を選択する（vars_ 不要）。
+     */
+    void refine_watches(const Model& model);
+
+    /**
      * @brief 未確定変数があるかどうか
      */
-    bool has_uninstantiated() const;
+    bool has_uninstantiated(const Model& model) const;
 
     /**
      * @brief 唯一の未確定変数の内部インデックスを取得
      * @return 未確定変数が1つだけならそのインデックス、それ以外はSIZE_MAX
      */
-    size_t find_last_uninstantiated() const;
+    size_t find_last_uninstantiated(const Model& model) const;
 
     /**
      * @brief バックトラック時に内部状態を復元する
