@@ -26,8 +26,8 @@ public:
     ArrayBoolAndConstraint(std::vector<VariablePtr> vars, VariablePtr r);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -44,24 +44,15 @@ public:
      */
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;  // bool変数の配列
-    VariablePtr r_;                   // 結果変数
-    size_t n_;                        // vars_ のサイズ
-
-    std::vector<size_t> var_ids_;  // vars_[i]->id() をキャッシュ
-    size_t r_id_;                   // r_->id() をキャッシュ
+    size_t n_;                        // bool変数の数（var_ids_ の先頭 n_ 個）
+    size_t r_id_;                     // 結果変数のID（var_ids_[n_]）
 
     // 2-watched literal: r = 0 のとき、0 になりうる変数を2つ監視
     size_t w1_;  // 1つ目の watched index
     size_t w2_;  // 2つ目の watched index
-
-    // Trail for watched literals: (save_point, old_w1, old_w2)
-
-    // 変数ポインタ → 内部インデックス (0..n-1: vars_, n: r_)
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_idx_;
@@ -95,8 +86,8 @@ public:
     ArrayBoolOrConstraint(std::vector<VariablePtr> vars, VariablePtr r);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -109,20 +100,14 @@ public:
 
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
-    VariablePtr r_;
-    size_t n_;
-
-    std::vector<size_t> var_ids_;  // vars_[i]->id() をキャッシュ
-    size_t r_id_;                   // r_->id() をキャッシュ
+    size_t n_;                        // bool変数の数（var_ids_ の先頭 n_ 個）
+    size_t r_id_;                     // 結果変数のID（var_ids_[n_]）
 
     size_t w1_;
     size_t w2_;
-
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     // 変数ID → 内部インデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_idx_;
@@ -152,8 +137,8 @@ public:
     BoolClauseConstraint(std::vector<VariablePtr> pos, std::vector<VariablePtr> neg);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -167,16 +152,14 @@ public:
 
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> pos_;  // 正リテラル
-    std::vector<VariablePtr> neg_;  // 負リテラル
-    size_t n_pos_;                  // pos_ のサイズ
-    size_t n_neg_;                  // neg_ のサイズ
+    size_t n_pos_;                  // 正リテラル数
+    size_t n_neg_;                  // 負リテラル数
 
-    std::vector<size_t> pos_ids_;  // pos_[i]->id() をキャッシュ
-    std::vector<size_t> neg_ids_;  // neg_[i]->id() をキャッシュ
+    std::vector<size_t> pos_ids_;  // 正リテラルの変数ID
+    std::vector<size_t> neg_ids_;  // 負リテラルの変数ID
 
     // 2-watched literal
     // w1_, w2_ はリテラルのインデックス
@@ -185,41 +168,23 @@ private:
     size_t w1_;
     size_t w2_;
 
-    // Trail for watched literals
-
-    // 変数ポインタ → リテラルインデックス
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
-
     // 変数ID → リテラルインデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_lit_idx_;
 
     /**
-     * @brief リテラルが節を充足できるか
-     * - pos リテラル: 未確定 or = 1 なら充足可能
-     * - neg リテラル: 未確定 or = 0 なら充足可能
+     * @brief リテラルが節を充足できるか（Model参照版）
      */
-    bool can_satisfy(size_t lit_idx) const;
     bool can_satisfy(const Model& model, size_t lit_idx) const;
 
     /**
-     * @brief リテラルが既に節を充足しているか
-     * - pos リテラル: = 1 なら充足
-     * - neg リテラル: = 0 なら充足
+     * @brief リテラルが既に節を充足しているか（Model参照版）
      */
-    bool is_satisfied_by(size_t lit_idx) const;
     bool is_satisfied_by(const Model& model, size_t lit_idx) const;
 
     /**
      * @brief リテラルを充足方向に確定させる値を取得
-     * - pos リテラル: 1
-     * - neg リテラル: 0
      */
     Domain::value_type satisfying_value(size_t lit_idx) const;
-
-    /**
-     * @brief リテラルに対応する変数を取得
-     */
-    VariablePtr get_var(size_t lit_idx) const;
 
     /**
      * @brief リテラルに対応する変数IDを取得
@@ -251,8 +216,6 @@ public:
     BoolNotConstraint(VariablePtr a, VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -261,14 +224,9 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr a_;
-    VariablePtr b_;
-    size_t a_id_;  // a_->id() をキャッシュ
-    size_t b_id_;  // b_->id() をキャッシュ
+    size_t a_id_;
+    size_t b_id_;
 };
 
 } // namespace sabori_csp

@@ -50,24 +50,11 @@ ConnectedConstraint::ConnectedConstraint(
     }
 
     // Note: vars_ would need to be built here if this file is compiled
-    check_initial_consistency();
 }
 
 std::string ConnectedConstraint::name() const {
     return "connected";
 }
-
-std::vector<VariablePtr> ConnectedConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> ConnectedConstraint::is_satisfied() const {
-    // 全変数が確定していなければ nullopt
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-    }
 
     // subgraph 制約チェック: es[e]=1 → ns[from[e]]=1 ∧ ns[to[e]]=1
     for (size_t e = 0; e < n_edges_; ++e) {
@@ -346,14 +333,6 @@ void ConnectedConstraint::rewind_to(int save_point) {
         n_selected_components_ = entry.old_n_selected_components;
 
         trail_.pop_back();
-    }
-}
-
-void ConnectedConstraint::check_initial_consistency() {
-    if (is_initially_inconsistent()) return;
-    // 初期チェック: from/to のサイズが一致
-    if (from_.size() != to_.size() || from_.size() != n_edges_) {
-        set_initially_inconsistent(true);
     }
 }
 

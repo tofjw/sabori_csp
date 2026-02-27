@@ -26,8 +26,8 @@ public:
     explicit AllDifferentConstraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -59,11 +59,9 @@ protected:
     /**
      * @brief 初期整合性チェック
      */
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
-
     // 値プール（Sparse Set）
     std::vector<Domain::value_type> pool_values_;  // Dense 配列
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス
@@ -95,8 +93,8 @@ public:
     explicit AllDifferentExcept0Constraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -110,10 +108,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<Domain::value_type> pool_values_;
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;
     size_t pool_n_;
@@ -146,8 +143,8 @@ public:
                        int64_t target_sum);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -207,10 +204,9 @@ protected:
     /**
      * @brief 初期整合性チェック
      */
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_sum_;
 
@@ -263,8 +259,8 @@ public:
                        int64_t bound);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -303,10 +299,9 @@ protected:
     /**
      * @brief 初期整合性チェック
      */
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
     int64_t current_fixed_sum_;
@@ -351,8 +346,8 @@ public:
     explicit CircuitConstraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -384,10 +379,9 @@ protected:
     /**
      * @brief 初期整合性チェック
      */
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     size_t n_;  // ノード数
     Domain::value_type base_offset_;  // 1-based インデックスのオフセット（通常は1）
 
@@ -450,8 +444,8 @@ public:
                        int64_t target);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -485,10 +479,9 @@ public:
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
 
@@ -531,8 +524,8 @@ public:
                          bool zero_based = false);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -575,11 +568,9 @@ protected:
     /**
      * @brief 初期整合性チェック
      */
-    void check_initial_consistency() override;
+
 
 private:
-    VariablePtr index_var_;
-    VariablePtr result_var_;
     std::vector<Domain::value_type> array_;
     size_t n_;
     bool zero_based_;
@@ -601,7 +592,6 @@ private:
     int log_n_;
 
     // 変数ポインタ → 内部インデックス (0: index, 1: result)
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 
     /**
      * @brief index を 0-based に変換
@@ -640,8 +630,8 @@ public:
                                    bool zero_based = false);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -666,11 +656,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    VariablePtr index_var_;
-    VariablePtr result_var_;
     std::vector<Domain::value_type> array_;  // 元配列そのまま (O(n))
     size_t n_;
     bool zero_based_;
@@ -702,8 +690,8 @@ public:
     ArrayIntMaximumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -721,16 +709,13 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    VariablePtr m_;                // 最大値変数
-    std::vector<VariablePtr> x_;   // 配列変数
     size_t n_;                     // 配列サイズ
     size_t m_id_;                  // m_ の変数ID キャッシュ
 
     // 変数ポインタ → 内部インデックス (0: m, 1..n: x[0]..x[n-1])
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
 /**
@@ -743,8 +728,8 @@ public:
     ArrayIntMinimumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -759,14 +744,11 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    VariablePtr m_;
-    std::vector<VariablePtr> x_;
     size_t n_;
     size_t m_id_;                  // m_ の変数ID キャッシュ
-    std::unordered_map<Variable*, size_t> var_ptr_to_idx_;
 };
 
 /**
@@ -792,8 +774,8 @@ public:
                            VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -829,13 +811,11 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
-    VariablePtr b_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
     int64_t max_rem_potential_;
@@ -879,8 +859,8 @@ public:
                            VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -916,13 +896,11 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t target_;
-    VariablePtr b_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
     int64_t max_rem_potential_;
@@ -966,8 +944,8 @@ public:
                            VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -1003,13 +981,11 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
-    VariablePtr b_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
     int64_t max_rem_potential_;
@@ -1056,8 +1032,8 @@ public:
                           VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -1096,13 +1072,11 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     std::vector<int64_t> coeffs_;
     int64_t bound_;
-    VariablePtr b_;  // 含意変数
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
 
@@ -1150,8 +1124,8 @@ public:
                                   bool zero_based = false);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -1186,13 +1160,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
-    VariablePtr index_;
-    std::vector<VariablePtr> array_;
-    VariablePtr result_;
     size_t n_;  // array size
     bool zero_based_;
     size_t index_id_;
@@ -1263,8 +1233,8 @@ public:
                     std::vector<Domain::value_type> flat_tuples);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
@@ -1309,10 +1279,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     size_t arity_;
     size_t num_tuples_;
     size_t num_words_;
@@ -1421,8 +1390,8 @@ public:
                       VariablePtr count_var);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -1452,10 +1421,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     Domain::value_type target_;
     size_t n_;  // 配列サイズ (x[] の要素数)
     size_t c_id_;  // count 変数の ID キャッシュ
@@ -1505,8 +1473,8 @@ public:
                                 VariablePtr count_var);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -1536,10 +1504,9 @@ public:
     void rewind_to(int save_point);
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     size_t n_;  // 配列サイズ (x[] の要素数)
     size_t y_id_;  // y 変数の ID キャッシュ
     size_t c_id_;  // count 変数の ID キャッシュ
@@ -1590,8 +1557,8 @@ public:
                           bool strict);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
@@ -1610,10 +1577,9 @@ public:
     void rewind_to(int save_point) override;
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     size_t n_;          // タスク数
     bool strict_;       // strict disjunctive かどうか
     int offset_;        // 時間軸オフセット (min_start)
@@ -1640,10 +1606,10 @@ private:
     std::vector<std::pair<int, CpUndoEntry>> cp_trail_;
 
     // Task helpers
-    bool task_fully_assigned(size_t task) const;
-    int task_start(size_t task) const;
-    int task_dur(size_t task) const;
-    int task_dur_min(size_t task) const;
+    bool task_fully_assigned(const Model& model, size_t task) const;
+    int task_start(const Model& model, size_t task) const;
+    int task_dur(const Model& model, size_t task) const;
+    int task_dur_min(const Model& model, size_t task) const;
 
     // Bit operations
     bool check_conflict(int start, int len) const;
@@ -1660,7 +1626,7 @@ private:
 
     // Compulsory part
     bool update_compulsory_part(Model& model, int save_point, size_t task);
-    bool update_compulsory_part_direct(size_t task);
+    bool update_compulsory_part_direct(Model& model, size_t task);
 
     // Propagation
     bool propagate_bounds(Model& model);
@@ -1681,8 +1647,8 @@ public:
                     bool strict = true);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
+
+
     bool presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
@@ -1701,17 +1667,16 @@ public:
     void rewind_to(int save_point) override;
 
 protected:
-    void check_initial_consistency() override;
+
 
 private:
-    std::vector<VariablePtr> vars_;
     size_t n_;      // 矩形数
     bool strict_;   // strict diffn かどうか
 
-    // vars_ レイアウト: [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
+    // var_ids_ レイアウト: [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
 
     bool propagate_pairwise(Model& model);
-    bool propagate_pairwise_direct();
+    bool propagate_pairwise_direct(Model& model);
 };
 
 } // namespace sabori_csp

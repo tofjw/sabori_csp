@@ -16,42 +16,13 @@ ArrayIntMinimumConstraint::ArrayIntMinimumConstraint(VariablePtr m, std::vector<
         for (const auto& v : vars) ids.push_back(v->id());
         return ids;
     }())
-    , m_(std::move(m))
-    , x_(std::move(vars))
-    , n_(x_.size()) {
+    , n_(vars.size()) {
 
-    var_ptr_to_idx_[m_] = 0;
-    for (size_t i = 0; i < n_; ++i) {
-        var_ptr_to_idx_[x_[i]] = i + 1;
-    }
-
-    m_id_ = m_->id();
-
-    check_initial_consistency();
+    m_id_ = m->id();
 }
 
 std::string ArrayIntMinimumConstraint::name() const {
     return "array_int_minimum";
-}
-
-std::vector<VariablePtr> ArrayIntMinimumConstraint::variables() const {
-    std::vector<VariablePtr> result = {m_};
-    result.insert(result.end(), x_.begin(), x_.end());
-    return result;
-}
-
-std::optional<bool> ArrayIntMinimumConstraint::is_satisfied() const {
-    if (!m_->is_assigned()) return std::nullopt;
-    for (const auto& var : x_) {
-        if (!var->is_assigned()) return std::nullopt;
-    }
-
-    auto m_val = m_->assigned_value().value();
-    Domain::value_type min_val = x_[0]->assigned_value().value();
-    for (size_t i = 1; i < n_; ++i) {
-        min_val = std::min(min_val, x_[i]->assigned_value().value());
-    }
-    return m_val == min_val;
 }
 
 bool ArrayIntMinimumConstraint::presolve(Model& model) {
@@ -59,34 +30,36 @@ bool ArrayIntMinimumConstraint::presolve(Model& model) {
         return false;
     }
 
+    auto* m_var = model.variable(m_id_);
+
     // 1. 全 x[i] の最小値の最小値を計算 -> m.min
-    Domain::value_type min_of_min = model.var_min(x_[0]->id());
+    Domain::value_type min_of_min = model.var_min(var_ids_[1]);
     for (size_t i = 1; i < n_; ++i) {
-        min_of_min = std::min(min_of_min, model.var_min(x_[i]->id()));
+        min_of_min = std::min(min_of_min, model.var_min(var_ids_[1 + i]));
     }
 
     // 2. 全 x[i] の最大値の最小値を計算 -> m.max
-    Domain::value_type min_of_max = model.var_max(x_[0]->id());
+    Domain::value_type min_of_max = model.var_max(var_ids_[1]);
     for (size_t i = 1; i < n_; ++i) {
-        min_of_max = std::min(min_of_max, model.var_max(x_[i]->id()));
+        min_of_max = std::min(min_of_max, model.var_max(var_ids_[1 + i]));
     }
 
     // 3. m のドメインを絞る: min_of_min <= m <= min_of_max
-    if (!m_->remove_below(min_of_min)) return false;
-    if (!m_->remove_above(min_of_max)) return false;
+    if (!m_var->remove_below(min_of_min)) return false;
+    if (!m_var->remove_above(min_of_max)) return false;
 
     // 4. 各 x[i].min を m.min 以上に絞る
-    auto m_min = model.var_min(m_->id());
-    for (auto& var : x_) {
-        if (!var->remove_below(m_min)) return false;
+    auto m_min = model.var_min(m_id_);
+    for (size_t i = 0; i < n_; ++i) {
+        if (!model.variable(var_ids_[1 + i])->remove_below(m_min)) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある
-    if (m_->is_assigned()) {
-        auto m_val = m_->assigned_value().value();
+    if (m_var->is_assigned()) {
+        auto m_val = m_var->assigned_value().value();
         bool can_achieve = false;
-        for (const auto& var : x_) {
-            if (var->domain().contains(m_val)) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.variable(var_ids_[1 + i])->domain().contains(m_val)) {
                 can_achieve = true;
                 break;
             }
@@ -101,13 +74,18 @@ bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,
                                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type value,
                                                  Domain::value_type /*prev_min*/,
                                                  Domain::value_type /*prev_max*/) {
-    VariablePtr assigned_var = model.variable(var_idx);
-    auto it = var_ptr_to_idx_.find(assigned_var);
-    if (it == var_ptr_to_idx_.end()) {
+    // 確定した変数を特定: var_ids_ layout = [m, x[0], ..., x[n-1]]
+    size_t internal_idx = SIZE_MAX;
+    auto assigned_id = model.variable(var_idx)->id();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        if (var_ids_[i] == assigned_id) {
+            internal_idx = i;
+            break;
+        }
+    }
+    if (internal_idx == SIZE_MAX) {
         return true;
     }
-
-    size_t internal_idx = it->second;
 
     if (internal_idx == 0) {
         // m が確定: 全 x[i].min を m 以上に制限し、少なくとも1つは m になれる必要あり
@@ -233,32 +211,6 @@ bool ArrayIntMinimumConstraint::on_final_instantiate(const Model& model) {
 
 void ArrayIntMinimumConstraint::rewind_to(int /*save_point*/) {
     // 状態を持たないので何もしない
-}
-
-void ArrayIntMinimumConstraint::check_initial_consistency() {
-    if (n_ == 0) {
-        set_initially_inconsistent(true);
-        return;
-    }
-
-    if (m_->is_assigned()) {
-        auto m_val = m_->assigned_value().value();
-        bool all_fixed = true;
-        Domain::value_type min_val = std::numeric_limits<Domain::value_type>::max();
-
-        for (const auto& var : x_) {
-            if (!var->is_assigned()) {
-                all_fixed = false;
-                break;
-            }
-            min_val = std::min(min_val, var->assigned_value().value());
-        }
-
-        if (all_fixed && m_val != min_val) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
 }
 
 // ============================================================================

@@ -16,43 +16,23 @@ CountEqConstraint::CountEqConstraint(std::vector<VariablePtr> x_vars,
     , n_(x_vars.size())
     , definite_count_(0)
     , possible_count_(0) {
-    // vars_ = [x[0], x[1], ..., x[n-1], c]
-    vars_.reserve(n_ + 1);
+    // var_ids_ = [x[0], x[1], ..., x[n-1], c]
+    std::vector<VariablePtr> all_vars;
+    all_vars.reserve(n_ + 1);
     for (auto& v : x_vars) {
-        vars_.push_back(std::move(v));
+        all_vars.push_back(std::move(v));
     }
-    vars_.push_back(std::move(count_var));
+    all_vars.push_back(std::move(count_var));
 
     is_possible_.resize(n_, false);
 
     // 変数IDキャッシュを構築
-    var_ids_ = extract_var_ids(vars_);
-    c_id_ = vars_[n_]->id();
+    var_ids_ = extract_var_ids(all_vars);
+    c_id_ = all_vars[n_]->id();
 }
 
 std::string CountEqConstraint::name() const {
     return "count_eq";
-}
-
-std::vector<VariablePtr> CountEqConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> CountEqConstraint::is_satisfied() const {
-    // 全変数が確定しているか確認
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-    }
-    // 全確定: count を計算してチェック
-    int64_t count = 0;
-    for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->assigned_value().value() == target_) {
-            count++;
-        }
-    }
-    return count == vars_[n_]->assigned_value().value();
 }
 
 bool CountEqConstraint::presolve(Model& model) {
@@ -60,12 +40,13 @@ bool CountEqConstraint::presolve(Model& model) {
     definite_count_ = 0;
     possible_count_ = 0;
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) {
-            if (vars_[i]->assigned_value().value() == target_) {
+        auto var = model.variable(var_ids_[i]);
+        if (var->is_assigned()) {
+            if (var->assigned_value().value() == target_) {
                 definite_count_++;
             }
             is_possible_[i] = false;
-        } else if (vars_[i]->domain().contains(target_)) {
+        } else if (var->domain().contains(target_)) {
             is_possible_[i] = true;
             possible_count_++;
         } else {
@@ -74,7 +55,7 @@ bool CountEqConstraint::presolve(Model& model) {
     }
 
     // c の bounds を絞り込む
-    auto& c_var = vars_[n_];
+    auto c_var = model.variable(var_ids_[n_]);
     auto c_min = c_var->min();
     auto c_max = c_var->max();
     auto new_min = static_cast<Domain::value_type>(definite_count_);
@@ -98,8 +79,9 @@ bool CountEqConstraint::presolve(Model& model) {
     if (c_max == static_cast<Domain::value_type>(definite_count_)) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
-                vars_[i]->domain().remove(target_);
-                if (vars_[i]->domain().empty()) return false;
+                auto xi = model.variable(var_ids_[i]);
+                xi->domain().remove(target_);
+                if (xi->domain().empty()) return false;
                 is_possible_[i] = false;
                 possible_count_--;
             }
@@ -109,9 +91,11 @@ bool CountEqConstraint::presolve(Model& model) {
     // c.min == definite_count_ + possible_count_ → 残りの possible な x[i] を target に確定
     if (c_min == static_cast<Domain::value_type>(definite_count_ + possible_count_)) {
         for (size_t i = 0; i < n_; ++i) {
-            if (is_possible_[i] && !vars_[i]->is_assigned()) {
-                if (!vars_[i]->domain().contains(target_)) return false;
-                if (!vars_[i]->assign(target_)) return false;
+            if (is_possible_[i]) {
+                auto xi = model.variable(var_ids_[i]);
+                if (xi->is_assigned()) continue;
+                if (!xi->domain().contains(target_)) return false;
+                if (!xi->assign(target_)) return false;
                 // 確定した
                 definite_count_++;
                 is_possible_[i] = false;
@@ -335,16 +319,6 @@ bool CountEqConstraint::on_remove_value(Model& model, int save_point,
     return true;
 }
 
-void CountEqConstraint::check_initial_consistency() {
-    auto c_min = vars_[n_]->min();
-    auto c_max = vars_[n_]->max();
-    auto def = static_cast<Domain::value_type>(definite_count_);
-    auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
-    if (def > c_max || def_plus_poss < c_min) {
-        set_initially_inconsistent(true);
-    }
-}
-
 void CountEqConstraint::rewind_to(int save_point) {
     while (!trail_.empty() && trail_.back().first > save_point) {
         const auto& entry = trail_.back().second;
@@ -421,43 +395,24 @@ CountEqVarTargetConstraint::CountEqVarTargetConstraint(
     , target_(0)
     , definite_count_(0)
     , possible_count_(0) {
-    // vars_ = [x[0], ..., x[n-1], y, c]
-    vars_.reserve(n_ + 2);
+    // var_ids_ = [x[0], ..., x[n-1], y, c]
+    std::vector<VariablePtr> all_vars;
+    all_vars.reserve(n_ + 2);
     for (auto& v : x_vars) {
-        vars_.push_back(std::move(v));
+        all_vars.push_back(std::move(v));
     }
-    vars_.push_back(std::move(y_var));
-    vars_.push_back(std::move(count_var));
+    all_vars.push_back(std::move(y_var));
+    all_vars.push_back(std::move(count_var));
 
     is_possible_.resize(n_, false);
 
-    var_ids_ = extract_var_ids(vars_);
-    y_id_ = vars_[n_]->id();
-    c_id_ = vars_[n_ + 1]->id();
+    var_ids_ = extract_var_ids(all_vars);
+    y_id_ = all_vars[n_]->id();
+    c_id_ = all_vars[n_ + 1]->id();
 }
 
 std::string CountEqVarTargetConstraint::name() const {
     return "count_eq_var";
-}
-
-std::vector<VariablePtr> CountEqVarTargetConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> CountEqVarTargetConstraint::is_satisfied() const {
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-    }
-    auto y_val = vars_[n_]->assigned_value().value();
-    int64_t count = 0;
-    for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->assigned_value().value() == y_val) {
-            count++;
-        }
-    }
-    return count == vars_[n_ + 1]->assigned_value().value();
 }
 
 void CountEqVarTargetConstraint::initialize_counts(Model& model) {
@@ -479,14 +434,15 @@ void CountEqVarTargetConstraint::initialize_counts(Model& model) {
 }
 
 bool CountEqVarTargetConstraint::presolve(Model& model) {
-    if (vars_[n_]->is_assigned()) {
+    auto y_var = model.variable(var_ids_[n_]);
+    if (y_var->is_assigned()) {
         // y が既に確定
         target_known_ = true;
-        target_ = vars_[n_]->assigned_value().value();
+        target_ = y_var->assigned_value().value();
         initialize_counts(model);
 
         // c の bounds を絞り込む
-        auto& c_var = vars_[n_ + 1];
+        auto c_var = model.variable(var_ids_[n_ + 1]);
         auto c_min = c_var->min();
         auto c_max = c_var->max();
         auto new_min = static_cast<Domain::value_type>(definite_count_);
@@ -507,8 +463,9 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
         if (c_max == static_cast<Domain::value_type>(definite_count_)) {
             for (size_t i = 0; i < n_; ++i) {
                 if (is_possible_[i]) {
-                    vars_[i]->domain().remove(target_);
-                    if (vars_[i]->domain().empty()) return false;
+                    auto xi = model.variable(var_ids_[i]);
+                    xi->domain().remove(target_);
+                    if (xi->domain().empty()) return false;
                     is_possible_[i] = false;
                     possible_count_--;
                 }
@@ -517,9 +474,11 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
 
         if (c_min == static_cast<Domain::value_type>(definite_count_ + possible_count_)) {
             for (size_t i = 0; i < n_; ++i) {
-                if (is_possible_[i] && !vars_[i]->is_assigned()) {
-                    if (!vars_[i]->domain().contains(target_)) return false;
-                    if (!vars_[i]->assign(target_)) return false;
+                if (is_possible_[i]) {
+                    auto xi = model.variable(var_ids_[i]);
+                    if (xi->is_assigned()) continue;
+                    if (!xi->domain().contains(target_)) return false;
+                    if (!xi->assign(target_)) return false;
                     definite_count_++;
                     is_possible_[i] = false;
                     possible_count_--;
@@ -528,7 +487,7 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
         }
     } else {
         // y 未確定: 弱い bounds のみ
-        auto& c_var = vars_[n_ + 1];
+        auto c_var = model.variable(var_ids_[n_ + 1]);
         auto n_val = static_cast<Domain::value_type>(n_);
         if (c_var->min() > n_val) return false;
         if (0 > c_var->max()) return false;
@@ -779,25 +738,6 @@ bool CountEqVarTargetConstraint::on_remove_value(Model& model, int save_point,
         return propagate(model);
     }
     return true;
-}
-
-void CountEqVarTargetConstraint::check_initial_consistency() {
-    if (target_known_) {
-        auto c_min = vars_[n_ + 1]->min();
-        auto c_max = vars_[n_ + 1]->max();
-        auto def = static_cast<Domain::value_type>(definite_count_);
-        auto def_plus_poss = static_cast<Domain::value_type>(definite_count_ + possible_count_);
-        if (def > c_max || def_plus_poss < c_min) {
-            set_initially_inconsistent(true);
-        }
-    } else {
-        auto c_min = vars_[n_ + 1]->min();
-        auto c_max = vars_[n_ + 1]->max();
-        auto n_val = static_cast<Domain::value_type>(n_);
-        if (0 > c_max || n_val < c_min) {
-            set_initially_inconsistent(true);
-        }
-    }
 }
 
 void CountEqVarTargetConstraint::rewind_to(int save_point) {

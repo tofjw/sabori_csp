@@ -16,45 +16,13 @@ ArrayIntMaximumConstraint::ArrayIntMaximumConstraint(VariablePtr m, std::vector<
         for (const auto& v : vars) ids.push_back(v->id());
         return ids;
     }())
-    , m_(std::move(m))
-    , x_(std::move(vars))
-    , n_(x_.size()) {
+    , n_(vars.size()) {
 
-    // var_ptr_to_idx 構築: 0 = m, 1..n = x[0]..x[n-1]
-    var_ptr_to_idx_[m_] = 0;
-    for (size_t i = 0; i < n_; ++i) {
-        var_ptr_to_idx_[x_[i]] = i + 1;
-    }
-
-    m_id_ = m_->id();
-
-    check_initial_consistency();
+    m_id_ = m->id();
 }
 
 std::string ArrayIntMaximumConstraint::name() const {
     return "array_int_maximum";
-}
-
-std::vector<VariablePtr> ArrayIntMaximumConstraint::variables() const {
-    std::vector<VariablePtr> result = {m_};
-    result.insert(result.end(), x_.begin(), x_.end());
-    return result;
-}
-
-std::optional<bool> ArrayIntMaximumConstraint::is_satisfied() const {
-    // 全変数が確定しているか
-    if (!m_->is_assigned()) return std::nullopt;
-    for (const auto& var : x_) {
-        if (!var->is_assigned()) return std::nullopt;
-    }
-
-    // m が全ての x[i] の最大値と一致するか
-    auto m_val = m_->assigned_value().value();
-    Domain::value_type max_val = x_[0]->assigned_value().value();
-    for (size_t i = 1; i < n_; ++i) {
-        max_val = std::max(max_val, x_[i]->assigned_value().value());
-    }
-    return m_val == max_val;
 }
 
 bool ArrayIntMaximumConstraint::presolve(Model& model) {
@@ -62,34 +30,36 @@ bool ArrayIntMaximumConstraint::presolve(Model& model) {
         return false;  // 空配列は不正
     }
 
+    auto* m_var = model.variable(m_id_);
+
     // 1. 全 x[i] の最大値の最大値を計算 -> m.max
-    Domain::value_type max_of_max = model.var_max(x_[0]->id());
+    Domain::value_type max_of_max = model.var_max(var_ids_[1]);
     for (size_t i = 1; i < n_; ++i) {
-        max_of_max = std::max(max_of_max, model.var_max(x_[i]->id()));
+        max_of_max = std::max(max_of_max, model.var_max(var_ids_[1 + i]));
     }
 
     // 2. 全 x[i] の最小値の最大値を計算 -> m.min
-    Domain::value_type max_of_min = model.var_min(x_[0]->id());
+    Domain::value_type max_of_min = model.var_min(var_ids_[1]);
     for (size_t i = 1; i < n_; ++i) {
-        max_of_min = std::max(max_of_min, model.var_min(x_[i]->id()));
+        max_of_min = std::max(max_of_min, model.var_min(var_ids_[1 + i]));
     }
 
     // 3. m のドメインを絞る: max_of_min <= m <= max_of_max
-    if (!m_->remove_below(max_of_min)) return false;
-    if (!m_->remove_above(max_of_max)) return false;
+    if (!m_var->remove_below(max_of_min)) return false;
+    if (!m_var->remove_above(max_of_max)) return false;
 
     // 4. 各 x[i].max を m.max 以下に絞る
-    auto m_max = model.var_max(m_->id());
-    for (auto& var : x_) {
-        if (!var->remove_above(m_max)) return false;
+    auto m_max = model.var_max(m_id_);
+    for (size_t i = 0; i < n_; ++i) {
+        if (!model.variable(var_ids_[1 + i])->remove_above(m_max)) return false;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある
-    if (m_->is_assigned()) {
-        auto m_val = m_->assigned_value().value();
+    if (m_var->is_assigned()) {
+        auto m_val = m_var->assigned_value().value();
         bool can_achieve = false;
-        for (const auto& var : x_) {
-            if (var->domain().contains(m_val)) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.variable(var_ids_[1 + i])->domain().contains(m_val)) {
                 can_achieve = true;
                 break;
             }
@@ -104,14 +74,18 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
                                                  size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type value,
                                                  Domain::value_type /*prev_min*/,
                                                  Domain::value_type /*prev_max*/) {
-    // 確定した変数を特定
-    VariablePtr assigned_var = model.variable(var_idx);
-    auto it = var_ptr_to_idx_.find(assigned_var);
-    if (it == var_ptr_to_idx_.end()) {
+    // 確定した変数を特定: var_ids_ layout = [m, x[0], ..., x[n-1]]
+    size_t internal_idx = SIZE_MAX;
+    auto assigned_id = model.variable(var_idx)->id();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        if (var_ids_[i] == assigned_id) {
+            internal_idx = i;
+            break;
+        }
+    }
+    if (internal_idx == SIZE_MAX) {
         return true;  // この制約に関係ない変数
     }
-
-    size_t internal_idx = it->second;
 
     if (internal_idx == 0) {
         // m が確定: 全 x[i].max を m 以下に制限し、少なくとも1つは m になれる必要あり
@@ -249,33 +223,6 @@ bool ArrayIntMaximumConstraint::on_final_instantiate(const Model& model) {
 
 void ArrayIntMaximumConstraint::rewind_to(int /*save_point*/) {
     // 状態を持たないので何もしない
-}
-
-void ArrayIntMaximumConstraint::check_initial_consistency() {
-    if (n_ == 0) {
-        set_initially_inconsistent(true);
-        return;
-    }
-
-    // 全変数が確定している場合
-    if (m_->is_assigned()) {
-        auto m_val = m_->assigned_value().value();
-        bool all_fixed = true;
-        Domain::value_type max_val = std::numeric_limits<Domain::value_type>::min();
-
-        for (const auto& var : x_) {
-            if (!var->is_assigned()) {
-                all_fixed = false;
-                break;
-            }
-            max_val = std::max(max_val, var->assigned_value().value());
-        }
-
-        if (all_fixed && m_val != max_val) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
 }
 
 // ============================================================================

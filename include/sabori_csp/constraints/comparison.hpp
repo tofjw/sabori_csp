@@ -17,9 +17,6 @@ public:
     IntEqConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
-    std::optional<bool> is_satisfied(const Model& model) const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -36,12 +33,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
     size_t x_id_, y_id_;
 };
 
@@ -53,8 +45,6 @@ public:
     IntEqReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -75,13 +65,7 @@ public:
                          Domain::value_type removed_value) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
-    VariablePtr b_;
     size_t x_id_, y_id_, b_id_;
 };
 
@@ -93,8 +77,6 @@ public:
     IntNeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -103,12 +85,7 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
     size_t x_id_, y_id_;
 };
 
@@ -120,8 +97,6 @@ public:
     IntNeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool prepare_propagation(Model& model) override;
     bool presolve(Model& model) override;
 
@@ -142,13 +117,7 @@ public:
                          Domain::value_type removed_value) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
-    VariablePtr b_;
     size_t x_id_, y_id_, b_id_;
 };
 
@@ -160,8 +129,6 @@ public:
     IntLtConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -178,12 +145,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
     size_t x_id_, y_id_;
 };
 
@@ -195,8 +157,6 @@ public:
     IntLeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -213,12 +173,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
     size_t x_id_, y_id_;
 };
 
@@ -230,8 +185,6 @@ public:
     IntLeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -248,13 +201,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
-    VariablePtr b_;
     size_t x_id_, y_id_, b_id_;
 };
 
@@ -268,8 +215,6 @@ public:
     IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -286,13 +231,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
-    VariablePtr m_;
     size_t x_id_, y_id_, m_id_;
 };
 
@@ -306,8 +245,6 @@ public:
     IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;
-    std::vector<VariablePtr> variables() const override;
-    std::optional<bool> is_satisfied() const override;
     bool presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -324,13 +261,7 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-protected:
-    void check_initial_consistency() override;
-
 private:
-    VariablePtr x_;
-    VariablePtr y_;
-    VariablePtr m_;
     size_t x_id_, y_id_, m_id_;
 };
 

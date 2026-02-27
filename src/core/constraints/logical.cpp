@@ -14,78 +14,22 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
         ids.push_back(r->id());
         return ids;
     }())
-    , vars_(std::move(vars))
-    , r_(std::move(r))
-    , n_(vars_.size())
+    , n_(vars.size())
+    , r_id_(r->id())
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
-    // 変数IDキャッシュを構築
-    var_ids_.resize(n_);
+    // 変数ID → 内部インデックスマップを構築
     for (size_t i = 0; i < n_; ++i) {
-        var_ids_[i] = vars_[i]->id();
-    }
-    r_id_ = r_->id();
-
-    // 変数ポインタ/ID → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i]] = i;
         var_id_to_idx_[var_ids_[i]] = i;
     }
-    var_ptr_to_idx_[r_] = n_;  // r は index n
     var_id_to_idx_[r_id_] = n_;
 
-    // 初期 watch を設定: 0 になりうる（= 未確定 or 0 を含む）変数を探す
-    w1_ = SIZE_MAX;
-    w2_ = SIZE_MAX;
-    for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned() || vars_[i]->assigned_value().value() == 0) {
-            if (w1_ == SIZE_MAX) {
-                w1_ = i;
-            } else if (w2_ == SIZE_MAX) {
-                w2_ = i;
-                break;
-            }
-        }
-    }
-    // watch が2つ見つからなかった場合のフォールバック
-    if (w1_ == SIZE_MAX) w1_ = 0;
-    if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
-
-    // 注意: 内部状態は presolve() で初期化
+    // 注意: watch は prepare_propagation() で再初期化される
 }
 
 std::string ArrayBoolAndConstraint::name() const {
     return "array_bool_and";
-}
-
-std::vector<VariablePtr> ArrayBoolAndConstraint::variables() const {
-    std::vector<VariablePtr> result = vars_;
-    result.push_back(r_);
-    return result;
-}
-
-std::optional<bool> ArrayBoolAndConstraint::is_satisfied() const {
-    // 全変数が確定しているか
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-    }
-    if (!r_->is_assigned()) {
-        return std::nullopt;
-    }
-
-    // 全ての bi の AND を計算
-    bool and_result = true;
-    for (const auto& var : vars_) {
-        if (var->assigned_value().value() == 0) {
-            and_result = false;
-            break;
-        }
-    }
-
-    return and_result == (r_->assigned_value().value() == 1);
 }
 
 bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
@@ -108,7 +52,6 @@ bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
 
     // 2WL を初期化
     init_watches();
-
 
     // 初期整合性チェック
     // r = 1 だが bi = 0 が存在する場合は矛盾
@@ -138,62 +81,68 @@ bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
 }
 
 bool ArrayBoolAndConstraint::presolve(Model& model) {
+    auto* r = model.variable(r_id_);
+
     // 1. bi の中に 0 が確定しているものがあれば r = 0
-    for (const auto& var : vars_) {
-        if (var->is_assigned() && var->assigned_value().value() == 0) {
-            if (r_->is_assigned()) {
-                return r_->assigned_value().value() == 0;
+    for (size_t i = 0; i < n_; ++i) {
+        auto* v = model.variable(var_ids_[i]);
+        if (v->is_assigned() && v->assigned_value().value() == 0) {
+            if (r->is_assigned()) {
+                return r->assigned_value().value() == 0;
             }
-            if (!r_->domain().contains(0)) {
+            if (!r->domain().contains(0)) {
                 return false;
             }
-            r_->assign(0);
+            r->assign(0);
             return true;
         }
     }
 
     // 2. 全ての bi = 1 が確定していれば r = 1
     bool all_one = true;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned() || var->assigned_value().value() != 1) {
+    for (size_t i = 0; i < n_; ++i) {
+        auto* v = model.variable(var_ids_[i]);
+        if (!v->is_assigned() || v->assigned_value().value() != 1) {
             all_one = false;
             break;
         }
     }
     if (all_one) {
-        if (r_->is_assigned()) {
-            return r_->assigned_value().value() == 1;
+        if (r->is_assigned()) {
+            return r->assigned_value().value() == 1;
         }
-        if (!r_->domain().contains(1)) {
+        if (!r->domain().contains(1)) {
             return false;
         }
-        r_->assign(1);
+        r->assign(1);
         return true;
     }
 
     // 3. r = 1 が確定していれば全ての bi = 1
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
-        for (const auto& var : vars_) {
-            if (!var->is_assigned()) {
-                if (!var->domain().contains(1)) {
+    if (r->is_assigned() && r->assigned_value().value() == 1) {
+        for (size_t i = 0; i < n_; ++i) {
+            auto* v = model.variable(var_ids_[i]);
+            if (!v->is_assigned()) {
+                if (!v->domain().contains(1)) {
                     return false;
                 }
-                var->assign(1);
-            } else if (var->assigned_value().value() != 1) {
+                v->assign(1);
+            } else if (v->assigned_value().value() != 1) {
                 return false;
             }
         }
     }
 
     // 4. r = 0 が確定していて、未確定の bi が1つだけなら、その bi = 0
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
+    if (r->is_assigned() && r->assigned_value().value() == 0) {
         size_t unassigned_count = 0;
         size_t last_unassigned = SIZE_MAX;
         bool has_zero = false;
 
         for (size_t i = 0; i < n_; ++i) {
-            if (vars_[i]->is_assigned()) {
-                if (vars_[i]->assigned_value().value() == 0) {
+            auto* v = model.variable(var_ids_[i]);
+            if (v->is_assigned()) {
+                if (v->assigned_value().value() == 0) {
                     has_zero = true;
                     break;
                 }
@@ -204,11 +153,11 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
         }
 
         if (!has_zero && unassigned_count == 1) {
-            // 最後の未確定変数を 0 に
-            if (!vars_[last_unassigned]->domain().contains(0)) {
+            auto* last_v = model.variable(var_ids_[last_unassigned]);
+            if (!last_v->domain().contains(0)) {
                 return false;
             }
-            vars_[last_unassigned]->assign(0);
+            last_v->assign(0);
         }
     }
 
@@ -397,45 +346,6 @@ bool ArrayBoolAndConstraint::on_last_uninstantiated(Model& model, int save_point
     return true;
 }
 
-void ArrayBoolAndConstraint::check_initial_consistency() {
-    // r = 1 だが bi = 0 が存在する場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
-        for (const auto& var : vars_) {
-            if (var->is_assigned() && var->assigned_value().value() == 0) {
-                set_initially_inconsistent(true);
-                return;
-            }
-        }
-    }
-
-    // r = 0 だが全ての bi = 1 の場合は矛盾
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
-        bool all_one = true;
-        for (const auto& var : vars_) {
-            if (!var->is_assigned() || var->assigned_value().value() != 1) {
-                all_one = false;
-                break;
-            }
-        }
-        if (all_one) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    // bi = 0 が存在するが r = 1 が強制されている場合
-    bool has_zero = false;
-    for (const auto& var : vars_) {
-        if (var->is_assigned() && var->assigned_value().value() == 0) {
-            has_zero = true;
-            break;
-        }
-    }
-    if (has_zero && r_->is_assigned() && r_->assigned_value().value() == 1) {
-        set_initially_inconsistent(true);
-    }
-}
-
 size_t ArrayBoolAndConstraint::find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const {
     for (size_t i = 0; i < n_; ++i) {
         if (i == exclude1 || i == exclude2) continue;
@@ -469,123 +379,81 @@ ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, Vari
         ids.push_back(r->id());
         return ids;
     }())
-    , vars_(std::move(vars))
-    , r_(std::move(r))
-    , n_(vars_.size())
+    , n_(vars.size())
+    , r_id_(r->id())
     , w1_(0)
     , w2_(n_ > 1 ? 1 : 0) {
 
-    // 変数IDキャッシュを構築
-    var_ids_.resize(n_);
+    // 変数ID → 内部インデックスマップを構築
     for (size_t i = 0; i < n_; ++i) {
-        var_ids_[i] = vars_[i]->id();
-    }
-    r_id_ = r_->id();
-
-    // 変数ポインタ/ID → 内部インデックスマップを構築
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i]] = i;
         var_id_to_idx_[var_ids_[i]] = i;
     }
-    var_ptr_to_idx_[r_] = n_;
     var_id_to_idx_[r_id_] = n_;
 
-    // 初期 watch: 1 になりうる変数を探す
-    w1_ = SIZE_MAX;
-    w2_ = SIZE_MAX;
-    for (size_t i = 0; i < n_; ++i) {
-        if (!vars_[i]->is_assigned() || vars_[i]->assigned_value().value() == 1) {
-            if (w1_ == SIZE_MAX) {
-                w1_ = i;
-            } else if (w2_ == SIZE_MAX) {
-                w2_ = i;
-                break;
-            }
-        }
-    }
-    if (w1_ == SIZE_MAX) w1_ = 0;
-    if (w2_ == SIZE_MAX) w2_ = (n_ > 1) ? 1 : 0;
-
-    check_initial_consistency();
+    // 注意: watch は prepare_propagation() で再初期化される
 }
 
 std::string ArrayBoolOrConstraint::name() const {
     return "array_bool_or";
 }
 
-std::vector<VariablePtr> ArrayBoolOrConstraint::variables() const {
-    std::vector<VariablePtr> result = vars_;
-    result.push_back(r_);
-    return result;
-}
-
-std::optional<bool> ArrayBoolOrConstraint::is_satisfied() const {
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) return std::nullopt;
-    }
-    if (!r_->is_assigned()) return std::nullopt;
-
-    bool or_result = false;
-    for (const auto& var : vars_) {
-        if (var->assigned_value().value() == 1) {
-            or_result = true;
-            break;
-        }
-    }
-    return or_result == (r_->assigned_value().value() == 1);
-}
-
 bool ArrayBoolOrConstraint::presolve(Model& model) {
+    auto* r = model.variable(r_id_);
+
     // 1. bi の中に 1 が確定しているものがあれば r = 1
-    for (const auto& var : vars_) {
-        if (var->is_assigned() && var->assigned_value().value() == 1) {
-            if (r_->is_assigned()) {
-                return r_->assigned_value().value() == 1;
+    for (size_t i = 0; i < n_; ++i) {
+        auto* v = model.variable(var_ids_[i]);
+        if (v->is_assigned() && v->assigned_value().value() == 1) {
+            if (r->is_assigned()) {
+                return r->assigned_value().value() == 1;
             }
-            if (!r_->domain().contains(1)) return false;
-            r_->assign(1);
+            if (!r->domain().contains(1)) return false;
+            r->assign(1);
             return true;
         }
     }
 
     // 2. 全ての bi = 0 が確定していれば r = 0
     bool all_zero = true;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned() || var->assigned_value().value() != 0) {
+    for (size_t i = 0; i < n_; ++i) {
+        auto* v = model.variable(var_ids_[i]);
+        if (!v->is_assigned() || v->assigned_value().value() != 0) {
             all_zero = false;
             break;
         }
     }
     if (all_zero) {
-        if (r_->is_assigned()) {
-            return r_->assigned_value().value() == 0;
+        if (r->is_assigned()) {
+            return r->assigned_value().value() == 0;
         }
-        if (!r_->domain().contains(0)) return false;
-        r_->assign(0);
+        if (!r->domain().contains(0)) return false;
+        r->assign(0);
         return true;
     }
 
     // 3. r = 0 なら全ての bi = 0
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
-        for (const auto& var : vars_) {
-            if (!var->is_assigned()) {
-                if (!var->domain().contains(0)) return false;
-                var->assign(0);
-            } else if (var->assigned_value().value() != 0) {
+    if (r->is_assigned() && r->assigned_value().value() == 0) {
+        for (size_t i = 0; i < n_; ++i) {
+            auto* v = model.variable(var_ids_[i]);
+            if (!v->is_assigned()) {
+                if (!v->domain().contains(0)) return false;
+                v->assign(0);
+            } else if (v->assigned_value().value() != 0) {
                 return false;
             }
         }
     }
 
     // 4. r = 1 で未確定の bi が1つだけなら、その bi = 1
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
+    if (r->is_assigned() && r->assigned_value().value() == 1) {
         size_t unassigned_count = 0;
         size_t last_unassigned = SIZE_MAX;
         bool has_one = false;
 
         for (size_t i = 0; i < n_; ++i) {
-            if (vars_[i]->is_assigned()) {
-                if (vars_[i]->assigned_value().value() == 1) {
+            auto* v = model.variable(var_ids_[i]);
+            if (v->is_assigned()) {
+                if (v->assigned_value().value() == 1) {
                     has_one = true;
                     break;
                 }
@@ -596,8 +464,9 @@ bool ArrayBoolOrConstraint::presolve(Model& model) {
         }
 
         if (!has_one && unassigned_count == 1) {
-            if (!vars_[last_unassigned]->domain().contains(1)) return false;
-            vars_[last_unassigned]->assign(1);
+            auto* last_v = model.variable(var_ids_[last_unassigned]);
+            if (!last_v->domain().contains(1)) return false;
+            last_v->assign(1);
         }
     }
 
@@ -772,42 +641,6 @@ bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
     return true;
 }
 
-void ArrayBoolOrConstraint::check_initial_consistency() {
-    if (r_->is_assigned() && r_->assigned_value().value() == 0) {
-        for (const auto& var : vars_) {
-            if (var->is_assigned() && var->assigned_value().value() == 1) {
-                set_initially_inconsistent(true);
-                return;
-            }
-        }
-    }
-
-    if (r_->is_assigned() && r_->assigned_value().value() == 1) {
-        bool all_zero = true;
-        for (const auto& var : vars_) {
-            if (!var->is_assigned() || var->assigned_value().value() != 0) {
-                all_zero = false;
-                break;
-            }
-        }
-        if (all_zero) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    bool has_one = false;
-    for (const auto& var : vars_) {
-        if (var->is_assigned() && var->assigned_value().value() == 1) {
-            has_one = true;
-            break;
-        }
-    }
-    if (has_one && r_->is_assigned() && r_->assigned_value().value() == 0) {
-        set_initially_inconsistent(true);
-    }
-}
-
 size_t ArrayBoolOrConstraint::find_unwatched_candidate(const Model& model, size_t exclude1, size_t exclude2) const {
     for (size_t i = 0; i < n_; ++i) {
         if (i == exclude1 || i == exclude2) continue;
@@ -837,86 +670,40 @@ void ArrayBoolOrConstraint::move_watch(Model& model, int /*save_point*/, int whi
 BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::vector<VariablePtr> neg)
     : Constraint([&]() {
         auto ids = extract_var_ids(pos);
-        auto neg_ids = extract_var_ids(neg);
-        ids.insert(ids.end(), neg_ids.begin(), neg_ids.end());
+        auto nids = extract_var_ids(neg);
+        ids.insert(ids.end(), nids.begin(), nids.end());
         return ids;
     }())
-    , pos_(std::move(pos))
-    , neg_(std::move(neg))
-    , n_pos_(pos_.size())
-    , n_neg_(neg_.size())
-    , w1_(SIZE_MAX)
-    , w2_(SIZE_MAX) {
+    , n_pos_(pos.size())
+    , n_neg_(neg.size())
+    , w1_(0)
+    , w2_(n_pos_ + n_neg_ > 1 ? 1 : 0) {
 
     // 変数IDキャッシュを構築
     pos_ids_.resize(n_pos_);
     for (size_t i = 0; i < n_pos_; ++i) {
-        pos_ids_[i] = pos_[i]->id();
+        pos_ids_[i] = pos[i]->id();
     }
     neg_ids_.resize(n_neg_);
     for (size_t i = 0; i < n_neg_; ++i) {
-        neg_ids_[i] = neg_[i]->id();
+        neg_ids_[i] = neg[i]->id();
     }
 
-    // 変数ポインタ → リテラルインデックスマップを構築
     // 変数ID → リテラルインデックスマップを構築
-    // 0 <= idx < n_pos_: pos_[idx]
-    // n_pos_ <= idx < n_pos_ + n_neg_: neg_[idx - n_pos_]
     for (size_t i = 0; i < n_pos_; ++i) {
-        var_ptr_to_idx_[pos_[i]] = i;
-        var_id_to_lit_idx_[pos_[i]->id()] = i;
+        var_id_to_lit_idx_[pos_ids_[i]] = i;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
-        // neg の変数が pos にも含まれている場合は上書きしない
-        // （同じ変数が両方に含まれるケースは稀だが対応）
-        if (var_ptr_to_idx_.find(neg_[i]) == var_ptr_to_idx_.end()) {
-            var_ptr_to_idx_[neg_[i]] = n_pos_ + i;
-            var_id_to_lit_idx_[neg_[i]->id()] = n_pos_ + i;
+        if (var_id_to_lit_idx_.find(neg_ids_[i]) == var_id_to_lit_idx_.end()) {
+            var_id_to_lit_idx_[neg_ids_[i]] = n_pos_ + i;
         }
     }
 
-    // 初期 watch を設定: 節を充足しうるリテラルを2つ探す
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
-            if (w1_ == SIZE_MAX) {
-                w1_ = i;
-            } else if (w2_ == SIZE_MAX) {
-                w2_ = i;
-                break;
-            }
-        }
-    }
-
-    // watch が見つからなかった場合のフォールバック
-    if (w1_ == SIZE_MAX && n_pos_ + n_neg_ > 0) w1_ = 0;
-    if (w2_ == SIZE_MAX && n_pos_ + n_neg_ > 1) w2_ = 1;
-    if (w2_ == SIZE_MAX) w2_ = w1_;
-
-    // 注意: 内部状態は presolve() で初期化
+    // 注意: watch は prepare_propagation() で再初期化される
 }
 
 std::string BoolClauseConstraint::name() const {
     return "bool_clause";
-}
-
-std::vector<VariablePtr> BoolClauseConstraint::variables() const {
-    std::vector<VariablePtr> result = pos_;
-    result.insert(result.end(), neg_.begin(), neg_.end());
-    return result;
-}
-
-std::optional<bool> BoolClauseConstraint::is_satisfied() const {
-    // 充足しているリテラルがあるか
-    for (size_t i = 0; i < n_pos_; ++i) {
-        if (!pos_[i]->is_assigned()) return std::nullopt;
-        if (pos_[i]->assigned_value().value() == 1) return true;
-    }
-    for (size_t i = 0; i < n_neg_; ++i) {
-        if (!neg_[i]->is_assigned()) return std::nullopt;
-        if (neg_[i]->assigned_value().value() == 0) return true;
-    }
-    // 全リテラルが確定し、いずれも充足していない
-    return false;
 }
 
 bool BoolClauseConstraint::prepare_propagation(Model& model) {
@@ -942,7 +729,6 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
     // 2WL を初期化
     init_watches();
 
-
     // 初期整合性チェック: 全てのリテラルが充足不可能なら矛盾
     bool has_satisfiable = false;
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
@@ -961,12 +747,14 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
 bool BoolClauseConstraint::presolve(Model& model) {
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_; ++i) {
-        if (pos_[i]->is_assigned() && pos_[i]->assigned_value().value() == 1) {
+        auto* v = model.variable(pos_ids_[i]);
+        if (v->is_assigned() && v->assigned_value().value() == 1) {
             return true;  // 充足
         }
     }
     for (size_t i = 0; i < n_neg_; ++i) {
-        if (neg_[i]->is_assigned() && neg_[i]->assigned_value().value() == 0) {
+        auto* v = model.variable(neg_ids_[i]);
+        if (v->is_assigned() && v->assigned_value().value() == 0) {
             return true;  // 充足
         }
     }
@@ -976,7 +764,7 @@ bool BoolClauseConstraint::presolve(Model& model) {
     size_t last_satisfiable = SIZE_MAX;
 
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
+        if (can_satisfy(model, i)) {
             satisfiable_count++;
             last_satisfiable = i;
         }
@@ -988,7 +776,8 @@ bool BoolClauseConstraint::presolve(Model& model) {
 
     if (satisfiable_count == 1) {
         // Unit propagation: 唯一の充足可能リテラルを確定
-        VariablePtr var = get_var(last_satisfiable);
+        auto var_id = get_var_id(last_satisfiable);
+        auto* var = model.variable(var_id);
         Domain::value_type val = satisfying_value(last_satisfiable);
         if (!var->is_assigned()) {
             if (!var->domain().contains(val)) return false;
@@ -996,7 +785,6 @@ bool BoolClauseConstraint::presolve(Model& model) {
         }
     }
 
-      
     return true;
 }
 
@@ -1095,50 +883,12 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
     return true;
 }
 
-void BoolClauseConstraint::check_initial_consistency() {
-    // 全てのリテラルが充足不可能なら矛盾
-    bool has_satisfiable = false;
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (can_satisfy(i)) {
-            has_satisfiable = true;
-            break;
-        }
-    }
-    if (!has_satisfiable) {
-        set_initially_inconsistent(true);
-    }
-}
-
-bool BoolClauseConstraint::can_satisfy(size_t lit_idx) const {
-    if (lit_idx < n_pos_) {
-        // 正リテラル: 1 になれるか（未確定 or = 1）
-        return !pos_[lit_idx]->is_assigned() ||
-               pos_[lit_idx]->assigned_value().value() == 1;
-    } else {
-        // 負リテラル: 0 になれるか（未確定 or = 0）
-        size_t neg_idx = lit_idx - n_pos_;
-        return !neg_[neg_idx]->is_assigned() ||
-               neg_[neg_idx]->assigned_value().value() == 0;
-    }
-}
-
 bool BoolClauseConstraint::can_satisfy(const Model& model, size_t lit_idx) const {
     size_t var_id = get_var_id(lit_idx);
     if (lit_idx < n_pos_) {
         return !model.is_instantiated(var_id) || model.value(var_id) == 1;
     } else {
         return !model.is_instantiated(var_id) || model.value(var_id) == 0;
-    }
-}
-
-bool BoolClauseConstraint::is_satisfied_by(size_t lit_idx) const {
-    if (lit_idx < n_pos_) {
-        return pos_[lit_idx]->is_assigned() &&
-               pos_[lit_idx]->assigned_value().value() == 1;
-    } else {
-        size_t neg_idx = lit_idx - n_pos_;
-        return neg_[neg_idx]->is_assigned() &&
-               neg_[neg_idx]->assigned_value().value() == 0;
     }
 }
 
@@ -1153,14 +903,6 @@ bool BoolClauseConstraint::is_satisfied_by(const Model& model, size_t lit_idx) c
 
 Domain::value_type BoolClauseConstraint::satisfying_value(size_t lit_idx) const {
     return (lit_idx < n_pos_) ? 1 : 0;
-}
-
-VariablePtr BoolClauseConstraint::get_var(size_t lit_idx) const {
-    if (lit_idx < n_pos_) {
-        return pos_[lit_idx];
-    } else {
-        return neg_[lit_idx - n_pos_];
-    }
 }
 
 size_t BoolClauseConstraint::get_var_id(size_t lit_idx) const {
@@ -1196,49 +938,33 @@ void BoolClauseConstraint::move_watch(Model& model, int /*save_point*/, int whic
 
 BoolNotConstraint::BoolNotConstraint(VariablePtr a, VariablePtr b)
     : Constraint(extract_var_ids({a, b}))
-    , a_(std::move(a))
-    , b_(std::move(b))
-    , a_id_(a_->id())
-    , b_id_(b_->id()) {
-    check_initial_consistency();
-}
+    , a_id_(a->id())
+    , b_id_(b->id()) {}
 
 std::string BoolNotConstraint::name() const {
     return "bool_not";
 }
 
-std::vector<VariablePtr> BoolNotConstraint::variables() const {
-    return {a_, b_};
-}
-
-std::optional<bool> BoolNotConstraint::is_satisfied() const {
-    if (a_->is_assigned() && b_->is_assigned()) {
-        // a + b = 1 (つまり a != b)
-        return a_->assigned_value().value() != b_->assigned_value().value();
-    }
-    return std::nullopt;
-}
-
 bool BoolNotConstraint::presolve(Model& model) {
     // a が確定したら b を決定
-    if (a_->is_assigned() && !b_->is_assigned()) {
-        auto val = 1 - a_->assigned_value().value();
-        if (!b_->domain().contains(val)) {
+    if (model.variable(a_id_)->is_assigned() && !model.variable(b_id_)->is_assigned()) {
+        auto val = 1 - model.variable(a_id_)->assigned_value().value();
+        if (!model.variable(b_id_)->domain().contains(val)) {
             return false;
         }
-        b_->assign(val);
+        model.variable(b_id_)->assign(val);
     }
 
     // b が確定したら a を決定
-    if (b_->is_assigned() && !a_->is_assigned()) {
-        auto val = 1 - b_->assigned_value().value();
-        if (!a_->domain().contains(val)) {
+    if (model.variable(b_id_)->is_assigned() && !model.variable(a_id_)->is_assigned()) {
+        auto val = 1 - model.variable(b_id_)->assigned_value().value();
+        if (!model.variable(a_id_)->domain().contains(val)) {
             return false;
         }
-        a_->assign(val);
+        model.variable(a_id_)->assign(val);
     }
 
-    return !a_->domain().empty() && !b_->domain().empty();
+    return !model.variable(a_id_)->domain().empty() && !model.variable(b_id_)->domain().empty();
 }
 
 bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
@@ -1275,14 +1001,6 @@ bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
 bool BoolNotConstraint::on_final_instantiate(const Model& model) {
     // a + b = 1 を確認
     return model.value(a_id_) != model.value(b_id_);
-}
-
-void BoolNotConstraint::check_initial_consistency() {
-    // 両方が確定していて同じ値なら矛盾
-    if (a_->is_assigned() && b_->is_assigned() &&
-        a_->assigned_value() == b_->assigned_value()) {
-        set_initially_inconsistent(true);
-    }
 }
 
 } // namespace sabori_csp

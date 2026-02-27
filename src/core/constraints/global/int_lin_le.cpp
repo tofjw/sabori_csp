@@ -24,12 +24,13 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
     }
 
     // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    std::vector<VariablePtr> unique_vars;
     for (const auto& [var_ptr, coeff] : aggregated) {
         if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
             if (var == var_ptr) {
-                vars_.push_back(var);
+                unique_vars.push_back(var);
                 coeffs_.push_back(coeff);
                 break;
             }
@@ -37,33 +38,18 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
     }
 
     // 全ての係数が0になった場合: presolve で処理
-    if (vars_.empty()) {
+    if (unique_vars.empty()) {
         return;
     }
 
     // 変数IDキャッシュを構築
-    var_ids_ = extract_var_ids(vars_);
+    var_ids_ = extract_var_ids(unique_vars);
 
     // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntLinLeConstraint::name() const {
     return "int_lin_le";
-}
-
-std::vector<VariablePtr> IntLinLeConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> IntLinLeConstraint::is_satisfied() const {
-    int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (!vars_[i]->is_assigned()) {
-            return std::nullopt;
-        }
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
-    }
-    return sum <= bound_;
 }
 
 bool IntLinLeConstraint::presolve(Model& model) {
@@ -97,10 +83,10 @@ bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool IntLinLeConstraint::on_final_instantiate(const Model& /*model*/) {
+bool IntLinLeConstraint::on_final_instantiate(const Model& model) {
     int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        sum += coeffs_[i] * model.value(var_ids_[i]);
     }
     return sum <= bound_;
 }
@@ -114,16 +100,9 @@ void IntLinLeConstraint::rewind_to(int save_point) {
     }
 }
 
-void IntLinLeConstraint::check_initial_consistency() {
-    // 確定済み + 残りの最小ポテンシャルが bound を超えるなら矛盾
-    if (current_fixed_sum_ + min_rem_potential_ > bound_) {
-        set_initially_inconsistent(true);
-    }
-}
-
 bool IntLinLeConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合: 0 <= bound
-    if (vars_.empty()) {
+    if (var_ids_.empty()) {
         return bound_ >= 0;
     }
 
@@ -131,14 +110,15 @@ bool IntLinLeConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
 
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
+        size_t vid = var_ids_[i];
 
-        if (vars_[i]->is_assigned()) {
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        if (model.variable(vid)->is_assigned()) {
+            current_fixed_sum_ += c * model.variable(vid)->assigned_value().value();
         } else {
-            auto min_val = model.var_min(vars_[i]->id());
-            auto max_val = model.var_max(vars_[i]->id());
+            auto min_val = model.var_min(vid);
+            auto max_val = model.var_max(vid);
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

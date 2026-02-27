@@ -24,12 +24,13 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     }
 
     // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    std::vector<VariablePtr> unique_vars;
     for (const auto& [var_ptr, coeff] : aggregated) {
         if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
             if (var == var_ptr) {
-                vars_.push_back(var);
+                unique_vars.push_back(var);
                 coeffs_.push_back(coeff);
                 break;
             }
@@ -37,7 +38,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     }
 
     // 全ての係数が0になった場合: 0 == target_sum
-    if (vars_.empty()) {
+    if (unique_vars.empty()) {
         if (target_sum_ != 0) {
             set_initially_inconsistent(true);
         }
@@ -45,7 +46,7 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     }
 
     // 変数IDキャッシュを構築
-    var_ids_ = extract_var_ids(vars_);
+    var_ids_ = extract_var_ids(unique_vars);
 
     // 注意: 内部状態（current_fixed_sum_ 等）は presolve() で初期化
     // コンストラクタでは変数の状態を参照しない
@@ -55,31 +56,17 @@ std::string IntLinEqConstraint::name() const {
     return "int_lin_eq";
 }
 
-std::vector<VariablePtr> IntLinEqConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> IntLinEqConstraint::is_satisfied() const {
-    int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (!vars_[i]->is_assigned()) {
-            return std::nullopt;
-        }
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
-    }
-    return sum == target_sum_;
-}
-
 bool IntLinEqConstraint::presolve(Model& model) {
     // Bounds propagation: 各変数の上下限を直接絞り込む（従来の方式）
 
     // 全体の min/max potential を計算
     int64_t total_min = 0;
     int64_t total_max = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
-        auto min_val = vars_[i]->min();
-        auto max_val = vars_[i]->max();
+        auto var = model.variable(var_ids_[i]);
+        auto min_val = var->min();
+        auto max_val = var->max();
         if (c >= 0) {
             total_min += c * min_val;
             total_max += c * max_val;
@@ -99,14 +86,15 @@ bool IntLinEqConstraint::presolve(Model& model) {
     while (changed) {
         changed = false;
 
-        for (size_t j = 0; j < vars_.size(); ++j) {
-            if (vars_[j]->is_assigned()) continue;
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            auto var_j = model.variable(var_ids_[j]);
+            if (var_j->is_assigned()) continue;
 
             int64_t c = coeffs_[j];
             if (c == 0) continue;
 
-            auto cur_min = vars_[j]->min();
-            auto cur_max = vars_[j]->max();
+            auto cur_min = var_j->min();
+            auto cur_max = var_j->max();
             // rest の min/max を計算
             int64_t rest_min = total_min;
             int64_t rest_max = total_max;
@@ -146,8 +134,8 @@ bool IntLinEqConstraint::presolve(Model& model) {
             // ドメインの範囲を変更
             if (new_min > cur_min) {
                 if (new_min > cur_max) return false;
-                if (!vars_[j]->remove_below(new_min)) return false;
-                auto new_cur_min = vars_[j]->min();
+                if (!var_j->remove_below(new_min)) return false;
+                auto new_cur_min = var_j->min();
                 if (c >= 0) {
                     total_min += c * (new_cur_min - cur_min);
                 } else {
@@ -156,10 +144,10 @@ bool IntLinEqConstraint::presolve(Model& model) {
                 changed = true;
             }
             if (new_max < cur_max) {
-                auto cur_min_after = vars_[j]->min();
+                auto cur_min_after = var_j->min();
                 if (new_max < cur_min_after) return false;
-                if (!vars_[j]->remove_above(new_max)) return false;
-                auto new_cur_max = vars_[j]->max();
+                if (!var_j->remove_above(new_max)) return false;
+                auto new_cur_max = var_j->max();
                 if (c >= 0) {
                     total_max += c * (new_cur_max - cur_max);
                 } else {
@@ -218,11 +206,11 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
                                                   size_t last_var_internal_idx) {
     int64_t last_coeff = coeffs_[last_var_internal_idx];
     int64_t remaining = target_sum_ - current_fixed_sum_;
-    auto& last_var = vars_[last_var_internal_idx];
+    size_t last_var_id = var_ids_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
-        int64_t actual = model.value(var_ids_[last_var_internal_idx]);
+    if (model.is_instantiated(last_var_id)) {
+        int64_t actual = model.value(last_var_id);
         return (last_coeff * actual == remaining);
     }
 
@@ -230,8 +218,8 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
     if (remaining % last_coeff == 0) {
         int64_t required_value = remaining / last_coeff;
 
-        if (last_var->domain().contains(required_value)) {
-            model.enqueue_instantiate(var_ids_[last_var_internal_idx], required_value);
+        if (model.contains(last_var_id, required_value)) {
+            model.enqueue_instantiate(last_var_id, required_value);
         } else {
             // 確定する値がドメインに含まれない
             return false;
@@ -244,22 +232,11 @@ bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/
     return true;
 }
 
-void IntLinEqConstraint::check_initial_consistency() {
-    // 確定済み + 残りの最小/最大ポテンシャルをチェック
-    // current_fixed_sum_ + min_rem_potential_ > target_sum_ または
-    // current_fixed_sum_ + max_rem_potential_ < target_sum_ なら矛盾
-    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
-    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
-    if (total_min > target_sum_ || total_max < target_sum_) {
-        set_initially_inconsistent(true);
-    }
-}
-
 // constraint の親クラスからは呼ばない場合も、verify で使うので実装
-bool IntLinEqConstraint::on_final_instantiate(const Model& /*model*/) {
+bool IntLinEqConstraint::on_final_instantiate(const Model& model) {
     int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        sum += coeffs_[i] * model.value(var_ids_[i]);
     }
     return sum == target_sum_;
 }
@@ -334,7 +311,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
 
-    if (vars_.size() == 2) {
+    if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!model.is_instantiated(var_ids_[j])) {
             size_t var_id = var_ids_[j];
@@ -368,7 +345,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
         return true;
     }
 
-    for (size_t j = 0; j < vars_.size(); ++j) {
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
         if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
 
         size_t var_id = var_ids_[j];
@@ -408,7 +385,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     int64_t total_max = current_fixed_sum_ + max_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
 
-    if (vars_.size() == 2) {
+    if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!model.is_instantiated(var_ids_[j])) {
             size_t var_id = var_ids_[j];
@@ -442,7 +419,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
         return true;
     }
 
-    for (size_t j = 0; j < vars_.size(); ++j) {
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
         if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
 
         size_t var_id = var_ids_[j];
@@ -479,7 +456,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
 
 bool IntLinEqConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合: 0
-    if (vars_.empty()) {
+    if (var_ids_.empty()) {
         return target_sum_ == 0;
     }
 
@@ -488,16 +465,17 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     min_rem_potential_ = 0;
     max_rem_potential_ = 0;
 
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
+        size_t vid = var_ids_[i];
 
-        if (vars_[i]->is_assigned()) {
+        if (model.variable(vid)->is_assigned()) {
             // 確定している変数
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+            current_fixed_sum_ += c * model.variable(vid)->assigned_value().value();
         } else {
             // 未確定の変数
-            auto min_val = model.var_min(vars_[i]->id());
-            auto max_val = model.var_max(vars_[i]->id());
+            auto min_val = model.var_min(vid);
+            auto max_val = model.var_max(vid);
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;

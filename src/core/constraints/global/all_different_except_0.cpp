@@ -11,12 +11,11 @@ namespace sabori_csp {
 
 AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
-    , vars_(std::move(vars))
     , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築（値0を除外）
     std::set<Domain::value_type> all_values;
-    for (const auto& var : vars_) {
+    for (const auto& var : vars) {
         var->domain().for_each_value([&](auto v) {
             if (v != 0) {
                 all_values.insert(v);
@@ -31,7 +30,7 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
     }
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
-    for (const auto& var : vars_) {
+    for (const auto& var : vars) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             if (val != 0) {
@@ -56,32 +55,10 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
     }
 
     // 初期整合性チェック
-    check_initial_consistency();
 }
 
 std::string AllDifferentExcept0Constraint::name() const {
     return "all_different_except_0";
-}
-
-std::vector<VariablePtr> AllDifferentExcept0Constraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> AllDifferentExcept0Constraint::is_satisfied() const {
-    std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-        auto val = var->assigned_value().value();
-        if (val != 0) {
-            if (used_values.count(val) > 0) {
-                return false;
-            }
-            used_values.insert(val);
-        }
-    }
-    return true;
 }
 
 bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
@@ -93,7 +70,7 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
     unfixed_count_ = 0;
     pool_trail_.clear();
 
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         if (model.is_instantiated(var_ids_[i])) {
             auto val = model.value(var_ids_[i]);
             if (val != 0) {
@@ -126,15 +103,19 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
 
 bool AllDifferentExcept0Constraint::presolve(Model& model) {
     // 非0の確定値のみを他の変数から削除
-    for (const auto& var : vars_) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto* var = model.variable(var_ids_[i]);
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             if (val != 0) {
-                for (const auto& other : vars_) {
-                    if (other != var && !other->is_assigned()) {
-                        other->remove(val);
-                        if (other->domain().empty()) {
-                            return false;
+                for (size_t j = 0; j < var_ids_.size(); ++j) {
+                    if (j != i) {
+                        auto* other = model.variable(var_ids_[j]);
+                        if (!other->is_assigned()) {
+                            other->remove(val);
+                            if (other->domain().empty()) {
+                                return false;
+                            }
                         }
                     }
                 }
@@ -248,11 +229,11 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
 
 bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                             size_t last_var_internal_idx) {
-    auto& last_var = vars_[last_var_internal_idx];
+    auto last_var_id = var_ids_[last_var_internal_idx];
 
     // 既に確定している場合は整合性チェックのみ
-    if (model.is_instantiated(var_ids_[last_var_internal_idx])) {
-        auto val = model.value(var_ids_[last_var_internal_idx]);
+    if (model.is_instantiated(last_var_id)) {
+        auto val = model.value(last_var_id);
         if (val == 0) return true;  // 0は常にOK
         // その値がプールに残っているか
         auto it = pool_sparse_.find(val);
@@ -261,16 +242,16 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
 
     if (pool_n_ == 0) {
         // 全ての非0値が使用済み。変数は0しか取れない
-        if (model.contains(var_ids_[last_var_internal_idx], 0)) {
-            model.enqueue_instantiate(last_var->id(), 0);
+        if (model.contains(last_var_id, 0)) {
+            model.enqueue_instantiate(last_var_id, 0);
         } else {
             return false;
         }
-    } else if (pool_n_ == 1 && !model.contains(var_ids_[last_var_internal_idx], 0)) {
+    } else if (pool_n_ == 1 && !model.contains(last_var_id, 0)) {
         // 0がドメインにない場合のみ、残りの非0値で確定
         Domain::value_type remaining_value = pool_values_[0];
-        if (model.contains(var_ids_[last_var_internal_idx], remaining_value)) {
-            model.enqueue_instantiate(last_var->id(), remaining_value);
+        if (model.contains(last_var_id, remaining_value)) {
+            model.enqueue_instantiate(last_var_id, remaining_value);
         } else {
             return false;
         }
@@ -278,25 +259,6 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
     // pool_n_ >= 1 かつ 0がドメインにある場合: 0も取れるので確定しない
 
     return true;
-}
-
-void AllDifferentExcept0Constraint::check_initial_consistency() {
-    // 非0の確定値が重複していれば矛盾
-    std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        if (var->is_assigned()) {
-            auto val = var->assigned_value().value();
-            if (val != 0) {
-                if (used_values.count(val) > 0) {
-                    set_initially_inconsistent(true);
-                    return;
-                }
-                used_values.insert(val);
-            }
-        }
-    }
-
-    // 鳩の巣原理は適用不可（unfixed変数は0を取れる）
 }
 
 bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {

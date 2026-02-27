@@ -36,10 +36,10 @@ TEST_CASE("IntEqConstraint variables", "[constraint][int_eq]") {
     auto y = make_var("y", 1, 3);
     IntEqConstraint c(x, y);
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 2);
-    REQUIRE(vars[0] == x);
-    REQUIRE(vars[1] == y);
+    REQUIRE(vars[0] == x->id());
+    REQUIRE(vars[1] == y->id());
 }
 
 TEST_CASE("IntEqConstraint is_satisfied", "[constraint][int_eq]") {
@@ -48,8 +48,8 @@ TEST_CASE("IntEqConstraint is_satisfied", "[constraint][int_eq]") {
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("both assigned and not equal") {
@@ -57,8 +57,8 @@ TEST_CASE("IntEqConstraint is_satisfied", "[constraint][int_eq]") {
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -66,7 +66,7 @@ TEST_CASE("IntEqConstraint is_satisfied", "[constraint][int_eq]") {
         auto y = make_var("y", 5);
         IntEqConstraint c(x, y);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -122,8 +122,8 @@ TEST_CASE("IntNeConstraint is_satisfied", "[constraint][int_ne]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("both assigned and equal") {
@@ -131,8 +131,8 @@ TEST_CASE("IntNeConstraint is_satisfied", "[constraint][int_ne]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -140,7 +140,7 @@ TEST_CASE("IntNeConstraint is_satisfied", "[constraint][int_ne]") {
         auto y = make_var("y", 5);
         IntNeConstraint c(x, y);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -210,8 +210,8 @@ TEST_CASE("IntLtConstraint is_satisfied", "[constraint][int_lt]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x == y") {
@@ -219,8 +219,8 @@ TEST_CASE("IntLtConstraint is_satisfied", "[constraint][int_lt]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("x > y") {
@@ -228,8 +228,8 @@ TEST_CASE("IntLtConstraint is_satisfied", "[constraint][int_lt]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -237,7 +237,7 @@ TEST_CASE("IntLtConstraint is_satisfied", "[constraint][int_lt]") {
         auto y = make_var("y", 5);
         IntLtConstraint c(x, y);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -294,8 +294,8 @@ TEST_CASE("IntLeConstraint is_satisfied", "[constraint][int_le]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x == y") {
@@ -303,8 +303,8 @@ TEST_CASE("IntLeConstraint is_satisfied", "[constraint][int_le]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x > y") {
@@ -312,8 +312,8 @@ TEST_CASE("IntLeConstraint is_satisfied", "[constraint][int_le]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -321,7 +321,7 @@ TEST_CASE("IntLeConstraint is_satisfied", "[constraint][int_le]") {
         auto y = make_var("y", 5);
         IntLeConstraint c(x, y);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -391,11 +391,11 @@ TEST_CASE("IntEqReifConstraint variables", "[constraint][int_eq_reif]") {
     auto b = make_var("b", 0, 1);
     IntEqReifConstraint c(x, y, b);
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 3);
-    REQUIRE(vars[0] == x);
-    REQUIRE(vars[1] == y);
-    REQUIRE(vars[2] == b);
+    REQUIRE(vars[0] == x->id());
+    REQUIRE(vars[1] == y->id());
+    REQUIRE(vars[2] == b->id());
 }
 
 TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
@@ -405,8 +405,8 @@ TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x != y and b == 0") {
@@ -415,8 +415,8 @@ TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x == y and b == 0 - violated") {
@@ -425,8 +425,8 @@ TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("x != y and b == 1 - violated") {
@@ -435,8 +435,8 @@ TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -445,7 +445,7 @@ TEST_CASE("IntEqReifConstraint is_satisfied", "[constraint][int_eq_reif]") {
         auto b = make_var("b", 0, 1);
         IntEqReifConstraint c(x, y, b);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -636,11 +636,11 @@ TEST_CASE("IntLeReifConstraint variables", "[constraint][int_le_reif]") {
     auto b = make_var("b", 0, 1);
     IntLeReifConstraint c(x, y, b);
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 3);
-    REQUIRE(vars[0] == x);
-    REQUIRE(vars[1] == y);
-    REQUIRE(vars[2] == b);
+    REQUIRE(vars[0] == x->id());
+    REQUIRE(vars[1] == y->id());
+    REQUIRE(vars[2] == b->id());
 }
 
 TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
@@ -650,8 +650,8 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x == y and b == 1") {
@@ -660,8 +660,8 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x > y and b == 0") {
@@ -670,8 +670,8 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == true);
     }
 
     SECTION("x <= y but b == 0") {
@@ -680,8 +680,8 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("x > y but b == 1") {
@@ -690,8 +690,8 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(dummy_model).has_value());
+        REQUIRE(c.is_satisfied(dummy_model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -700,7 +700,7 @@ TEST_CASE("IntLeReifConstraint is_satisfied", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0, 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(dummy_model).has_value());
     }
 }
 
@@ -754,7 +754,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 1);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_initially_inconsistent() == true);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 
     SECTION("b=0 with x.max <= y.min is infeasible") {
@@ -763,7 +763,7 @@ TEST_CASE("IntLeReifConstraint propagate", "[constraint][int_le_reif]") {
         auto b = make_var("b", 0);
         IntLeReifConstraint c(x, y, b);
 
-        REQUIRE(c.is_initially_inconsistent() == true);
+        REQUIRE(c.presolve(dummy_model) == false);
     }
 }
 

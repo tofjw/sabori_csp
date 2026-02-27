@@ -16,143 +16,47 @@ IntElementMonotonicConstraint::IntElementMonotonicConstraint(
     Monotonicity mono,
     bool zero_based)
     : Constraint(extract_var_ids({index_var, result_var}))
-    , index_var_(std::move(index_var))
-    , result_var_(std::move(result_var))
     , array_(std::move(array))
     , n_(array_.size())
     , zero_based_(zero_based)
     , mono_(mono) {
 
-    index_id_ = index_var_->id();
-    result_id_ = result_var_->id();
+    index_id_ = index_var->id();
+    result_id_ = result_var->id();
 
-    check_initial_consistency();
 }
 
 std::string IntElementMonotonicConstraint::name() const {
     return "int_element_monotonic";
 }
 
-std::vector<VariablePtr> IntElementMonotonicConstraint::variables() const {
-    return {index_var_, result_var_};
-}
-
 Domain::value_type IntElementMonotonicConstraint::index_to_0based(Domain::value_type idx) const {
     return zero_based_ ? idx : idx - 1;
-}
-
-std::optional<bool> IntElementMonotonicConstraint::is_satisfied() const {
-    if (!index_var_->is_assigned() || !result_var_->is_assigned()) {
-        return std::nullopt;
-    }
-
-    auto idx = index_var_->assigned_value().value();
-    auto idx_0based = index_to_0based(idx);
-
-    if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-        return false;
-    }
-
-    return array_[static_cast<size_t>(idx_0based)] == result_var_->assigned_value().value();
-}
-
-void IntElementMonotonicConstraint::check_initial_consistency() {
-    if (index_var_->is_assigned() && result_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
-        auto idx_0based = index_to_0based(idx);
-
-        if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        if (array_[static_cast<size_t>(idx_0based)] != result_var_->assigned_value().value()) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    if (index_var_->is_assigned() && !result_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
-        auto idx_0based = index_to_0based(idx);
-
-        if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        auto expected_result = array_[static_cast<size_t>(idx_0based)];
-        if (!result_var_->domain().contains(expected_result)) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    if (!index_var_->is_assigned() && result_var_->is_assigned()) {
-        auto result_value = result_var_->assigned_value().value();
-        // 単調配列なので二分探索で存在チェック
-        bool found = false;
-        if (mono_ == Monotonicity::NON_DECREASING) {
-            auto it = std::lower_bound(array_.begin(), array_.end(), result_value);
-            found = (it != array_.end() && *it == result_value);
-        } else {
-            auto it = std::lower_bound(array_.begin(), array_.end(), result_value, std::greater<>());
-            found = (it != array_.end() && *it == result_value);
-        }
-        if (!found) {
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        // 有効なインデックスが index_var のドメインに含まれているか
-        size_t first, last;
-        if (mono_ == Monotonicity::NON_DECREASING) {
-            auto lo = std::lower_bound(array_.begin(), array_.end(), result_value);
-            auto hi = std::upper_bound(array_.begin(), array_.end(), result_value);
-            first = static_cast<size_t>(lo - array_.begin());
-            last = static_cast<size_t>(hi - array_.begin()) - 1;
-        } else {
-            auto lo = std::lower_bound(array_.begin(), array_.end(), result_value, std::greater<>());
-            auto hi = std::upper_bound(array_.begin(), array_.end(), result_value, std::greater<>());
-            first = static_cast<size_t>(lo - array_.begin());
-            last = static_cast<size_t>(hi - array_.begin()) - 1;
-        }
-
-        Domain::value_type offset = zero_based_ ? 0 : 1;
-        bool found_valid = false;
-        for (size_t i = first; i <= last; ++i) {
-            auto idx_val = static_cast<Domain::value_type>(i) + offset;
-            if (index_var_->domain().contains(idx_val)) {
-                found_valid = true;
-                break;
-            }
-        }
-        if (!found_valid) {
-            set_initially_inconsistent(true);
-        }
-    }
 }
 
 bool IntElementMonotonicConstraint::presolve(Model& model) {
     if (n_ == 0) return false;
 
+    auto* index_var = model.variable(index_id_);
+    auto* result_var = model.variable(result_id_);
+
     // index が確定している場合
-    if (index_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
+    if (index_var->is_assigned()) {
+        auto idx = index_var->assigned_value().value();
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
             return false;
         }
         auto expected = array_[static_cast<size_t>(idx_0based)];
-        if (result_var_->is_assigned()) {
-            return result_var_->assigned_value().value() == expected;
+        if (result_var->is_assigned()) {
+            return result_var->assigned_value().value() == expected;
         }
-        return result_var_->assign(expected);
+        return result_var->assign(expected);
     }
 
     // result が確定している場合
-    if (result_var_->is_assigned()) {
-        auto result_value = result_var_->assigned_value().value();
+    if (result_var->is_assigned()) {
+        auto result_value = result_var->assigned_value().value();
 
         // 二分探索で対応インデックス範囲を見つける
         size_t first, last;
@@ -181,7 +85,7 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto new_idx_min = static_cast<Domain::value_type>(first) + offset;
         auto new_idx_max = static_cast<Domain::value_type>(last) + offset;
 
-        auto& idx_domain = index_var_->domain();
+        auto& idx_domain = index_var->domain();
         if (new_idx_min > idx_domain.min().value()) {
             if (!idx_domain.remove_below(new_idx_min)) return false;
         }
@@ -192,8 +96,8 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
     }
 
     // 両方未確定: bounds propagation
-    auto idx_min = index_var_->domain().min().value();
-    auto idx_max = index_var_->domain().max().value();
+    auto idx_min = index_var->domain().min().value();
+    auto idx_max = index_var->domain().max().value();
     auto lo_0 = index_to_0based(idx_min);
     auto hi_0 = index_to_0based(idx_max);
     if (lo_0 < 0) lo_0 = 0;
@@ -210,7 +114,7 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         r_max = array_[static_cast<size_t>(lo_0)];
     }
 
-    auto& result_domain = result_var_->domain();
+    auto& result_domain = result_var->domain();
     if (r_min > result_domain.min().value()) {
         if (!result_domain.remove_below(r_min)) return false;
     }
@@ -237,10 +141,10 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var_->domain().remove_below(new_idx_min)) return false;
+            if (!index_var->domain().remove_below(new_idx_min)) return false;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var_->domain().remove_above(new_idx_max)) return false;
+            if (!index_var->domain().remove_above(new_idx_max)) return false;
         }
     } else {
         // NON_INCREASING: a[0] >= a[1] >= ... >= a[n-1]
@@ -258,10 +162,10 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var_->domain().remove_below(new_idx_min)) return false;
+            if (!index_var->domain().remove_below(new_idx_min)) return false;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var_->domain().remove_above(new_idx_max)) return false;
+            if (!index_var->domain().remove_above(new_idx_max)) return false;
         }
     }
 
@@ -273,18 +177,14 @@ bool IntElementMonotonicConstraint::on_instantiate(
     size_t /*var_idx*/, size_t /*internal_var_idx*/, Domain::value_type value,
     Domain::value_type /*prev_min*/, Domain::value_type /*prev_max*/) {
 
-    Variable* assigned_var = nullptr;
+    bool is_index;
     if (model.is_instantiated(index_id_) && model.value(index_id_) == value) {
-        assigned_var = index_var_;
+        is_index = true;
     } else if (model.is_instantiated(result_id_) && model.value(result_id_) == value) {
-        assigned_var = result_var_;
-    }
-
-    if (assigned_var == nullptr) {
+        is_index = false;
+    } else {
         return true;
     }
-
-    bool is_index = (assigned_var == index_var_);
 
     if (is_index) {
         // index が確定 -> result = array[index]

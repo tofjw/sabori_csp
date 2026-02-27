@@ -15,52 +15,21 @@ DiffnConstraint::DiffnConstraint(
     , n_(x.size())
     , strict_(strict)
 {
-    // vars_ = [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
-    vars_.reserve(4 * n_);
-    for (auto& v : x)  vars_.push_back(std::move(v));
-    for (auto& v : y)  vars_.push_back(std::move(v));
-    for (auto& v : dx) vars_.push_back(std::move(v));
-    for (auto& v : dy) vars_.push_back(std::move(v));
+    // var_ids_ = [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
+    std::vector<VariablePtr> all_vars;
+    all_vars.reserve(4 * n_);
+    for (auto& v : x)  all_vars.push_back(std::move(v));
+    for (auto& v : y)  all_vars.push_back(std::move(v));
+    for (auto& v : dx) all_vars.push_back(std::move(v));
+    for (auto& v : dy) all_vars.push_back(std::move(v));
 
-    var_ids_ = extract_var_ids(vars_);
-    check_initial_consistency();
+    var_ids_ = extract_var_ids(all_vars);
 }
 
 std::string DiffnConstraint::name() const {
     return strict_ ? "fzn_diffn" : "fzn_diffn_nonstrict";
 }
 
-std::vector<VariablePtr> DiffnConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> DiffnConstraint::is_satisfied() const {
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) return std::nullopt;
-    }
-    for (size_t i = 0; i < n_; ++i) {
-        auto xi  = vars_[i]->assigned_value().value();
-        auto yi  = vars_[n_ + i]->assigned_value().value();
-        auto dxi = vars_[2 * n_ + i]->assigned_value().value();
-        auto dyi = vars_[3 * n_ + i]->assigned_value().value();
-        for (size_t j = i + 1; j < n_; ++j) {
-            auto xj  = vars_[j]->assigned_value().value();
-            auto yj  = vars_[n_ + j]->assigned_value().value();
-            auto dxj = vars_[2 * n_ + j]->assigned_value().value();
-            auto dyj = vars_[3 * n_ + j]->assigned_value().value();
-
-            // nonstrict: ゼロサイズ矩形はスキップ
-            if (!strict_ && ((dxi == 0 || dyi == 0) || (dxj == 0 || dyj == 0)))
-                continue;
-
-            // 重複チェック: 4方向いずれの分離も成立しなければ重複
-            bool separated = (xi + dxi <= xj) || (xj + dxj <= xi) ||
-                             (yi + dyi <= yj) || (yj + dyj <= yi);
-            if (!separated) return false;
-        }
-    }
-    return true;
-}
 
 // ---------- Pairwise propagation (callback版: model 経由) ----------
 
@@ -135,26 +104,36 @@ bool DiffnConstraint::propagate_pairwise(Model& model) {
     return true;
 }
 
-// ---------- Pairwise propagation (presolve版: vars_ 直接) ----------
+// ---------- Pairwise propagation (presolve版: model.variable() 経由) ----------
 
-bool DiffnConstraint::propagate_pairwise_direct() {
+bool DiffnConstraint::propagate_pairwise_direct(Model& model) {
     for (size_t i = 0; i < n_; ++i) {
-        auto xi_min  = vars_[i]->min();
-        auto xi_max  = vars_[i]->max();
-        auto yi_min  = vars_[n_ + i]->min();
-        auto yi_max  = vars_[n_ + i]->max();
-        auto dxi_min = vars_[2 * n_ + i]->min();
-        auto dyi_min = vars_[3 * n_ + i]->min();
+        auto xi_var  = model.variable(var_ids_[i]);
+        auto yi_var  = model.variable(var_ids_[n_ + i]);
+        auto dxi_var = model.variable(var_ids_[2 * n_ + i]);
+        auto dyi_var = model.variable(var_ids_[3 * n_ + i]);
+
+        auto xi_min  = xi_var->min();
+        auto xi_max  = xi_var->max();
+        auto yi_min  = yi_var->min();
+        auto yi_max  = yi_var->max();
+        auto dxi_min = dxi_var->min();
+        auto dyi_min = dyi_var->min();
 
         if (!strict_ && (dxi_min == 0 || dyi_min == 0)) continue;
 
         for (size_t j = i + 1; j < n_; ++j) {
-            auto xj_min  = vars_[j]->min();
-            auto xj_max  = vars_[j]->max();
-            auto yj_min  = vars_[n_ + j]->min();
-            auto yj_max  = vars_[n_ + j]->max();
-            auto dxj_min = vars_[2 * n_ + j]->min();
-            auto dyj_min = vars_[3 * n_ + j]->min();
+            auto xj_var  = model.variable(var_ids_[j]);
+            auto yj_var  = model.variable(var_ids_[n_ + j]);
+            auto dxj_var = model.variable(var_ids_[2 * n_ + j]);
+            auto dyj_var = model.variable(var_ids_[3 * n_ + j]);
+
+            auto xj_min  = xj_var->min();
+            auto xj_max  = xj_var->max();
+            auto yj_min  = yj_var->min();
+            auto yj_max  = yj_var->max();
+            auto dxj_min = dxj_var->min();
+            auto dyj_min = dyj_var->min();
 
             if (!strict_ && (dxj_min == 0 || dyj_min == 0)) continue;
 
@@ -169,17 +148,17 @@ bool DiffnConstraint::propagate_pairwise_direct() {
 
             if (directions == 1) {
                 if (can_left) {
-                    if (!vars_[j]->remove_below(xi_min + dxi_min)) return false;
-                    if (!vars_[i]->remove_above(xj_max - dxi_min)) return false;
+                    if (!xj_var->remove_below(xi_min + dxi_min)) return false;
+                    if (!xi_var->remove_above(xj_max - dxi_min)) return false;
                 } else if (can_right) {
-                    if (!vars_[i]->remove_below(xj_min + dxj_min)) return false;
-                    if (!vars_[j]->remove_above(xi_max - dxj_min)) return false;
+                    if (!xi_var->remove_below(xj_min + dxj_min)) return false;
+                    if (!xj_var->remove_above(xi_max - dxj_min)) return false;
                 } else if (can_below) {
-                    if (!vars_[n_ + j]->remove_below(yi_min + dyi_min)) return false;
-                    if (!vars_[n_ + i]->remove_above(yj_max - dyi_min)) return false;
+                    if (!yj_var->remove_below(yi_min + dyi_min)) return false;
+                    if (!yi_var->remove_above(yj_max - dyi_min)) return false;
                 } else {  // can_above
-                    if (!vars_[n_ + i]->remove_below(yj_min + dyj_min)) return false;
-                    if (!vars_[n_ + j]->remove_above(yi_max - dyj_min)) return false;
+                    if (!yi_var->remove_below(yj_min + dyj_min)) return false;
+                    if (!yj_var->remove_above(yi_max - dyj_min)) return false;
                 }
             }
         }
@@ -190,7 +169,7 @@ bool DiffnConstraint::propagate_pairwise_direct() {
 // ---------- Presolve ----------
 
 bool DiffnConstraint::presolve(Model& model) {
-    return propagate_pairwise_direct();
+    return propagate_pairwise_direct(model);
 }
 
 // ---------- Prepare propagation ----------
@@ -222,9 +201,28 @@ bool DiffnConstraint::on_instantiate(
 }
 
 bool DiffnConstraint::on_final_instantiate(const Model& model) {
-    (void)model;
-    auto result = is_satisfied();
-    return result.has_value() && result.value();
+    for (size_t i = 0; i < n_; ++i) {
+        auto xi  = model.value(var_ids_[i]);
+        auto yi  = model.value(var_ids_[n_ + i]);
+        auto dxi = model.value(var_ids_[2 * n_ + i]);
+        auto dyi = model.value(var_ids_[3 * n_ + i]);
+        for (size_t j = i + 1; j < n_; ++j) {
+            auto xj  = model.value(var_ids_[j]);
+            auto yj  = model.value(var_ids_[n_ + j]);
+            auto dxj = model.value(var_ids_[2 * n_ + j]);
+            auto dyj = model.value(var_ids_[3 * n_ + j]);
+
+            // nonstrict: skip zero-size rectangles
+            if (!strict_ && ((dxi == 0 || dyi == 0) || (dxj == 0 || dyj == 0)))
+                continue;
+
+            // overlap check: not separated in any of 4 directions means overlap
+            bool separated = (xi + dxi <= xj) || (xj + dxj <= xi) ||
+                             (yi + dyi <= yj) || (yj + dyj <= yi);
+            if (!separated) return false;
+        }
+    }
+    return true;
 }
 
 bool DiffnConstraint::on_set_min(
@@ -249,51 +247,6 @@ bool DiffnConstraint::on_set_max(
 
 void DiffnConstraint::rewind_to(int /*save_point*/) {
     // 状態なし: 何もしない
-}
-
-// ---------- Initial consistency ----------
-
-void DiffnConstraint::check_initial_consistency() {
-    // エネルギーチェック: 最小面積合計 vs 外接矩形面積
-    int64_t total_area = 0;
-    int64_t global_x_min = 0, global_x_max = 0;
-    int64_t global_y_min = 0, global_y_max = 0;
-    bool has_relevant = false;
-
-    for (size_t i = 0; i < n_; ++i) {
-        int64_t dxi_min = vars_[2 * n_ + i]->min();
-        int64_t dyi_min = vars_[3 * n_ + i]->min();
-        if (!strict_ && (dxi_min == 0 || dyi_min == 0)) continue;
-        if (dxi_min <= 0 || dyi_min <= 0) continue;
-
-        total_area += dxi_min * dyi_min;
-
-        int64_t xi_min = vars_[i]->min();
-        int64_t xi_max = vars_[i]->max() + vars_[2 * n_ + i]->max();
-        int64_t yi_min = vars_[n_ + i]->min();
-        int64_t yi_max = vars_[n_ + i]->max() + vars_[3 * n_ + i]->max();
-
-        if (!has_relevant) {
-            global_x_min = xi_min;
-            global_x_max = xi_max;
-            global_y_min = yi_min;
-            global_y_max = yi_max;
-            has_relevant = true;
-        } else {
-            if (xi_min < global_x_min) global_x_min = xi_min;
-            if (xi_max > global_x_max) global_x_max = xi_max;
-            if (yi_min < global_y_min) global_y_min = yi_min;
-            if (yi_max > global_y_max) global_y_max = yi_max;
-        }
-    }
-
-    if (has_relevant) {
-        int64_t bounding_area = (global_x_max - global_x_min) *
-                                (global_y_max - global_y_min);
-        if (total_area > bounding_area) {
-            set_initially_inconsistent(true);
-        }
-    }
 }
 
 }  // namespace sabori_csp

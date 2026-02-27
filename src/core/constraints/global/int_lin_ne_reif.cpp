@@ -16,11 +16,12 @@ IntLinNeReifConstraint::IntLinNeReifConstraint(std::vector<int64_t> coeffs,
                                                  VariablePtr b)
     : Constraint()
     , target_(target)
-    , b_(std::move(b))
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
     , max_rem_potential_(0)
     , unfixed_count_(0) {
+    b_id_ = b->id();
+
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -28,33 +29,26 @@ IntLinNeReifConstraint::IntLinNeReifConstraint(std::vector<int64_t> coeffs,
     }
 
     // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    std::vector<VariablePtr> unique_vars;
     for (const auto& [var_ptr, coeff] : aggregated) {
         if (coeff == 0) continue;  // 係数が0の変数は除外
-        // shared_ptr を探す
-        for (const auto& var : vars) {
-            if (var == var_ptr) {
-                vars_.push_back(var);
-                coeffs_.push_back(coeff);
-                break;
-            }
-        }
+        unique_vars.push_back(var_ptr);
+        coeffs_.push_back(coeff);
     }
 
     // 全ての係数が0になった場合: b ↔ (0 != target)
     if (coeffs_.empty()) {
-        // vars_ には b だけを含める
-        vars_.push_back(b_);
-        var_ids_ = extract_var_ids(vars_);
-        b_id_ = b_->id();
+        // var_ids_ には b だけを含める
+        unique_vars.push_back(b);
+        var_ids_ = extract_var_ids(unique_vars);
         return;
     }
 
     // b を末尾に追加
-    vars_.push_back(b_);
+    unique_vars.push_back(b);
 
     // 変数IDキャッシュを構築
-    var_ids_ = extract_var_ids(vars_);
-    b_id_ = b_->id();
+    var_ids_ = extract_var_ids(unique_vars);
 
     // 注意: 内部状態は presolve() で初期化
 }
@@ -63,49 +57,32 @@ std::string IntLinNeReifConstraint::name() const {
     return "int_lin_ne_reif";
 }
 
-std::vector<VariablePtr> IntLinNeReifConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> IntLinNeReifConstraint::is_satisfied() const {
-    if (!b_->is_assigned()) {
-        return std::nullopt;
-    }
-
-    int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size() - 1; ++i) {
-        if (!vars_[i]->is_assigned()) {
-            return std::nullopt;
-        }
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
-    }
-
-    bool ne = (sum != target_);
-    return ne == (b_->assigned_value().value() == 1);
-}
-
 bool IntLinNeReifConstraint::presolve(Model& model) {
     // キャッシュ値ではなく変数ドメインから毎回計算
     // （イベント処理が組み上がる前なのでキャッシュは信頼できない）
     int64_t min_sum = 0;
     int64_t max_sum = 0;
-    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+    size_t n_linear = coeffs_.size();
+    for (size_t i = 0; i < n_linear; ++i) {
+        auto* var = model.variable(var_ids_[i]);
         int64_t c = coeffs_[i];
-        if (vars_[i]->is_assigned()) {
-            int64_t v = vars_[i]->assigned_value().value();
+        if (var->is_assigned()) {
+            int64_t v = var->assigned_value().value();
             min_sum += c * v;
             max_sum += c * v;
         } else if (c >= 0) {
-            min_sum += c * vars_[i]->min();
-            max_sum += c * vars_[i]->max();
+            min_sum += c * var->min();
+            max_sum += c * var->max();
         } else {
-            min_sum += c * vars_[i]->max();
-            max_sum += c * vars_[i]->min();
+            min_sum += c * var->max();
+            max_sum += c * var->min();
         }
     }
 
+    auto* bvar = model.variable(b_id_);
+
     // b = 1 の場合、sum != target を強制
-    if (b_->is_assigned() && b_->assigned_value().value() == 1) {
+    if (bvar->is_assigned() && bvar->assigned_value().value() == 1) {
         // sum が target にしかなりえない場合は矛盾
         if (min_sum == target_ && max_sum == target_) {
             return false;
@@ -113,7 +90,7 @@ bool IntLinNeReifConstraint::presolve(Model& model) {
     }
 
     // b = 0 の場合、sum == target を強制
-    if (b_->is_assigned() && b_->assigned_value().value() == 0) {
+    if (bvar->is_assigned() && bvar->assigned_value().value() == 0) {
         // target が [min_sum, max_sum] に含まれていなければ矛盾
         if (target_ < min_sum || target_ > max_sum) {
             return false;
@@ -121,19 +98,19 @@ bool IntLinNeReifConstraint::presolve(Model& model) {
     }
 
     // bounds から b を推論
-    if (!b_->is_assigned()) {
+    if (!bvar->is_assigned()) {
         if (target_ < min_sum || target_ > max_sum) {
             // sum != target が常に真 → b = 1
-            if (!b_->domain().contains(1)) {
+            if (!bvar->domain().contains(1)) {
                 return false;
             }
-            b_->assign(1);
+            bvar->assign(1);
         } else if (min_sum == target_ && max_sum == target_) {
             // sum == target が常に真 → sum != target は常に偽 → b = 0
-            if (!b_->domain().contains(0)) {
+            if (!bvar->domain().contains(0)) {
                 return false;
             }
-            b_->assign(0);
+            bvar->assign(0);
         }
     }
 
@@ -186,8 +163,8 @@ bool IntLinNeReifConstraint::on_instantiate(Model& model, int save_point,
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
     // b が確定している場合の矛盾チェック
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1) {
+    if (model.is_instantiated(b_id_)) {
+        if (model.value(b_id_) == 1) {
             // sum != target を強制
             if (min_sum == target_ && max_sum == target_) {
                 return false;
@@ -202,24 +179,25 @@ bool IntLinNeReifConstraint::on_instantiate(Model& model, int save_point,
         // b を推論
         if (target_ < min_sum || target_ > max_sum) {
             // sum != target が常に真 → b = 1
-            model.enqueue_instantiate(b_->id(), 1);
+            model.enqueue_instantiate(b_id_, 1);
         } else if (min_sum == target_ && max_sum == target_) {
             // sum == target が常に真 → b = 0
-            model.enqueue_instantiate(b_->id(), 0);
+            model.enqueue_instantiate(b_id_, 0);
         }
     }
 
     return true;
 }
 
-bool IntLinNeReifConstraint::on_final_instantiate(const Model& /*model*/) {
+bool IntLinNeReifConstraint::on_final_instantiate(const Model& model) {
     int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size() - 1; ++i) {
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
+    size_t n_linear = coeffs_.size();
+    for (size_t i = 0; i < n_linear; ++i) {
+        sum += coeffs_[i] * model.value(var_ids_[i]);
     }
 
     bool ne = (sum != target_);
-    return ne == (b_->assigned_value().value() == 1);
+    return ne == (model.value(b_id_) == 1);
 }
 
 void IntLinNeReifConstraint::rewind_to(int save_point) {
@@ -233,36 +211,18 @@ void IntLinNeReifConstraint::rewind_to(int save_point) {
     }
 }
 
-void IntLinNeReifConstraint::check_initial_consistency() {
-    int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
-    int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
-
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1) {
-            // sum != target が必要
-            if (min_sum == target_ && max_sum == target_) {
-                set_initially_inconsistent(true);
-            }
-        } else {
-            // sum == target が必要
-            if (target_ < min_sum || target_ > max_sum) {
-                set_initially_inconsistent(true);
-            }
-        }
-    }
-}
-
 bool IntLinNeReifConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合の特別処理
     if (coeffs_.empty()) {
+        auto* bvar = model.variable(b_id_);
         bool trivially_true = (target_ != 0);
-        if (b_->is_assigned()) {
-            bool b_val = (b_->assigned_value().value() == 1);
+        if (bvar->is_assigned()) {
+            bool b_val = (bvar->assigned_value().value() == 1);
             if (b_val != trivially_true) {
                 return false;  // 矛盾
             }
         } else {
-            b_->assign(trivially_true ? 1 : 0);
+            bvar->assign(trivially_true ? 1 : 0);
         }
         return true;
     }
@@ -273,15 +233,17 @@ bool IntLinNeReifConstraint::prepare_propagation(Model& model) {
     max_rem_potential_ = 0;
     unfixed_count_ = 0;
 
-    for (size_t i = 0; i < vars_.size() - 1; ++i) {
+    size_t n_linear = coeffs_.size();
+    for (size_t i = 0; i < n_linear; ++i) {
         int64_t c = coeffs_[i];
+        auto* var = model.variable(var_ids_[i]);
 
-        if (vars_[i]->is_assigned()) {
-            current_fixed_sum_ += c * vars_[i]->assigned_value().value();
+        if (var->is_assigned()) {
+            current_fixed_sum_ += c * var->assigned_value().value();
         } else {
             ++unfixed_count_;
-            auto min_val = model.var_min(vars_[i]->id());
-            auto max_val = model.var_max(vars_[i]->id());
+            auto min_val = model.var_min(var_ids_[i]);
+            auto max_val = model.var_max(var_ids_[i]);
 
             if (c >= 0) {
                 min_rem_potential_ += c * min_val;
@@ -303,8 +265,9 @@ bool IntLinNeReifConstraint::prepare_propagation(Model& model) {
     int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
-    if (b_->is_assigned()) {
-        if (b_->assigned_value().value() == 1) {
+    auto* bvar = model.variable(b_id_);
+    if (bvar->is_assigned()) {
+        if (bvar->assigned_value().value() == 1) {
             // sum != target が必要
             if (min_sum == target_ && max_sum == target_) {
                 return false;  // 矛盾
@@ -331,7 +294,7 @@ bool IntLinNeReifConstraint::on_set_min(Model& model, int save_point,
                                          size_t var_idx, size_t internal_var_idx,
                                          Domain::value_type new_min,
                                          Domain::value_type old_min) {
-    if (var_idx == b_id_) return true;  // b_ の変更は無視
+    if (var_idx == b_id_) return true;  // b の変更は無視
     size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 
@@ -363,7 +326,7 @@ bool IntLinNeReifConstraint::on_set_max(Model& model, int save_point,
                                          size_t var_idx, size_t internal_var_idx,
                                          Domain::value_type new_max,
                                          Domain::value_type old_max) {
-    if (var_idx == b_id_) return true;  // b_ の変更は無視
+    if (var_idx == b_id_) return true;  // b の変更は無視
     size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
 

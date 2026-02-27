@@ -12,8 +12,7 @@ namespace sabori_csp {
 
 CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
-    , vars_(std::move(vars))
-    , n_(vars_.size())
+    , n_(var_ids_.size())
     , base_offset_(0)
     , head_(n_)
     , tail_(n_)
@@ -23,9 +22,9 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     , pool_n_(n_) {
     // ベースオフセットを検出（全変数の値域のグローバル最小値から）
     // FlatZinc の circuit は通常 1-based（値の範囲は 1..n）
-    if (!vars_.empty()) {
+    if (!vars.empty()) {
         Domain::value_type global_min = std::numeric_limits<Domain::value_type>::max();
-        for (const auto& v : vars_) {
+        for (const auto& v : vars) {
             if (!v->domain().empty()) {
                 global_min = std::min(global_min, v->min());
             }
@@ -50,8 +49,8 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
 
     // 既に確定している変数のパス結合と入次数を設定 + 未確定カウント
     for (size_t i = 0; i < n_; ++i) {
-        if (vars_[i]->is_assigned()) {
-            auto val = vars_[i]->assigned_value().value();
+        if (vars[i]->is_assigned()) {
+            auto val = vars[i]->assigned_value().value();
             // 値を内部インデックス（0-based）に変換
             size_t j = static_cast<size_t>(val - base_offset_);
 
@@ -93,48 +92,10 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
         }
     }
 
-    // 初期整合性チェック
-    check_initial_consistency();
 }
 
 std::string CircuitConstraint::name() const {
     return "circuit";
-}
-
-std::vector<VariablePtr> CircuitConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> CircuitConstraint::is_satisfied() const {
-    // 全変数が確定していなければ nullopt
-    std::vector<Domain::value_type> values;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-        values.push_back(var->assigned_value().value());
-    }
-
-    // AllDifferent チェック
-    std::set<Domain::value_type> unique_values(values.begin(), values.end());
-    if (unique_values.size() != n_) {
-        return false;
-    }
-
-    // 閉路チェック: ノード 0 から始めて全ノードを訪問できるか
-    std::set<size_t> visited;
-    size_t current = 0;
-    for (size_t step = 0; step < n_; ++step) {
-        if (visited.count(current) > 0) {
-            return false;  // 途中で既訪問ノードに戻った（サブサーキット）
-        }
-        visited.insert(current);
-        // 値を内部インデックスに変換
-        current = static_cast<size_t>(values[current] - base_offset_);
-    }
-
-    // 全ノード訪問後、ノード 0 に戻るか
-    return current == 0 && visited.size() == n_;
 }
 
 bool CircuitConstraint::prepare_propagation(Model& model) {
@@ -375,18 +336,6 @@ void CircuitConstraint::rewind_to(int save_point) {
         }
 
         trail_.pop_back();
-    }
-}
-
-void CircuitConstraint::check_initial_consistency() {
-    // 既に初期矛盾が設定されている場合はスキップ
-    if (is_initially_inconsistent()) {
-        return;
-    }
-
-    // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
-    if (unfixed_count_ > pool_n_) {
-        set_initially_inconsistent(true);
     }
 }
 

@@ -15,11 +15,12 @@ IntElementConstraint::IntElementConstraint(VariablePtr index_var,
                                            VariablePtr result_var,
                                            bool zero_based)
     : Constraint(extract_var_ids({index_var, result_var}))
-    , index_var_(std::move(index_var))
-    , result_var_(std::move(result_var))
     , array_(std::move(array))
     , n_(array_.size())
     , zero_based_(zero_based) {
+
+    index_id_ = index_var->id();
+    result_id_ = result_var->id();
 
     // CSR 構築: 値 -> インデックスリスト (逆引き)
     Domain::value_type index_offset = zero_based_ ? 0 : 1;
@@ -74,72 +75,46 @@ IntElementConstraint::IntElementConstraint(VariablePtr index_var,
         }
     }
 
-    // var_ptr_to_idx 構築
-    var_ptr_to_idx_[index_var_] = 0;
-    var_ptr_to_idx_[result_var_] = 1;
-
-    index_id_ = index_var_->id();
-    result_id_ = result_var_->id();
-
-    // 初期整合性チェック
-    check_initial_consistency();
 }
 
 std::string IntElementConstraint::name() const {
     return "int_element";
 }
 
-std::vector<VariablePtr> IntElementConstraint::variables() const {
-    return {index_var_, result_var_};
-}
-
 Domain::value_type IntElementConstraint::index_to_0based(Domain::value_type idx) const {
     return zero_based_ ? idx : idx - 1;
 }
 
-std::optional<bool> IntElementConstraint::is_satisfied() const {
-    if (!index_var_->is_assigned() || !result_var_->is_assigned()) {
-        return std::nullopt;
-    }
-
-    auto idx = index_var_->assigned_value().value();
-    auto idx_0based = index_to_0based(idx);
-
-    if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-        return false;  // 範囲外
-    }
-
-    return array_[static_cast<size_t>(idx_0based)] == result_var_->assigned_value().value();
-}
-
 bool IntElementConstraint::presolve(Model& model) {
     // Bounds propagation: index のドメインから result のドメインを絞る
+    auto* index_var = model.variable(index_id_);
+    auto* result_var = model.variable(result_id_);
 
     // index が確定している場合
-    if (index_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
+    if (index_var->is_assigned()) {
+        auto idx = index_var->assigned_value().value();
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
             return false;
         }
         auto expected = array_[static_cast<size_t>(idx_0based)];
-        if (result_var_->is_assigned()) {
-            return result_var_->assigned_value().value() == expected;
+        if (result_var->is_assigned()) {
+            return result_var->assigned_value().value() == expected;
         }
         // result を expected に固定
-        return result_var_->assign(expected);
+        return result_var->assign(expected);
     }
 
     // result が確定している場合
-    if (result_var_->is_assigned()) {
-        auto result_value = result_var_->assigned_value().value();
+    if (result_var->is_assigned()) {
+        auto result_value = result_var->assigned_value().value();
         auto it = value_to_indices_.find(result_value);
         if (it == value_to_indices_.end()) {
             return false;  // この値を持つ index がない
         }
         // index のドメインを valid_indices に絞る
         const auto& valid_indices = it->second;
-        auto& idx_domain = index_var_->domain();
+        auto& idx_domain = index_var->domain();
         std::vector<Domain::value_type> buf;
         idx_domain.copy_values_to(buf);
         for (auto v : buf) {
@@ -163,7 +138,7 @@ bool IntElementConstraint::presolve(Model& model) {
 
     // 1. index のドメインから result の取りうる値を計算
     std::set<Domain::value_type> valid_results;
-    index_var_->domain().for_each_value([&](auto idx) {
+    index_var->domain().for_each_value([&](auto idx) {
         auto idx_0based = index_to_0based(idx);
         if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
             valid_results.insert(array_[static_cast<size_t>(idx_0based)]);
@@ -171,7 +146,7 @@ bool IntElementConstraint::presolve(Model& model) {
     });
 
     // 2. result のドメインを絞る
-    auto& result_domain = result_var_->domain();
+    auto& result_domain = result_var->domain();
     std::vector<Domain::value_type> buf;
     result_domain.copy_values_to(buf);
     for (auto v : buf) {
@@ -194,7 +169,7 @@ bool IntElementConstraint::presolve(Model& model) {
     });
 
     // 4. index のドメインを絞る
-    auto& idx_domain = index_var_->domain();
+    auto& idx_domain = index_var->domain();
     idx_domain.copy_values_to(buf);
     for (auto v : buf) {
         if (valid_indices.find(v) == valid_indices.end()) {
@@ -207,88 +182,20 @@ bool IntElementConstraint::presolve(Model& model) {
     return true;
 }
 
-void IntElementConstraint::check_initial_consistency() {
-    // 両方確定している場合のチェック
-    if (index_var_->is_assigned() && result_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
-        auto idx_0based = index_to_0based(idx);
-
-        if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        if (array_[static_cast<size_t>(idx_0based)] != result_var_->assigned_value().value()) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    // index のみ確定している場合
-    if (index_var_->is_assigned() && !result_var_->is_assigned()) {
-        auto idx = index_var_->assigned_value().value();
-        auto idx_0based = index_to_0based(idx);
-
-        if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        auto expected_result = array_[static_cast<size_t>(idx_0based)];
-        if (!result_var_->domain().contains(expected_result)) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-
-    // result のみ確定している場合
-    if (!index_var_->is_assigned() && result_var_->is_assigned()) {
-        auto result_value = result_var_->assigned_value().value();
-        auto it = value_to_indices_.find(result_value);
-        if (it == value_to_indices_.end()) {
-            // この値を持つインデックスが存在しない
-            set_initially_inconsistent(true);
-            return;
-        }
-
-        // 有効なインデックスが少なくとも1つ index_var のドメインに含まれているか
-        bool found_valid = false;
-        for (auto valid_idx : it->second) {
-            if (index_var_->domain().contains(valid_idx)) {
-                found_valid = true;
-                break;
-            }
-        }
-        if (!found_valid) {
-            set_initially_inconsistent(true);
-            return;
-        }
-    }
-}
-
 bool IntElementConstraint::on_instantiate(Model& model, int save_point,
                                            size_t /*var_idx*/, size_t /*internal_var_idx*/, Domain::value_type value,
                                            Domain::value_type /*prev_min*/,
                                            Domain::value_type /*prev_max*/) {
     // 確定した変数を特定
-    Variable* assigned_var = nullptr;
+    size_t internal_idx;
     if (model.is_instantiated(index_id_) && model.value(index_id_) == value) {
-        assigned_var = index_var_;
+        internal_idx = 0;  // index
     } else if (model.is_instantiated(result_id_) && model.value(result_id_) == value) {
-        assigned_var = result_var_;
-    }
-
-    if (assigned_var == nullptr) {
+        internal_idx = 1;  // result
+    } else {
         // この制約に関係ない変数
         return true;
     }
-
-    auto it = var_ptr_to_idx_.find(assigned_var);
-    if (it == var_ptr_to_idx_.end()) {
-        return true;
-    }
-
-    size_t internal_idx = it->second;
 
     if (internal_idx == 0) {
         // index が確定 -> result を array[index] に固定（または一致チェック）

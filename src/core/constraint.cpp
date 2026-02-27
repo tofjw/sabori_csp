@@ -124,10 +124,20 @@ bool Constraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
-bool Constraint::on_final_instantiate(const Model& model) {
-    // Model ベースの is_satisfied を使用
-    auto result = is_satisfied(model);
-    return result.value_or(true);
+std::optional<bool> Constraint::is_satisfied(const Model& model) const {
+    // 全変数が確定しているかチェック
+    for (auto vid : var_ids_) {
+        if (!model.is_instantiated(vid)) {
+            return std::nullopt;
+        }
+    }
+    // 全確定 → on_final_instantiate で判定（論理的に const）
+    return const_cast<Constraint*>(this)->on_final_instantiate(model);
+}
+
+bool Constraint::on_final_instantiate(const Model& /*model*/) {
+    // サブクラスでオーバーライドすること
+    return true;
 }
 
 bool Constraint::prepare_propagation(Model& /*model*/) {
@@ -167,11 +177,7 @@ bool Constraint::on_remove_value(Model& /*model*/, int /*save_point*/,
 }
 
 void Constraint::check_initial_consistency() {
-    // 全変数が確定している場合は is_satisfied() で判定
-    auto result = is_satisfied();
-    if (result.has_value() && !result.value()) {
-        set_initially_inconsistent(true);
-    }
+    // デフォルト: 何もしない（presolve / prepare_propagation で検出）
 }
 
 bool Constraint::has_uninstantiated(const Model& model) const {

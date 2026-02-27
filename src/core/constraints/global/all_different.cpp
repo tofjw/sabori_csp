@@ -11,12 +11,11 @@ namespace sabori_csp {
 
 AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
-    , vars_(std::move(vars))
     , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築
     std::set<Domain::value_type> all_values;
-    for (const auto& var : vars_) {
+    for (const auto& var : vars) {
         var->domain().for_each_value([&](auto v) { all_values.insert(v); });
     }
 
@@ -27,7 +26,7 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     }
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
-    for (const auto& var : vars_) {
+    for (const auto& var : vars) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             auto it = pool_sparse_.find(val);
@@ -49,30 +48,10 @@ AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     }
 
     // 初期整合性チェック
-    check_initial_consistency();
 }
 
 std::string AllDifferentConstraint::name() const {
     return "all_different";
-}
-
-std::vector<VariablePtr> AllDifferentConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> AllDifferentConstraint::is_satisfied() const {
-    std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-        auto val = var->assigned_value().value();
-        if (used_values.count(val) > 0) {
-            return false;
-        }
-        used_values.insert(val);
-    }
-    return true;
 }
 
 bool AllDifferentConstraint::prepare_propagation(Model& model) {
@@ -84,7 +63,7 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
     unfixed_count_ = 0;
     pool_trail_.clear();
 
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         auto vid = var_ids_[i];
         if (model.is_instantiated(vid)) {
             auto val = model.value(vid);
@@ -115,14 +94,18 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
 
 bool AllDifferentConstraint::presolve(Model& model) {
     // 確定した変数の値を他の変数から削除
-    for (const auto& var : vars_) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto* var = model.variable(var_ids_[i]);
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
-            for (const auto& other : vars_) {
-                if (other != var && !other->is_assigned()) {
-                    other->remove(val);
-                    if (other->domain().empty()) {
-                        return false;
+            for (size_t j = 0; j < var_ids_.size(); ++j) {
+                if (j != i) {
+                    auto* other = model.variable(var_ids_[j]);
+                    if (!other->is_assigned()) {
+                        other->remove(val);
+                        if (other->domain().empty()) {
+                            return false;
+                        }
                     }
                 }
             }
@@ -242,26 +225,6 @@ bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_poi
     // 注: ここでは単純化のため、確定のみを行う
 
     return true;
-}
-
-void AllDifferentConstraint::check_initial_consistency() {
-    // 既に確定している変数の値が重複していれば矛盾
-    std::set<Domain::value_type> used_values;
-    for (const auto& var : vars_) {
-        if (var->is_assigned()) {
-            auto val = var->assigned_value().value();
-            if (used_values.count(val) > 0) {
-                set_initially_inconsistent(true);
-                return;
-            }
-            used_values.insert(val);
-        }
-    }
-
-    // 鳩の巣原理: 未確定変数の数 > 利用可能な値の数 なら矛盾
-    if (unfixed_count_ > pool_n_) {
-        set_initially_inconsistent(true);
-    }
 }
 
 bool AllDifferentConstraint::on_final_instantiate(const Model& model) {

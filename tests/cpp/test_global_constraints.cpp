@@ -30,7 +30,7 @@ TEST_CASE("AllDifferentConstraint variables", "[constraint][all_different]") {
     auto* y = model.create_variable("y", Domain(1, 3));
     AllDifferentConstraint c({x, y});
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 2);
 }
 
@@ -42,8 +42,8 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
         auto* z = model.create_variable("z", Domain(3, 3));
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("duplicate values - violated") {
@@ -53,8 +53,8 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
         auto* z = model.create_variable("z", Domain(1, 1));  // same as x
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -64,7 +64,7 @@ TEST_CASE("AllDifferentConstraint is_satisfied", "[constraint][all_different]") 
         auto* z = model.create_variable("z", Domain(3, 3));
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -94,7 +94,7 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
 
         // Note: Both are singletons (assigned), so propagate won't modify them
         // The infeasibility is detected by is_satisfied() instead
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("infeasible via propagation") {
@@ -189,8 +189,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("satisfied: 2*1 + 3*2 = 8") {
@@ -199,8 +199,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
         auto* y = model.create_variable("y", Domain(2, 2));
         IntLinEqConstraint c({2, 3}, {x, y}, 8);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("violated: 1*2 + 1*3 != 6") {
@@ -209,8 +209,8 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinEqConstraint c({1, 1}, {x, y}, 6);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -219,7 +219,7 @@ TEST_CASE("IntLinEqConstraint is_satisfied", "[constraint][int_lin_eq]") {
         auto* y = model.create_variable("y", Domain(2, 2));
         IntLinEqConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -250,8 +250,8 @@ TEST_CASE("IntLinEqConstraint with negative coefficients", "[constraint][int_lin
         auto* y = model.create_variable("y", Domain(1, 1));
         IntLinEqConstraint c({2, -1}, {x, y}, 5);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("satisfied: (-1)*2 + 1*7 = 5") {
@@ -260,8 +260,8 @@ TEST_CASE("IntLinEqConstraint with negative coefficients", "[constraint][int_lin
         auto* y = model.create_variable("y", Domain(7, 7));
         IntLinEqConstraint c({-1, 1}, {x, y}, 5);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 }
 
@@ -312,8 +312,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("satisfied: 1*2 + 1*3 <= 6") {
@@ -322,8 +322,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 6);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("violated: 1*2 + 1*3 > 4") {
@@ -332,8 +332,8 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinLeConstraint c({1, 1}, {x, y}, 4);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -342,7 +342,7 @@ TEST_CASE("IntLinLeConstraint is_satisfied", "[constraint][int_lin_le]") {
         auto* y = model.create_variable("y", Domain(2, 2));
         IntLinLeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -395,8 +395,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 4);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("satisfied: 1*2 + 1*3 != 6") {
@@ -405,8 +405,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 6);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("violated: 1*2 + 1*3 == 5") {
@@ -415,8 +415,8 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
         auto* y = model.create_variable("y", Domain(3, 3));
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -425,7 +425,7 @@ TEST_CASE("IntLinNeConstraint is_satisfied", "[constraint][int_lin_ne]") {
         auto* y = model.create_variable("y", Domain(2, 2));
         IntLinNeConstraint c({1, 1}, {x, y}, 5);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -874,7 +874,7 @@ TEST_CASE("CircuitConstraint variables", "[constraint][circuit]") {
     auto* x2 = model.create_variable("x2", Domain(0, 2));
     CircuitConstraint c({x0, x1, x2});
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 3);
 }
 
@@ -887,8 +887,8 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
         auto* x2 = model.create_variable("x2", Domain(0, 0));  // x[2] = 0
         CircuitConstraint c({x0, x1, x2});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("subcircuit - violated") {
@@ -900,8 +900,8 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
         CircuitConstraint c({x0, x1, x2});
 
         // This should be marked as initially inconsistent or is_satisfied returns false
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("duplicate values - violated") {
@@ -922,7 +922,7 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
         auto* x2 = model.create_variable("x2", Domain(0, 0));
         CircuitConstraint c({x0, x1, x2});
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -1165,10 +1165,10 @@ TEST_CASE("IntElementConstraint variables", "[constraint][int_element]") {
     std::vector<Domain::value_type> array = {10, 20, 30};
     IntElementConstraint c(index, array, result);
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 2);
-    REQUIRE(vars[0] == index);
-    REQUIRE(vars[1] == result);
+    REQUIRE(vars[0] == index->id());
+    REQUIRE(vars[1] == result->id());
 }
 
 TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
@@ -1180,8 +1180,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("satisfied - 0-based index") {
@@ -1192,8 +1192,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result, true);  // zero_based = true
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("violated - value mismatch") {
@@ -1203,8 +1203,8 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -1214,7 +1214,7 @@ TEST_CASE("IntElementConstraint is_satisfied", "[constraint][int_element]") {
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -1248,7 +1248,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_initially_inconsistent() == true);
+        REQUIRE(c.presolve(model) == false);
     }
 
     SECTION("index out of range - too large") {
@@ -1258,7 +1258,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_initially_inconsistent() == true);
+        REQUIRE(c.presolve(model) == false);
     }
 
     SECTION("result value not in array") {
@@ -1268,7 +1268,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_initially_inconsistent() == true);
+        REQUIRE(c.presolve(model) == false);
     }
 
     SECTION("consistent initial state") {
@@ -1278,7 +1278,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.is_initially_inconsistent() == false);
+        REQUIRE(c.presolve(model) == true);
     }
 }
 
@@ -1895,7 +1895,7 @@ TEST_CASE("ArrayBoolAndConstraint variables", "[constraint][array_bool_and]") {
     auto* r = model.create_variable("r", Domain(0, 1));
     ArrayBoolAndConstraint c({b1, b2}, r);
 
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 3);  // b1, b2, r
 }
 
@@ -1907,8 +1907,8 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
         auto* r = model.create_variable("r", Domain(1, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("one false - r=0 satisfied") {
@@ -1918,8 +1918,8 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
         auto* r = model.create_variable("r", Domain(0, 0));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("one false - r=1 not satisfied") {
@@ -1929,8 +1929,8 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
         auto* r = model.create_variable("r", Domain(1, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("not all assigned - unknown") {
@@ -1940,7 +1940,7 @@ TEST_CASE("ArrayBoolAndConstraint is_satisfied", "[constraint][array_bool_and]")
         auto* r = model.create_variable("r", Domain(0, 1));
         ArrayBoolAndConstraint c({b1, b2}, r);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -2075,8 +2075,8 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
         auto* r = model.create_variable("r", Domain(1, 1));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("all false - r=0 satisfied") {
@@ -2086,8 +2086,8 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
         auto* r = model.create_variable("r", Domain(0, 0));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("all false - r=1 not satisfied") {
@@ -2097,8 +2097,8 @@ TEST_CASE("ArrayBoolOrConstraint is_satisfied", "[constraint][array_bool_or]") {
         auto* r = model.create_variable("r", Domain(1, 1));
         ArrayBoolOrConstraint c({b1, b2}, r);
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 }
 
@@ -2206,8 +2206,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
         auto* n1 = model.create_variable("n1", Domain(1, 1));
         BoolClauseConstraint c({p1}, {n1});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("negative literal false - satisfied") {
@@ -2217,8 +2217,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
         auto* n1 = model.create_variable("n1", Domain(0, 0));
         BoolClauseConstraint c({p1}, {n1});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("all falsified - not satisfied") {
@@ -2228,8 +2228,8 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
         auto* n1 = model.create_variable("n1", Domain(1, 1));
         BoolClauseConstraint c({p1}, {n1});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("undetermined") {
@@ -2238,7 +2238,7 @@ TEST_CASE("BoolClauseConstraint is_satisfied", "[constraint][bool_clause]") {
         auto* n1 = model.create_variable("n1", Domain(0, 1));
         BoolClauseConstraint c({p1}, {n1});
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -2402,8 +2402,8 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
         auto* x3 = model.create_variable("x3", Domain(2, 2));
         ArrayIntMaximumConstraint c(m, {x1, x2, x3});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("not satisfied when m differs from max") {
@@ -2413,8 +2413,8 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
         auto* x2 = model.create_variable("x2", Domain(3, 3));
         ArrayIntMaximumConstraint c(m, {x1, x2});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("undetermined when variables unassigned") {
@@ -2424,7 +2424,7 @@ TEST_CASE("ArrayIntMaximumConstraint is_satisfied", "[constraint][array_int_maxi
         auto* x2 = model.create_variable("x2", Domain(1, 5));
         ArrayIntMaximumConstraint c(m, {x1, x2});
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -2503,8 +2503,8 @@ TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_mini
         auto* x3 = model.create_variable("x3", Domain(2, 2));
         ArrayIntMinimumConstraint c(m, {x1, x2, x3});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("not satisfied when m differs from min") {
@@ -2514,8 +2514,8 @@ TEST_CASE("ArrayIntMinimumConstraint is_satisfied", "[constraint][array_int_mini
         auto* x2 = model.create_variable("x2", Domain(3, 3));
         ArrayIntMinimumConstraint c(m, {x1, x2});
 
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 }
 
@@ -2731,7 +2731,7 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
         auto* z = model.create_variable("z", Domain(6, 6));
         IntTimesConstraint c(x, y, z);
 
-        auto satisfied = c.is_satisfied();
+        auto satisfied = c.is_satisfied(model);
         REQUIRE(satisfied.has_value());
         REQUIRE(satisfied.value() == true);
     }
@@ -2743,7 +2743,7 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
         auto* z = model.create_variable("z", Domain(5, 5));
         IntTimesConstraint c(x, y, z);
 
-        auto satisfied = c.is_satisfied();
+        auto satisfied = c.is_satisfied(model);
         REQUIRE(satisfied.has_value());
         REQUIRE(satisfied.value() == false);
     }
@@ -2755,7 +2755,7 @@ TEST_CASE("IntTimesConstraint is_satisfied", "[constraint][int_times]") {
         auto* z = model.create_variable("z", Domain(1, 25));
         IntTimesConstraint c(x, y, z);
 
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -3096,7 +3096,7 @@ TEST_CASE("TableConstraint variables", "[constraint][table]") {
     auto* x = model.create_variable("x", Domain(1, 3));
     auto* y = model.create_variable("y", Domain(1, 3));
     TableConstraint c({x, y}, {1,2, 2,3, 3,1});
-    auto vars = c.variables();
+    auto& vars = c.var_ids_ref();
     REQUIRE(vars.size() == 2);
 }
 
@@ -3106,8 +3106,8 @@ TEST_CASE("TableConstraint is_satisfied", "[constraint][table]") {
         auto* x = model.create_variable("x", Domain(1, 1));
         auto* y = model.create_variable("y", Domain(2, 2));
         TableConstraint c({x, y}, {1,2, 2,3, 3,1});
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == true);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == true);
     }
 
     SECTION("violated - tuple not in table") {
@@ -3115,8 +3115,8 @@ TEST_CASE("TableConstraint is_satisfied", "[constraint][table]") {
         auto* x = model.create_variable("x", Domain(1, 1));
         auto* y = model.create_variable("y", Domain(3, 3));
         TableConstraint c({x, y}, {1,2, 2,3, 3,1});
-        REQUIRE(c.is_satisfied().has_value());
-        REQUIRE(c.is_satisfied().value() == false);
+        REQUIRE(c.is_satisfied(model).has_value());
+        REQUIRE(c.is_satisfied(model).value() == false);
     }
 
     SECTION("unknown - not fully assigned") {
@@ -3124,7 +3124,7 @@ TEST_CASE("TableConstraint is_satisfied", "[constraint][table]") {
         auto* x = model.create_variable("x", Domain(1, 3));
         auto* y = model.create_variable("y", Domain(2, 2));
         TableConstraint c({x, y}, {1,2, 2,3, 3,1});
-        REQUIRE_FALSE(c.is_satisfied().has_value());
+        REQUIRE_FALSE(c.is_satisfied(model).has_value());
     }
 }
 
@@ -3277,7 +3277,7 @@ TEST_CASE("CountEqConstraint variables", "[constraint][count_eq]") {
     auto* c = model.create_variable("c", Domain(0, 2));
     CountEqConstraint cst({x1, x2}, 2, c);
 
-    auto vars = cst.variables();
+    auto& vars = cst.var_ids_ref();
     REQUIRE(vars.size() == 3);  // x1, x2, c
 }
 
@@ -3290,8 +3290,8 @@ TEST_CASE("CountEqConstraint is_satisfied", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(2, 2));
         CountEqConstraint cst({x1, x2, x3}, 2, c);
 
-        REQUIRE(cst.is_satisfied().has_value());
-        REQUIRE(cst.is_satisfied().value() == true);
+        REQUIRE(cst.is_satisfied(model).has_value());
+        REQUIRE(cst.is_satisfied(model).value() == true);
     }
 
     SECTION("violated - count does not match") {
@@ -3302,8 +3302,8 @@ TEST_CASE("CountEqConstraint is_satisfied", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(1, 1));
         CountEqConstraint cst({x1, x2, x3}, 2, c);
 
-        REQUIRE(cst.is_satisfied().has_value());
-        REQUIRE(cst.is_satisfied().value() == false);
+        REQUIRE(cst.is_satisfied(model).has_value());
+        REQUIRE(cst.is_satisfied(model).value() == false);
     }
 
     SECTION("not fully assigned") {
@@ -3313,7 +3313,7 @@ TEST_CASE("CountEqConstraint is_satisfied", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(0, 2));
         CountEqConstraint cst({x1, x2}, 2, c);
 
-        REQUIRE_FALSE(cst.is_satisfied().has_value());
+        REQUIRE_FALSE(cst.is_satisfied(model).has_value());
     }
 }
 

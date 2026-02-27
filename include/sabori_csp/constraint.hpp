@@ -62,32 +62,17 @@ public:
     virtual std::string name() const = 0;
 
     /**
-     * @brief 制約が関係する変数を取得
-     */
-    virtual std::vector<VariablePtr> variables() const = 0;
-
-    /**
      * @brief 変数IDリストへの const 参照を返す（shared_ptr デリファレンス回避）
      */
     const std::vector<size_t>& var_ids_ref() const { return var_ids_; }
 
     /**
-     * @brief 制約が満たされているか確認
-     * @return 満たされていればtrue、違反していればfalse、
-     *         未確定ならstd::nullopt
-     */
-    virtual std::optional<bool> is_satisfied() const = 0;
-
-    /**
      * @brief 制約が満たされているか確認（Model ベース）
      *
-     * VariablePtr なしで動作する。デフォルトでは is_satisfied() に委譲。
-     * 制約を ID-only に移行する際にオーバーライドする。
+     * デフォルトでは std::nullopt を返す。
+     * サブクラスでオーバーライドして制約固有のチェックを行う。
      */
-    virtual std::optional<bool> is_satisfied(const Model& model) const {
-        (void)model;
-        return is_satisfied();
-    }
+    virtual std::optional<bool> is_satisfied(const Model& model) const;
 
     /**
      * @brief イベント伝播の準備（内部構造の初期化）

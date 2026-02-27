@@ -24,12 +24,13 @@ IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
     }
 
     // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    std::vector<VariablePtr> unique_vars;
     for (const auto& [var_ptr, coeff] : aggregated) {
         if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
             if (var == var_ptr) {
-                vars_.push_back(var);
+                unique_vars.push_back(var);
                 coeffs_.push_back(coeff);
                 break;
             }
@@ -37,33 +38,18 @@ IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
     }
 
     // 全ての係数が0になった場合: presolve で処理
-    if (vars_.empty()) {
+    if (unique_vars.empty()) {
         return;
     }
 
     // 変数IDキャッシュを構築
-    var_ids_ = extract_var_ids(vars_);
+    var_ids_ = extract_var_ids(unique_vars);
 
     // 注意: 内部状態は presolve() で初期化
 }
 
 std::string IntLinNeConstraint::name() const {
     return "int_lin_ne";
-}
-
-std::vector<VariablePtr> IntLinNeConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> IntLinNeConstraint::is_satisfied() const {
-    int64_t sum = 0;
-    for (size_t i = 0; i < vars_.size(); ++i) {
-        if (!vars_[i]->is_assigned()) {
-            return std::nullopt;
-        }
-        sum += coeffs_[i] * vars_[i]->assigned_value().value();
-    }
-    return sum != target_;
 }
 
 bool IntLinNeConstraint::presolve(Model& model) {
@@ -131,15 +117,6 @@ bool IntLinNeConstraint::on_last_uninstantiated(Model& model, int save_point,
     return true;
 }
 
-void IntLinNeConstraint::check_initial_consistency() {
-    // 全変数が確定している場合のみチェック
-    if (unfixed_count_ == 0) {
-        if (current_fixed_sum_ == target_) {
-            set_initially_inconsistent(true);
-        }
-    }
-}
-
 bool IntLinNeConstraint::on_final_instantiate(const Model& model) {
     int64_t sum = 0;
     for (size_t i = 0; i < var_ids_.size(); ++i) {
@@ -159,7 +136,7 @@ void IntLinNeConstraint::rewind_to(int save_point) {
 
 bool IntLinNeConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合: 0 != target
-    if (vars_.empty()) {
+    if (var_ids_.empty()) {
         return target_ != 0;
     }
 
@@ -167,7 +144,7 @@ bool IntLinNeConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     unfixed_count_ = 0;
 
-    for (size_t i = 0; i < vars_.size(); ++i) {
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
 
         if (model.is_instantiated(var_ids_[i])) {

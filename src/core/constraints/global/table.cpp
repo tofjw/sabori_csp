@@ -11,8 +11,7 @@ namespace sabori_csp {
 TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
                                  std::vector<Domain::value_type> flat_tuples)
     : Constraint(extract_var_ids(vars))
-    , vars_(std::move(vars))
-    , arity_(vars_.size())
+    , arity_(var_ids_.size())
     , flat_tuples_(std::move(flat_tuples))
     , num_tuples_(0)
     , num_words_(0) {
@@ -99,43 +98,18 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
     // word_modified_at_ 初期化
     word_modified_at_.assign(num_words_, 0);
 
-    check_initial_consistency();
 }
 
 std::string TableConstraint::name() const {
     return "table_int";
 }
 
-std::vector<VariablePtr> TableConstraint::variables() const {
-    return vars_;
-}
-
-std::optional<bool> TableConstraint::is_satisfied() const {
-    // 全変数が確定している場合のみ判定可能
-    for (const auto& var : vars_) {
-        if (!var->is_assigned()) {
-            return std::nullopt;
-        }
-    }
-    // 割り当てタプルがテーブル内にあるかチェック
-    for (size_t t = 0; t < num_tuples_; ++t) {
-        bool match = true;
-        for (size_t v = 0; v < arity_; ++v) {
-            if (vars_[v]->assigned_value().value() != flat_tuples_[t * arity_ + v]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return true;
-    }
-    return false;
-}
-
 bool TableConstraint::presolve(Model& model) {
     // テーブルに存在しない値をドメインから直接除去
     // bounds-only 対応: テーブルの値範囲で反復し、ドメイン外の値をスキップ
     for (size_t v = 0; v < arity_; ++v) {
-        auto& dom = vars_[v]->domain();
+        auto var = model.variable(var_ids_[v]);
+        auto& dom = var->domain();
         const auto& info = var_support_info_[v];
         auto table_max = info.min_val + static_cast<Domain::value_type>(info.range_size - 1);
 
@@ -247,9 +221,18 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool TableConstraint::on_final_instantiate(const Model& model) {
-    (void)model;
-    auto result = is_satisfied();
-    return result.has_value() && result.value();
+    // 全変数が確定: 割当がテーブル内のタプルと一致するか直接チェック
+    for (size_t t = 0; t < num_tuples_; ++t) {
+        bool match = true;
+        for (size_t v = 0; v < arity_; ++v) {
+            if (model.value(var_ids_[v]) != flat_tuples_[t * arity_ + v]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
 }
 
 bool TableConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
@@ -388,32 +371,6 @@ void TableConstraint::rewind_to(int save_point) {
         }
         last_nz_word_ = trail_.back().second.old_last_nz_word;
         trail_.pop_back();
-    }
-}
-
-void TableConstraint::check_initial_consistency() {
-    if (flat_tuples_.empty() || arity_ == 0) {
-        set_initially_inconsistent(true);
-        return;
-    }
-    // テーブルが空かチェック（初期状態では全タプルが有効なので空にはならない）
-    // ただし、変数のドメインに存在しない値しかテーブルにない場合は矛盾
-    for (size_t v = 0; v < arity_; ++v) {
-        bool has_any = false;
-        const auto& info = var_support_info_[v];
-        for (size_t i = 0; i < info.range_size; ++i) {
-            if (supports_offsets_flat_[info.flat_offset + i] != NO_SUPPORT) {
-                auto val = info.min_val + static_cast<Domain::value_type>(i);
-                if (vars_[v]->domain().contains(val)) {
-                    has_any = true;
-                    break;
-                }
-            }
-        }
-        if (!has_any) {
-            set_initially_inconsistent(true);
-            return;
-        }
     }
 }
 
