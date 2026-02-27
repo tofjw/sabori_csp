@@ -12,26 +12,27 @@ Examples:
 """
 import subprocess
 import sys
-import os
 import re
 import argparse
+from pathlib import Path
 
-MINIZINC = "./squashfs-root/usr/bin/minizinc"
+BASE_DIR = Path(__file__).resolve().parent
+MINIZINC = str(BASE_DIR / "squashfs-root/usr/bin/minizinc")
 DEFAULT_TIMEOUT = 30
 
 def natural_sort_key(s):
-    return [int(t) if t.isdigit() else t.lower() for t in re.split('([0-9]+)', s)]
+    return [int(t) if t.isdigit() else t.lower() for t in re.split('([0-9]+)', str(s))]
 
 def find_files(prob_dir):
-    mzn = [f for f in os.listdir(prob_dir) if f.endswith('.mzn')]
-    dzn = sorted([f for f in os.listdir(prob_dir) if f.endswith('.dzn')], key=natural_sort_key)
-    json = sorted([f for f in os.listdir(prob_dir) if f.endswith('.json')], key=natural_sort_key)
-    return mzn[0] if mzn else None, dzn, json
+    mzn_files = sorted(prob_dir.glob("*.mzn"), key=natural_sort_key)
+    dzn_files = sorted(prob_dir.glob("*.dzn"), key=natural_sort_key)
+    json_files = sorted(prob_dir.glob("*.json"), key=natural_sort_key)
+    return mzn_files[0] if mzn_files else None, dzn_files, json_files
 
 def run_solver(solver_name, solver_id, mzn, dzn, timeout):
-    cmd = [MINIZINC, "--solver", solver_id, "-a", mzn]
+    cmd = [MINIZINC, "--solver", solver_id, "-a", str(mzn)]
     if dzn:
-        cmd.append(dzn)
+        cmd.append(str(dzn))
 
     print(f"\n{'='*60}")
     print(f"Solver: {solver_name}")
@@ -57,12 +58,12 @@ def main():
     parser.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT)
     args = parser.parse_args()
 
-    os.chdir("/home/tofjw/develop/cp/sabori_csp/benchmarks/minizinc_challenge_2025")
-
-    prob_dir = f"mznc2025_probs/{args.problem}"
-    if not os.path.isdir(prob_dir):
+    probs_dir = BASE_DIR / "mznc2025_probs"
+    prob_dir = probs_dir / args.problem
+    if not prob_dir.is_dir():
         print(f"Error: Problem '{args.problem}' not found")
-        print(f"Available: {sorted(os.listdir('mznc2025_probs'))}")
+        available = sorted(p.name for p in probs_dir.iterdir() if p.is_dir())
+        print(f"Available: {available}")
         sys.exit(1)
 
     mzn_file, dzn_files, json_files = find_files(prob_dir)
@@ -70,26 +71,26 @@ def main():
         print(f"Error: No .mzn file in {prob_dir}")
         sys.exit(1)
 
-    mzn = os.path.join(prob_dir, mzn_file)
+    mzn = mzn_file
 
     # Find instance
     all_instances = dzn_files + json_files
     if args.instance:
-        matches = [f for f in all_instances if args.instance in f]
+        matches = [f for f in all_instances if args.instance in f.name]
         if not matches:
             print(f"Error: Instance '{args.instance}' not found")
-            print(f"Available: {all_instances}")
+            print(f"Available: {[f.name for f in all_instances]}")
             sys.exit(1)
-        dzn = os.path.join(prob_dir, matches[0])
+        dzn = matches[0]
     elif all_instances:
-        dzn = os.path.join(prob_dir, all_instances[0])
-        print(f"Using smallest instance: {all_instances[0]}")
+        dzn = all_instances[0]
+        print(f"Using smallest instance: {all_instances[0].name}")
     else:
         dzn = None
 
     print(f"Problem: {args.problem}")
     print(f"MZN: {mzn}")
-    print(f"Data: {dzn or '(none)'}")
+    print(f"Data: {dzn if dzn else '(none)'}")
 
     solvers = []
     if args.solver in ('sabori', 'both'):
