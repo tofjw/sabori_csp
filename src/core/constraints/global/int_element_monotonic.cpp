@@ -275,16 +275,16 @@ bool IntElementMonotonicConstraint::on_instantiate(
 
     Variable* assigned_var = nullptr;
     if (model.is_instantiated(index_id_) && model.value(index_id_) == value) {
-        assigned_var = index_var_.get();
+        assigned_var = index_var_;
     } else if (model.is_instantiated(result_id_) && model.value(result_id_) == value) {
-        assigned_var = result_var_.get();
+        assigned_var = result_var_;
     }
 
     if (assigned_var == nullptr) {
         return true;
     }
 
-    bool is_index = (assigned_var == index_var_.get());
+    bool is_index = (assigned_var == index_var_);
 
     if (is_index) {
         // index が確定 -> result = array[index]

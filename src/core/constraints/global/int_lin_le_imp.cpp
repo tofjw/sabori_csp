@@ -22,7 +22,7 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i].get()] += coeffs[i];
+        aggregated[vars[i]] += coeffs[i];
     }
 
     // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
@@ -30,7 +30,7 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
         if (coeff == 0) continue;  // 係数が0の変数は除外
         // shared_ptr を探す
         for (const auto& var : vars) {
-            if (var.get() == var_ptr) {
+            if (var == var_ptr) {
                 vars_.push_back(var);
                 coeffs_.push_back(coeff);
                 break;

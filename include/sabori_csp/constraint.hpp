@@ -339,7 +339,7 @@ private:
     bool is_initially_inconsistent_ = false;
 };
 
-using ConstraintPtr = std::shared_ptr<Constraint>;
+using ConstraintPtr = std::unique_ptr<Constraint>;
 
 } // namespace sabori_csp
 

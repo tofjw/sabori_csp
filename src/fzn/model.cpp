@@ -475,7 +475,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntEqConstraint>(x, y);
+            constraint = std::make_unique<IntEqConstraint>(x, y);
         } else if (decl.name == "int_eq_reif") {
 #if 1/* broken */
             if (decl.args.size() != 3) {
@@ -484,7 +484,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
-            constraint = std::make_shared<IntEqReifConstraint>(x, y, b);
+            constraint = std::make_unique<IntEqReifConstraint>(x, y, b);
 #endif
         } else if (decl.name == "int_ne") {
             if (decl.args.size() != 2) {
@@ -492,7 +492,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntNeConstraint>(x, y);
+            constraint = std::make_unique<IntNeConstraint>(x, y);
         } else if (decl.name == "int_ne_reif") {
 #if 1
             if (decl.args.size() != 3) {
@@ -501,7 +501,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
-            constraint = std::make_shared<IntNeReifConstraint>(x, y, b);
+            constraint = std::make_unique<IntNeReifConstraint>(x, y, b);
 #endif
         } else if (decl.name == "int_lt") {
             if (decl.args.size() != 2) {
@@ -509,14 +509,14 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntLtConstraint>(x, y);
+            constraint = std::make_unique<IntLtConstraint>(x, y);
         } else if (decl.name == "int_le") {
             if (decl.args.size() != 2) {
                 throw std::runtime_error("int_le requires 2 arguments");
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntLeConstraint>(x, y);
+            constraint = std::make_unique<IntLeConstraint>(x, y);
         } else if (decl.name == "int_le_reif") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_le_reif requires 3 arguments");
@@ -524,7 +524,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto b = get_var(decl.args[2]);
-            constraint = std::make_shared<IntLeReifConstraint>(x, y, b);
+            constraint = std::make_unique<IntLeReifConstraint>(x, y, b);
         } else if (decl.name == "all_different_int" || decl.name == "alldifferent_int" ||
                    decl.name == "fzn_all_different_int") {
             if (decl.args.size() != 1) {
@@ -535,7 +535,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<AllDifferentConstraint>(vars);
+            constraint = std::make_unique<AllDifferentConstraint>(vars);
         } else if (decl.name == "alldifferent_except_0" || decl.name == "fzn_alldifferent_except_0") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("alldifferent_except_0 requires 1 argument (array)");
@@ -545,7 +545,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<AllDifferentExcept0Constraint>(vars);
+            constraint = std::make_unique<AllDifferentExcept0Constraint>(vars);
         } else if (decl.name == "circuit" || decl.name == "fzn_circuit") {
             if (decl.args.size() != 1) {
                 throw std::runtime_error("circuit requires 1 argument (array)");
@@ -555,7 +555,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<CircuitConstraint>(vars);
+            constraint = std::make_unique<CircuitConstraint>(vars);
         } else if (decl.name == "int_lin_eq") {
 #if 1
             if (decl.args.size() != 3) {
@@ -585,7 +585,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+            constraint = std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
             // 制約内に既に defined_var がなければ、係数の絶対値が1で
             // 配列に2回以上出現しない未定義変数を1つ選んで探索候補から除外
             {
@@ -649,7 +649,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+            constraint = std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
         } else if (decl.name == "int_lin_eq_reif") {
 #if 1
             if (decl.args.size() != 4) {
@@ -680,7 +680,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
+            constraint = std::make_unique<IntLinEqReifConstraint>(coeffs, vars, target, b);
 #endif
         } else if (decl.name == "int_lin_ne_reif") {
             if (decl.args.size() != 4) {
@@ -711,7 +711,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinNeReifConstraint>(coeffs, vars, target, b);
+            constraint = std::make_unique<IntLinNeReifConstraint>(coeffs, vars, target, b);
         } else if (decl.name == "int_lin_le_reif") {
             if (decl.args.size() != 4) {
                 throw std::runtime_error("int_lin_le_reif requires 4 arguments (coeffs, vars, bound, b)");
@@ -741,7 +741,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinLeReifConstraint>(coeffs, vars, bound, b);
+            constraint = std::make_unique<IntLinLeReifConstraint>(coeffs, vars, bound, b);
         } else if (decl.name == "int_lin_le_imp") {
             if (decl.args.size() != 4) {
                 throw std::runtime_error("int_lin_le_imp requires 4 arguments (coeffs, vars, bound, b)");
@@ -769,7 +769,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinLeImpConstraint>(coeffs, vars, bound, b);
+            constraint = std::make_unique<IntLinLeImpConstraint>(coeffs, vars, bound, b);
         } else if (decl.name == "int_lin_ne") {
             if (decl.args.size() != 3) {
                 throw std::runtime_error("int_lin_ne requires 3 arguments (coeffs, vars, target)");
@@ -796,7 +796,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names_mut) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<IntLinNeConstraint>(coeffs, vars, target);
+            constraint = std::make_unique<IntLinNeConstraint>(coeffs, vars, target);
         // ========================================
         // Bool constraints (aliases for int constraints with 0-1 variables)
         // ========================================
@@ -812,7 +812,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 // 定数ケース等: 従来通り IntEqConstraint
                 auto b = get_var(decl.args[0]);
                 auto i = get_var(decl.args[1]);
-                constraint = std::make_shared<IntEqConstraint>(b, i);
+                constraint = std::make_unique<IntEqConstraint>(b, i);
                 // b が決まれば i は一意に決まる
                 if (!model->is_defined_var(i->id())) {
                     model->set_defined_var(i->id());
@@ -825,7 +825,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntEqConstraint>(x, y);
+            constraint = std::make_unique<IntEqConstraint>(x, y);
         } else if (decl.name == "bool_ne") {
             // bool_ne(a, b) is equivalent to int_ne(a, b) for 0-1 variables
             if (decl.args.size() != 2) {
@@ -833,7 +833,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntNeConstraint>(x, y);
+            constraint = std::make_unique<IntNeConstraint>(x, y);
         } else if (decl.name == "bool_lt") {
             // bool_lt(a, b) is equivalent to int_lt(a, b) for 0-1 variables
             // a < b with a,b in {0,1} means a=0, b=1
@@ -842,7 +842,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntLtConstraint>(x, y);
+            constraint = std::make_unique<IntLtConstraint>(x, y);
         } else if (decl.name == "bool_le") {
             // bool_le(a, b) is equivalent to int_le(a, b) for 0-1 variables
             // a <= b means not(a) or b, i.e., a implies b
@@ -851,7 +851,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntLeConstraint>(x, y);
+            constraint = std::make_unique<IntLeConstraint>(x, y);
         } else if (decl.name == "bool_eq_reif") {
             // bool_eq_reif(a, b, r) is equivalent to int_eq_reif(a, b, r)
             if (decl.args.size() != 3) {
@@ -860,7 +860,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto r = get_var(decl.args[2]);
-            constraint = std::make_shared<IntEqReifConstraint>(x, y, r);
+            constraint = std::make_unique<IntEqReifConstraint>(x, y, r);
         } else if (decl.name == "bool_le_reif") {
             // bool_le_reif(a, b, r) is equivalent to int_le_reif(a, b, r)
             if (decl.args.size() != 3) {
@@ -869,7 +869,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto r = get_var(decl.args[2]);
-            constraint = std::make_shared<IntLeReifConstraint>(x, y, r);
+            constraint = std::make_unique<IntLeReifConstraint>(x, y, r);
         } else if (decl.name == "bool_lin_eq") {
             // bool_lin_eq(coeffs, vars, sum) is equivalent to int_lin_eq
             if (decl.args.size() != 3) {
@@ -893,7 +893,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 for (const auto& name : var_names_mut) {
                     vars.push_back(get_var_by_name(name));
                 }
-                constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
+                constraint = std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
             } else {
                 // var int: rewrite sum(c[i]*x[i]) = y as sum(c[i]*x[i]) + (-1)*y = 0
                 auto rhs_var = get_var(decl.args[2]);
@@ -903,7 +903,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 }
                 coeffs.push_back(-1);
                 vars.push_back(rhs_var);
-                constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, 0);
+                constraint = std::make_unique<IntLinEqConstraint>(coeffs, vars, 0);
             }
         } else if (decl.name == "bool_lin_le") {
             // bool_lin_le(coeffs, vars, bound) is equivalent to int_lin_le
@@ -928,7 +928,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 for (const auto& name : var_names_mut) {
                     vars.push_back(get_var_by_name(name));
                 }
-                constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
+                constraint = std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
             } else {
                 // var int: rewrite sum(c[i]*x[i]) <= y as sum(c[i]*x[i]) + (-1)*y <= 0
                 auto rhs_var = get_var(decl.args[2]);
@@ -938,7 +938,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 }
                 coeffs.push_back(-1);
                 vars.push_back(rhs_var);
-                constraint = std::make_shared<IntLinLeConstraint>(coeffs, vars, 0);
+                constraint = std::make_unique<IntLinLeConstraint>(coeffs, vars, 0);
             }
         } else if (decl.name == "array_bool_and") {
 #if 1
@@ -952,7 +952,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 vars.push_back(get_var_by_name(name));
             }
             auto r = get_var(decl.args[1]);
-            constraint = std::make_shared<ArrayBoolAndConstraint>(vars, r);
+            constraint = std::make_unique<ArrayBoolAndConstraint>(vars, r);
 #endif
         } else if (decl.name == "array_bool_or") {
             // array_bool_or([b1, b2, ..., bn], r) means r = b1 ∨ b2 ∨ ... ∨ bn
@@ -965,7 +965,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 vars.push_back(get_var_by_name(name));
             }
             auto r = get_var(decl.args[1]);
-            constraint = std::make_shared<ArrayBoolOrConstraint>(vars, r);
+            constraint = std::make_unique<ArrayBoolOrConstraint>(vars, r);
         } else if (decl.name == "bool_clause") {
 #if 1 /* broken */
             // bool_clause([pos], [neg]) means ∨(pos) ∨ ∨(¬neg)
@@ -982,7 +982,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : neg_names) {
                 neg_vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
+            constraint = std::make_unique<BoolClauseConstraint>(pos_vars, neg_vars);
 #endif
         } else if (decl.name == "bool_not") {
 #if 1
@@ -992,7 +992,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto a = get_var(decl.args[0]);
             auto b = get_var(decl.args[1]);
-            constraint = std::make_shared<BoolNotConstraint>(a, b);
+            constraint = std::make_unique<BoolNotConstraint>(a, b);
 #endif
         } else if (decl.name == "array_int_element" || decl.name == "int_element" || decl.name == "array_bool_element") {
             if (decl.args.size() != 3) {
@@ -1068,10 +1068,10 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 auto mono = non_decreasing
                     ? IntElementMonotonicConstraint::Monotonicity::NON_DECREASING
                     : IntElementMonotonicConstraint::Monotonicity::NON_INCREASING;
-                constraint = std::make_shared<IntElementMonotonicConstraint>(
+                constraint = std::make_unique<IntElementMonotonicConstraint>(
                     index_var, array, result_var, mono, false);
             } else {
-                constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
+                constraint = std::make_unique<IntElementConstraint>(index_var, array, result_var, false);
             }
 
             if (!((non_decreasing || non_increasing) && array.size() > 1)) {
@@ -1104,7 +1104,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             VariablePtr result_var = get_var(decl.args[2]);
 
             // FlatZinc uses 1-based indexing by default
-            constraint = std::make_shared<ArrayVarIntElementConstraint>(
+            constraint = std::make_unique<ArrayVarIntElementConstraint>(
                 index_var, array_vars, result_var, false);
 
             // index変数はbisectよりenumerateが効果的
@@ -1126,7 +1126,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<ArrayIntMaximumConstraint>(m, vars);
+            constraint = std::make_unique<ArrayIntMaximumConstraint>(m, vars);
         } else if (decl.name == "array_int_minimum") {
             // array_int_minimum(m, [x1, x2, ...]) means m = min(x1, x2, ...)
             if (decl.args.size() != 2) {
@@ -1138,7 +1138,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<ArrayIntMinimumConstraint>(m, vars);
+            constraint = std::make_unique<ArrayIntMinimumConstraint>(m, vars);
         } else if (decl.name == "int_min") {
             // int_min(x, y, m) means min(x, y) = m
             if (decl.args.size() != 3) {
@@ -1147,7 +1147,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto m = get_var(decl.args[2]);
-            constraint = std::make_shared<IntMinConstraint>(x, y, m);
+            constraint = std::make_unique<IntMinConstraint>(x, y, m);
             // x,y が決まれば m は一意に決まる
             if (!model->is_defined_var(m->id())) {
                 model->set_defined_var(m->id());
@@ -1160,7 +1160,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto z = get_var(decl.args[2]);
-            constraint = std::make_shared<IntTimesConstraint>(x, y, z);
+            constraint = std::make_unique<IntTimesConstraint>(x, y, z);
             // x,y が決まれば z は一意に決まる
             if (!model->is_defined_var(z->id())) {
                 model->set_defined_var(z->id());
@@ -1173,7 +1173,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto z = get_var(decl.args[2]);
-            constraint = std::make_shared<IntModConstraint>(x, y, z);
+            constraint = std::make_unique<IntModConstraint>(x, y, z);
             // x,y が決まれば z は一意に決まる
             if (!model->is_defined_var(z->id())) {
                 model->set_defined_var(z->id());
@@ -1185,7 +1185,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             }
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
-            constraint = std::make_shared<IntAbsConstraint>(x, y);
+            constraint = std::make_unique<IntAbsConstraint>(x, y);
             // x が決まれば y は一意に決まる
             if (!model->is_defined_var(y->id())) {
                 model->set_defined_var(y->id());
@@ -1198,7 +1198,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             auto x = get_var(decl.args[0]);
             auto y = get_var(decl.args[1]);
             auto m = get_var(decl.args[2]);
-            constraint = std::make_shared<IntMaxConstraint>(x, y, m);
+            constraint = std::make_unique<IntMaxConstraint>(x, y, m);
             // x,y が決まれば m は一意に決まる
             if (!model->is_defined_var(m->id())) {
                 model->set_defined_var(m->id());
@@ -1213,7 +1213,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : var_names) {
                 vars.push_back(get_var_by_name(name));
             }
-            constraint = std::make_shared<TableConstraint>(vars, tuples);
+            constraint = std::make_unique<TableConstraint>(vars, tuples);
         } else if (decl.name == "fzn_count_eq" || decl.name == "count_eq") {
             // fzn_count_eq(x[], y, c): count of x[i] == y equals c
             if (decl.args.size() != 3) {
@@ -1230,16 +1230,16 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
 
             if (std::holds_alternative<Domain::value_type>(decl.args[1])) {
                 auto target_val = std::get<Domain::value_type>(decl.args[1]);
-                constraint = std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
+                constraint = std::make_unique<CountEqConstraint>(x_vars, target_val, c_var);
             } else if (std::holds_alternative<std::string>(decl.args[1])) {
                 auto y_var = get_var(decl.args[1]);
                 if (y_var->is_assigned()) {
                     // singleton → 定数版を使用
                     auto target_val = y_var->assigned_value().value();
-                    constraint = std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
+                    constraint = std::make_unique<CountEqConstraint>(x_vars, target_val, c_var);
                 } else {
                     // 変数 → variable target 版を使用
-                    constraint = std::make_shared<CountEqVarTargetConstraint>(x_vars, y_var, c_var);
+                    constraint = std::make_unique<CountEqVarTargetConstraint>(x_vars, y_var, c_var);
                 }
             } else {
                 throw std::runtime_error("fzn_count_eq: target (y) must be an integer or variable");
@@ -1257,9 +1257,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 auto lb_var = model->create_variable("__set_in_lb_" + x->name(), range.lb);
                 auto ub_var = model->create_variable("__set_in_ub_" + x->name(), range.ub);
                 // x >= lb (equivalent to lb <= x)
-                model->add_constraint(std::make_shared<IntLeConstraint>(lb_var, x));
+                model->add_constraint(std::make_unique<IntLeConstraint>(lb_var, x));
                 // x <= ub
-                model->add_constraint(std::make_shared<IntLeConstraint>(x, ub_var));
+                model->add_constraint(std::make_unique<IntLeConstraint>(x, ub_var));
                 constraint = nullptr; // Already added
             } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
                 const auto& values = std::get<std::vector<Domain::value_type>>(decl.args[1]);
@@ -1293,11 +1293,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                 auto b1 = model->create_variable("__sir_b1_" + std::to_string(id), 0, 1);
                 auto b2 = model->create_variable("__sir_b2_" + std::to_string(id), 0, 1);
                 // b1 = (lb <= x)
-                model->add_constraint(std::make_shared<IntLeReifConstraint>(lb_var, x, b1));
+                model->add_constraint(std::make_unique<IntLeReifConstraint>(lb_var, x, b1));
                 // b2 = (x <= ub)
-                model->add_constraint(std::make_shared<IntLeReifConstraint>(x, ub_var, b2));
+                model->add_constraint(std::make_unique<IntLeReifConstraint>(x, ub_var, b2));
                 // b = b1 ∧ b2
-                model->add_constraint(std::make_shared<ArrayBoolAndConstraint>(
+                model->add_constraint(std::make_unique<ArrayBoolAndConstraint>(
                     std::vector<VariablePtr>{b1, b2}, b));
                 constraint = nullptr;
             } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
@@ -1312,11 +1312,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
                     auto bi = model->create_variable(
                         "__sir_bi_" + std::to_string(id) + "_" + std::to_string(i), 0, 1);
                     // bi = (x == vi)
-                    model->add_constraint(std::make_shared<IntEqReifConstraint>(x, vi_var, bi));
+                    model->add_constraint(std::make_unique<IntEqReifConstraint>(x, vi_var, bi));
                     bool_vars.push_back(bi);
                 }
                 // b = b1 ∨ b2 ∨ ... ∨ bn
-                model->add_constraint(std::make_shared<ArrayBoolOrConstraint>(bool_vars, b));
+                model->add_constraint(std::make_unique<ArrayBoolOrConstraint>(bool_vars, b));
                 constraint = nullptr;
             } else {
                 throw std::runtime_error("set_in_reif requires range or set argument");
@@ -1335,7 +1335,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : dx_names) dx_vars.push_back(get_var_by_name(name));
             for (const auto& name : dy_names) dy_vars.push_back(get_var_by_name(name));
             bool strict = (decl.name == "fzn_diffn");
-            constraint = std::make_shared<DiffnConstraint>(
+            constraint = std::make_unique<DiffnConstraint>(
                 std::move(x_vars), std::move(y_vars),
                 std::move(dx_vars), std::move(dy_vars), strict);
         } else if (decl.name == "fzn_disjunctive" || decl.name == "fzn_disjunctive_strict") {
@@ -1350,7 +1350,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
             for (const auto& name : dur_names)
                 durations.push_back(get_var_by_name(name));
             bool strict = (decl.name == "fzn_disjunctive_strict");
-            constraint = std::make_shared<DisjunctiveConstraint>(
+            constraint = std::make_unique<DisjunctiveConstraint>(
                 std::move(starts), std::move(durations), strict);
         } else {
             // Unknown constraint - error
@@ -1358,7 +1358,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
         }
 
         if (constraint) {
-            model->add_constraint(constraint);
+            model->add_constraint(std::move(constraint));
         }
     }
 

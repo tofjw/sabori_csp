@@ -434,7 +434,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
 
     auto& last_var = vars_[last_var_internal_idx];
 
-    if (last_var.get() == index_.get()) {
+    if (last_var == index_) {
         // index が最後の未確定変数
         // result と array 要素の共通値を持つインデックスのみ有効
         if (model.is_instantiated(index_id_)) {
@@ -442,7 +442,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
             auto idx_val = model.var_min(index_id_);
             model.enqueue_instantiate(index_id_, idx_val);
         }
-    } else if (last_var.get() == result_.get()) {
+    } else if (last_var == result_) {
         // result が最後の未確定変数で、index は確定済み
         if (model.is_instantiated(index_id_)) {
             auto idx = model.value(index_id_);
@@ -469,7 +469,7 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
 
             if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
                 auto arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
-                if (last_var.get() == array_[static_cast<size_t>(idx_0based)].get()) {
+                if (last_var == array_[static_cast<size_t>(idx_0based)]) {
                     // この配列要素を result の値に確定
                     auto expected = model.value(result_id_);
                     if (model.contains(arr_id, expected)) {

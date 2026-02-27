@@ -814,8 +814,8 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLtConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLtConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // x.min が 3 に上がった → y.min >= 4
@@ -836,8 +836,8 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLtConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLtConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // y.max が 7 に下がった → x.max <= 6
@@ -858,8 +858,8 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLtConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLtConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, y->id(), 0, 3, 1) == true);
@@ -870,8 +870,8 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLtConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLtConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, x->id(), 0, 8, 10) == true);
@@ -884,8 +884,8 @@ TEST_CASE("IntLeConstraint on_set_min/on_set_max", "[constraint][int_le][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLeConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, x->id(), 0, 5, 1) == true);
@@ -905,8 +905,8 @@ TEST_CASE("IntLeConstraint on_set_min/on_set_max", "[constraint][int_le][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntLeConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, y->id(), 0, 7, 10) == true);
@@ -928,8 +928,8 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntEqConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntEqConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, x->id(), 0, 4, 1) == true);
@@ -949,8 +949,8 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntEqConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntEqConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, y->id(), 0, 6, 10) == true);
@@ -970,8 +970,8 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         Model model;
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
-        auto c = std::make_shared<IntEqConstraint>(x, y);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntEqConstraint>(x, y);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, y->id(), 0, 3, 1) == true);
@@ -994,8 +994,8 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 3, 10);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMaxConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // x.min 5 に上がった → m.min >= max(5, 3) = 5
@@ -1022,8 +1022,8 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMaxConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, m->id(), 0, 7, 10) == true);
@@ -1047,8 +1047,8 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 8);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMaxConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // x.max が 6 に下がった → m.max <= max(6, 8) = 8
@@ -1073,8 +1073,8 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMaxConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMaxConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, m->id(), 0, 3, 1) == true);
@@ -1088,8 +1088,8 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMinConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMinConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, m->id(), 0, 4, 1) == true);
@@ -1113,8 +1113,8 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 8);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMinConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMinConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // x.max が 6 に下がった → m.max <= min(6, 8) = 6
@@ -1139,8 +1139,8 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto m = model.create_variable("m", 1, 10);
-        auto c = std::make_shared<IntMinConstraint>(x, y, m);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntMinConstraint>(x, y, m);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, m->id(), 0, 7, 10) == true);
@@ -1154,8 +1154,8 @@ TEST_CASE("IntEqReifConstraint on_set_min/on_set_max", "[constraint][int_eq_reif
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 5, 8);
         auto b = model.create_variable("b", 0, 1);
-        auto c = std::make_shared<IntEqReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntEqReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         // x.max=3 < y.min=5 なので b=0
@@ -1177,8 +1177,8 @@ TEST_CASE("IntEqReifConstraint on_set_min/on_set_max", "[constraint][int_eq_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 1);
-        auto c = std::make_shared<IntEqReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntEqReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_min(0, x->id(), 4);
@@ -1204,8 +1204,8 @@ TEST_CASE("IntNeReifConstraint on_set_min/on_set_max", "[constraint][int_ne_reif
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 5, 8);
         auto b = model.create_variable("b", 0, 1);
-        auto c = std::make_shared<IntNeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntNeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_max(model, 0, x->id(), 0, 3, 5) == true);
@@ -1226,8 +1226,8 @@ TEST_CASE("IntNeReifConstraint on_set_min/on_set_max", "[constraint][int_ne_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 0);
-        auto c = std::make_shared<IntNeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntNeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_min(0, x->id(), 4);
@@ -1253,8 +1253,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 5, 8);
         auto b = model.create_variable("b", 0, 1);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, y->id(), 0, 5, 3) == true);
@@ -1275,8 +1275,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 6, 10);
         auto y = model.create_variable("y", 1, 5);
         auto b = model.create_variable("b", 0, 1);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         REQUIRE(c->on_set_min(model, 0, x->id(), 0, 6, 4) == true);
@@ -1297,8 +1297,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 1);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_min(0, x->id(), 5);
@@ -1322,8 +1322,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 1);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_max(0, y->id(), 7);
@@ -1347,8 +1347,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 0);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_min(0, y->id(), 4);
@@ -1372,8 +1372,8 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         auto x = model.create_variable("x", 1, 10);
         auto y = model.create_variable("y", 1, 10);
         auto b = model.create_variable("b", 0);
-        auto c = std::make_shared<IntLeReifConstraint>(x, y, b);
-        model.add_constraint(c);
+        auto c_uptr = std::make_unique<IntLeReifConstraint>(x, y, b);        auto* c = c_uptr.get();
+        model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
         model.set_max(0, x->id(), 8);
@@ -1402,7 +1402,7 @@ TEST_CASE("IntLtConstraint solver with bounds propagation", "[constraint][int_lt
         Model model;
         auto x = model.create_variable("x", 1, 4);
         auto y = model.create_variable("y", 1, 4);
-        model.add_constraint(std::make_shared<IntLtConstraint>(x, y));
+        model.add_constraint(std::make_unique<IntLtConstraint>(x, y));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1424,7 +1424,7 @@ TEST_CASE("IntLeConstraint solver with bounds propagation", "[constraint][int_le
         Model model;
         auto x = model.create_variable("x", 1, 4);
         auto y = model.create_variable("y", 1, 4);
-        model.add_constraint(std::make_shared<IntLeConstraint>(x, y));
+        model.add_constraint(std::make_unique<IntLeConstraint>(x, y));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1446,7 +1446,7 @@ TEST_CASE("IntEqConstraint solver with bounds propagation", "[constraint][int_eq
         Model model;
         auto x = model.create_variable("x", 1, 5);
         auto y = model.create_variable("y", 3, 7);
-        model.add_constraint(std::make_shared<IntEqConstraint>(x, y));
+        model.add_constraint(std::make_unique<IntEqConstraint>(x, y));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1469,7 +1469,7 @@ TEST_CASE("IntMaxConstraint solver with bounds propagation", "[constraint][int_m
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 1, 3);
         auto m = model.create_variable("m", 1, 3);
-        model.add_constraint(std::make_shared<IntMaxConstraint>(x, y, m));
+        model.add_constraint(std::make_unique<IntMaxConstraint>(x, y, m));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1492,7 +1492,7 @@ TEST_CASE("IntMinConstraint solver with bounds propagation", "[constraint][int_m
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 1, 3);
         auto m = model.create_variable("m", 1, 3);
-        model.add_constraint(std::make_shared<IntMinConstraint>(x, y, m));
+        model.add_constraint(std::make_unique<IntMinConstraint>(x, y, m));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1514,7 +1514,7 @@ TEST_CASE("IntLeReifConstraint solver with bounds propagation", "[constraint][in
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 1, 3);
         auto b = model.create_variable("b", 0, 1);
-        model.add_constraint(std::make_shared<IntLeReifConstraint>(x, y, b));
+        model.add_constraint(std::make_unique<IntLeReifConstraint>(x, y, b));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1538,7 +1538,7 @@ TEST_CASE("IntEqReifConstraint solver with bounds propagation", "[constraint][in
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 1, 3);
         auto b = model.create_variable("b", 0, 1);
-        model.add_constraint(std::make_shared<IntEqReifConstraint>(x, y, b));
+        model.add_constraint(std::make_unique<IntEqReifConstraint>(x, y, b));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1561,7 +1561,7 @@ TEST_CASE("IntNeReifConstraint solver with bounds propagation", "[constraint][in
         auto x = model.create_variable("x", 1, 3);
         auto y = model.create_variable("y", 1, 3);
         auto b = model.create_variable("b", 0, 1);
-        model.add_constraint(std::make_shared<IntNeReifConstraint>(x, y, b));
+        model.add_constraint(std::make_unique<IntNeReifConstraint>(x, y, b));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1590,7 +1590,7 @@ TEST_CASE("IntModConstraint solve_all basic", "[constraint][int_mod][solver]") {
         auto x = model.create_variable("x", 0, 8);
         auto y = model.create_variable("y", 3, 3);
         auto z = model.create_variable("z", 0, 2);
-        model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1614,7 +1614,7 @@ TEST_CASE("IntModConstraint solve_all basic", "[constraint][int_mod][solver]") {
         auto x = model.create_variable("x", 1, 12);
         auto y = model.create_variable("y", 3, 4);
         auto z = model.create_variable("z", 0, 3);
-        model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
 
         Solver solver;
         std::vector<Solution> solutions;
@@ -1647,9 +1647,9 @@ TEST_CASE("IntModConstraint with int_lin_eq propagation chain", "[constraint][in
     auto x = model.create_variable("x", 5, 9);
     auto y = model.create_variable("y", 2, 5);
     auto z = model.create_variable("z", 0, 4);
-    model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
+    model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
     // x - z = 5 → coeffs=[1,-1], vars=[x,z], rhs=5
-    model.add_constraint(std::make_shared<IntLinEqConstraint>(
+    model.add_constraint(std::make_unique<IntLinEqConstraint>(
         std::vector<int64_t>{1, -1}, std::vector<VariablePtr>{x, z}, 5));
 
     Solver solver;
@@ -1682,8 +1682,8 @@ TEST_CASE("IntModConstraint multiple int_mod sharing y", "[constraint][int_mod][
     auto y = model.create_variable("y", 3, 5);
     auto z1 = model.create_variable("z1", 0, 4);
     auto z2 = model.create_variable("z2", 0, 4);
-    model.add_constraint(std::make_shared<IntModConstraint>(x1, y, z1));
-    model.add_constraint(std::make_shared<IntModConstraint>(x2, y, z2));
+    model.add_constraint(std::make_unique<IntModConstraint>(x1, y, z1));
+    model.add_constraint(std::make_unique<IntModConstraint>(x2, y, z2));
 
     Solver solver;
     std::vector<Solution> solutions;
@@ -1713,8 +1713,8 @@ TEST_CASE("IntModConstraint with int_eq on y", "[constraint][int_mod][solver]") 
     auto y = model.create_variable("y", 2, 6);
     auto z = model.create_variable("z", 0, 5);
     auto w = model.create_variable("w", 2, 6);
-    model.add_constraint(std::make_shared<IntModConstraint>(x, y, z));
-    model.add_constraint(std::make_shared<IntEqConstraint>(y, w));
+    model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
+    model.add_constraint(std::make_unique<IntEqConstraint>(y, w));
 
     Solver solver;
     std::vector<Solution> solutions;

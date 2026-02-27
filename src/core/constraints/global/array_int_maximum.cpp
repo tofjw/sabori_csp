@@ -21,9 +21,9 @@ ArrayIntMaximumConstraint::ArrayIntMaximumConstraint(VariablePtr m, std::vector<
     , n_(x_.size()) {
 
     // var_ptr_to_idx 構築: 0 = m, 1..n = x[0]..x[n-1]
-    var_ptr_to_idx_[m_.get()] = 0;
+    var_ptr_to_idx_[m_] = 0;
     for (size_t i = 0; i < n_; ++i) {
-        var_ptr_to_idx_[x_[i].get()] = i + 1;
+        var_ptr_to_idx_[x_[i]] = i + 1;
     }
 
     m_id_ = m_->id();
@@ -106,7 +106,7 @@ bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,
                                                  Domain::value_type /*prev_max*/) {
     // 確定した変数を特定
     VariablePtr assigned_var = model.variable(var_idx);
-    auto it = var_ptr_to_idx_.find(assigned_var.get());
+    auto it = var_ptr_to_idx_.find(assigned_var);
     if (it == var_ptr_to_idx_.end()) {
         return true;  // この制約に関係ない変数
     }

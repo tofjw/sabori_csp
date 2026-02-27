@@ -110,7 +110,7 @@ public:
      * @param domain 定義域
      * @return 作成された変数へのポインタ
      */
-    VariablePtr create_variable(std::string name, Domain domain);
+    Variable* create_variable(std::string name, Domain domain);
 
     /**
      * @brief 単一値（定数）変数を作成して登録
@@ -118,7 +118,7 @@ public:
      * @param value 固定値
      * @return 作成された変数へのポインタ
      */
-    VariablePtr create_variable(std::string name, Domain::value_type value);
+    Variable* create_variable(std::string name, Domain::value_type value);
 
     /**
      * @brief 区間ドメインの変数を作成して登録
@@ -127,7 +127,7 @@ public:
      * @param max 上限
      * @return 作成された変数へのポインタ
      */
-    VariablePtr create_variable(std::string name, Domain::value_type min, Domain::value_type max);
+    Variable* create_variable(std::string name, Domain::value_type min, Domain::value_type max);
 
     /**
      * @brief 値リストドメインの変数を作成して登録
@@ -135,14 +135,14 @@ public:
      * @param values ドメイン値のリスト
      * @return 作成された変数へのポインタ
      */
-    VariablePtr create_variable(std::string name, std::vector<Domain::value_type> values);
+    Variable* create_variable(std::string name, std::vector<Domain::value_type> values);
 
     /**
      * @brief 変数を追加（既存の変数を登録する場合）
      * @param var 追加する変数
      * @return 変数のID（インデックス）
      */
-    size_t add_variable(VariablePtr var);
+    size_t add_variable(std::unique_ptr<Variable> var);
 
     /**
      * @brief 制約を追加
@@ -165,7 +165,7 @@ public:
     /**
      * @brief 変数リストを取得
      */
-    const std::vector<VariablePtr>& variables() const;
+    const std::vector<std::unique_ptr<Variable>>& variables() const;
 
     /**
      * @brief 制約リストを取得
@@ -175,12 +175,12 @@ public:
     /**
      * @brief IDで変数を取得
      */
-    VariablePtr variable(size_t id) const;
+    Variable* variable(size_t id) const;
 
     /**
      * @brief 名前で変数を取得
      */
-    VariablePtr variable(const std::string& name) const;
+    Variable* variable(const std::string& name) const;
 
     /**
      * @brief 名前から変数インデックスを検索（エイリアスも考慮）
@@ -466,7 +466,7 @@ public:
     void clear_pending_updates();
 
 private:
-    std::vector<VariablePtr> variables_;
+    std::vector<std::unique_ptr<Variable>> variables_;
     std::vector<ConstraintPtr> constraints_;
     std::map<std::string, size_t> name_to_id_;
     std::map<std::string, size_t> variable_aliases_;  // alias_name -> var_id

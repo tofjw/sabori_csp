@@ -29,10 +29,10 @@ ArrayBoolAndConstraint::ArrayBoolAndConstraint(std::vector<VariablePtr> vars, Va
 
     // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
+        var_ptr_to_idx_[vars_[i]] = i;
         var_id_to_idx_[var_ids_[i]] = i;
     }
-    var_ptr_to_idx_[r_.get()] = n_;  // r は index n
+    var_ptr_to_idx_[r_] = n_;  // r は index n
     var_id_to_idx_[r_id_] = n_;
 
     // 初期 watch を設定: 0 になりうる（= 未確定 or 0 を含む）変数を探す
@@ -484,10 +484,10 @@ ArrayBoolOrConstraint::ArrayBoolOrConstraint(std::vector<VariablePtr> vars, Vari
 
     // 変数ポインタ/ID → 内部インデックスマップを構築
     for (size_t i = 0; i < vars_.size(); ++i) {
-        var_ptr_to_idx_[vars_[i].get()] = i;
+        var_ptr_to_idx_[vars_[i]] = i;
         var_id_to_idx_[var_ids_[i]] = i;
     }
-    var_ptr_to_idx_[r_.get()] = n_;
+    var_ptr_to_idx_[r_] = n_;
     var_id_to_idx_[r_id_] = n_;
 
     // 初期 watch: 1 になりうる変数を探す
@@ -863,14 +863,14 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     // 0 <= idx < n_pos_: pos_[idx]
     // n_pos_ <= idx < n_pos_ + n_neg_: neg_[idx - n_pos_]
     for (size_t i = 0; i < n_pos_; ++i) {
-        var_ptr_to_idx_[pos_[i].get()] = i;
+        var_ptr_to_idx_[pos_[i]] = i;
         var_id_to_lit_idx_[pos_[i]->id()] = i;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
         // neg の変数が pos にも含まれている場合は上書きしない
         // （同じ変数が両方に含まれるケースは稀だが対応）
-        if (var_ptr_to_idx_.find(neg_[i].get()) == var_ptr_to_idx_.end()) {
-            var_ptr_to_idx_[neg_[i].get()] = n_pos_ + i;
+        if (var_ptr_to_idx_.find(neg_[i]) == var_ptr_to_idx_.end()) {
+            var_ptr_to_idx_[neg_[i]] = n_pos_ + i;
             var_id_to_lit_idx_[neg_[i]->id()] = n_pos_ + i;
         }
     }

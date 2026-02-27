@@ -32,9 +32,9 @@ TEST_CASE("Bound nogood via RemoveValue: correctness with IntNe + bisect", "[nog
         auto x = model.create_variable("x", 1, 20);
         auto y = model.create_variable("y", 1, 20);
         auto z = model.create_variable("z", 1, 20);
-        model.add_constraint(std::make_shared<IntNeConstraint>(x, y));
-        model.add_constraint(std::make_shared<IntNeConstraint>(y, z));
-        model.add_constraint(std::make_shared<IntLinLeConstraint>(
+        model.add_constraint(std::make_unique<IntNeConstraint>(x, y));
+        model.add_constraint(std::make_unique<IntNeConstraint>(y, z));
+        model.add_constraint(std::make_unique<IntLinLeConstraint>(
             std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{x, z}, 10));
 
         Solver solver;
@@ -70,9 +70,9 @@ TEST_CASE("Bound nogood via RemoveValue: AllDifferent + bisect", "[nogood][solve
         auto x2 = model.create_variable("x2", 1, 15);
         auto x3 = model.create_variable("x3", 1, 15);
         auto x4 = model.create_variable("x4", 1, 15);
-        model.add_constraint(std::make_shared<AllDifferentConstraint>(
+        model.add_constraint(std::make_unique<AllDifferentConstraint>(
             std::vector<VariablePtr>{x1, x2, x3, x4}));
-        model.add_constraint(std::make_shared<IntLinLeConstraint>(
+        model.add_constraint(std::make_unique<IntLinLeConstraint>(
             std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{x1, x4}, 8));
 
         Solver solver;
@@ -106,8 +106,8 @@ TEST_CASE("Bound nogood via RemoveValue: optimization with IntNe + bisect", "[no
         auto x = model.create_variable("x", 1, 30);
         auto y = model.create_variable("y", 1, 30);
         auto obj = model.create_variable("obj", 2, 60);
-        model.add_constraint(std::make_shared<IntNeConstraint>(x, y));
-        model.add_constraint(std::make_shared<IntLinEqConstraint>(
+        model.add_constraint(std::make_unique<IntNeConstraint>(x, y));
+        model.add_constraint(std::make_unique<IntLinEqConstraint>(
             std::vector<int64_t>{1, 1, -1},
             std::vector<VariablePtr>{x, y, obj}, 0));
 

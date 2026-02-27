@@ -7,46 +7,48 @@
 
 namespace sabori_csp {
 
-VariablePtr Model::create_variable(std::string name, Domain domain) {
-    auto var = std::make_shared<Variable>(std::move(name), std::move(domain));
-    add_variable(var);
-    return var;
+Variable* Model::create_variable(std::string name, Domain domain) {
+    auto var = std::make_unique<Variable>(std::move(name), std::move(domain));
+    Variable* ptr = var.get();
+    add_variable(std::move(var));
+    return ptr;
 }
 
-VariablePtr Model::create_variable(std::string name, Domain::value_type value) {
+Variable* Model::create_variable(std::string name, Domain::value_type value) {
     return create_variable(std::move(name), Domain(value, value));
 }
 
-VariablePtr Model::create_variable(std::string name, Domain::value_type min, Domain::value_type max) {
+Variable* Model::create_variable(std::string name, Domain::value_type min, Domain::value_type max) {
     return create_variable(std::move(name), Domain(min, max));
 }
 
-VariablePtr Model::create_variable(std::string name, std::vector<Domain::value_type> values) {
+Variable* Model::create_variable(std::string name, std::vector<Domain::value_type> values) {
     return create_variable(std::move(name), Domain(std::move(values)));
 }
 
-size_t Model::add_variable(VariablePtr var) {
+size_t Model::add_variable(std::unique_ptr<Variable> var) {
     size_t id = next_var_id_++;
     var->set_id(id);
     var->set_model(this);
     name_to_id_[var->name()] = id;
-    variables_.push_back(var);
+    Variable* p = var.get();
+    variables_.push_back(std::move(var));
 
     VarData vd;
-    vd.min = var->min();
-    vd.max = var->max();
-    vd.size = var->domain().size();
-    vd.initial_range = var->domain().initial_range();
+    vd.min = p->min();
+    vd.max = p->max();
+    vd.size = p->domain().size();
+    vd.initial_range = p->domain().initial_range();
     vd.is_defined_var = false;
     vd.last_saved_level = -1;
 
-    if (var->domain().is_bounds_only()) {
+    if (p->domain().is_bounds_only()) {
         // bounds-only: support_value を中央値で初期化
         vd.support_value = (vd.min + vd.max) / 2;
     } else {
         // support_value を初期化（dense 配列の中央値）
-        const auto& vals = var->domain().values_ref();
-        size_t n = var->domain().n();
+        const auto& vals = p->domain().values_ref();
+        size_t n = p->domain().n();
         vd.support_value = vals[n / 2];
     }
     var_data_.push_back(vd);
@@ -77,7 +79,7 @@ void Model::add_constraint(ConstraintPtr constraint) {
     constraints_.push_back(std::move(constraint));
 }
 
-const std::vector<VariablePtr>& Model::variables() const {
+const std::vector<std::unique_ptr<Variable>>& Model::variables() const {
     return variables_;
 }
 
@@ -85,19 +87,19 @@ const std::vector<ConstraintPtr>& Model::constraints() const {
     return constraints_;
 }
 
-VariablePtr Model::variable(size_t id) const {
+Variable* Model::variable(size_t id) const {
     if (id >= variables_.size()) {
         throw std::out_of_range("Variable ID out of range");
     }
-    return variables_[id];
+    return variables_[id].get();
 }
 
-VariablePtr Model::variable(const std::string& name) const {
+Variable* Model::variable(const std::string& name) const {
     auto it = name_to_id_.find(name);
     if (it == name_to_id_.end()) {
         throw std::out_of_range("Variable not found: " + name);
     }
-    return variables_[it->second];
+    return variables_[it->second].get();
 }
 
 size_t Model::find_variable_index(const std::string& name) const {

@@ -116,7 +116,7 @@ private:
     Domain domain_;
 };
 
-using VariablePtr = std::shared_ptr<Variable>;
+using VariablePtr = Variable*;
 
 } // namespace sabori_csp
 

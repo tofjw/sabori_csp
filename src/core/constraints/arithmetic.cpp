@@ -43,9 +43,9 @@ IntTimesConstraint::IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr
     , y_id_(y_->id())
     , z_id_(z_->id()) {
     // var_ptr_to_idx_ を構築
-    var_ptr_to_idx_[x_.get()] = 0;
-    var_ptr_to_idx_[y_.get()] = 1;
-    var_ptr_to_idx_[z_.get()] = 2;
+    var_ptr_to_idx_[x_] = 0;
+    var_ptr_to_idx_[y_] = 1;
+    var_ptr_to_idx_[z_] = 2;
 
     check_initial_consistency();
 }

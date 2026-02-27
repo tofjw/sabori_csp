@@ -75,8 +75,8 @@ IntElementConstraint::IntElementConstraint(VariablePtr index_var,
     }
 
     // var_ptr_to_idx 構築
-    var_ptr_to_idx_[index_var_.get()] = 0;
-    var_ptr_to_idx_[result_var_.get()] = 1;
+    var_ptr_to_idx_[index_var_] = 0;
+    var_ptr_to_idx_[result_var_] = 1;
 
     index_id_ = index_var_->id();
     result_id_ = result_var_->id();
@@ -273,9 +273,9 @@ bool IntElementConstraint::on_instantiate(Model& model, int save_point,
     // 確定した変数を特定
     Variable* assigned_var = nullptr;
     if (model.is_instantiated(index_id_) && model.value(index_id_) == value) {
-        assigned_var = index_var_.get();
+        assigned_var = index_var_;
     } else if (model.is_instantiated(result_id_) && model.value(result_id_) == value) {
-        assigned_var = result_var_.get();
+        assigned_var = result_var_;
     }
 
     if (assigned_var == nullptr) {
