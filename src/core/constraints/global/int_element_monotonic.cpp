@@ -141,10 +141,10 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var->domain().remove_below(new_idx_min)) return false;
+            if (!index_var->remove_below(new_idx_min)) return false;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var->domain().remove_above(new_idx_max)) return false;
+            if (!index_var->remove_above(new_idx_max)) return false;
         }
     } else {
         // NON_INCREASING: a[0] >= a[1] >= ... >= a[n-1]
@@ -162,10 +162,10 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var->domain().remove_below(new_idx_min)) return false;
+            if (!index_var->remove_below(new_idx_min)) return false;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var->domain().remove_above(new_idx_max)) return false;
+            if (!index_var->remove_above(new_idx_max)) return false;
         }
     }
 

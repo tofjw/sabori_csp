@@ -348,7 +348,7 @@ static std::optional<ConstraintPtr> make_int_lin_eq_reif(const ConstraintDecl& d
     ctx.apply_substitutions(coeffs, var_names_mut, target);
 
     if (var_names_mut.empty()) {
-        if (target == 0) b->domain().remove(0); else b->domain().remove(1);
+        if (target == 0) b->remove(0); else b->remove(1);
         return std::nullopt;
     }
 
@@ -370,7 +370,7 @@ static std::optional<ConstraintPtr> make_int_lin_ne_reif(const ConstraintDecl& d
     ctx.apply_substitutions(coeffs, var_names_mut, target);
 
     if (var_names_mut.empty()) {
-        if (target != 0) b->domain().remove(0); else b->domain().remove(1);
+        if (target != 0) b->remove(0); else b->remove(1);
         return std::nullopt;
     }
 
@@ -392,7 +392,7 @@ static std::optional<ConstraintPtr> make_int_lin_le_reif(const ConstraintDecl& d
     ctx.apply_substitutions(coeffs, var_names_mut, bound);
 
     if (var_names_mut.empty()) {
-        if (0 <= bound) b->domain().remove(0); else b->domain().remove(1);
+        if (0 <= bound) b->remove(0); else b->remove(1);
         return std::nullopt;
     }
 
@@ -414,7 +414,7 @@ static std::optional<ConstraintPtr> make_int_lin_le_imp(const ConstraintDecl& de
     ctx.apply_substitutions(coeffs, var_names_mut, bound);
 
     if (var_names_mut.empty()) {
-        if (0 > bound) b->domain().remove(1);
+        if (0 > bound) b->remove(1);
         return std::nullopt;
     }
 
@@ -510,7 +510,7 @@ static std::optional<ConstraintPtr> make_set_in(const ConstraintDecl& decl, FznB
         x->domain().copy_values_to(domain_vals);
         for (auto v : domain_vals) {
             if (std::find(values.begin(), values.end(), v) == values.end()) {
-                x->domain().remove(v);
+                x->remove(v);
             }
         }
         return std::nullopt;

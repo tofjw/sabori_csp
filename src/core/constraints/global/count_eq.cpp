@@ -80,8 +80,7 @@ bool CountEqConstraint::presolve(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
                 auto xi = model.variable(var_ids_[i]);
-                xi->domain().remove(target_);
-                if (xi->domain().empty()) return false;
+                if (!xi->remove(target_)) return false;
                 is_possible_[i] = false;
                 possible_count_--;
             }
@@ -464,7 +463,7 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
             for (size_t i = 0; i < n_; ++i) {
                 if (is_possible_[i]) {
                     auto xi = model.variable(var_ids_[i]);
-                    xi->domain().remove(target_);
+                    xi->remove(target_);
                     if (xi->domain().empty()) return false;
                     is_possible_[i] = false;
                     possible_count_--;
