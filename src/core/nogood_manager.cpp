@@ -56,7 +56,8 @@ void NoGoodManager::remove_nogood(NoGood* ng) {
 // ===== Propagation =====
 
 bool NoGoodManager::propagate_eq_watches(Model& model, size_t var_idx, Domain::value_type val,
-                                          size_t restart_count, std::vector<double>& activity) {
+                                          size_t restart_count, std::vector<double>& activity,
+                                          double activity_inc) {
     if (var_idx >= ng_eq_watches_.size()) return true;
     auto& var_watches = ng_eq_watches_[var_idx];
     auto it2 = var_watches.find(val);
@@ -70,7 +71,7 @@ bool NoGoodManager::propagate_eq_watches(Model& model, size_t var_idx, Domain::v
             prune_count_++;
             size_t n = ng->literals.size();
             for (const auto& lit : ng->literals) {
-                activity[lit.var_idx] += 1.0 / n;
+                activity[lit.var_idx] += activity_inc / n;
             }
             return false;
         }
@@ -80,7 +81,8 @@ bool NoGoodManager::propagate_eq_watches(Model& model, size_t var_idx, Domain::v
 }
 
 bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound,
-                                             size_t restart_count, std::vector<double>& activity) {
+                                             size_t restart_count, std::vector<double>& activity,
+                                             double activity_inc) {
     if (is_lower_bound) {
         // 下限が上がった → Geq リテラル (x >= v) が充足された可能性
         if (var_idx < ng_geq_watches_.size() && !ng_geq_watches_[var_idx].empty()) {
@@ -95,7 +97,7 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
                         prune_count_++;
                         size_t n = ng->literals.size();
                         for (const auto& lit : ng->literals) {
-                            activity[lit.var_idx] += 1.0 / n;
+                            activity[lit.var_idx] += activity_inc / n;
                         }
                         return false;
                     }
@@ -115,7 +117,7 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
                         prune_count_++;
                         size_t n = ng->literals.size();
                         for (const auto& lit : ng->literals) {
-                            activity[lit.var_idx] += 1.0 / n;
+                            activity[lit.var_idx] += activity_inc / n;
                         }
                         return false;
                     }
@@ -213,11 +215,12 @@ void NoGoodManager::enqueue_unit_nogoods(Model& model) const {
 // ===== NoGood Learning =====
 
 void NoGoodManager::learn_from_conflict(const std::vector<Literal>& decision_trail,
-                                         std::vector<double>& activity, size_t restart_count) {
+                                         std::vector<double>& activity, double activity_inc,
+                                         size_t restart_count) {
     if (decision_trail.size() >= 2) {
         add_nogood(decision_trail, restart_count);
         for (const auto& lit : decision_trail) {
-            activity[lit.var_idx] += 0.01 / decision_trail.size();
+            activity[lit.var_idx] += activity_inc * 0.01 / decision_trail.size();
         }
     } else if (decision_trail.size() == 1) {
         unit_nogoods_.push_back(decision_trail[0]);

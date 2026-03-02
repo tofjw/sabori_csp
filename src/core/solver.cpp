@@ -770,14 +770,14 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
             if (!found_value) {
                 // 全値失敗
-                activity_[frame.var_idx] += 1.0;
+                activity_[frame.var_idx] += activity_inc_;
                 stats_.fail_count++;
                 save_partial_assignment(model);
 
                 nogood_mgr_.truncate_nogoods(frame.nogoods_before);
 
                 if (nogood_learning_) {
-                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, stats_.restart_count);
+                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_, stats_.restart_count);
                 }
 
                 value_buffer_ = std::move(stack.back().values);
@@ -829,14 +829,14 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
             if (!found_branch) {
                 // 両方失敗
-                activity_[frame.var_idx] += 1.0;
+                activity_[frame.var_idx] += activity_inc_;
                 stats_.fail_count++;
                 save_partial_assignment(model);
 
                 nogood_mgr_.truncate_nogoods(frame.nogoods_before);
 
                 if (nogood_learning_) {
-                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, stats_.restart_count);
+                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_, stats_.restart_count);
                 }
 
                 stack.pop_back();
@@ -931,16 +931,16 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     // NoGood チェック
     if (nogood_learning_) {
         if (!nogood_mgr_.propagate_eq_watches(model, var_idx, val,
-                                               stats_.restart_count, activity_)) {
+                                               stats_.restart_count, activity_, activity_inc_)) {
             return false;
         }
         // instantiate は Leq/Geq 両方を充足しうる
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true,
-                                                  stats_.restart_count, activity_)) {
+                                                  stats_.restart_count, activity_, activity_inc_)) {
             return false;
         }
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false,
-                                                  stats_.restart_count, activity_)) {
+                                                  stats_.restart_count, activity_, activity_inc_)) {
             return false;
         }
     }
@@ -1203,7 +1203,7 @@ bool Solver::process_queue(Model& model) {
                     }
                 }
                 // Bound NoGood 伝播
-                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_)) {
+                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
                     return false;
                 }
             }
@@ -1234,7 +1234,7 @@ bool Solver::process_queue(Model& model) {
                     }
                 }
                 // Bound NoGood 伝播
-                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_)) {
+                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
                     return false;
                 }
             }
@@ -1268,7 +1268,7 @@ bool Solver::process_queue(Model& model) {
                         }
                     }
                     // Bound NoGood 伝播
-                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_)) {
+                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
                         return false;
                     }
                 }
@@ -1282,7 +1282,7 @@ bool Solver::process_queue(Model& model) {
                         }
                     }
                     // Bound NoGood 伝播
-                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_)) {
+                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
                         return false;
                     }
                 }

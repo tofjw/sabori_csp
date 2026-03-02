@@ -65,7 +65,8 @@ public:
      * @return false なら矛盾
      */
     bool propagate_eq_watches(Model& model, size_t var_idx, Domain::value_type val,
-                              size_t restart_count, std::vector<double>& activity);
+                              size_t restart_count, std::vector<double>& activity,
+                              double activity_inc);
 
     /**
      * @brief 変数の境界変更時の NoGood 伝播
@@ -76,7 +77,8 @@ public:
      * @return false なら矛盾
      */
     bool propagate_bound_nogoods(Model& model, size_t var_idx, bool is_lower_bound,
-                                 size_t restart_count, std::vector<double>& activity);
+                                 size_t restart_count, std::vector<double>& activity,
+                                 double activity_inc);
 
     // ===== Unit NoGood =====
 
@@ -106,7 +108,8 @@ public:
      * trail.size() == 1 なら unit NoGood を追加。
      */
     void learn_from_conflict(const std::vector<Literal>& decision_trail,
-                             std::vector<double>& activity, size_t restart_count);
+                             std::vector<double>& activity, double activity_inc,
+                             size_t restart_count);
 
     // ===== Solution NoGood =====
 
