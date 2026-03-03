@@ -1,0 +1,12 @@
+% int_lin_eq unit coefficients: mixed +1/-1
+% x - y + z = 2, x=3, y in [1,5], z in [1,5]
+% 3 - y + z = 2 => z = y - 1
+% y=1 => z=0 (out of range), y=2 => z=1, y=3 => z=2, y=4 => z=3, y=5 => z=4
+% First solution: y=2, z=1
+var 3..3: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: z :: output_var;
+
+constraint int_lin_eq([1, -1, 1], [x, y, z], 2);
+
+solve satisfy;

@@ -1,0 +1,11 @@
+% int_lin_eq unit coefficients: all +1
+% x + y + z = 6, x,y,z in [1,3]
+% Only solution with x=1: y+z=5 => (2,3),(3,2)
+% Fix x=1 to get deterministic output
+var 1..1: x :: output_var;
+var 1..3: y :: output_var;
+var 1..3: z :: output_var;
+
+constraint int_lin_eq([1, 1, 1], [x, y, z], 6);
+
+solve satisfy;
