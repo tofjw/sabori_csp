@@ -293,6 +293,65 @@ private:
                             SolutionCallback callback, bool find_all);
 
     /**
+     * @brief 探索フレーム（明示的スタック用）
+     */
+    struct SearchFrame {
+        size_t var_idx;
+        int save_point;
+        Domain::value_type prev_min, prev_max;
+        size_t nogoods_before;
+        int remaining_cl;
+
+        enum class Mode : uint8_t { Enumerate, Bisect } mode;
+
+        // Enumerate 用
+        std::vector<Domain::value_type> values;
+        size_t value_idx;
+
+        // Bisect 用
+        Domain::value_type split_point;
+        uint8_t branch;  // 0=未開始, 1=first試行済, 2=second試行済
+        bool right_first;  // true: 右(x>mid)を先に試す
+    };
+
+    /**
+     * @brief handle_ascent の戻り値
+     */
+    enum class AscentAction { Return, Continue, TryNext };
+
+    // ===== run_search ヘルパー =====
+
+    /// 全値/全ブランチ失敗時の共通処理
+    void handle_failure(Model& model, SearchFrame& frame,
+                        std::vector<SearchFrame>& stack,
+                        SearchResult& result, bool& ascending);
+
+    /// 勾配ヒント・ベスト解ヒントによる値の並べ替え
+    void order_values(size_t var_idx);
+
+    /// Enumerate モードの値ループ
+    void try_enumerate_values(Model& model, SearchFrame& frame,
+                              std::vector<SearchFrame>& stack,
+                              SearchResult& result, bool& ascending);
+
+    /// Bisect モードの2ブランチ試行
+    void try_bisect_branches(Model& model, SearchFrame& frame,
+                             std::vector<SearchFrame>& stack,
+                             SearchResult& result, bool& ascending);
+
+    /// 変数に対して SearchFrame を構築して stack に push
+    void create_search_frame(Model& model, size_t var_idx,
+                             std::vector<SearchFrame>& stack, int conflict_limit);
+
+    /// 全変数確定時の解検証・コールバック呼出
+    void handle_solution(Model& model, SolutionCallback& callback, bool find_all,
+                         SearchResult& result, bool& ascending);
+
+    /// 子ノード結果の処理
+    AscentAction handle_ascent(Model& model, std::vector<SearchFrame>& stack,
+                               SearchResult& result);
+
+    /**
      * @brief 探索共通の初期化（build_constraint_watch_list → presolve → community 分析）
      * @return presolve 成功なら true、矛盾検出なら false
      */

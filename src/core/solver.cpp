@@ -533,336 +533,332 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
 SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                                  SolutionCallback callback, bool find_all) {
-    // 明示的スタックによる反復探索（再帰によるスタックオーバーフローを回避）
-    struct SearchFrame {
-        size_t var_idx;
-        int save_point;
-        Domain::value_type prev_min, prev_max;
-        size_t nogoods_before;
-        int remaining_cl;
-
-        enum class Mode : uint8_t { Enumerate, Bisect } mode;
-
-        // Enumerate 用
-        std::vector<Domain::value_type> values;
-        size_t value_idx;
-
-        // Bisect 用
-        Domain::value_type split_point;
-        uint8_t branch;  // 0=未開始, 1=first試行済, 2=second試行済
-        bool right_first;  // true: 右(x>mid)を先に試す
-    };
-
     std::vector<SearchFrame> stack;
     SearchResult result = SearchResult::UNSAT;
     bool ascending = false;
-
-    const auto& variables = model.variables();
 
     while (true) {
         if (!ascending) {
             // === 降下: 新レベルに入る ===
             size_t current_depth = depth + stack.size();
 
-            // タイムアウトチェック
             if (stopped_) {
                 result = SearchResult::UNKNOWN;
                 ascending = true;
                 continue;
             }
 
-            // 統計更新
             stats_.depth_sum += current_depth;
             stats_.depth_count++;
             if (current_depth > stats_.max_depth) {
                 stats_.max_depth = current_depth;
             }
 
-            // 変数選択（全変数確定なら SIZE_MAX）
-            size_t var_idx = var_selector_.select(model, activity_, temporal_activity_, ng_usage_bloom_, activity_first_, rng_);
+            size_t var_idx = var_selector_.select(model, activity_, temporal_activity_,
+                                                  ng_usage_bloom_, activity_first_, rng_);
 
             if (var_idx == SIZE_MAX) {
-                if (verify_solution(model)) {
-                    if (!callback(build_solution(model))) {
-                        result = SearchResult::SAT;
-                    } else {
-                        result = find_all ? SearchResult::UNSAT : SearchResult::SAT;
-                    }
-                } else {
-                    result = SearchResult::UNSAT;
-                }
-                ascending = true;
+                handle_solution(model, callback, find_all, result, ascending);
                 continue;
             }
 
-            int save_point = current_decision_;
-            auto prev_min = model.var_min(var_idx);
-            auto prev_max = model.var_max(var_idx);
-            size_t nogoods_before = nogood_mgr_.nogoods_count();
-            int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
-
-            // モード判定
-            auto& domain = variables[var_idx]->domain();
-            auto domain_range = static_cast<size_t>(prev_max - prev_min + 1);
-            bool use_bisect = (domain.is_bounds_only() ||
-                              (bisection_threshold_ > 0 && domain_range > bisection_threshold_))
-                              && !model.is_no_bisect(var_idx);
-
-            if (use_bisect) {
-                // Bisect モード
-                stats_.bisect_count++;
-                auto mid = prev_min + (prev_max - prev_min) / 2;
-
-                // ヒント解がある場合はそちら側を優先、なければランダム
-                bool right_first;
-                if (current_best_assignment_[var_idx] != kNoValue) {
-                    auto hint_val = current_best_assignment_[var_idx];
-                    right_first = (hint_val > mid);
-                } else {
-                    right_first = (rng_() & 1) != 0;
-                }
-
-                SearchFrame frame;
-                frame.var_idx = var_idx;
-                frame.save_point = save_point;
-                frame.prev_min = prev_min;
-                frame.prev_max = prev_max;
-                frame.nogoods_before = nogoods_before;
-                frame.remaining_cl = cl;
-                frame.mode = SearchFrame::Mode::Bisect;
-                frame.split_point = mid;
-                frame.branch = 0;
-                frame.right_first = right_first;
-                frame.value_idx = 0;
-                stack.push_back(std::move(frame));
-            } else {
-                // Enumerate モード
-                stats_.enumerate_count++;
-                auto& domain = variables[var_idx]->domain();
-                domain.copy_values_to(value_buffer_);
-                auto& values = value_buffer_;
-
-                // 疑似勾配ヒント（対象変数のみ）
-                if (var_idx == gradient_var_idx_ && gradient_direction_ != 0) {
-                    std::vector<size_t> candidate_indices;
-                    for (size_t i = 0; i < values.size(); ++i) {
-                        if (gradient_direction_ > 0 && values[i] > gradient_ref_val_) {
-                            candidate_indices.push_back(i);
-                        } else if (gradient_direction_ < 0 && values[i] < gradient_ref_val_) {
-                            candidate_indices.push_back(i);
-                        }
-                    }
-                    if (!candidate_indices.empty()) {
-                        size_t pick = candidate_indices[rng_() % candidate_indices.size()];
-                        if (pick != 0) std::swap(values[pick], values[0]);
-                        // 2番目の候補としてベスト解の値を配置
-                        if (values.size() > 1 && current_best_assignment_[var_idx] != kNoValue) {
-                            auto best_val = current_best_assignment_[var_idx];
-                            for (size_t i = 1; i < values.size(); ++i) {
-                                if (values[i] == best_val) {
-                                    if (i != 1) std::swap(values[i], values[1]);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    gradient_var_idx_ = SIZE_MAX;
-                } else if (current_best_assignment_[var_idx] != kNoValue) {
-                    auto best_val = current_best_assignment_[var_idx];
-                    auto it = std::find(values.begin(), values.end(), best_val);
-                    if (it != values.end() && it != values.begin()) {
-                        std::swap(*it, values[0]);
-                    }
-                }
-
-                SearchFrame frame;
-                frame.var_idx = var_idx;
-                frame.save_point = save_point;
-                frame.prev_min = prev_min;
-                frame.prev_max = prev_max;
-                frame.nogoods_before = nogoods_before;
-                frame.remaining_cl = cl;
-                frame.mode = SearchFrame::Mode::Enumerate;
-                frame.values = std::move(values);
-                frame.value_idx = 0;
-                frame.split_point = 0;
-                frame.branch = 0;
-                frame.right_first = false;
-                stack.push_back(std::move(frame));
-            }
-            // TRY VALUES/BRANCH へフォールスルー
+            create_search_frame(model, var_idx, stack, conflict_limit);
         } else {
             // === 上昇: 子の結果を処理 ===
-            if (stack.empty()) {
-                return result;
-            }
-
-            auto& frame = stack.back();
-
-            decision_trail_.pop_back();
-
-            if (result == SearchResult::SAT) {
-                value_buffer_ = std::move(stack.back().values);
-                stack.pop_back();
-                continue;  // SAT を上へ伝播
-            }
-
-            if (result == SearchResult::UNKNOWN || frame.remaining_cl <= 1) {
-                current_decision_--;
-                backtrack(model, frame.save_point);
-                value_buffer_ = std::move(stack.back().values);
-                stack.pop_back();
-                result = SearchResult::UNKNOWN;
-                continue;
-            }
-
-            // UNSAT: 次の値/branch を試す
-            frame.remaining_cl--;
-            current_decision_--;
-            backtrack(model, frame.save_point);
-
-            if (frame.mode == SearchFrame::Mode::Enumerate) {
-                frame.value_idx++;
-            }
-            // Bisect モードでは branch は TRY BRANCH 側で自動インクリメント
-            // フォールスルー
+            auto action = handle_ascent(model, stack, result);
+            if (action == AscentAction::Return) return result;
+            if (action == AscentAction::Continue) continue;
         }
 
         auto& frame = stack.back();
+        if (frame.mode == SearchFrame::Mode::Enumerate)
+            try_enumerate_values(model, frame, stack, result, ascending);
+        else
+            try_bisect_branches(model, frame, stack, result, ascending);
+    }
+}
 
-        if (frame.mode == SearchFrame::Mode::Enumerate) {
-            // === TRY VALUES (Enumerate) ===
-            bool found_value = false;
+void Solver::handle_failure(Model& model, SearchFrame& frame,
+                            std::vector<SearchFrame>& stack,
+                            SearchResult& result, bool& ascending) {
+    activity_[frame.var_idx] += activity_inc_;
+    temporal_activity_[frame.var_idx]++;
 
-            while (frame.value_idx < frame.values.size()) {
-                auto val = frame.values[frame.value_idx];
+    stats_.fail_count++;
+    save_partial_assignment(model);
 
-                current_decision_++;
+    nogood_mgr_.truncate_nogoods(frame.nogoods_before);
 
-                if (!model.instantiate(current_decision_, frame.var_idx, val)) {
-                    current_decision_--;
-                    frame.value_idx++;
-                    continue;
-                }
+    if (nogood_learning_) {
+        nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_,
+                                        stats_.restart_count);
+    }
 
-                unassigned_trail_.push_back({current_decision_, var_selector_.decision_unassigned_end(), var_selector_.defined_unassigned_end(), ng_usage_bloom_});
-                ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
+    value_buffer_ = std::move(frame.values);
+    stack.pop_back();
+    result = SearchResult::UNSAT;
+    ascending = true;
+}
 
-                bool propagate_ok = propagate_instantiate(model, frame.var_idx,
-                                                           frame.prev_min, frame.prev_max);
-                bool queue_ok = false;
-                if (propagate_ok) {
-                    queue_ok = process_queue(model);
-                    if (queue_ok) {
-                        decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
-                        if (community_analysis_.is_enabled()) {
-                            community_analysis_.on_decision(frame.var_idx);
-                            propagation_source_ = frame.var_idx;
-                        }
-                        ascending = false;
-                        found_value = true;
-                        if (temporal_activity_[frame.var_idx] > 0) 
-                            temporal_activity_[frame.var_idx]--;
+void Solver::order_values(size_t var_idx) {
+    auto& values = value_buffer_;
+
+    // 疑似勾配ヒント（対象変数のみ）
+    if (var_idx == gradient_var_idx_ && gradient_direction_ != 0) {
+        std::vector<size_t> candidate_indices;
+        for (size_t i = 0; i < values.size(); ++i) {
+            if (gradient_direction_ > 0 && values[i] > gradient_ref_val_) {
+                candidate_indices.push_back(i);
+            } else if (gradient_direction_ < 0 && values[i] < gradient_ref_val_) {
+                candidate_indices.push_back(i);
+            }
+        }
+        if (!candidate_indices.empty()) {
+            size_t pick = candidate_indices[rng_() % candidate_indices.size()];
+            if (pick != 0) std::swap(values[pick], values[0]);
+            // 2番目の候補としてベスト解の値を配置
+            if (values.size() > 1 && current_best_assignment_[var_idx] != kNoValue) {
+                auto best_val = current_best_assignment_[var_idx];
+                for (size_t i = 1; i < values.size(); ++i) {
+                    if (values[i] == best_val) {
+                        if (i != 1) std::swap(values[i], values[1]);
                         break;
                     }
                 }
-
-                if (!propagate_ok || !queue_ok) {
-                    model.clear_pending_updates();
-                }
-
-                current_decision_--;
-                backtrack(model, frame.save_point);
-                frame.value_idx++;
-            }
-
-            if (!found_value) {
-                // 全値失敗
-                if (temporal_activity_[frame.var_idx] == 0) {
-                }
-                activity_[frame.var_idx] += activity_inc_;
-                temporal_activity_[frame.var_idx]++;
-
-                stats_.fail_count++;
-                save_partial_assignment(model);
-
-                nogood_mgr_.truncate_nogoods(frame.nogoods_before);
-
-                if (nogood_learning_) {
-                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_, stats_.restart_count);
-                }
-
-                value_buffer_ = std::move(stack.back().values);
-                stack.pop_back();
-                result = SearchResult::UNSAT;
-                ascending = true;
-            }
-        } else {
-            // === TRY BRANCH (Bisect) ===
-            bool found_branch = false;
-
-            while (frame.branch < 2) {
-                frame.branch++;
-                current_decision_++;
-                unassigned_trail_.push_back({current_decision_, var_selector_.decision_unassigned_end(), var_selector_.defined_unassigned_end(), ng_usage_bloom_});
-                ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
-
-                // right_first なら branch==1 で右、branch==2 で左
-                bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
-
-                bool ok;
-                Literal decision_lit;
-                if (try_left) {
-                    // 左: x <= mid
-                    model.enqueue_set_max(frame.var_idx, frame.split_point);
-                    decision_lit = {frame.var_idx, frame.split_point, Literal::Type::Leq};
-                } else {
-                    // 右: x > mid (x >= mid+1)
-                    model.enqueue_set_min(frame.var_idx, frame.split_point + 1);
-                    decision_lit = {frame.var_idx, frame.split_point + 1, Literal::Type::Geq};
-                }
-
-                ok = process_queue(model);
-                if (ok) {
-                    decision_trail_.push_back(decision_lit);
-                    if (community_analysis_.is_enabled()) {
-                        community_analysis_.on_decision(frame.var_idx);
-                        propagation_source_ = frame.var_idx;
-                    }
-                    ascending = false;
-                    found_branch = true;
-                    if (temporal_activity_[frame.var_idx] > 0) 
-                        temporal_activity_[frame.var_idx]--;
-                    break;
-                }
-
-                model.clear_pending_updates();
-                current_decision_--;
-                backtrack(model, frame.save_point);
-            }
-
-            if (!found_branch) {
-                // 両方失敗
-                if (temporal_activity_[frame.var_idx] == 0) {
-                }
-                activity_[frame.var_idx] += activity_inc_;
-                temporal_activity_[frame.var_idx]++;
-
-                stats_.fail_count++;
-                save_partial_assignment(model);
-
-                nogood_mgr_.truncate_nogoods(frame.nogoods_before);
-
-                if (nogood_learning_) {
-                    nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_, stats_.restart_count);
-                }
-
-                stack.pop_back();
-                result = SearchResult::UNSAT;
-                ascending = true;
             }
         }
+        gradient_var_idx_ = SIZE_MAX;
+    } else if (current_best_assignment_[var_idx] != kNoValue) {
+        auto best_val = current_best_assignment_[var_idx];
+        auto it = std::find(values.begin(), values.end(), best_val);
+        if (it != values.end() && it != values.begin()) {
+            std::swap(*it, values[0]);
+        }
     }
+}
+
+void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
+                                  std::vector<SearchFrame>& stack,
+                                  SearchResult& result, bool& ascending) {
+    bool found_value = false;
+
+    while (frame.value_idx < frame.values.size()) {
+        auto val = frame.values[frame.value_idx];
+
+        current_decision_++;
+
+        if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+            current_decision_--;
+            frame.value_idx++;
+            continue;
+        }
+
+        unassigned_trail_.push_back({current_decision_,
+                                     var_selector_.decision_unassigned_end(),
+                                     var_selector_.defined_unassigned_end(),
+                                     ng_usage_bloom_});
+        ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
+
+        bool propagate_ok = propagate_instantiate(model, frame.var_idx,
+                                                   frame.prev_min, frame.prev_max);
+        bool queue_ok = false;
+        if (propagate_ok) {
+            queue_ok = process_queue(model);
+            if (queue_ok) {
+                decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
+                if (community_analysis_.is_enabled()) {
+                    community_analysis_.on_decision(frame.var_idx);
+                    propagation_source_ = frame.var_idx;
+                }
+                ascending = false;
+                found_value = true;
+                if (temporal_activity_[frame.var_idx] > 0)
+                    temporal_activity_[frame.var_idx]--;
+                break;
+            }
+        }
+
+        if (!propagate_ok || !queue_ok) {
+            model.clear_pending_updates();
+        }
+
+        current_decision_--;
+        backtrack(model, frame.save_point);
+        frame.value_idx++;
+    }
+
+    if (!found_value) {
+        handle_failure(model, frame, stack, result, ascending);
+    }
+}
+
+void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
+                                 std::vector<SearchFrame>& stack,
+                                 SearchResult& result, bool& ascending) {
+    bool found_branch = false;
+
+    while (frame.branch < 2) {
+        frame.branch++;
+        current_decision_++;
+        unassigned_trail_.push_back({current_decision_,
+                                     var_selector_.decision_unassigned_end(),
+                                     var_selector_.defined_unassigned_end(),
+                                     ng_usage_bloom_});
+        ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
+
+        // right_first なら branch==1 で右、branch==2 で左
+        bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
+
+        Literal decision_lit;
+        if (try_left) {
+            // 左: x <= mid
+            model.enqueue_set_max(frame.var_idx, frame.split_point);
+            decision_lit = {frame.var_idx, frame.split_point, Literal::Type::Leq};
+        } else {
+            // 右: x > mid (x >= mid+1)
+            model.enqueue_set_min(frame.var_idx, frame.split_point + 1);
+            decision_lit = {frame.var_idx, frame.split_point + 1, Literal::Type::Geq};
+        }
+
+        bool ok = process_queue(model);
+        if (ok) {
+            decision_trail_.push_back(decision_lit);
+            if (community_analysis_.is_enabled()) {
+                community_analysis_.on_decision(frame.var_idx);
+                propagation_source_ = frame.var_idx;
+            }
+            ascending = false;
+            found_branch = true;
+            if (temporal_activity_[frame.var_idx] > 0)
+                temporal_activity_[frame.var_idx]--;
+            break;
+        }
+
+        model.clear_pending_updates();
+        current_decision_--;
+        backtrack(model, frame.save_point);
+    }
+
+    if (!found_branch) {
+        handle_failure(model, frame, stack, result, ascending);
+    }
+}
+
+void Solver::create_search_frame(Model& model, size_t var_idx,
+                                 std::vector<SearchFrame>& stack,
+                                 int conflict_limit) {
+    int save_point = current_decision_;
+    auto prev_min = model.var_min(var_idx);
+    auto prev_max = model.var_max(var_idx);
+    size_t nogoods_before = nogood_mgr_.nogoods_count();
+    int cl = stack.empty() ? conflict_limit : stack.back().remaining_cl;
+
+    // モード判定
+    const auto& variables = model.variables();
+    auto& domain = variables[var_idx]->domain();
+    auto domain_range = static_cast<size_t>(prev_max - prev_min + 1);
+    bool use_bisect = (domain.is_bounds_only() ||
+                      (bisection_threshold_ > 0 && domain_range > bisection_threshold_))
+                      && !model.is_no_bisect(var_idx);
+
+    if (use_bisect) {
+        stats_.bisect_count++;
+        auto mid = prev_min + (prev_max - prev_min) / 2;
+
+        // ヒント解がある場合はそちら側を優先、なければランダム
+        bool right_first;
+        if (current_best_assignment_[var_idx] != kNoValue) {
+            auto hint_val = current_best_assignment_[var_idx];
+            right_first = (hint_val > mid);
+        } else {
+            right_first = (rng_() & 1) != 0;
+        }
+
+        SearchFrame frame;
+        frame.var_idx = var_idx;
+        frame.save_point = save_point;
+        frame.prev_min = prev_min;
+        frame.prev_max = prev_max;
+        frame.nogoods_before = nogoods_before;
+        frame.remaining_cl = cl;
+        frame.mode = SearchFrame::Mode::Bisect;
+        frame.split_point = mid;
+        frame.branch = 0;
+        frame.right_first = right_first;
+        frame.value_idx = 0;
+        stack.push_back(std::move(frame));
+    } else {
+        stats_.enumerate_count++;
+        domain.copy_values_to(value_buffer_);
+        order_values(var_idx);
+
+        SearchFrame frame;
+        frame.var_idx = var_idx;
+        frame.save_point = save_point;
+        frame.prev_min = prev_min;
+        frame.prev_max = prev_max;
+        frame.nogoods_before = nogoods_before;
+        frame.remaining_cl = cl;
+        frame.mode = SearchFrame::Mode::Enumerate;
+        frame.values = std::move(value_buffer_);
+        frame.value_idx = 0;
+        frame.split_point = 0;
+        frame.branch = 0;
+        frame.right_first = false;
+        stack.push_back(std::move(frame));
+    }
+}
+
+void Solver::handle_solution(Model& model, SolutionCallback& callback, bool find_all,
+                             SearchResult& result, bool& ascending) {
+    if (verify_solution(model)) {
+        if (!callback(build_solution(model))) {
+            result = SearchResult::SAT;
+        } else {
+            result = find_all ? SearchResult::UNSAT : SearchResult::SAT;
+        }
+    } else {
+        result = SearchResult::UNSAT;
+    }
+    ascending = true;
+}
+
+Solver::AscentAction Solver::handle_ascent(Model& model,
+                                           std::vector<SearchFrame>& stack,
+                                           SearchResult& result) {
+    if (stack.empty()) {
+        return AscentAction::Return;
+    }
+
+    auto& frame = stack.back();
+    decision_trail_.pop_back();
+
+    if (result == SearchResult::SAT) {
+        value_buffer_ = std::move(frame.values);
+        stack.pop_back();
+        return AscentAction::Continue;  // SAT を上へ伝播
+    }
+
+    if (result == SearchResult::UNKNOWN || frame.remaining_cl <= 1) {
+        current_decision_--;
+        backtrack(model, frame.save_point);
+        value_buffer_ = std::move(frame.values);
+        stack.pop_back();
+        result = SearchResult::UNKNOWN;
+        return AscentAction::Continue;
+    }
+
+    // UNSAT: 次の値/branch を試す
+    frame.remaining_cl--;
+    current_decision_--;
+    backtrack(model, frame.save_point);
+
+    if (frame.mode == SearchFrame::Mode::Enumerate) {
+        frame.value_idx++;
+    }
+    // Bisect モードでは branch は try_bisect_branches 側で自動インクリメント
+
+    return AscentAction::TryNext;
 }
 
 void Solver::log_presolve_start(const Model& model) const {
