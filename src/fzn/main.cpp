@@ -30,11 +30,13 @@ void print_usage(const char* program) {
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -N      Disable nogood learning\n";
+    std::cerr << "  -E      Disable variable elimination\n";
 }
 
 bool g_print_stats = false;
 bool g_verbose = false;
 bool g_no_nogood = false;
+bool g_no_elimination = false;
 bool g_community_analysis = false;
 
 void print_stats(const sabori_csp::Solver& solver) {
@@ -131,21 +133,9 @@ void print_solution(const sabori_csp::Solution& sol,
 sabori_csp::ModelSimplifier simplify_model(
     sabori_csp::Model& model,
     const sabori_csp::fzn::Model& fzn_model) {
-    // protected variable IDs を構築（output変数 + 目的変数）
+    // protected variable IDs を構築（目的変数のみ）
+    // output 変数は定義制約が残るため伝播で値が決まる
     std::unordered_set<size_t> protected_ids;
-    for (const auto& name : fzn_model.output_vars()) {
-        size_t idx = model.find_variable_index(name);
-        if (idx != SIZE_MAX) protected_ids.insert(idx);
-    }
-    for (const auto& array_name : fzn_model.output_arrays()) {
-        auto it = fzn_model.array_decls().find(array_name);
-        if (it != fzn_model.array_decls().end()) {
-            for (const auto& elem : it->second.elements) {
-                size_t idx = model.find_variable_index(elem);
-                if (idx != SIZE_MAX) protected_ids.insert(idx);
-            }
-        }
-    }
     if (fzn_model.solve_decl().kind != sabori_csp::fzn::SolveKind::Satisfy &&
         !fzn_model.solve_decl().objective_var.empty()) {
         size_t idx = model.find_variable_index(fzn_model.solve_decl().objective_var);
@@ -164,7 +154,7 @@ int g_bisection_threshold = 8;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model(g_verbose);
-    simplify_model(*model, fzn_model);
+    if (!g_no_elimination) simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
@@ -210,7 +200,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
     auto model = fzn_model.to_model(g_verbose);
-    simplify_model(*model, fzn_model);
+    if (!g_no_elimination) simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
@@ -283,6 +273,8 @@ int main(int argc, char* argv[]) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
+        } else if (std::strcmp(argv[i], "-E") == 0) {
+            g_no_elimination = true;
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
