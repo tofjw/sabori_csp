@@ -173,6 +173,31 @@ public:
     const std::vector<ConstraintPtr>& constraints() const;
 
     /**
+     * @brief 制約をnullptrに設定（削除マーク）
+     */
+    void remove_constraint(size_t idx);
+
+    /**
+     * @brief 制約を差し替え
+     */
+    void replace_constraint(size_t idx, ConstraintPtr new_cst);
+
+    /**
+     * @brief nullptr制約を除去し、model_indexを再割り当て
+     */
+    void compact_constraints();
+
+    /**
+     * @brief 変数を探索対象外にマーク
+     */
+    void mark_variable_eliminated(size_t var_idx);
+
+    /**
+     * @brief 消去済みかどうか
+     */
+    bool is_eliminated(size_t var_idx) const;
+
+    /**
      * @brief IDで変数を取得
      */
     Variable* variable(size_t id) const;
@@ -473,6 +498,9 @@ private:
 
     // 変数IDカウンタ
     size_t next_var_id_ = 0;
+
+    // 変数ごとの消去フラグ（ModelSimplifier で使用）
+    std::vector<bool> eliminated_;
 
     // 変数データ（AoS: 同一変数の min/max/size が同一キャッシュラインに乗る）
     std::vector<VarData> var_data_;

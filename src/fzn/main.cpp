@@ -1,5 +1,6 @@
 #include "sabori_csp/fzn/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include "sabori_csp/model_simplifier.hpp"
 #include "fzn_parser.hpp"
 #include <iostream>
 #include <string>
@@ -125,12 +126,45 @@ void print_solution(const sabori_csp::Solution& sol,
 }
 
 /**
+ * @brief protected 変数ID集合を構築し、ModelSimplifier を実行
+ */
+sabori_csp::ModelSimplifier simplify_model(
+    sabori_csp::Model& model,
+    const sabori_csp::fzn::Model& fzn_model) {
+    // protected variable IDs を構築（output変数 + 目的変数）
+    std::unordered_set<size_t> protected_ids;
+    for (const auto& name : fzn_model.output_vars()) {
+        size_t idx = model.find_variable_index(name);
+        if (idx != SIZE_MAX) protected_ids.insert(idx);
+    }
+    for (const auto& array_name : fzn_model.output_arrays()) {
+        auto it = fzn_model.array_decls().find(array_name);
+        if (it != fzn_model.array_decls().end()) {
+            for (const auto& elem : it->second.elements) {
+                size_t idx = model.find_variable_index(elem);
+                if (idx != SIZE_MAX) protected_ids.insert(idx);
+            }
+        }
+    }
+    if (fzn_model.solve_decl().kind != sabori_csp::fzn::SolveKind::Satisfy &&
+        !fzn_model.solve_decl().objective_var.empty()) {
+        size_t idx = model.find_variable_index(fzn_model.solve_decl().objective_var);
+        if (idx != SIZE_MAX) protected_ids.insert(idx);
+    }
+
+    sabori_csp::ModelSimplifier simplifier;
+    simplifier.simplify(model, protected_ids, g_verbose);
+    return simplifier;
+}
+
+/**
  * @brief 充足可能性問題を解く
  */
 int g_bisection_threshold = 8;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model(g_verbose);
+    simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
@@ -176,6 +210,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
     auto model = fzn_model.to_model(g_verbose);
+    simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);

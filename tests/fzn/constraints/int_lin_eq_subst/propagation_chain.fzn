@@ -1,0 +1,17 @@
+% Propagation through defining constraint during search
+% z(1..5) = y(1..5) - 0 (defined by z - y = 0), z != x
+% z is eliminated, but defining constraint remains for propagation.
+% When y is assigned, z must be propagated via defining constraint,
+% then z != x must prune x.
+% y=1 -> z=1 -> x!=1 -> x in {2,3,4,5} (4 sols)
+% y=2 -> z=2 -> x!=2 -> x in {1,3,4,5} (4 sols)
+% y=3 -> z=3 -> x!=3 -> x in {1,2,4,5} (4 sols)
+% y=4 -> z=4 -> x!=4 -> x in {1,2,3,5} (4 sols)
+% y=5 -> z=5 -> x!=5 -> x in {1,2,3,4} (4 sols)
+% Total: 20 solutions
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: z :: is_defined_var;
+constraint int_lin_eq([1, -1], [z, y], 0);
+constraint int_lin_ne([1, -1], [z, x], 0);
+solve satisfy;

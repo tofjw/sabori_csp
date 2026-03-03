@@ -1,0 +1,9 @@
+% Domain tightening via defining constraint
+% x(0..11) = y(0..13) - 2, y <= 10
+% Defining constraint x + (-1)*y = -2 kept; presolve tightens y to 2..13
+% Combined with y <= 10: y in 2..10, x in 0..8 => 9 solutions
+var 0..11: x :: is_defined_var;
+var 0..13: y :: output_var;
+constraint int_lin_eq([1, -1], [x, y], -2);
+constraint int_lin_le([1], [y], 10);
+solve satisfy;

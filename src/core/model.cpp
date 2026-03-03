@@ -87,6 +87,45 @@ const std::vector<ConstraintPtr>& Model::constraints() const {
     return constraints_;
 }
 
+void Model::remove_constraint(size_t idx) {
+    constraints_[idx] = nullptr;
+    constraint_ptrs_[idx] = nullptr;
+}
+
+void Model::replace_constraint(size_t idx, ConstraintPtr new_cst) {
+    new_cst->set_model_index(idx);
+    constraint_ptrs_[idx] = new_cst.get();
+    constraints_[idx] = std::move(new_cst);
+}
+
+void Model::compact_constraints() {
+    size_t w = 0;
+    for (size_t r = 0; r < constraints_.size(); ++r) {
+        if (constraints_[r]) {
+            if (w != r) {
+                constraints_[w] = std::move(constraints_[r]);
+                constraint_ptrs_[w] = constraints_[w].get();
+                constraints_[w]->set_model_index(w);
+            }
+            ++w;
+        }
+    }
+    constraints_.resize(w);
+    constraint_ptrs_.resize(w);
+}
+
+void Model::mark_variable_eliminated(size_t var_idx) {
+    if (eliminated_.size() <= var_idx) {
+        eliminated_.resize(var_idx + 1, false);
+    }
+    eliminated_[var_idx] = true;
+}
+
+bool Model::is_eliminated(size_t var_idx) const {
+    if (var_idx >= eliminated_.size()) return false;
+    return eliminated_[var_idx];
+}
+
 Variable* Model::variable(size_t id) const {
     if (id >= variables_.size()) {
         throw std::out_of_range("Variable ID out of range");

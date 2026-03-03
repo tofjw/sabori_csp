@@ -7,6 +7,7 @@ add_library(sabori_csp_core
   nogood_manager.cpp
   variable_selector.cpp
   model.cpp
+  model_simplifier.cpp
   community_analysis.cpp
   # Constraints
   constraints/arithmetic.cpp

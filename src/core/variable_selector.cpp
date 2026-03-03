@@ -16,6 +16,7 @@ void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
     std::vector<size_t> defined_vars;
 
     for (size_t i = 0; i < variables.size(); ++i) {
+        if (model.is_eliminated(i)) continue;
         if (model.is_defined_var(i)) {
             defined_vars.push_back(i);
         } else {
@@ -30,7 +31,7 @@ void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
 
 void VariableSelector::init_tracking(const Model& model) {
     const size_t n = var_order_.size();
-    var_position_.resize(n);
+    var_position_.assign(model.variables().size(), SIZE_MAX);
     for (size_t k = 0; k < n; ++k) {
         var_position_[var_order_[k]] = k;
     }
@@ -61,7 +62,9 @@ void VariableSelector::init_tracking(const Model& model) {
 }
 
 void VariableSelector::mark_assigned(size_t var_idx) {
+    if (var_idx >= var_position_.size()) return;
     size_t pos = var_position_[var_idx];
+    if (pos == SIZE_MAX) return;  // eliminated variable
     if (pos < decision_var_end_) {
         if (pos < decision_unassigned_end_) {
             --decision_unassigned_end_;

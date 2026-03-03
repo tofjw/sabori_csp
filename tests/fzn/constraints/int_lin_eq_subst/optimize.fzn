@@ -1,0 +1,11 @@
+% Optimization with eliminated variable
+% z(1..10) = 10 - 2*y (defined), minimize x + z = x + 10 - 2*y
+% x in 1..5, y in 1..4 (z = 10-2y: y=1->z=8, y=4->z=2)
+% Optimal: x=1 (min), y=4 (max to minimize z=2), obj = 1+2 = 3
+var 1..5: x :: output_var;
+var 1..4: y :: output_var;
+var 1..10: z :: is_defined_var;
+var 0..100: obj :: output_var;
+constraint int_lin_eq([1, 2], [z, y], 10);
+constraint int_lin_eq([1, 1, -1], [x, z, obj], 0);
+solve minimize obj;

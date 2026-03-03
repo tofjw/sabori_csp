@@ -89,6 +89,37 @@ else
     fail "output_protected: z should appear in output (it's output_var)" "$stdout"
 fi
 
+# --- Test 9: domain tightening via kept defining constraint ---
+# x(0..11) = y - 2, y <= 10. Presolve tightens y to 2..10 => 9 solutions
+output=$("$SOLVER" -a "$SCRIPT_DIR/domain_tighten.fzn" 2>/dev/null)
+nsol=$(echo "$output" | grep -c "^----------$")
+if [ "$nsol" -eq 9 ]; then
+    pass "domain_tighten: 9 solutions (got $nsol)"
+else
+    fail "domain_tighten: expected 9 solutions, got $nsol" "$output"
+fi
+
+# --- Test 10: optimization with eliminated variable ---
+# z = 10 - 2y (eliminated), minimize obj = x + z
+# Optimal: x=1, y=4, z=2, obj=3
+output=$("$SOLVER" -a "$SCRIPT_DIR/optimize.fzn" 2>/dev/null)
+if echo "$output" | grep -q "^obj = 3;"; then
+    pass "optimize: optimal obj=3"
+else
+    fail "optimize: expected obj=3 in output" "$output"
+fi
+
+# --- Test 11: propagation through kept defining constraint ---
+# z = y (eliminated), z != x. Defining constraint propagates z when y assigned.
+# x,y in 1..5, x != y => 20 solutions
+output=$("$SOLVER" -a "$SCRIPT_DIR/propagation_chain.fzn" 2>/dev/null)
+nsol=$(echo "$output" | grep -c "^----------$")
+if [ "$nsol" -eq 20 ]; then
+    pass "propagation_chain: 20 solutions (got $nsol)"
+else
+    fail "propagation_chain: expected 20 solutions, got $nsol" "$output"
+fi
+
 echo ""
 echo "Results: $PASSED passed, $FAILED failed"
 [ $FAILED -eq 0 ] || exit 1

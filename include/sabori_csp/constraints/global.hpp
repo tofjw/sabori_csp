@@ -260,6 +260,8 @@ public:
 
     std::string name() const override;
 
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+    int64_t bound() const { return bound_; }
 
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;
@@ -775,6 +777,9 @@ public:
 
     std::string name() const override;
 
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+    int64_t target() const { return target_; }
+    size_t b_id() const { return b_id_; }
 
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;
@@ -860,6 +865,9 @@ public:
 
     std::string name() const override;
 
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+    int64_t target() const { return target_; }
+    size_t b_id() const { return b_id_; }
 
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;
@@ -945,6 +953,9 @@ public:
 
     std::string name() const override;
 
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+    int64_t bound() const { return bound_; }
+    size_t b_id() const { return b_id_; }
 
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;
@@ -1032,6 +1043,10 @@ public:
                           VariablePtr b);
 
     std::string name() const override;
+
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+    int64_t bound() const { return bound_; }
+    size_t b_id() const { return b_id_; }
 
 
     bool prepare_propagation(Model& model) override;

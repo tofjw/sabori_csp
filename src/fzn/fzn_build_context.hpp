@@ -17,14 +17,6 @@ namespace sabori_csp {
 namespace fzn {
 
 /**
- * @brief int_lin_eq 代入情報
- */
-struct SubstInfo {
-    std::string y_name;
-    int64_t cx, cy, rhs;
-};
-
-/**
  * @brief FlatZinc制約構築時の共有コンテキスト
  *
  * to_model() 内のラムダ関数群をメンバ関数として提供する。
@@ -35,9 +27,7 @@ struct FznBuildContext {
     const std::map<std::string, VarDecl>& var_decls;
     const std::map<std::string, ArrayDecl>& array_decls;
     const std::map<std::string, std::vector<Domain::value_type>>& constant_arrays;
-    const std::map<std::string, SubstInfo>& subst_map;
     const std::map<std::string, std::string>& alias_map;
-    bool is_defining;
     bool verbose;
 
     /**
@@ -59,14 +49,6 @@ struct FznBuildContext {
      * @brief 配列引数を整数リストに解決
      */
     std::vector<Domain::value_type> resolve_int_array(const ConstraintArg& arg) const;
-
-    /**
-     * @brief int_lin_* の係数・変数名・RHS に代入を適用
-     * @return 変更があった場合 true
-     */
-    bool apply_substitutions(std::vector<int64_t>& coeffs,
-                             std::vector<std::string>& vnames,
-                             int64_t& rhs_val) const;
 };
 
 } // namespace fzn

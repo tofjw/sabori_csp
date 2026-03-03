@@ -68,50 +68,5 @@ std::vector<Domain::value_type> FznBuildContext::resolve_int_array(const Constra
     throw std::runtime_error("Expected array of integers");
 }
 
-bool FznBuildContext::apply_substitutions(
-    std::vector<int64_t>& coeffs,
-    std::vector<std::string>& vnames,
-    int64_t& rhs_val) const
-{
-    bool changed = false;
-    for (size_t i = 0; i < vnames.size(); ) {
-        auto it = subst_map.find(vnames[i]);
-        if (it == subst_map.end()) { ++i; continue; }
-        changed = true;
-        const auto& info = it->second;
-        int64_t ck = coeffs[i];
-        int64_t y_coeff_add = -ck * info.cx * info.cy;
-        rhs_val -= ck * info.cx * info.rhs;
-        // X の項を除去
-        coeffs.erase(coeffs.begin() + i);
-        vnames.erase(vnames.begin() + i);
-        // Y の項をマージ
-        bool found_y = false;
-        for (size_t j = 0; j < vnames.size(); ++j) {
-            if (vnames[j] == info.y_name) {
-                coeffs[j] += y_coeff_add;
-                found_y = true;
-                break;
-            }
-        }
-        if (!found_y && y_coeff_add != 0) {
-            coeffs.push_back(y_coeff_add);
-            vnames.push_back(info.y_name);
-        }
-    }
-    // 係数 0 の項を除去
-    if (changed) {
-        size_t w = 0;
-        for (size_t r = 0; r < coeffs.size(); ++r) {
-            if (coeffs[r] != 0) {
-                if (w != r) { coeffs[w] = coeffs[r]; vnames[w] = vnames[r]; }
-                ++w;
-            }
-        }
-        coeffs.resize(w); vnames.resize(w);
-    }
-    return changed;
-}
-
 } // namespace fzn
 } // namespace sabori_csp

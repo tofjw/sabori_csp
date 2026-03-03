@@ -248,21 +248,12 @@ static std::optional<ConstraintPtr> make_int_lin_eq(const ConstraintDecl& decl, 
         throw std::runtime_error("int_lin_eq: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto sum = std::get<Domain::value_type>(decl.args[2]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
 
-    if (!ctx.is_defining) {
-        ctx.apply_substitutions(coeffs, var_names_mut, sum);
-        if (var_names_mut.empty()) {
-            if (sum != 0)
-                throw std::runtime_error("int_lin_eq: UNSAT after substitution (0 != " + std::to_string(sum) + ")");
-            return std::nullopt;
-        }
-    }
-
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     auto constraint = std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
 
     // defined_var heuristic
@@ -297,19 +288,12 @@ static std::optional<ConstraintPtr> make_int_lin_le(const ConstraintDecl& decl, 
         throw std::runtime_error("int_lin_le: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto bound = std::get<Domain::value_type>(decl.args[2]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, bound);
-
-    if (var_names_mut.empty()) {
-        if (0 > bound)
-            throw std::runtime_error("int_lin_le: UNSAT after substitution (0 > " + std::to_string(bound) + ")");
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
 }
 
@@ -319,19 +303,12 @@ static std::optional<ConstraintPtr> make_int_lin_ne(const ConstraintDecl& decl, 
         throw std::runtime_error("int_lin_ne: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto target = std::get<Domain::value_type>(decl.args[2]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, target);
-
-    if (var_names_mut.empty()) {
-        if (target == 0)
-            throw std::runtime_error("int_lin_ne: UNSAT after substitution (0 == 0)");
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinNeConstraint>(coeffs, vars, target);
 }
 
@@ -341,19 +318,13 @@ static std::optional<ConstraintPtr> make_int_lin_eq_reif(const ConstraintDecl& d
         throw std::runtime_error("int_lin_eq_reif: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto target = std::get<Domain::value_type>(decl.args[2]);
     auto b = ctx.get_var(decl.args[3]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, target);
-
-    if (var_names_mut.empty()) {
-        if (target == 0) b->remove(0); else b->remove(1);
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinEqReifConstraint>(coeffs, vars, target, b);
 }
 
@@ -363,19 +334,13 @@ static std::optional<ConstraintPtr> make_int_lin_ne_reif(const ConstraintDecl& d
         throw std::runtime_error("int_lin_ne_reif: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto target = std::get<Domain::value_type>(decl.args[2]);
     auto b = ctx.get_var(decl.args[3]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, target);
-
-    if (var_names_mut.empty()) {
-        if (target != 0) b->remove(0); else b->remove(1);
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinNeReifConstraint>(coeffs, vars, target, b);
 }
 
@@ -385,19 +350,13 @@ static std::optional<ConstraintPtr> make_int_lin_le_reif(const ConstraintDecl& d
         throw std::runtime_error("int_lin_le_reif: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto bound = std::get<Domain::value_type>(decl.args[2]);
     auto b = ctx.get_var(decl.args[3]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, bound);
-
-    if (var_names_mut.empty()) {
-        if (0 <= bound) b->remove(0); else b->remove(1);
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinLeReifConstraint>(coeffs, vars, bound, b);
 }
 
@@ -407,19 +366,13 @@ static std::optional<ConstraintPtr> make_int_lin_le_imp(const ConstraintDecl& de
         throw std::runtime_error("int_lin_le_imp: third argument must be an integer");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     auto bound = std::get<Domain::value_type>(decl.args[2]);
     auto b = ctx.get_var(decl.args[3]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
-    ctx.apply_substitutions(coeffs, var_names_mut, bound);
-
-    if (var_names_mut.empty()) {
-        if (0 > bound) b->remove(1);
-        return std::nullopt;
-    }
 
     std::vector<VariablePtr> vars;
-    for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+    for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
     return std::make_unique<IntLinLeImpConstraint>(coeffs, vars, bound, b);
 }
 
@@ -427,23 +380,18 @@ static std::optional<ConstraintPtr> make_bool_lin_eq(const ConstraintDecl& decl,
     if (decl.args.size() != 3) throw std::runtime_error("bool_lin_eq requires 3 arguments");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
 
     if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
         auto sum = std::get<Domain::value_type>(decl.args[2]);
-        ctx.apply_substitutions(coeffs, var_names_mut, sum);
-        if (var_names_mut.empty()) {
-            if (sum != 0) throw std::runtime_error("bool_lin_eq: UNSAT after substitution");
-            return std::nullopt;
-        }
         std::vector<VariablePtr> vars;
-        for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+        for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         return std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
     } else {
         auto rhs_var = ctx.get_var(decl.args[2]);
         std::vector<VariablePtr> vars;
-        for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+        for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         coeffs.push_back(-1);
         vars.push_back(rhs_var);
         return std::make_unique<IntLinEqConstraint>(coeffs, vars, 0);
@@ -454,23 +402,18 @@ static std::optional<ConstraintPtr> make_bool_lin_le(const ConstraintDecl& decl,
     if (decl.args.size() != 3) throw std::runtime_error("bool_lin_le requires 3 arguments");
 
     const auto coeffs_raw = ctx.resolve_int_array(decl.args[0]);
-    auto var_names_mut = ctx.resolve_var_array(decl.args[1]);
+    auto var_names = ctx.resolve_var_array(decl.args[1]);
     std::vector<int64_t> coeffs(coeffs_raw.begin(), coeffs_raw.end());
 
     if (std::holds_alternative<Domain::value_type>(decl.args[2])) {
         auto bound = std::get<Domain::value_type>(decl.args[2]);
-        ctx.apply_substitutions(coeffs, var_names_mut, bound);
-        if (var_names_mut.empty()) {
-            if (0 > bound) throw std::runtime_error("bool_lin_le: UNSAT after substitution");
-            return std::nullopt;
-        }
         std::vector<VariablePtr> vars;
-        for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+        for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         return std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
     } else {
         auto rhs_var = ctx.get_var(decl.args[2]);
         std::vector<VariablePtr> vars;
-        for (const auto& name : var_names_mut) vars.push_back(ctx.get_var_by_name(name));
+        for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         coeffs.push_back(-1);
         vars.push_back(rhs_var);
         return std::make_unique<IntLinLeConstraint>(coeffs, vars, 0);
