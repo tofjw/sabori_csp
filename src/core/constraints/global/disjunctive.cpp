@@ -664,7 +664,8 @@ void DisjunctiveConstraint::rewind_to(int save_point) {
 
 // ---------- Presolve ----------
 
-bool DisjunctiveConstraint::presolve(Model& model) {
+PresolveResult DisjunctiveConstraint::presolve(Model& model) {
+    bool changed = false;
     // Reset timeline and CP (presolve may be called multiple times in fixpoint loop)
     std::fill(timeline_.begin(), timeline_.end(), 0ULL);
     std::fill(cp_lo_.begin(), cp_lo_.end(), 0);
@@ -677,7 +678,7 @@ bool DisjunctiveConstraint::presolve(Model& model) {
         if (!strict_ && d == 0) continue;
         if (d <= 0) continue;
         int pos = task_start(model, i) - offset_;
-        if (check_conflict(pos, d)) return false;
+        if (check_conflict(pos, d)) return PresolveResult::Contradiction;
         set_bits_direct(pos, d);
         cp_lo_[i] = pos;
         cp_hi_[i] = pos + d;
@@ -686,7 +687,7 @@ bool DisjunctiveConstraint::presolve(Model& model) {
     // Set compulsory parts for unassigned tasks
     for (size_t i = 0; i < n_; ++i) {
         if (task_fully_assigned(model, i)) continue;
-        if (!update_compulsory_part_direct(model, i)) return false;
+        if (!update_compulsory_part_direct(model, i)) return PresolveResult::Contradiction;
     }
 
     // Bounds tightening for unassigned starts
@@ -707,7 +708,8 @@ bool DisjunctiveConstraint::presolve(Model& model) {
                 int lo = static_cast<int>(s_var->min()) - offset_;
                 int hi = static_cast<int>(s_var->max()) - offset_;
                 if (find_first_valid_excluding(lo, hi, 1, i) == -1) {
-                    if (!d_var->assign(0)) return false;
+                    if (!d_var->assign(0)) return PresolveResult::Contradiction;
+                    changed = true;
                 }
             }
             continue;
@@ -720,24 +722,26 @@ bool DisjunctiveConstraint::presolve(Model& model) {
         int new_lo = find_first_valid_excluding(lo, hi, dur, i);
         int new_hi = find_last_valid_excluding(lo, hi, dur, i);
 
-        if (new_lo == -1 || new_hi == -1) return false;
+        if (new_lo == -1 || new_hi == -1) return PresolveResult::Contradiction;
 
         if (new_lo > lo) {
             if (!s_var->remove_below(
                     static_cast<Domain::value_type>(new_lo + offset_)))
-                return false;
+                return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_hi < hi) {
             if (!s_var->remove_above(
                     static_cast<Domain::value_type>(new_hi + offset_)))
-                return false;
+                return PresolveResult::Contradiction;
+            changed = true;
         }
     }
 
     // Edge-finding propagation
-    if (!edge_finding(model, true)) return false;
+    if (!edge_finding(model, true)) return PresolveResult::Contradiction;
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 // ---------- Prepare propagation ----------

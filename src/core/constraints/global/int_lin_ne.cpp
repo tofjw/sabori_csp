@@ -52,10 +52,10 @@ std::string IntLinNeConstraint::name() const {
     return "int_lin_ne";
 }
 
-bool IntLinNeConstraint::presolve(Model& model) {
+PresolveResult IntLinNeConstraint::presolve(Model& model) {
     // int_lin_ne は bounds propagation が難しいため、
     // 特にアクティブな伝播は行わない
-    return true;
+    return PresolveResult::Unchanged;
 }
 
 bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,

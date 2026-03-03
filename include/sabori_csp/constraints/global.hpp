@@ -29,7 +29,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -96,7 +96,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -146,7 +146,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -262,7 +262,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -349,7 +349,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -447,7 +447,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -526,7 +526,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -632,7 +632,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -692,7 +692,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -730,7 +730,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -777,7 +777,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -862,7 +862,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -947,7 +947,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -1035,7 +1035,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -1127,7 +1127,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -1235,7 +1235,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -1393,7 +1393,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -1476,7 +1476,7 @@ public:
 
 
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -1559,7 +1559,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
@@ -1649,7 +1649,7 @@ public:
     std::string name() const override;
 
 
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
     bool prepare_propagation(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,

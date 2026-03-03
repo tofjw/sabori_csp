@@ -80,7 +80,8 @@ bool ArrayBoolAndConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool ArrayBoolAndConstraint::presolve(Model& model) {
+PresolveResult ArrayBoolAndConstraint::presolve(Model& model) {
+    bool changed = false;
     auto* r = model.variable(r_id_);
 
     // 1. bi の中に 0 が確定しているものがあれば r = 0
@@ -88,13 +89,14 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
         auto* v = model.variable(var_ids_[i]);
         if (v->is_assigned() && v->assigned_value().value() == 0) {
             if (r->is_assigned()) {
-                return r->assigned_value().value() == 0;
+                return r->assigned_value().value() == 0
+                    ? PresolveResult::Unchanged : PresolveResult::Contradiction;
             }
             if (!r->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             r->assign(0);
-            return true;
+            return PresolveResult::Changed;
         }
     }
 
@@ -109,13 +111,14 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
     }
     if (all_one) {
         if (r->is_assigned()) {
-            return r->assigned_value().value() == 1;
+            return r->assigned_value().value() == 1
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
         }
         if (!r->domain().contains(1)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         r->assign(1);
-        return true;
+        return PresolveResult::Changed;
     }
 
     // 3. r = 1 が確定していれば全ての bi = 1
@@ -124,11 +127,12 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
             auto* v = model.variable(var_ids_[i]);
             if (!v->is_assigned()) {
                 if (!v->domain().contains(1)) {
-                    return false;
+                    return PresolveResult::Contradiction;
                 }
                 v->assign(1);
+                changed = true;
             } else if (v->assigned_value().value() != 1) {
-                return false;
+                return PresolveResult::Contradiction;
             }
         }
     }
@@ -155,13 +159,14 @@ bool ArrayBoolAndConstraint::presolve(Model& model) {
         if (!has_zero && unassigned_count == 1) {
             auto* last_v = model.variable(var_ids_[last_unassigned]);
             if (!last_v->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             last_v->assign(0);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
@@ -397,7 +402,8 @@ std::string ArrayBoolOrConstraint::name() const {
     return "array_bool_or";
 }
 
-bool ArrayBoolOrConstraint::presolve(Model& model) {
+PresolveResult ArrayBoolOrConstraint::presolve(Model& model) {
+    bool changed = false;
     auto* r = model.variable(r_id_);
 
     // 1. bi の中に 1 が確定しているものがあれば r = 1
@@ -405,11 +411,12 @@ bool ArrayBoolOrConstraint::presolve(Model& model) {
         auto* v = model.variable(var_ids_[i]);
         if (v->is_assigned() && v->assigned_value().value() == 1) {
             if (r->is_assigned()) {
-                return r->assigned_value().value() == 1;
+                return r->assigned_value().value() == 1
+                    ? PresolveResult::Unchanged : PresolveResult::Contradiction;
             }
-            if (!r->domain().contains(1)) return false;
+            if (!r->domain().contains(1)) return PresolveResult::Contradiction;
             r->assign(1);
-            return true;
+            return PresolveResult::Changed;
         }
     }
 
@@ -424,11 +431,12 @@ bool ArrayBoolOrConstraint::presolve(Model& model) {
     }
     if (all_zero) {
         if (r->is_assigned()) {
-            return r->assigned_value().value() == 0;
+            return r->assigned_value().value() == 0
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
         }
-        if (!r->domain().contains(0)) return false;
+        if (!r->domain().contains(0)) return PresolveResult::Contradiction;
         r->assign(0);
-        return true;
+        return PresolveResult::Changed;
     }
 
     // 3. r = 0 なら全ての bi = 0
@@ -436,10 +444,11 @@ bool ArrayBoolOrConstraint::presolve(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             auto* v = model.variable(var_ids_[i]);
             if (!v->is_assigned()) {
-                if (!v->domain().contains(0)) return false;
+                if (!v->domain().contains(0)) return PresolveResult::Contradiction;
                 v->assign(0);
+                changed = true;
             } else if (v->assigned_value().value() != 0) {
-                return false;
+                return PresolveResult::Contradiction;
             }
         }
     }
@@ -465,12 +474,13 @@ bool ArrayBoolOrConstraint::presolve(Model& model) {
 
         if (!has_one && unassigned_count == 1) {
             auto* last_v = model.variable(var_ids_[last_unassigned]);
-            if (!last_v->domain().contains(1)) return false;
+            if (!last_v->domain().contains(1)) return PresolveResult::Contradiction;
             last_v->assign(1);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
@@ -744,18 +754,18 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool BoolClauseConstraint::presolve(Model& model) {
+PresolveResult BoolClauseConstraint::presolve(Model& model) {
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_; ++i) {
         auto* v = model.variable(pos_ids_[i]);
         if (v->is_assigned() && v->assigned_value().value() == 1) {
-            return true;  // 充足
+            return PresolveResult::Unchanged;
         }
     }
     for (size_t i = 0; i < n_neg_; ++i) {
         auto* v = model.variable(neg_ids_[i]);
         if (v->is_assigned() && v->assigned_value().value() == 0) {
-            return true;  // 充足
+            return PresolveResult::Unchanged;
         }
     }
 
@@ -771,21 +781,21 @@ bool BoolClauseConstraint::presolve(Model& model) {
     }
 
     if (satisfiable_count == 0) {
-        return false;  // 矛盾
+        return PresolveResult::Contradiction;
     }
 
     if (satisfiable_count == 1) {
-        // Unit propagation: 唯一の充足可能リテラルを確定
         auto var_id = get_var_id(last_satisfiable);
         auto* var = model.variable(var_id);
         Domain::value_type val = satisfying_value(last_satisfiable);
         if (!var->is_assigned()) {
-            if (!var->domain().contains(val)) return false;
+            if (!var->domain().contains(val)) return PresolveResult::Contradiction;
             var->assign(val);
+            return PresolveResult::Changed;
         }
     }
 
-    return true;
+    return PresolveResult::Unchanged;
 }
 
 bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
@@ -945,26 +955,32 @@ std::string BoolNotConstraint::name() const {
     return "bool_not";
 }
 
-bool BoolNotConstraint::presolve(Model& model) {
+PresolveResult BoolNotConstraint::presolve(Model& model) {
+    bool changed = false;
     // a が確定したら b を決定
     if (model.variable(a_id_)->is_assigned() && !model.variable(b_id_)->is_assigned()) {
         auto val = 1 - model.variable(a_id_)->assigned_value().value();
         if (!model.variable(b_id_)->domain().contains(val)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         model.variable(b_id_)->assign(val);
+        changed = true;
     }
 
     // b が確定したら a を決定
     if (model.variable(b_id_)->is_assigned() && !model.variable(a_id_)->is_assigned()) {
         auto val = 1 - model.variable(b_id_)->assigned_value().value();
         if (!model.variable(a_id_)->domain().contains(val)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         model.variable(a_id_)->assign(val);
+        changed = true;
     }
 
-    return !model.variable(a_id_)->domain().empty() && !model.variable(b_id_)->domain().empty();
+    if (model.variable(a_id_)->domain().empty() || model.variable(b_id_)->domain().empty()) {
+        return PresolveResult::Contradiction;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool BoolNotConstraint::on_instantiate(Model& model, int save_point,

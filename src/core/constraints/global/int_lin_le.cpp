@@ -52,8 +52,8 @@ std::string IntLinLeConstraint::name() const {
     return "int_lin_le";
 }
 
-bool IntLinLeConstraint::presolve(Model& model) {
-    return true;
+PresolveResult IntLinLeConstraint::presolve(Model& model) {
+    return PresolveResult::Unchanged;
 }
 
 bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,

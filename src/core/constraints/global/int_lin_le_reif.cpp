@@ -57,7 +57,8 @@ std::string IntLinLeReifConstraint::name() const {
     return "int_lin_le_reif";
 }
 
-bool IntLinLeReifConstraint::presolve(Model& model) {
+PresolveResult IntLinLeReifConstraint::presolve(Model& model) {
+    bool changed = false;
     // キャッシュ値ではなく変数ドメインから毎回計算
     // （イベント処理が組み上がる前なのでキャッシュは信頼できない）
     int64_t min_sum = 0;
@@ -84,14 +85,14 @@ bool IntLinLeReifConstraint::presolve(Model& model) {
     // b = 1 の場合、sum <= bound を強制
     if (bvar->is_assigned() && bvar->assigned_value().value() == 1) {
         if (min_sum > bound_) {
-            return false;
+            return PresolveResult::Contradiction;
         }
     }
 
     // b = 0 の場合、sum > bound を強制
     if (bvar->is_assigned() && bvar->assigned_value().value() == 0) {
         if (max_sum <= bound_) {
-            return false;
+            return PresolveResult::Contradiction;
         }
     }
 
@@ -100,19 +101,21 @@ bool IntLinLeReifConstraint::presolve(Model& model) {
         if (max_sum <= bound_) {
             // sum <= bound が常に真 → b = 1
             if (!bvar->domain().contains(1)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             bvar->assign(1);
+            changed = true;
         } else if (min_sum > bound_) {
             // sum <= bound が常に偽 → b = 0
             if (!bvar->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             bvar->assign(0);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLinLeReifConstraint::on_instantiate(Model& model, int save_point,

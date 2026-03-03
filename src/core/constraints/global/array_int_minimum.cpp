@@ -25,11 +25,12 @@ std::string ArrayIntMinimumConstraint::name() const {
     return "array_int_minimum";
 }
 
-bool ArrayIntMinimumConstraint::presolve(Model& model) {
+PresolveResult ArrayIntMinimumConstraint::presolve(Model& model) {
     if (n_ == 0) {
-        return false;
+        return PresolveResult::Contradiction;
     }
 
+    bool changed = false;
     auto* m_var = model.variable(m_id_);
 
     // 1. 全 x[i] の最小値の最小値を計算 -> m.min
@@ -45,13 +46,16 @@ bool ArrayIntMinimumConstraint::presolve(Model& model) {
     }
 
     // 3. m のドメインを絞る: min_of_min <= m <= min_of_max
-    if (!m_var->remove_below(min_of_min)) return false;
-    if (!m_var->remove_above(min_of_max)) return false;
+    if (min_of_min > m_var->min()) changed = true;
+    if (!m_var->remove_below(min_of_min)) return PresolveResult::Contradiction;
+    if (min_of_max < m_var->max()) changed = true;
+    if (!m_var->remove_above(min_of_max)) return PresolveResult::Contradiction;
 
     // 4. 各 x[i].min を m.min 以上に絞る
     auto m_min = model.var_min(m_id_);
     for (size_t i = 0; i < n_; ++i) {
-        if (!model.variable(var_ids_[1 + i])->remove_below(m_min)) return false;
+        if (m_min > model.variable(var_ids_[1 + i])->min()) changed = true;
+        if (!model.variable(var_ids_[1 + i])->remove_below(m_min)) return PresolveResult::Contradiction;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある
@@ -64,10 +68,10 @@ bool ArrayIntMinimumConstraint::presolve(Model& model) {
                 break;
             }
         }
-        if (!can_achieve) return false;
+        if (!can_achieve) return PresolveResult::Contradiction;
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool ArrayIntMinimumConstraint::on_instantiate(Model& model, int save_point,

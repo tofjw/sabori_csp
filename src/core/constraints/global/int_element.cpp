@@ -85,7 +85,8 @@ Domain::value_type IntElementConstraint::index_to_0based(Domain::value_type idx)
     return zero_based_ ? idx : idx - 1;
 }
 
-bool IntElementConstraint::presolve(Model& model) {
+PresolveResult IntElementConstraint::presolve(Model& model) {
+    bool changed = false;
     // Bounds propagation: index のドメインから result のドメインを絞る
     auto* index_var = model.variable(index_id_);
     auto* result_var = model.variable(result_id_);
@@ -95,14 +96,16 @@ bool IntElementConstraint::presolve(Model& model) {
         auto idx = index_var->assigned_value().value();
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         auto expected = array_[static_cast<size_t>(idx_0based)];
         if (result_var->is_assigned()) {
-            return result_var->assigned_value().value() == expected;
+            return result_var->assigned_value().value() == expected
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
         }
         // result を expected に固定
-        return result_var->assign(expected);
+        if (!result_var->assign(expected)) return PresolveResult::Contradiction;
+        return PresolveResult::Changed;
     }
 
     // result が確定している場合
@@ -110,7 +113,7 @@ bool IntElementConstraint::presolve(Model& model) {
         auto result_value = result_var->assigned_value().value();
         auto it = value_to_indices_.find(result_value);
         if (it == value_to_indices_.end()) {
-            return false;  // この値を持つ index がない
+            return PresolveResult::Contradiction;  // この値を持つ index がない
         }
         // index のドメインを valid_indices に絞る
         const auto& valid_indices = it->second;
@@ -127,11 +130,12 @@ bool IntElementConstraint::presolve(Model& model) {
             }
             if (!found) {
                 if (!idx_domain.remove(v)) {
-                    return false;
+                    return PresolveResult::Contradiction;
                 }
+                changed = true;
             }
         }
-        return true;
+        return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
     }
 
     // 両方未確定の場合: 双方向 bounds propagation
@@ -152,8 +156,9 @@ bool IntElementConstraint::presolve(Model& model) {
     for (auto v : buf) {
         if (valid_results.find(v) == valid_results.end()) {
             if (!result_domain.remove(v)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
+            changed = true;
         }
     }
 
@@ -174,12 +179,13 @@ bool IntElementConstraint::presolve(Model& model) {
     for (auto v : buf) {
         if (valid_indices.find(v) == valid_indices.end()) {
             if (!idx_domain.remove(v)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntElementConstraint::on_instantiate(Model& model, int save_point,

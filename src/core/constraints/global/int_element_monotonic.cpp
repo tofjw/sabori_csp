@@ -34,9 +34,10 @@ Domain::value_type IntElementMonotonicConstraint::index_to_0based(Domain::value_
     return zero_based_ ? idx : idx - 1;
 }
 
-bool IntElementMonotonicConstraint::presolve(Model& model) {
-    if (n_ == 0) return false;
+PresolveResult IntElementMonotonicConstraint::presolve(Model& model) {
+    if (n_ == 0) return PresolveResult::Contradiction;
 
+    bool changed = false;
     auto* index_var = model.variable(index_id_);
     auto* result_var = model.variable(result_id_);
 
@@ -45,13 +46,15 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
         auto idx = index_var->assigned_value().value();
         auto idx_0based = index_to_0based(idx);
         if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         auto expected = array_[static_cast<size_t>(idx_0based)];
         if (result_var->is_assigned()) {
-            return result_var->assigned_value().value() == expected;
+            return result_var->assigned_value().value() == expected
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
         }
-        return result_var->assign(expected);
+        if (!result_var->assign(expected)) return PresolveResult::Contradiction;
+        return PresolveResult::Changed;
     }
 
     // result が確定している場合
@@ -79,7 +82,7 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
             }
         }
 
-        if (!found) return false;
+        if (!found) return PresolveResult::Contradiction;
 
         Domain::value_type offset = zero_based_ ? 0 : 1;
         auto new_idx_min = static_cast<Domain::value_type>(first) + offset;
@@ -87,12 +90,14 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
 
         auto& idx_domain = index_var->domain();
         if (new_idx_min > idx_domain.min().value()) {
-            if (!idx_domain.remove_below(new_idx_min)) return false;
+            if (!idx_domain.remove_below(new_idx_min)) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_idx_max < idx_domain.max().value()) {
-            if (!idx_domain.remove_above(new_idx_max)) return false;
+            if (!idx_domain.remove_above(new_idx_max)) return PresolveResult::Contradiction;
+            changed = true;
         }
-        return true;
+        return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
     }
 
     // 両方未確定: bounds propagation
@@ -102,7 +107,7 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
     auto hi_0 = index_to_0based(idx_max);
     if (lo_0 < 0) lo_0 = 0;
     if (hi_0 >= static_cast<Domain::value_type>(n_)) hi_0 = static_cast<Domain::value_type>(n_) - 1;
-    if (lo_0 > hi_0) return false;
+    if (lo_0 > hi_0) return PresolveResult::Contradiction;
 
     // index bounds → result bounds
     Domain::value_type r_min, r_max;
@@ -116,10 +121,12 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
 
     auto& result_domain = result_var->domain();
     if (r_min > result_domain.min().value()) {
-        if (!result_domain.remove_below(r_min)) return false;
+        if (!result_domain.remove_below(r_min)) return PresolveResult::Contradiction;
+        changed = true;
     }
     if (r_max < result_domain.max().value()) {
-        if (!result_domain.remove_above(r_max)) return false;
+        if (!result_domain.remove_above(r_max)) return PresolveResult::Contradiction;
+        changed = true;
     }
 
     // result bounds → index bounds (二分探索)
@@ -129,47 +136,51 @@ bool IntElementMonotonicConstraint::presolve(Model& model) {
     if (mono_ == Monotonicity::NON_DECREASING) {
         // index.min: a[i] >= cur_r_min を満たす最小の i
         auto it_lo = std::lower_bound(array_.begin() + lo_0, array_.begin() + hi_0 + 1, cur_r_min);
-        if (it_lo == array_.begin() + hi_0 + 1) return false;
+        if (it_lo == array_.begin() + hi_0 + 1) return PresolveResult::Contradiction;
         auto new_lo = static_cast<Domain::value_type>(it_lo - array_.begin());
 
         // index.max: a[i] <= cur_r_max を満たす最大の i
         auto it_hi = std::upper_bound(array_.begin() + lo_0, array_.begin() + hi_0 + 1, cur_r_max);
-        if (it_hi == array_.begin() + lo_0) return false;
+        if (it_hi == array_.begin() + lo_0) return PresolveResult::Contradiction;
         auto new_hi = static_cast<Domain::value_type>((it_hi - array_.begin()) - 1);
 
         Domain::value_type offset = zero_based_ ? 0 : 1;
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var->remove_below(new_idx_min)) return false;
+            if (!index_var->remove_below(new_idx_min)) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var->remove_above(new_idx_max)) return false;
+            if (!index_var->remove_above(new_idx_max)) return PresolveResult::Contradiction;
+            changed = true;
         }
     } else {
         // NON_INCREASING: a[0] >= a[1] >= ... >= a[n-1]
         // index.min: a[i] <= cur_r_max を満たす最小の i
         auto it_lo = std::lower_bound(array_.begin() + lo_0, array_.begin() + hi_0 + 1, cur_r_max, std::greater<>());
-        if (it_lo == array_.begin() + hi_0 + 1) return false;
+        if (it_lo == array_.begin() + hi_0 + 1) return PresolveResult::Contradiction;
         auto new_lo = static_cast<Domain::value_type>(it_lo - array_.begin());
 
         // index.max: a[i] >= cur_r_min を満たす最大の i
         auto it_hi = std::upper_bound(array_.begin() + lo_0, array_.begin() + hi_0 + 1, cur_r_min, std::greater<>());
-        if (it_hi == array_.begin() + lo_0) return false;
+        if (it_hi == array_.begin() + lo_0) return PresolveResult::Contradiction;
         auto new_hi = static_cast<Domain::value_type>((it_hi - array_.begin()) - 1);
 
         Domain::value_type offset = zero_based_ ? 0 : 1;
         auto new_idx_min = new_lo + offset;
         auto new_idx_max = new_hi + offset;
         if (new_idx_min > idx_min) {
-            if (!index_var->remove_below(new_idx_min)) return false;
+            if (!index_var->remove_below(new_idx_min)) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_idx_max < idx_max) {
-            if (!index_var->remove_above(new_idx_max)) return false;
+            if (!index_var->remove_above(new_idx_max)) return PresolveResult::Contradiction;
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntElementMonotonicConstraint::on_instantiate(

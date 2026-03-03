@@ -17,6 +17,15 @@ namespace sabori_csp {
 class Model;
 
 /**
+ * @brief presolve() の戻り値
+ */
+enum class PresolveResult : uint8_t {
+    Contradiction,  ///< 矛盾検出
+    Unchanged,      ///< 成功、ドメイン変更なし
+    Changed         ///< 成功、ドメイン変更あり
+};
+
+/**
  * @brief VariablePtr のリストから変数IDリストを抽出するヘルパー
  */
 inline std::vector<size_t> extract_var_ids(const std::vector<VariablePtr>& vars) {
@@ -98,7 +107,7 @@ public:
      * @param model モデルへの参照
      * @return 伝播が成功すればtrue、失敗（矛盾検出）すればfalse
      */
-    virtual bool presolve(Model& model) = 0;
+    virtual PresolveResult presolve(Model& model) = 0;
 
     // ===== 2-Watched Literal (2WL) インターフェース =====
 

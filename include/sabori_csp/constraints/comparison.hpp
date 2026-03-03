@@ -17,7 +17,7 @@ public:
     IntEqConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -46,7 +46,7 @@ public:
 
     std::string name() const override;
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -77,7 +77,7 @@ public:
     IntNeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -98,7 +98,7 @@ public:
 
     std::string name() const override;
     bool prepare_propagation(Model& model) override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -129,7 +129,7 @@ public:
     IntLtConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -157,7 +157,7 @@ public:
     IntLeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -185,7 +185,7 @@ public:
     IntLeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -215,7 +215,7 @@ public:
     IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -245,7 +245,7 @@ public:
     IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,

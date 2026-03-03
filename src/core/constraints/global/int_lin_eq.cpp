@@ -56,8 +56,9 @@ std::string IntLinEqConstraint::name() const {
     return "int_lin_eq";
 }
 
-bool IntLinEqConstraint::presolve(Model& model) {
+PresolveResult IntLinEqConstraint::presolve(Model& model) {
     // Bounds propagation: 各変数の上下限を直接絞り込む（従来の方式）
+    bool any_changed = false;
 
     // 全体の min/max potential を計算
     int64_t total_min = 0;
@@ -78,7 +79,7 @@ bool IntLinEqConstraint::presolve(Model& model) {
 
     // target が [total_min, total_max] の範囲外なら矛盾
     if (target_sum_ < total_min || target_sum_ > total_max) {
-        return false;
+        return PresolveResult::Contradiction;
     }
 
     // 各変数の bounds を絞り込む（固定点まで繰り返し）
@@ -133,8 +134,8 @@ bool IntLinEqConstraint::presolve(Model& model) {
 
             // ドメインの範囲を変更
             if (new_min > cur_min) {
-                if (new_min > cur_max) return false;
-                if (!var_j->remove_below(new_min)) return false;
+                if (new_min > cur_max) return PresolveResult::Contradiction;
+                if (!var_j->remove_below(new_min)) return PresolveResult::Contradiction;
                 auto new_cur_min = var_j->min();
                 if (c >= 0) {
                     total_min += c * (new_cur_min - cur_min);
@@ -142,11 +143,12 @@ bool IntLinEqConstraint::presolve(Model& model) {
                     total_max += c * (new_cur_min - cur_min);
                 }
                 changed = true;
+                any_changed = true;
             }
             if (new_max < cur_max) {
                 auto cur_min_after = var_j->min();
-                if (new_max < cur_min_after) return false;
-                if (!var_j->remove_above(new_max)) return false;
+                if (new_max < cur_min_after) return PresolveResult::Contradiction;
+                if (!var_j->remove_above(new_max)) return PresolveResult::Contradiction;
                 auto new_cur_max = var_j->max();
                 if (c >= 0) {
                     total_max += c * (new_cur_max - cur_max);
@@ -154,11 +156,12 @@ bool IntLinEqConstraint::presolve(Model& model) {
                     total_min += c * (new_cur_max - cur_max);
                 }
                 changed = true;
+                any_changed = true;
             }
         }
     }
 
-    return true;
+    return any_changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,

@@ -101,7 +101,8 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool AllDifferentExcept0Constraint::presolve(Model& model) {
+PresolveResult AllDifferentExcept0Constraint::presolve(Model& model) {
+    bool changed = false;
     // 非0の確定値のみを他の変数から削除
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         auto* var = model.variable(var_ids_[i]);
@@ -112,9 +113,12 @@ bool AllDifferentExcept0Constraint::presolve(Model& model) {
                     if (j != i) {
                         auto* other = model.variable(var_ids_[j]);
                         if (!other->is_assigned()) {
-                            other->remove(val);
+                            if (other->domain().contains(val)) {
+                                other->remove(val);
+                                changed = true;
+                            }
                             if (other->domain().empty()) {
-                                return false;
+                                return PresolveResult::Contradiction;
                             }
                         }
                     }
@@ -122,7 +126,7 @@ bool AllDifferentExcept0Constraint::presolve(Model& model) {
             }
         }
     }
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool AllDifferentExcept0Constraint::remove_from_pool(int save_point, Domain::value_type value) {

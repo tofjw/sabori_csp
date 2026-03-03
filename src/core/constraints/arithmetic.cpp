@@ -45,8 +45,49 @@ std::string IntTimesConstraint::name() const {
     return "int_times";
 }
 
-bool IntTimesConstraint::presolve(Model& model) {
-    return propagate_bounds(model);
+PresolveResult IntTimesConstraint::presolve(Model& model) {
+    bool changed = false;
+    auto x_min = model.var_min(x_id_);
+    auto x_max = model.var_max(x_id_);
+    auto y_min = model.var_min(y_id_);
+    auto y_max = model.var_max(y_id_);
+
+    std::vector<Domain::value_type> products = {
+        x_min * y_min, x_min * y_max, x_max * y_min, x_max * y_max
+    };
+    auto [prod_min, prod_max] = std::minmax_element(products.begin(), products.end());
+
+    if (model.var_min(z_id_) < *prod_min) {
+        if (!model.variable(z_id_)->remove_below(*prod_min)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    if (model.var_max(z_id_) > *prod_max) {
+        if (!model.variable(z_id_)->remove_above(*prod_max)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+
+    if (x_min == 0 && x_max == 0) {
+        if (!model.variable(z_id_)->is_assigned() || model.variable(z_id_)->assigned_value().value() != 0) {
+            if (!model.variable(z_id_)->assign(0)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+    }
+    if (y_min == 0 && y_max == 0) {
+        if (!model.variable(z_id_)->is_assigned() || model.variable(z_id_)->assigned_value().value() != 0) {
+            if (!model.variable(z_id_)->assign(0)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+    }
+
+    auto z_min = model.var_min(z_id_);
+    auto z_max = model.var_max(z_id_);
+    if (z_min == 0 && z_max == 0) {
+        if (!model.variable(x_id_)->domain().contains(0) && !model.variable(y_id_)->domain().contains(0)) {
+            return PresolveResult::Contradiction;
+        }
+    }
+
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntTimesConstraint::propagate_bounds(Model& model) {
@@ -334,8 +375,14 @@ std::string IntAbsConstraint::name() const {
     return "int_abs";
 }
 
-bool IntAbsConstraint::presolve(Model& model) {
-    return propagate_bounds(model);
+PresolveResult IntAbsConstraint::presolve(Model& model) {
+    // Snapshot domain sizes before propagation
+    size_t x_size_before = model.variable(x_id_)->domain().size();
+    size_t y_size_before = model.variable(y_id_)->domain().size();
+    if (!propagate_bounds(model)) return PresolveResult::Contradiction;
+    bool changed = (model.variable(x_id_)->domain().size() != x_size_before ||
+                    model.variable(y_id_)->domain().size() != y_size_before);
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntAbsConstraint::propagate_bounds(Model& model) {
@@ -533,13 +580,15 @@ std::string IntModConstraint::name() const {
     return "int_mod";
 }
 
-bool IntModConstraint::presolve(Model& model) {
+PresolveResult IntModConstraint::presolve(Model& model) {
+    bool changed = false;
     // y != 0 を強制
     if (model.variable(y_id_)->domain().contains(0)) {
-        if (!model.variable(y_id_)->remove(0)) return false;
+        if (!model.variable(y_id_)->remove(0)) return PresolveResult::Contradiction;
+        changed = true;
     }
 
-    // z の bounds を直接設定（presolve では直接ドメイン操作）
+    // z の bounds を直接設定
     {
         auto x_min = model.variable(x_id_)->min();
         auto x_max = model.variable(x_id_)->max();
@@ -557,20 +606,29 @@ bool IntModConstraint::presolve(Model& model) {
             z_lo = std::max(-(abs_y_max - 1), x_min);
             z_hi = std::min(abs_y_max - 1, x_max);
         }
-        if (!model.variable(z_id_)->remove_below(z_lo)) return false;
-        if (!model.variable(z_id_)->remove_above(z_hi)) return false;
+        if (model.variable(z_id_)->min() < z_lo) {
+            if (!model.variable(z_id_)->remove_below(z_lo)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+        if (model.variable(z_id_)->max() > z_hi) {
+            if (!model.variable(z_id_)->remove_above(z_hi)) return PresolveResult::Contradiction;
+            changed = true;
+        }
     }
 
     // x, y 両方確定 → z を直接計算
     if (model.variable(x_id_)->is_assigned() && model.variable(y_id_)->is_assigned()) {
         auto y_val = model.variable(y_id_)->assigned_value().value();
-        if (y_val == 0) return false;
+        if (y_val == 0) return PresolveResult::Contradiction;
         auto z_val = model.variable(x_id_)->assigned_value().value() % y_val;
-        if (!model.variable(z_id_)->domain().contains(z_val)) return false;
-        if (!model.variable(z_id_)->assign(z_val)) return false;
+        if (!model.variable(z_id_)->domain().contains(z_val)) return PresolveResult::Contradiction;
+        if (!model.variable(z_id_)->is_assigned()) {
+            if (!model.variable(z_id_)->assign(z_val)) return PresolveResult::Contradiction;
+            changed = true;
+        }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntModConstraint::propagate_bounds(Model& model) {

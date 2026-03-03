@@ -104,7 +104,8 @@ std::string TableConstraint::name() const {
     return "table_int";
 }
 
-bool TableConstraint::presolve(Model& model) {
+PresolveResult TableConstraint::presolve(Model& model) {
+    bool changed = false;
     // テーブルに存在しない値をドメインから直接除去
     // bounds-only 対応: テーブルの値範囲で反復し、ドメイン外の値をスキップ
     for (size_t v = 0; v < arity_; ++v) {
@@ -114,8 +115,10 @@ bool TableConstraint::presolve(Model& model) {
         auto table_max = info.min_val + static_cast<Domain::value_type>(info.range_size - 1);
 
         // テーブル範囲外の値を一括除去
-        if (!dom.remove_below(info.min_val)) return false;
-        if (!dom.remove_above(table_max)) return false;
+        if (info.min_val > dom.min().value_or(0)) changed = true;
+        if (!dom.remove_below(info.min_val)) return PresolveResult::Contradiction;
+        if (table_max < dom.max().value_or(0)) changed = true;
+        if (!dom.remove_above(table_max)) return PresolveResult::Contradiction;
 
         // テーブル範囲内でサポートのない値を除去
         auto dom_min = dom.min().value_or(0);
@@ -126,11 +129,12 @@ bool TableConstraint::presolve(Model& model) {
             if (!dom.contains(val)) continue;
             if (supports_offsets_flat_[info.flat_offset + i] == NO_SUPPORT) {
                 dom.remove(val);
-                if (dom.empty()) return false;
+                changed = true;
+                if (dom.empty()) return PresolveResult::Contradiction;
             }
         }
     }
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool TableConstraint::prepare_propagation(Model& model) {

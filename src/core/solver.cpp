@@ -890,27 +890,11 @@ bool Solver::presolve(Model& model) {
         while (changed) {
             changed = false;
             for (const auto& constraint : constraints) {
-                const auto& var_ids = constraint->var_ids_ref();
-                const auto& all_vars = model.variables();
-                size_t total_size_before = 0;
-                int64_t total_range_before = 0;
-                for (size_t vid : var_ids) {
-                    total_size_before += all_vars[vid]->domain().size();
-                    total_range_before += all_vars[vid]->max() - all_vars[vid]->min();
-                }
-
-                if (!constraint->presolve(model)) {
+                auto result = constraint->presolve(model);
+                if (result == PresolveResult::Contradiction) {
                     return false;
                 }
-
-                size_t total_size_after = 0;
-                int64_t total_range_after = 0;
-                for (size_t vid : var_ids) {
-                    total_size_after += all_vars[vid]->domain().size();
-                    total_range_after += all_vars[vid]->max() - all_vars[vid]->min();
-                }
-
-                if (total_size_after < total_size_before || total_range_after < total_range_before) {
+                if (result == PresolveResult::Changed) {
                     changed = true;
                 }
             }

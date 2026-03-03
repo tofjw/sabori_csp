@@ -18,7 +18,8 @@ std::string IntEqConstraint::name() const {
     return "int_eq";
 }
 
-bool IntEqConstraint::presolve(Model& model) {
+PresolveResult IntEqConstraint::presolve(Model& model) {
+    bool changed = false;
     const auto& vars = model.variables();
     auto& x_var = *vars[x_id_];
     auto& y_var = *vars[y_id_];
@@ -29,22 +30,26 @@ bool IntEqConstraint::presolve(Model& model) {
         // bounds intersection
         auto new_min = std::max(x_var.min(), y_var.min());
         auto new_max = std::min(x_var.max(), y_var.max());
-        if (new_min > new_max) return false;
+        if (new_min > new_max) return PresolveResult::Contradiction;
         if (new_min > x_var.min()) {
             x_dom.remove_below(new_min);
-            if (x_dom.empty()) return false;
+            if (x_dom.empty()) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_max < x_var.max()) {
             x_dom.remove_above(new_max);
-            if (x_dom.empty()) return false;
+            if (x_dom.empty()) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_min > y_var.min()) {
             y_dom.remove_below(new_min);
-            if (y_dom.empty()) return false;
+            if (y_dom.empty()) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_max < y_var.max()) {
             y_dom.remove_above(new_max);
-            if (y_dom.empty()) return false;
+            if (y_dom.empty()) return PresolveResult::Contradiction;
+            changed = true;
         }
     } else {
         // sparse set: use contains() to avoid set construction
@@ -52,18 +57,20 @@ bool IntEqConstraint::presolve(Model& model) {
         x_dom.copy_values_to(buf);
         for (auto v : buf) {
             if (!y_dom.contains(v)) {
-                if (!x_var.remove(v)) return false;
+                if (!x_var.remove(v)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
         y_dom.copy_values_to(buf);
         for (auto v : buf) {
             if (!x_dom.contains(v)) {
-                if (!y_var.remove(v)) return false;
+                if (!y_var.remove(v)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntEqConstraint::on_instantiate(Model& model, int save_point,
@@ -171,46 +178,51 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool IntEqReifConstraint::presolve(Model& model) {
+PresolveResult IntEqReifConstraint::presolve(Model& model) {
+    bool changed = false;
     // If b is fixed to 1, enforce x == y
     if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 1) {
         auto& x_dom = model.variable(x_id_)->domain();
         auto& y_dom = model.variable(y_id_)->domain();
 
         if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
-            // bounds intersection: [max(x_min,y_min), min(x_max,y_max)]
             auto new_min = std::max(model.variable(x_id_)->min(), model.variable(y_id_)->min());
             auto new_max = std::min(model.variable(x_id_)->max(), model.variable(y_id_)->max());
-            if (new_min > new_max) return false;
+            if (new_min > new_max) return PresolveResult::Contradiction;
             if (new_min > model.variable(x_id_)->min()) {
                 x_dom.remove_below(new_min);
-                if (x_dom.empty()) return false;
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_max < model.variable(x_id_)->max()) {
                 x_dom.remove_above(new_max);
-                if (x_dom.empty()) return false;
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_min > model.variable(y_id_)->min()) {
                 y_dom.remove_below(new_min);
-                if (y_dom.empty()) return false;
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_max < model.variable(y_id_)->max()) {
                 y_dom.remove_above(new_max);
-                if (y_dom.empty()) return false;
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
         } else {
-            // sparse set: use contains() to avoid set construction
             std::vector<Domain::value_type> buf;
             x_dom.copy_values_to(buf);
             for (auto v : buf) {
                 if (!y_dom.contains(v)) {
-                    if (!model.variable(x_id_)->remove(v)) return false;
+                    if (!model.variable(x_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
                 }
             }
             y_dom.copy_values_to(buf);
             for (auto v : buf) {
                 if (!x_dom.contains(v)) {
-                    if (!model.variable(y_id_)->remove(v)) return false;
+                    if (!model.variable(y_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
                 }
             }
         }
@@ -219,36 +231,40 @@ bool IntEqReifConstraint::presolve(Model& model) {
     // If b is fixed to 0 and one variable is singleton, remove that value from the other
     if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 0) {
         if (model.variable(x_id_)->is_assigned()) {
-            if (!model.variable(y_id_)->remove(model.variable(x_id_)->assigned_value().value())) {
-                return false;
+            auto val = model.variable(x_id_)->assigned_value().value();
+            if (model.variable(y_id_)->domain().contains(val)) {
+                if (!model.variable(y_id_)->remove(val)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
         if (model.variable(y_id_)->is_assigned()) {
-            if (!model.variable(x_id_)->remove(model.variable(y_id_)->assigned_value().value())) {
-                return false;
+            auto val = model.variable(y_id_)->assigned_value().value();
+            if (model.variable(x_id_)->domain().contains(val)) {
+                if (!model.variable(x_id_)->remove(val)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
     }
 
     // If x and y are both singletons, fix b
-    // NOTE: propagate() は初期伝播で使用され、Trail は使用しない
     if (model.variable(x_id_)->is_assigned() && model.variable(y_id_)->is_assigned() && !model.variable(b_id_)->is_assigned()) {
         bool eq = (model.variable(x_id_)->assigned_value() == model.variable(y_id_)->assigned_value());
         if (!model.variable(b_id_)->domain().contains(eq ? 1 : 0)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         model.variable(b_id_)->assign(eq ? 1 : 0);
+        changed = true;
     }
 
     // If y is a singleton and x's domain doesn't contain y's value, then b = 0
-    // (x can never equal y)
     if (!model.variable(b_id_)->is_assigned() && model.variable(y_id_)->is_assigned()) {
         auto y_val = model.variable(y_id_)->assigned_value().value();
         if (!model.variable(x_id_)->domain().contains(y_val)) {
             if (!model.variable(b_id_)->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             model.variable(b_id_)->assign(0);
+            changed = true;
         }
     }
 
@@ -257,13 +273,14 @@ bool IntEqReifConstraint::presolve(Model& model) {
         auto x_val = model.variable(x_id_)->assigned_value().value();
         if (!model.variable(y_id_)->domain().contains(x_val)) {
             if (!model.variable(b_id_)->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             model.variable(b_id_)->assign(0);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
@@ -409,19 +426,24 @@ std::string IntNeConstraint::name() const {
     return "int_ne";
 }
 
-bool IntNeConstraint::presolve(Model& model) {
+PresolveResult IntNeConstraint::presolve(Model& model) {
+    bool changed = false;
     // If one is singleton, remove that value from the other
     if (model.variable(x_id_)->is_assigned()) {
-        if (!model.variable(y_id_)->remove(model.variable(x_id_)->assigned_value().value())) {
-            return false;
+        auto val = model.variable(x_id_)->assigned_value().value();
+        if (model.variable(y_id_)->domain().contains(val)) {
+            if (!model.variable(y_id_)->remove(val)) return PresolveResult::Contradiction;
+            changed = true;
         }
     }
     if (model.variable(y_id_)->is_assigned()) {
-        if (!model.variable(x_id_)->remove(model.variable(y_id_)->assigned_value().value())) {
-            return false;
+        auto val = model.variable(y_id_)->assigned_value().value();
+        if (model.variable(x_id_)->domain().contains(val)) {
+            if (!model.variable(x_id_)->remove(val)) return PresolveResult::Contradiction;
+            changed = true;
         }
     }
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntNeConstraint::on_instantiate(Model& model, int save_point,
@@ -495,17 +517,22 @@ bool IntNeReifConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool IntNeReifConstraint::presolve(Model& model) {
+PresolveResult IntNeReifConstraint::presolve(Model& model) {
+    bool changed = false;
     // If b is fixed to 1, enforce x != y
     if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 1) {
         if (model.variable(x_id_)->is_assigned()) {
-            if (!model.variable(y_id_)->remove(model.variable(x_id_)->assigned_value().value())) {
-                return false;
+            auto val = model.variable(x_id_)->assigned_value().value();
+            if (model.variable(y_id_)->domain().contains(val)) {
+                if (!model.variable(y_id_)->remove(val)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
         if (model.variable(y_id_)->is_assigned()) {
-            if (!model.variable(x_id_)->remove(model.variable(y_id_)->assigned_value().value())) {
-                return false;
+            auto val = model.variable(y_id_)->assigned_value().value();
+            if (model.variable(x_id_)->domain().contains(val)) {
+                if (!model.variable(x_id_)->remove(val)) return PresolveResult::Contradiction;
+                changed = true;
             }
         }
     }
@@ -518,35 +545,41 @@ bool IntNeReifConstraint::presolve(Model& model) {
         if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
             auto new_min = std::max(model.variable(x_id_)->min(), model.variable(y_id_)->min());
             auto new_max = std::min(model.variable(x_id_)->max(), model.variable(y_id_)->max());
-            if (new_min > new_max) return false;
+            if (new_min > new_max) return PresolveResult::Contradiction;
             if (new_min > model.variable(x_id_)->min()) {
                 x_dom.remove_below(new_min);
-                if (x_dom.empty()) return false;
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_max < model.variable(x_id_)->max()) {
                 x_dom.remove_above(new_max);
-                if (x_dom.empty()) return false;
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_min > model.variable(y_id_)->min()) {
                 y_dom.remove_below(new_min);
-                if (y_dom.empty()) return false;
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
             if (new_max < model.variable(y_id_)->max()) {
                 y_dom.remove_above(new_max);
-                if (y_dom.empty()) return false;
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
             }
         } else {
             std::vector<Domain::value_type> buf;
             x_dom.copy_values_to(buf);
             for (auto v : buf) {
                 if (!y_dom.contains(v)) {
-                    if (!model.variable(x_id_)->remove(v)) return false;
+                    if (!model.variable(x_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
                 }
             }
             y_dom.copy_values_to(buf);
             for (auto v : buf) {
                 if (!x_dom.contains(v)) {
-                    if (!model.variable(y_id_)->remove(v)) return false;
+                    if (!model.variable(y_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
                 }
             }
         }
@@ -556,20 +589,21 @@ bool IntNeReifConstraint::presolve(Model& model) {
     if (model.variable(x_id_)->is_assigned() && model.variable(y_id_)->is_assigned() && !model.variable(b_id_)->is_assigned()) {
         bool ne = (model.variable(x_id_)->assigned_value() != model.variable(y_id_)->assigned_value());
         if (!model.variable(b_id_)->domain().contains(ne ? 1 : 0)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         model.variable(b_id_)->assign(ne ? 1 : 0);
+        changed = true;
     }
 
     // If y is a singleton and x's domain doesn't contain y's value, then b = 1
-    // (x can never equal y, so x != y is always true)
     if (!model.variable(b_id_)->is_assigned() && model.variable(y_id_)->is_assigned()) {
         auto y_val = model.variable(y_id_)->assigned_value().value();
         if (!model.variable(x_id_)->domain().contains(y_val)) {
             if (!model.variable(b_id_)->domain().contains(1)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             model.variable(b_id_)->assign(1);
+            changed = true;
         }
     }
 
@@ -578,13 +612,14 @@ bool IntNeReifConstraint::presolve(Model& model) {
         auto x_val = model.variable(x_id_)->assigned_value().value();
         if (!model.variable(y_id_)->domain().contains(x_val)) {
             if (!model.variable(b_id_)->domain().contains(1)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             model.variable(b_id_)->assign(1);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
@@ -730,18 +765,20 @@ std::string IntLtConstraint::name() const {
     return "int_lt";
 }
 
-bool IntLtConstraint::presolve(Model& model) {
+PresolveResult IntLtConstraint::presolve(Model& model) {
+    bool changed = false;
     // x < y means x.max < y and y > x.min
-
-    // Remove values from x that are >= y.max
     auto y_max = model.var_max(y_id_);
-    if (!model.variable(x_id_)->remove_above(y_max - 1)) return false;
-
-    // Remove values from y that are <= x.min
+    if (model.var_max(x_id_) > y_max - 1) {
+        if (!model.variable(x_id_)->remove_above(y_max - 1)) return PresolveResult::Contradiction;
+        changed = true;
+    }
     auto x_min = model.var_min(x_id_);
-    if (!model.variable(y_id_)->remove_below(x_min + 1)) return false;
-
-    return true;
+    if (model.var_min(y_id_) < x_min + 1) {
+        if (!model.variable(y_id_)->remove_below(x_min + 1)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLtConstraint::on_instantiate(Model& model, int save_point,
@@ -813,15 +850,20 @@ std::string IntLeConstraint::name() const {
     return "int_le";
 }
 
-bool IntLeConstraint::presolve(Model& model) {
+PresolveResult IntLeConstraint::presolve(Model& model) {
+    bool changed = false;
     // x <= y
     auto y_max = model.var_max(y_id_);
-    if (!model.variable(x_id_)->remove_above(y_max)) return false;
-
+    if (model.var_max(x_id_) > y_max) {
+        if (!model.variable(x_id_)->remove_above(y_max)) return PresolveResult::Contradiction;
+        changed = true;
+    }
     auto x_min = model.var_min(x_id_);
-    if (!model.variable(y_id_)->remove_below(x_min)) return false;
-
-    return true;
+    if (model.var_min(y_id_) < x_min) {
+        if (!model.variable(y_id_)->remove_below(x_min)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLeConstraint::on_instantiate(Model& model, int save_point,
@@ -892,54 +934,64 @@ std::string IntLeReifConstraint::name() const {
     return "int_le_reif";
 }
 
-bool IntLeReifConstraint::presolve(Model& model) {
+PresolveResult IntLeReifConstraint::presolve(Model& model) {
+    bool changed = false;
     // If b is fixed to 1, enforce x <= y
     if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 1) {
-        // x <= y: x の上限を y.max に、y の下限を x.min に
         auto y_max = model.var_max(y_id_);
-        if (!model.variable(x_id_)->remove_above(y_max)) return false;
-
+        if (model.var_max(x_id_) > y_max) {
+            if (!model.variable(x_id_)->remove_above(y_max)) return PresolveResult::Contradiction;
+            changed = true;
+        }
         auto x_min = model.var_min(x_id_);
-        if (!model.variable(y_id_)->remove_below(x_min)) return false;
+        if (model.var_min(y_id_) < x_min) {
+            if (!model.variable(y_id_)->remove_below(x_min)) return PresolveResult::Contradiction;
+            changed = true;
+        }
     }
 
     // If b is fixed to 0, enforce x > y
     if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 0) {
-        // x > y: x の下限を y.min + 1 に、y の上限を x.max - 1 に
         auto y_min = model.var_min(y_id_);
-        if (!model.variable(x_id_)->remove_below(y_min + 1)) return false;
-
+        if (model.var_min(x_id_) < y_min + 1) {
+            if (!model.variable(x_id_)->remove_below(y_min + 1)) return PresolveResult::Contradiction;
+            changed = true;
+        }
         auto x_max = model.var_max(x_id_);
-        if (!model.variable(y_id_)->remove_above(x_max - 1)) return false;
+        if (model.var_max(y_id_) > x_max - 1) {
+            if (!model.variable(y_id_)->remove_above(x_max - 1)) return PresolveResult::Contradiction;
+            changed = true;
+        }
     }
 
     // If x and y bounds determine the relation, fix b
-    // NOTE: propagate() は初期伝播で使用され、Trail は使用しない
-    // on_instantiate で Model を通じた Trail 付き更新を行う
     auto x_max = model.var_max(x_id_);
     auto y_min = model.var_min(y_id_);
     auto x_min = model.var_min(x_id_);
     auto y_max = model.var_max(y_id_);
 
     if (x_max <= y_min) {
-        // x <= y is always true
         if (!model.variable(b_id_)->domain().contains(1)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         if (!model.variable(b_id_)->is_assigned()) {
             model.variable(b_id_)->assign(1);
+            changed = true;
         }
     } else if (x_min > y_max) {
-        // x <= y is always false (x > y)
         if (!model.variable(b_id_)->domain().contains(0)) {
-            return false;
+            return PresolveResult::Contradiction;
         }
         if (!model.variable(b_id_)->is_assigned()) {
             model.variable(b_id_)->assign(0);
+            changed = true;
         }
     }
 
-    return !model.variable(x_id_)->domain().empty() && !model.variable(y_id_)->domain().empty() && !model.variable(b_id_)->domain().empty();
+    if (model.variable(x_id_)->domain().empty() || model.variable(y_id_)->domain().empty() || model.variable(b_id_)->domain().empty()) {
+        return PresolveResult::Contradiction;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLeReifConstraint::on_instantiate(Model& model, int save_point,
@@ -1084,28 +1136,36 @@ std::string IntMaxConstraint::name() const {
     return "int_max";
 }
 
-bool IntMaxConstraint::presolve(Model& model) {
-    // m = max(x, y) の bounds propagation
+PresolveResult IntMaxConstraint::presolve(Model& model) {
+    bool changed = false;
     auto x_min = model.var_min(x_id_);
     auto x_max = model.var_max(x_id_);
     auto y_min = model.var_min(y_id_);
     auto y_max = model.var_max(y_id_);
 
-    // m.min = max(x.min, y.min)
-    // m.max = max(x.max, y.max)
     auto m_lower = std::max(x_min, y_min);
     auto m_upper = std::max(x_max, y_max);
 
-    // m のドメインを絞る
-    if (!model.variable(m_id_)->remove_below(m_lower)) return false;
-    if (!model.variable(m_id_)->remove_above(m_upper)) return false;
+    if (model.var_min(m_id_) < m_lower) {
+        if (!model.variable(m_id_)->remove_below(m_lower)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    if (model.var_max(m_id_) > m_upper) {
+        if (!model.variable(m_id_)->remove_above(m_upper)) return PresolveResult::Contradiction;
+        changed = true;
+    }
 
-    // x.max <= m.max, y.max <= m.max
     auto m_max = model.var_max(m_id_);
-    if (!model.variable(x_id_)->remove_above(m_max)) return false;
-    if (!model.variable(y_id_)->remove_above(m_max)) return false;
+    if (x_max > m_max) {
+        if (!model.variable(x_id_)->remove_above(m_max)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    if (y_max > m_max) {
+        if (!model.variable(y_id_)->remove_above(m_max)) return PresolveResult::Contradiction;
+        changed = true;
+    }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntMaxConstraint::on_instantiate(Model& model, int save_point,
@@ -1251,28 +1311,36 @@ std::string IntMinConstraint::name() const {
     return "int_min";
 }
 
-bool IntMinConstraint::presolve(Model& model) {
-    // m = min(x, y) の bounds propagation
+PresolveResult IntMinConstraint::presolve(Model& model) {
+    bool changed = false;
     auto x_min = model.var_min(x_id_);
     auto x_max = model.var_max(x_id_);
     auto y_min = model.var_min(y_id_);
     auto y_max = model.var_max(y_id_);
 
-    // m.min = min(x.min, y.min)
-    // m.max = min(x.max, y.max)
     auto m_lower = std::min(x_min, y_min);
     auto m_upper = std::min(x_max, y_max);
 
-    // m のドメインを絞る
-    if (!model.variable(m_id_)->remove_below(m_lower)) return false;
-    if (!model.variable(m_id_)->remove_above(m_upper)) return false;
+    if (model.var_min(m_id_) < m_lower) {
+        if (!model.variable(m_id_)->remove_below(m_lower)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    if (model.var_max(m_id_) > m_upper) {
+        if (!model.variable(m_id_)->remove_above(m_upper)) return PresolveResult::Contradiction;
+        changed = true;
+    }
 
-    // x.min >= m.min, y.min >= m.min
     auto m_min_val = model.var_min(m_id_);
-    if (!model.variable(x_id_)->remove_below(m_min_val)) return false;
-    if (!model.variable(y_id_)->remove_below(m_min_val)) return false;
+    if (x_min < m_min_val) {
+        if (!model.variable(x_id_)->remove_below(m_min_val)) return PresolveResult::Contradiction;
+        changed = true;
+    }
+    if (y_min < m_min_val) {
+        if (!model.variable(y_id_)->remove_below(m_min_val)) return PresolveResult::Contradiction;
+        changed = true;
+    }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntMinConstraint::on_instantiate(Model& model, int save_point,

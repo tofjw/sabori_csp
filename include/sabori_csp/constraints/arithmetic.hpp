@@ -17,7 +17,7 @@ public:
     IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -50,7 +50,7 @@ public:
     IntAbsConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,
@@ -80,7 +80,7 @@ public:
     IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
     std::string name() const override;
-    bool presolve(Model& model) override;
+    PresolveResult presolve(Model& model) override;
 
     bool on_instantiate(Model& model, int save_point,
                         size_t var_idx, size_t internal_var_idx,

@@ -57,7 +57,8 @@ std::string IntLinNeReifConstraint::name() const {
     return "int_lin_ne_reif";
 }
 
-bool IntLinNeReifConstraint::presolve(Model& model) {
+PresolveResult IntLinNeReifConstraint::presolve(Model& model) {
+    bool changed = false;
     // キャッシュ値ではなく変数ドメインから毎回計算
     // （イベント処理が組み上がる前なのでキャッシュは信頼できない）
     int64_t min_sum = 0;
@@ -85,7 +86,7 @@ bool IntLinNeReifConstraint::presolve(Model& model) {
     if (bvar->is_assigned() && bvar->assigned_value().value() == 1) {
         // sum が target にしかなりえない場合は矛盾
         if (min_sum == target_ && max_sum == target_) {
-            return false;
+            return PresolveResult::Contradiction;
         }
     }
 
@@ -93,7 +94,7 @@ bool IntLinNeReifConstraint::presolve(Model& model) {
     if (bvar->is_assigned() && bvar->assigned_value().value() == 0) {
         // target が [min_sum, max_sum] に含まれていなければ矛盾
         if (target_ < min_sum || target_ > max_sum) {
-            return false;
+            return PresolveResult::Contradiction;
         }
     }
 
@@ -102,19 +103,21 @@ bool IntLinNeReifConstraint::presolve(Model& model) {
         if (target_ < min_sum || target_ > max_sum) {
             // sum != target が常に真 → b = 1
             if (!bvar->domain().contains(1)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             bvar->assign(1);
+            changed = true;
         } else if (min_sum == target_ && max_sum == target_) {
             // sum == target が常に真 → sum != target は常に偽 → b = 0
             if (!bvar->domain().contains(0)) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             bvar->assign(0);
+            changed = true;
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLinNeReifConstraint::on_instantiate(Model& model, int save_point,

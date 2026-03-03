@@ -143,9 +143,9 @@ bool CircuitConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool CircuitConstraint::presolve(Model& model) {
+PresolveResult CircuitConstraint::presolve(Model& model) {
     // 初期伝播: 特に何もしない（on_instantiate で処理）
-    return true;
+    return PresolveResult::Unchanged;
 }
 
 size_t CircuitConstraint::find(size_t i) const {

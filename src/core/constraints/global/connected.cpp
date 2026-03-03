@@ -167,21 +167,24 @@ bool ConnectedConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool ConnectedConstraint::presolve(Model& /*model*/) {
+PresolveResult ConnectedConstraint::presolve(Model& /*model*/) {
+    bool changed = false;
     // subgraph 伝播: 辺が選択 → 両端点を選択
     for (size_t e = 0; e < n_edges_; ++e) {
         if (vars_[n_nodes_ + e]->is_assigned() && vars_[n_nodes_ + e]->assigned_value().value() == 1) {
             size_t u = static_cast<size_t>(from_[e]);
             size_t v = static_cast<size_t>(to_[e]);
             if (!vars_[u]->is_assigned()) {
-                if (!vars_[u]->assign(1)) return false;
+                if (!vars_[u]->assign(1)) return PresolveResult::Contradiction;
+                changed = true;
             } else if (vars_[u]->assigned_value().value() != 1) {
-                return false;
+                return PresolveResult::Contradiction;
             }
             if (!vars_[v]->is_assigned()) {
-                if (!vars_[v]->assign(1)) return false;
+                if (!vars_[v]->assign(1)) return PresolveResult::Contradiction;
+                changed = true;
             } else if (vars_[v]->assigned_value().value() != 1) {
-                return false;
+                return PresolveResult::Contradiction;
             }
         }
     }
@@ -190,14 +193,15 @@ bool ConnectedConstraint::presolve(Model& /*model*/) {
         if (vars_[n]->is_assigned() && vars_[n]->assigned_value().value() == 0) {
             for (size_t e_idx : adj_[n]) {
                 if (!vars_[n_nodes_ + e_idx]->is_assigned()) {
-                    if (!vars_[n_nodes_ + e_idx]->assign(0)) return false;
+                    if (!vars_[n_nodes_ + e_idx]->assign(0)) return PresolveResult::Contradiction;
+                    changed = true;
                 } else if (vars_[n_nodes_ + e_idx]->assigned_value().value() != 0) {
-                    return false;  // 端点が非選択なのに辺が選択 → 矛盾
+                    return PresolveResult::Contradiction;  // 端点が非選択なのに辺が選択 → 矛盾
                 }
             }
         }
     }
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 size_t ConnectedConstraint::uf_find(size_t x) const {

@@ -220,8 +220,18 @@ bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-bool ArrayVarIntElementConstraint::presolve(Model& model) {
-    return propagate_bounds(model);
+PresolveResult ArrayVarIntElementConstraint::presolve(Model& model) {
+    // Snapshot domain sizes before propagation
+    size_t total_size_before = 0;
+    for (size_t vid : var_ids_) {
+        total_size_before += model.variable(vid)->domain().size();
+    }
+    if (!propagate_bounds(model)) return PresolveResult::Contradiction;
+    size_t total_size_after = 0;
+    for (size_t vid : var_ids_) {
+        total_size_after += model.variable(vid)->domain().size();
+    }
+    return (total_size_after < total_size_before) ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool ArrayVarIntElementConstraint::propagate_via_queue(Model& model) {

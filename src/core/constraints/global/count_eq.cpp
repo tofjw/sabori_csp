@@ -35,7 +35,8 @@ std::string CountEqConstraint::name() const {
     return "count_eq";
 }
 
-bool CountEqConstraint::presolve(Model& model) {
+PresolveResult CountEqConstraint::presolve(Model& model) {
+    bool changed = false;
     // 初期 definite/possible カウントを計算
     definite_count_ = 0;
     possible_count_ = 0;
@@ -62,13 +63,15 @@ bool CountEqConstraint::presolve(Model& model) {
     auto new_max = static_cast<Domain::value_type>(definite_count_ + possible_count_);
 
     if (new_min > c_max || new_max < c_min) {
-        return false;  // 矛盾
+        return PresolveResult::Contradiction;  // 矛盾
     }
     if (new_min > c_min) {
-        if (!c_var->remove_below(new_min)) return false;
+        if (!c_var->remove_below(new_min)) return PresolveResult::Contradiction;
+        changed = true;
     }
     if (new_max < c_max) {
-        if (!c_var->remove_above(new_max)) return false;
+        if (!c_var->remove_above(new_max)) return PresolveResult::Contradiction;
+        changed = true;
     }
 
     // Forward propagation
@@ -80,7 +83,8 @@ bool CountEqConstraint::presolve(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
                 auto xi = model.variable(var_ids_[i]);
-                if (!xi->remove(target_)) return false;
+                if (!xi->remove(target_)) return PresolveResult::Contradiction;
+                changed = true;
                 is_possible_[i] = false;
                 possible_count_--;
             }
@@ -93,8 +97,9 @@ bool CountEqConstraint::presolve(Model& model) {
             if (is_possible_[i]) {
                 auto xi = model.variable(var_ids_[i]);
                 if (xi->is_assigned()) continue;
-                if (!xi->domain().contains(target_)) return false;
-                if (!xi->assign(target_)) return false;
+                if (!xi->domain().contains(target_)) return PresolveResult::Contradiction;
+                if (!xi->assign(target_)) return PresolveResult::Contradiction;
+                changed = true;
                 // 確定した
                 definite_count_++;
                 is_possible_[i] = false;
@@ -103,7 +108,7 @@ bool CountEqConstraint::presolve(Model& model) {
         }
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool CountEqConstraint::prepare_propagation(Model& model) {
@@ -432,7 +437,8 @@ void CountEqVarTargetConstraint::initialize_counts(Model& model) {
     }
 }
 
-bool CountEqVarTargetConstraint::presolve(Model& model) {
+PresolveResult CountEqVarTargetConstraint::presolve(Model& model) {
+    bool changed = false;
     auto y_var = model.variable(var_ids_[n_]);
     if (y_var->is_assigned()) {
         // y が既に確定
@@ -447,12 +453,14 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
         auto new_min = static_cast<Domain::value_type>(definite_count_);
         auto new_max = static_cast<Domain::value_type>(definite_count_ + possible_count_);
 
-        if (new_min > c_max || new_max < c_min) return false;
+        if (new_min > c_max || new_max < c_min) return PresolveResult::Contradiction;
         if (new_min > c_min) {
-            if (!c_var->remove_below(new_min)) return false;
+            if (!c_var->remove_below(new_min)) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (new_max < c_max) {
-            if (!c_var->remove_above(new_max)) return false;
+            if (!c_var->remove_above(new_max)) return PresolveResult::Contradiction;
+            changed = true;
         }
 
         // Forward propagation
@@ -464,7 +472,8 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
                 if (is_possible_[i]) {
                     auto xi = model.variable(var_ids_[i]);
                     xi->remove(target_);
-                    if (xi->domain().empty()) return false;
+                    if (xi->domain().empty()) return PresolveResult::Contradiction;
+                    changed = true;
                     is_possible_[i] = false;
                     possible_count_--;
                 }
@@ -476,8 +485,9 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
                 if (is_possible_[i]) {
                     auto xi = model.variable(var_ids_[i]);
                     if (xi->is_assigned()) continue;
-                    if (!xi->domain().contains(target_)) return false;
-                    if (!xi->assign(target_)) return false;
+                    if (!xi->domain().contains(target_)) return PresolveResult::Contradiction;
+                    if (!xi->assign(target_)) return PresolveResult::Contradiction;
+                    changed = true;
                     definite_count_++;
                     is_possible_[i] = false;
                     possible_count_--;
@@ -488,16 +498,18 @@ bool CountEqVarTargetConstraint::presolve(Model& model) {
         // y 未確定: 弱い bounds のみ
         auto c_var = model.variable(var_ids_[n_ + 1]);
         auto n_val = static_cast<Domain::value_type>(n_);
-        if (c_var->min() > n_val) return false;
-        if (0 > c_var->max()) return false;
+        if (c_var->min() > n_val) return PresolveResult::Contradiction;
+        if (0 > c_var->max()) return PresolveResult::Contradiction;
         if (c_var->min() < 0) {
-            if (!c_var->remove_below(0)) return false;
+            if (!c_var->remove_below(0)) return PresolveResult::Contradiction;
+            changed = true;
         }
         if (c_var->max() > n_val) {
-            if (!c_var->remove_above(n_val)) return false;
+            if (!c_var->remove_above(n_val)) return PresolveResult::Contradiction;
+            changed = true;
         }
     }
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool CountEqVarTargetConstraint::prepare_propagation(Model& model) {

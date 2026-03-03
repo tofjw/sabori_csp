@@ -76,7 +76,7 @@ TEST_CASE("AllDifferentConstraint propagate", "[constraint][all_different]") {
         auto z = model.create_variable("z", 1, 3);
         AllDifferentConstraint c({x, y, z});
 
-        REQUIRE(c.presolve(model) == true);
+        REQUIRE(c.presolve(model) != PresolveResult::Contradiction);
         REQUIRE_FALSE(y->domain().contains(2));
         REQUIRE_FALSE(z->domain().contains(2));
     }
@@ -1248,7 +1248,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.presolve(model) == false);
+        REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
     }
 
     SECTION("index out of range - too large") {
@@ -1258,7 +1258,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.presolve(model) == false);
+        REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
     }
 
     SECTION("result value not in array") {
@@ -1268,7 +1268,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.presolve(model) == false);
+        REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
     }
 
     SECTION("consistent initial state") {
@@ -1278,7 +1278,7 @@ TEST_CASE("IntElementConstraint initial consistency", "[constraint][int_element]
         std::vector<Domain::value_type> array = {10, 20, 30};
         IntElementConstraint c(index, array, result);
 
-        REQUIRE(c.presolve(model) == true);
+        REQUIRE(c.presolve(model) != PresolveResult::Contradiction);
     }
 }
 
@@ -3135,7 +3135,7 @@ TEST_CASE("TableConstraint presolve", "[constraint][table]") {
         auto* y = model.create_variable("y", Domain(1, 5));
         // table: (1,2), (2,3)
         TableConstraint c({x, y}, {1,2, 2,3});
-        REQUIRE(c.presolve(model) == true);
+        REQUIRE(c.presolve(model) != PresolveResult::Contradiction);
 
         // x should only have {1,2}, y should only have {2,3}
         REQUIRE(x->domain().contains(1));
@@ -3326,7 +3326,7 @@ TEST_CASE("CountEqConstraint presolve", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(0, 3));
         CountEqConstraint cst({x1, x2, x3}, 2, c);
 
-        REQUIRE(cst.presolve(model) == true);
+        REQUIRE(cst.presolve(model) != PresolveResult::Contradiction);
         // definite=1, possible=1 → c ∈ [1, 2]
         REQUIRE(c->min() == 1);
         REQUIRE(c->max() == 2);
@@ -3340,7 +3340,7 @@ TEST_CASE("CountEqConstraint presolve", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(3, 3));
         CountEqConstraint cst({x1, x2, x3}, 2, c);
 
-        REQUIRE(cst.presolve(model) == true);
+        REQUIRE(cst.presolve(model) != PresolveResult::Contradiction);
         // c=3, definite=0, possible=3 → c.min(3) == def+poss(3) → all forced to 2
         REQUIRE(x1->min() == 2);
         REQUIRE(x1->max() == 2);
@@ -3357,7 +3357,7 @@ TEST_CASE("CountEqConstraint presolve", "[constraint][count_eq]") {
         auto* c = model.create_variable("c", Domain(0, 0));
         CountEqConstraint cst({x1, x2}, 2, c);
 
-        REQUIRE(cst.presolve(model) == true);
+        REQUIRE(cst.presolve(model) != PresolveResult::Contradiction);
         // c=0, definite=0 → c.max(0)==definite(0) → remove target from all
         REQUIRE_FALSE(x1->domain().contains(2));
         REQUIRE_FALSE(x2->domain().contains(2));
@@ -3371,7 +3371,7 @@ TEST_CASE("CountEqConstraint presolve", "[constraint][count_eq]") {
         CountEqConstraint cst({x1, x2}, 2, c);
 
         // definite=0, possible=0, c=2 → impossible
-        REQUIRE(cst.presolve(model) == false);
+        REQUIRE(cst.presolve(model) == PresolveResult::Contradiction);
     }
 }
 

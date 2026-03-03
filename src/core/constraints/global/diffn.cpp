@@ -168,8 +168,18 @@ bool DiffnConstraint::propagate_pairwise_direct(Model& model) {
 
 // ---------- Presolve ----------
 
-bool DiffnConstraint::presolve(Model& model) {
-    return propagate_pairwise_direct(model);
+PresolveResult DiffnConstraint::presolve(Model& model) {
+    // Snapshot domain sizes before propagation
+    size_t total_size_before = 0;
+    for (size_t vid : var_ids_) {
+        total_size_before += model.variable(vid)->domain().size();
+    }
+    if (!propagate_pairwise_direct(model)) return PresolveResult::Contradiction;
+    size_t total_size_after = 0;
+    for (size_t vid : var_ids_) {
+        total_size_after += model.variable(vid)->domain().size();
+    }
+    return (total_size_after < total_size_before) ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 // ---------- Prepare propagation ----------

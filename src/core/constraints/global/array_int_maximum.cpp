@@ -25,11 +25,12 @@ std::string ArrayIntMaximumConstraint::name() const {
     return "array_int_maximum";
 }
 
-bool ArrayIntMaximumConstraint::presolve(Model& model) {
+PresolveResult ArrayIntMaximumConstraint::presolve(Model& model) {
     if (n_ == 0) {
-        return false;  // 空配列は不正
+        return PresolveResult::Contradiction;  // 空配列は不正
     }
 
+    bool changed = false;
     auto* m_var = model.variable(m_id_);
 
     // 1. 全 x[i] の最大値の最大値を計算 -> m.max
@@ -45,13 +46,16 @@ bool ArrayIntMaximumConstraint::presolve(Model& model) {
     }
 
     // 3. m のドメインを絞る: max_of_min <= m <= max_of_max
-    if (!m_var->remove_below(max_of_min)) return false;
-    if (!m_var->remove_above(max_of_max)) return false;
+    if (max_of_min > m_var->min()) changed = true;
+    if (!m_var->remove_below(max_of_min)) return PresolveResult::Contradiction;
+    if (max_of_max < m_var->max()) changed = true;
+    if (!m_var->remove_above(max_of_max)) return PresolveResult::Contradiction;
 
     // 4. 各 x[i].max を m.max 以下に絞る
     auto m_max = model.var_max(m_id_);
     for (size_t i = 0; i < n_; ++i) {
-        if (!model.variable(var_ids_[1 + i])->remove_above(m_max)) return false;
+        if (m_max < model.variable(var_ids_[1 + i])->max()) changed = true;
+        if (!model.variable(var_ids_[1 + i])->remove_above(m_max)) return PresolveResult::Contradiction;
     }
 
     // 5. m が確定している場合: 少なくとも1つの x[i] が m に等しくなれる必要がある
@@ -64,10 +68,10 @@ bool ArrayIntMaximumConstraint::presolve(Model& model) {
                 break;
             }
         }
-        if (!can_achieve) return false;
+        if (!can_achieve) return PresolveResult::Contradiction;
     }
 
-    return true;
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool ArrayIntMaximumConstraint::on_instantiate(Model& model, int save_point,

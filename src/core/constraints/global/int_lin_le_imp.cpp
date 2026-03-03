@@ -54,16 +54,16 @@ std::string IntLinLeImpConstraint::name() const {
     return "int_lin_le_imp";
 }
 
-bool IntLinLeImpConstraint::presolve(Model& model) {
+PresolveResult IntLinLeImpConstraint::presolve(Model& model) {
     auto* bvar = model.variable(b_id_);
     // b = 1 の場合のみ伝播
     if (!bvar->is_assigned() || bvar->assigned_value().value() == 0) {
-        return true;  // b が未確定または 0 なら何もしない
+        return PresolveResult::Unchanged;  // b が未確定または 0 なら何もしない
     }
 
     // b = 1: sum(coeffs[i] * vars[i]) <= bound を強制
     // 初期矛盾チェックは check_initial_consistency で行う
-    return true;
+    return PresolveResult::Unchanged;
 }
 
 bool IntLinLeImpConstraint::on_instantiate(Model& model, int save_point,
