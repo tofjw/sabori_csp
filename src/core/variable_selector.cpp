@@ -89,6 +89,7 @@ void VariableSelector::restore_defined_end(size_t new_end) {
 
 size_t VariableSelector::select(const Model& model,
                                  const std::vector<double>& activity,
+                                 const std::vector<int>& temporal_activity,
                                  const Bloom512& ng_usage_bloom,
                                  bool activity_first,
                                  std::mt19937& rng) {
@@ -102,15 +103,16 @@ size_t VariableSelector::select(const Model& model,
     }
 
     // 線形スキャン: decision vars → defined vars
-    size_t result = select_linear(model, activity, ng_usage_bloom, activity_first,
+    size_t result = select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
                                   rng, 0, decision_unassigned_end_);
     if (result != SIZE_MAX) return result;
-    return select_linear(model, activity, ng_usage_bloom, activity_first,
+    return select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
                          rng, decision_var_end_, defined_unassigned_end_);
 }
 
 size_t VariableSelector::select_linear(const Model& model,
                                         const std::vector<double>& activity,
+                                        const std::vector<int>& temporal_activity,
                                         const Bloom512& ng_usage_bloom,
                                         bool activity_first,
                                         std::mt19937& rng,
@@ -121,6 +123,7 @@ size_t VariableSelector::select_linear(const Model& model,
     size_t best_idx = SIZE_MAX;
     size_t min_domain_size = SIZE_MAX;
     double best_activity = -1.0;
+    int best_temporal = -1;
     int best_ng_overlap = -1;
     bool use_bloom = !ng_usage_bloom.empty();
 
@@ -130,23 +133,31 @@ size_t VariableSelector::select_linear(const Model& model,
         size_t k = begin + (start + j) % n;
         size_t i = var_order_[k];
         size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
+        int ta = temporal_activity[i];
         bool better = false;
         bool tied = false;
-        if (activity_first) {
-            if (activity[i] > best_activity) {
-                better = true;
-            } else if (activity[i] == best_activity && domain_size < min_domain_size) {
-                better = true;
-            } else if (activity[i] == best_activity && domain_size == min_domain_size) {
-                tied = true;
-            }
-        } else {
-            if (domain_size < min_domain_size) {
-                better = true;
-            } else if (domain_size == min_domain_size && activity[i] > best_activity) {
-                better = true;
-            } else if (domain_size == min_domain_size && activity[i] == best_activity) {
-                tied = true;
+        if (ta > best_temporal) {
+            better = true;
+        } else if (ta == best_temporal) {
+            if (activity_first) {
+                if (activity[i] > best_activity) {
+                    better = true;
+                } else if (activity[i] == best_activity && domain_size < min_domain_size) {
+                    better = true;
+                } else if (activity[i] == best_activity && domain_size == min_domain_size) {
+                    tied = true;
+                }
+            } else {
+                if (domain_size < min_domain_size) {
+                    better = true;
+                } else if (domain_size == min_domain_size && activity[i] > best_activity) {
+                    better = true;
+                } else if (domain_size == min_domain_size && activity[i] == best_activity) {
+                    tied = true;
+                }
+                else if (domain_size == min_domain_size) {
+                    tied = true;
+                }
             }
         }
 
@@ -164,6 +175,7 @@ size_t VariableSelector::select_linear(const Model& model,
             best_idx = i;
             min_domain_size = domain_size;
             best_activity = activity[i];
+            best_temporal = ta;
             if (use_bloom) {
                 best_ng_overlap = (model.var_ng_bloom(i) & ng_usage_bloom).popcount();
             }

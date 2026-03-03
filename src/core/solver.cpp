@@ -48,6 +48,7 @@ bool Solver::init_search(Model& model) {
 
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
+    temporal_activity_.assign(variables.size(), 0);
     var_selector_.build_order(model, rng_);
     decision_trail_.clear();
     nogood_mgr_.clear(variables.size());
@@ -239,6 +240,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Activity 減衰
             decay_activities();
 
+            // Temporal activity リセット
+            std::fill(temporal_activity_.begin(), temporal_activity_.end(), 0);
+
             // domain_size 優先と activity 優先を交互に切り替え
             activity_first_ = !activity_first_;
 
@@ -299,6 +303,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
     while (!stopped_) {
         // ===== cycle 開始 =====
         size_t prune_at_cycle_start = stats_.nogood_prune_count;
+        size_t domain_at_cycle_start = stats_.nogood_domain_count;
         size_t max_depth_at_cycle_start = stats_.max_depth;
         bool cycle_interrupted = false;
         restart_ctrl_.begin_cycle();
@@ -504,8 +509,9 @@ std::optional<Solution> Solver::search_with_restart_optimize(
         // ===== cycle 終了: outer を調整（改善時中断でなければ） =====
         if (!cycle_interrupted) {
             size_t prune_delta = stats_.nogood_prune_count - prune_at_cycle_start;
+            size_t domain_delta = stats_.nogood_domain_count - domain_at_cycle_start;
             bool depth_grew = stats_.max_depth > max_depth_at_cycle_start;
-            restart_ctrl_.end_cycle(prune_delta, depth_grew);
+            restart_ctrl_.end_cycle(prune_delta + domain_delta, depth_grew);
 
             if (verbose_) {
                 std::cerr << "% [verbose] cycle end: prune_delta=" << prune_delta
@@ -573,7 +579,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             }
 
             // 変数選択（全変数確定なら SIZE_MAX）
-            size_t var_idx = var_selector_.select(model, activity_, ng_usage_bloom_, activity_first_, rng_);
+            size_t var_idx = var_selector_.select(model, activity_, temporal_activity_, ng_usage_bloom_, activity_first_, rng_);
 
             if (var_idx == SIZE_MAX) {
                 if (verify_solution(model)) {
@@ -755,6 +761,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                         }
                         ascending = false;
                         found_value = true;
+                        if (temporal_activity_[frame.var_idx] > 0) 
+                            temporal_activity_[frame.var_idx]--;
                         break;
                     }
                 }
@@ -770,7 +778,11 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
             if (!found_value) {
                 // 全値失敗
+                if (temporal_activity_[frame.var_idx] == 0) {
+                }
                 activity_[frame.var_idx] += activity_inc_;
+                temporal_activity_[frame.var_idx]++;
+
                 stats_.fail_count++;
                 save_partial_assignment(model);
 
@@ -819,6 +831,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                     }
                     ascending = false;
                     found_branch = true;
+                    if (temporal_activity_[frame.var_idx] > 0) 
+                        temporal_activity_[frame.var_idx]--;
                     break;
                 }
 
@@ -829,7 +843,11 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 
             if (!found_branch) {
                 // 両方失敗
+                if (temporal_activity_[frame.var_idx] == 0) {
+                }
                 activity_[frame.var_idx] += activity_inc_;
+                temporal_activity_[frame.var_idx]++;
+
                 stats_.fail_count++;
                 save_partial_assignment(model);
 

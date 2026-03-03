@@ -420,6 +420,7 @@ private:
     int current_decision_ = 0;
     std::vector<double> activity_;
     double activity_inc_ = 1.0;
+    std::vector<int> temporal_activity_;  ///< 全値失敗した変数の直近失敗回数
     std::vector<Literal> decision_trail_;
 
     // NoGood 管理

@@ -54,6 +54,7 @@ public:
      */
     size_t select(const Model& model,
                   const std::vector<double>& activity,
+                  const std::vector<int>& temporal_activity,
                   const Bloom512& ng_usage_bloom,
                   bool activity_first,
                   std::mt19937& rng);
@@ -119,6 +120,7 @@ private:
     // 線形スキャンによる変数選択
     size_t select_linear(const Model& model,
                          const std::vector<double>& activity,
+                         const std::vector<int>& temporal_activity,
                          const Bloom512& ng_usage_bloom,
                          bool activity_first,
                          std::mt19937& rng,
