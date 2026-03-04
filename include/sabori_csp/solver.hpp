@@ -264,6 +264,12 @@ public:
      */
     void set_bisection_threshold(size_t threshold) { bisection_threshold_ = threshold; }
 
+    /**
+     * @brief improvement probe の fail 上限を設定
+     * @param limit fail上限（0=probe無効）
+     */
+    void set_probe_fail_limit(int limit) { probe_fail_limit_ = limit; }
+
 private:
     void log_presolve_start(const Model& model) const;
 
@@ -467,6 +473,7 @@ private:
     bool activity_selection_ = true;
     bool activity_first_ = false;  // false: MRV優先, true: Activity優先
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
+    int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 
     // 最適化状態
     bool optimizing_ = false;

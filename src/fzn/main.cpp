@@ -22,13 +22,14 @@ void timeout_handler(int) {
 }
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] <file.fzn>\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
     std::cerr << "  -c      Community analysis (print VIG/community/locality stats)\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
+    std::cerr << "  -p N    Probe fail limit for improvement probe (default: 10, 0=disable)\n";
     std::cerr << "  -N      Disable nogood learning\n";
     std::cerr << "  -E      Disable variable elimination\n";
 }
@@ -151,6 +152,7 @@ sabori_csp::ModelSimplifier simplify_model(
  * @brief 充足可能性問題を解く
  */
 int g_bisection_threshold = 8;
+int g_probe_fail_limit = 5;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model(g_verbose);
@@ -204,6 +206,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
+    solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
@@ -269,6 +272,8 @@ int main(int argc, char* argv[]) {
             timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
             bisection_threshold = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+            g_probe_fail_limit = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-c") == 0) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {

@@ -416,6 +416,165 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     }
                     return best_solution_;
                 }
+
+                // --- improvement probe: ~10% 改善を軽量プローブで試みる ---
+                if (probe_fail_limit_ > 0) {
+                    auto obj_lb = model.var_min(obj_var_idx_);
+                    auto obj_ub = model.var_max(obj_var_idx_);
+                    auto range = obj_ub - obj_lb;
+                    auto improvement = std::max(range / 20, static_cast<Domain::value_type>(1));
+
+                    Domain::value_type target;
+                    if (minimize_) {
+                        target = obj_lb + improvement - 1;  // obj <= target
+                    } else {
+                        target = obj_ub - improvement + 1;  // obj >= target
+                    }
+
+                    bool target_useful = minimize_ ? (target < obj_ub) : (target > obj_lb);
+
+                    if (target_useful) {
+                        if (verbose_) {
+                            std::cerr << "% [verbose] improvement probe: obj=["
+                                      << obj_lb << ".." << obj_ub << "] target=" << target
+                                      << " fail_limit=" << probe_fail_limit_ << "\n";
+                        }
+
+                        current_decision_++;
+                        if (minimize_) {
+                            decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Leq});
+                            model.enqueue_set_max(obj_var_idx_, target);
+                        } else {
+                            decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Geq});
+                            model.enqueue_set_min(obj_var_idx_, target);
+                        }
+
+                        Domain::value_type probe_obj = 0;
+                        std::optional<Solution> probe_solution;
+                        SearchResult res2 = SearchResult::UNKNOWN;
+                        bool probe_propagation_ok = false;
+
+                        if (process_queue(model)) {
+                            probe_propagation_ok = true;
+                            res2 = run_search(model, probe_fail_limit_, 0,
+                                              [&probe_solution](const Solution& sol) {
+                                                  probe_solution = sol;
+                                                  return false;
+                                              }, false);
+                            if (res2 == SearchResult::SAT) {
+                                probe_obj = model.value(obj_var_idx_);
+                                // current_best_assignment_ を backtrack 前に取得
+                                const auto& variables = model.variables();
+                                std::fill(current_best_assignment_.begin(),
+                                          current_best_assignment_.end(), kNoValue);
+                                for (size_t i = 0; i < variables.size(); ++i) {
+                                    if (model.is_instantiated(i)) {
+                                        current_best_assignment_[i] = model.value(i);
+                                    }
+                                }
+                            }
+                        }
+                        // process_queue 失敗 = 伝播のみで UNSAT（探索より強い証明）
+                        bool probe_unsat = !probe_propagation_ok || res2 == SearchResult::UNSAT;
+
+                        // プローブ仮定を除去してバックトラック
+                        decision_trail_.pop_back();
+                        model.clear_pending_updates();
+                        backtrack(model, root_point);
+                        current_decision_ = root_point;
+
+                        if (res2 == SearchResult::SAT) {
+                            bool probe_improved =
+                                (minimize_ && probe_obj < *best_objective_) ||
+                                (!minimize_ && probe_obj > *best_objective_);
+
+                            if (probe_improved) {
+                                best_objective_ = probe_obj;
+                                best_solution_ = probe_solution;
+
+                                if (verbose_) {
+                                    std::cerr << "% [verbose] probe improved: " << probe_obj << "\n";
+                                }
+
+                                if (callback) {
+                                    callback(*probe_solution);
+                                }
+
+                                // 永続的に目的変数を縮小
+                                if (minimize_) {
+                                    model.enqueue_set_max(obj_var_idx_, probe_obj - 1);
+                                } else {
+                                    model.enqueue_set_min(obj_var_idx_, probe_obj + 1);
+                                }
+
+                                if (!process_queue(model)) {
+                                    model.clear_pending_updates();
+                                    sync_nogood_stats();
+                                    if (verbose_) {
+                                        std::cerr << "% [verbose] optimal (probe proved optimality)\n";
+                                    }
+                                    return best_solution_;
+                                }
+                            } else {
+                                // プローブ解は改善なし（既に best_objective_ で縮小済み）
+                                // root 状態を再構築
+                                nogood_mgr_.enqueue_unit_nogoods(model);
+                                if (minimize_) {
+                                    model.enqueue_set_max(obj_var_idx_, *best_objective_ - 1);
+                                } else {
+                                    model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
+                                }
+                                if (!process_queue(model)) {
+                                    model.clear_pending_updates();
+                                    sync_nogood_stats();
+                                    return best_solution_;
+                                }
+                            }
+                        } else if (probe_unsat) {
+                            // UNSAT: obj <= target が不可能と証明
+                            // → obj >= target + 1 (minimize) / obj <= target - 1 (maximize) で永続縮小
+                            if (verbose_) {
+                                std::cerr << "% [verbose] probe UNSAT: tightening bound past target=" << target << "\n";
+                            }
+                            nogood_mgr_.enqueue_unit_nogoods(model);
+                            if (minimize_) {
+                                model.enqueue_set_min(obj_var_idx_, target + 1);
+                                model.enqueue_set_max(obj_var_idx_, *best_objective_ - 1);
+                            } else {
+                                model.enqueue_set_max(obj_var_idx_, target - 1);
+                                model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
+                            }
+                            if (!process_queue(model)) {
+                                model.clear_pending_updates();
+                                sync_nogood_stats();
+                                if (verbose_) {
+                                    std::cerr << "% [verbose] optimal (probe UNSAT + bound tightening)\n";
+                                }
+                                return best_solution_;
+                            }
+                        } else {
+                            // UNKNOWN: 情報なし、root 状態を再構築
+                            nogood_mgr_.enqueue_unit_nogoods(model);
+                            if (minimize_) {
+                                model.enqueue_set_max(obj_var_idx_, *best_objective_ - 1);
+                            } else {
+                                model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
+                            }
+                            if (!process_queue(model)) {
+                                model.clear_pending_updates();
+                                sync_nogood_stats();
+                                return best_solution_;
+                            }
+                        }
+
+                        // 再初期化
+                        apply_unit_nogoods(model);
+                        nogood_mgr_.rebuild_var_ng_blooms(model);
+                        ng_usage_bloom_ = Bloom512{};
+                    }
+                }
+                // --- end improvement probe ---
+
                 var_selector_.init_tracking(model);
                 unassigned_trail_.clear();
 
