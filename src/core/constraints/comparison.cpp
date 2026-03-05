@@ -413,6 +413,220 @@ bool IntEqReifConstraint::on_final_instantiate(const Model& model) {
 }
 
 // ============================================================================
+// IntEqImpConstraint implementation
+// ============================================================================
+
+IntEqImpConstraint::IntEqImpConstraint(VariablePtr x, VariablePtr y, VariablePtr b)
+    : Constraint(extract_var_ids({x, y, b}))
+    , x_id_(x->id())
+    , y_id_(y->id())
+    , b_id_(b->id()) {
+}
+
+std::string IntEqImpConstraint::name() const {
+    return "int_eq_imp";
+}
+
+bool IntEqImpConstraint::prepare_propagation(Model& model) {
+    init_watches();
+
+    // b=1 が強制で x,y に共通値がない → 矛盾
+    if (model.is_instantiated(b_id_) && model.value(b_id_) == 1) {
+        bool has_common = false;
+        model.variable(x_id_)->domain().for_each_value([&](Domain::value_type v) {
+            if (!has_common && model.variable(y_id_)->domain().contains(v)) {
+                has_common = true;
+            }
+        });
+        if (!has_common) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+PresolveResult IntEqImpConstraint::presolve(Model& model) {
+    bool changed = false;
+
+    // b=1 のとき x==y を強制（ドメインの交差）
+    if (model.variable(b_id_)->is_assigned() && model.variable(b_id_)->assigned_value().value() == 1) {
+        auto& x_dom = model.variable(x_id_)->domain();
+        auto& y_dom = model.variable(y_id_)->domain();
+
+        if (x_dom.is_bounds_only() || y_dom.is_bounds_only()) {
+            auto new_min = std::max(model.variable(x_id_)->min(), model.variable(y_id_)->min());
+            auto new_max = std::min(model.variable(x_id_)->max(), model.variable(y_id_)->max());
+            if (new_min > new_max) return PresolveResult::Contradiction;
+            if (new_min > model.variable(x_id_)->min()) {
+                x_dom.remove_below(new_min);
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
+            }
+            if (new_max < model.variable(x_id_)->max()) {
+                x_dom.remove_above(new_max);
+                if (x_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
+            }
+            if (new_min > model.variable(y_id_)->min()) {
+                y_dom.remove_below(new_min);
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
+            }
+            if (new_max < model.variable(y_id_)->max()) {
+                y_dom.remove_above(new_max);
+                if (y_dom.empty()) return PresolveResult::Contradiction;
+                changed = true;
+            }
+        } else {
+            std::vector<Domain::value_type> buf;
+            x_dom.copy_values_to(buf);
+            for (auto v : buf) {
+                if (!y_dom.contains(v)) {
+                    if (!model.variable(x_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+            y_dom.copy_values_to(buf);
+            for (auto v : buf) {
+                if (!x_dom.contains(v)) {
+                    if (!model.variable(y_id_)->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+        }
+    }
+    // b=0: 何もしない（vacuously true）
+
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
+}
+
+bool IntEqImpConstraint::on_instantiate(Model& model, int save_point,
+                                         size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                         Domain::value_type prev_min,
+                                         Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    if (model.is_instantiated(b_id_)) {
+        if (model.value(b_id_) == 1) {
+            // b=1: x==y を強制
+            if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+                if (model.value(x_id_) != model.value(y_id_)) {
+                    return false;
+                }
+            } else if (model.is_instantiated(x_id_)) {
+                auto val = model.value(x_id_);
+                if (!model.contains(y_id_, val)) return false;
+                model.enqueue_instantiate(y_id_, val);
+            } else if (model.is_instantiated(y_id_)) {
+                auto val = model.value(y_id_);
+                if (!model.contains(x_id_, val)) return false;
+                model.enqueue_instantiate(x_id_, val);
+            } else if (var_idx == b_id_) {
+                // b が今 1 になった: x,y の bounds を同期
+                auto x_min = model.var_min(x_id_);
+                auto x_max = model.var_max(x_id_);
+                auto y_min = model.var_min(y_id_);
+                auto y_max = model.var_max(y_id_);
+                auto new_min = std::max(x_min, y_min);
+                auto new_max = std::min(x_max, y_max);
+                if (new_min > new_max) return false;
+                if (new_min > x_min) model.enqueue_set_min(x_id_, new_min);
+                if (new_max < x_max) model.enqueue_set_max(x_id_, new_max);
+                if (new_min > y_min) model.enqueue_set_min(y_id_, new_min);
+                if (new_max < y_max) model.enqueue_set_max(y_id_, new_max);
+            }
+        }
+        // b=0: 何もしない
+    } else {
+        // 対偶: (x≠y) → b=0
+        if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+            if (model.value(x_id_) != model.value(y_id_)) {
+                model.enqueue_instantiate(b_id_, 0);
+            }
+            // x==y でも b=1 は強制しない（half-reification）
+        } else if (model.is_instantiated(x_id_)) {
+            if (!model.contains(y_id_, model.value(x_id_))) {
+                model.enqueue_instantiate(b_id_, 0);
+            }
+        } else if (model.is_instantiated(y_id_)) {
+            if (!model.contains(x_id_, model.value(y_id_))) {
+                model.enqueue_instantiate(b_id_, 0);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntEqImpConstraint::on_set_min(Model& model, int /*save_point*/,
+                                     size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_min,
+                                     Domain::value_type /*old_min*/) {
+    if (!model.is_instantiated(b_id_)) {
+        // 対偶: bounds が重ならない → b=0
+        if (model.var_min(x_id_) > model.var_max(y_id_) ||
+            model.var_max(x_id_) < model.var_min(y_id_)) {
+            model.enqueue_instantiate(b_id_, 0);
+        }
+    } else if (model.value(b_id_) == 1) {
+        if (var_idx == x_id_) {
+            model.enqueue_set_min(y_id_, new_min);
+        } else if (var_idx == y_id_) {
+            model.enqueue_set_min(x_id_, new_min);
+        }
+    }
+    return true;
+}
+
+bool IntEqImpConstraint::on_set_max(Model& model, int /*save_point*/,
+                                     size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type new_max,
+                                     Domain::value_type /*old_max*/) {
+    if (!model.is_instantiated(b_id_)) {
+        // 対偶: bounds が重ならない → b=0
+        if (model.var_min(x_id_) > model.var_max(y_id_) ||
+            model.var_max(x_id_) < model.var_min(y_id_)) {
+            model.enqueue_instantiate(b_id_, 0);
+        }
+    } else if (model.value(b_id_) == 1) {
+        if (var_idx == x_id_) {
+            model.enqueue_set_max(y_id_, new_max);
+        } else if (var_idx == y_id_) {
+            model.enqueue_set_max(x_id_, new_max);
+        }
+    }
+    return true;
+}
+
+bool IntEqImpConstraint::on_remove_value(Model& model, int /*save_point*/,
+                                          size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type removed_value) {
+    (void)removed_value;
+
+    // 対偶: x が確定して y に x の値がない → b=0 (逆も)
+    if (!model.is_instantiated(b_id_)) {
+        if (model.is_instantiated(y_id_) && var_idx == x_id_) {
+            if (!model.contains(x_id_, model.value(y_id_))) {
+                model.enqueue_instantiate(b_id_, 0);
+            }
+        }
+        if (model.is_instantiated(x_id_) && var_idx == y_id_) {
+            if (!model.contains(y_id_, model.value(x_id_))) {
+                model.enqueue_instantiate(b_id_, 0);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool IntEqImpConstraint::on_final_instantiate(const Model& model) {
+    // b -> (x == y): b=0 なら常に真、b=1 なら x==y が必要
+    return model.value(b_id_) == 0 || (model.value(x_id_) == model.value(y_id_));
+}
+
+// ============================================================================
 // IntNeConstraint implementation
 // ============================================================================
 

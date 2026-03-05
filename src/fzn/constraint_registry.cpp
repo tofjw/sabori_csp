@@ -78,7 +78,19 @@ static std::optional<ConstraintPtr> make_int_eq_reif(const ConstraintDecl& decl,
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
     auto b = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
+        !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntEqReifConstraint>(x, y, b);
+}
+
+static std::optional<ConstraintPtr> make_int_eq_imp(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3) throw std::runtime_error("int_eq_imp requires 3 arguments");
+    auto x = ctx.get_var(decl.args[0]);
+    auto y = ctx.get_var(decl.args[1]);
+    auto b = ctx.get_var(decl.args[2]);
+    return std::make_unique<IntEqImpConstraint>(x, y, b);
 }
 
 static std::optional<ConstraintPtr> make_int_ne_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -86,6 +98,10 @@ static std::optional<ConstraintPtr> make_int_ne_reif(const ConstraintDecl& decl,
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
     auto b = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
+        !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntNeReifConstraint>(x, y, b);
 }
 
@@ -94,6 +110,10 @@ static std::optional<ConstraintPtr> make_int_le_reif(const ConstraintDecl& decl,
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
     auto b = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
+        !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntLeReifConstraint>(x, y, b);
 }
 
@@ -180,6 +200,9 @@ static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& de
     if (decl.args.size() != 2) throw std::runtime_error("array_bool_and requires 2 arguments");
     auto vars = resolve_vars(decl.args[0], ctx);
     auto r = ctx.get_var(decl.args[1]);
+    if (!ctx.model->is_defined_var(r->id())) {
+        ctx.model->set_defined_var(r->id());
+    }
     return std::make_unique<ArrayBoolAndConstraint>(vars, r);
 }
 
@@ -187,6 +210,9 @@ static std::optional<ConstraintPtr> make_array_bool_or(const ConstraintDecl& dec
     if (decl.args.size() != 2) throw std::runtime_error("array_bool_or requires 2 arguments");
     auto vars = resolve_vars(decl.args[0], ctx);
     auto r = ctx.get_var(decl.args[1]);
+    if (!ctx.model->is_defined_var(r->id())) {
+        ctx.model->set_defined_var(r->id());
+    }
     return std::make_unique<ArrayBoolOrConstraint>(vars, r);
 }
 
@@ -325,6 +351,13 @@ static std::optional<ConstraintPtr> make_int_lin_eq_reif(const ConstraintDecl& d
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
+    if (!ctx.model->is_defined_var(b->id())) {
+        bool any_defined = false;
+        for (const auto& v : vars) {
+            if (ctx.model->is_defined_var(v->id())) { any_defined = true; break; }
+        }
+        if (!any_defined) ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntLinEqReifConstraint>(coeffs, vars, target, b);
 }
 
@@ -341,6 +374,13 @@ static std::optional<ConstraintPtr> make_int_lin_ne_reif(const ConstraintDecl& d
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
+    if (!ctx.model->is_defined_var(b->id())) {
+        bool any_defined = false;
+        for (const auto& v : vars) {
+            if (ctx.model->is_defined_var(v->id())) { any_defined = true; break; }
+        }
+        if (!any_defined) ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntLinNeReifConstraint>(coeffs, vars, target, b);
 }
 
@@ -357,6 +397,13 @@ static std::optional<ConstraintPtr> make_int_lin_le_reif(const ConstraintDecl& d
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
+    if (!ctx.model->is_defined_var(b->id())) {
+        bool any_defined = false;
+        for (const auto& v : vars) {
+            if (ctx.model->is_defined_var(v->id())) { any_defined = true; break; }
+        }
+        if (!any_defined) ctx.model->set_defined_var(b->id());
+    }
     return std::make_unique<IntLinLeReifConstraint>(coeffs, vars, bound, b);
 }
 
@@ -465,6 +512,9 @@ static std::optional<ConstraintPtr> make_set_in_reif(const ConstraintDecl& decl,
     if (decl.args.size() != 3) throw std::runtime_error("set_in_reif requires 3 arguments");
     auto x = ctx.get_var(decl.args[0]);
     auto b = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
 
     if (std::holds_alternative<IntRange>(decl.args[1])) {
         const auto& range = std::get<IntRange>(decl.args[1]);
@@ -474,6 +524,8 @@ static std::optional<ConstraintPtr> make_set_in_reif(const ConstraintDecl& decl,
         auto ub_var = ctx.model->create_variable("__sir_ub_" + std::to_string(id), range.ub);
         auto b1 = ctx.model->create_variable("__sir_b1_" + std::to_string(id), 0, 1);
         auto b2 = ctx.model->create_variable("__sir_b2_" + std::to_string(id), 0, 1);
+        ctx.model->set_defined_var(b1->id());
+        ctx.model->set_defined_var(b2->id());
         ctx.model->add_constraint(std::make_unique<IntLeReifConstraint>(lb_var, x, b1));
         ctx.model->add_constraint(std::make_unique<IntLeReifConstraint>(x, ub_var, b2));
         ctx.model->add_constraint(std::make_unique<ArrayBoolAndConstraint>(
@@ -489,6 +541,7 @@ static std::optional<ConstraintPtr> make_set_in_reif(const ConstraintDecl& decl,
                 "__sir_v_" + std::to_string(id) + "_" + std::to_string(i), values[i]);
             auto bi = ctx.model->create_variable(
                 "__sir_bi_" + std::to_string(id) + "_" + std::to_string(i), 0, 1);
+            ctx.model->set_defined_var(bi->id());
             ctx.model->add_constraint(std::make_unique<IntEqReifConstraint>(x, vi_var, bi));
             bool_vars.push_back(bi);
         }
@@ -634,6 +687,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("int_lt", make_int_lt);
     registry.register_constraint("int_le", make_int_le);
     registry.register_constraint("int_eq_reif", make_int_eq_reif);
+    registry.register_constraint("int_eq_imp", make_int_eq_imp);
     registry.register_constraint("int_ne_reif", make_int_ne_reif);
     registry.register_constraint("int_le_reif", make_int_le_reif);
     registry.register_constraint("bool_not", make_bool_not);
@@ -649,6 +703,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("bool_lt", make_int_lt);
     registry.register_constraint("bool_le", make_int_le);
     registry.register_constraint("bool_eq_reif", make_int_eq_reif);
+    registry.register_constraint("bool_eq_imp", make_int_eq_imp);
     registry.register_constraint("bool_le_reif", make_int_le_reif);
 
     // Pattern B: Array constraints

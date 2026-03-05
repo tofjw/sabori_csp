@@ -8,6 +8,7 @@
 |--------|--------|------|
 | `int_eq` | `IntEqConstraint` | x == y |
 | `int_eq_reif` | `IntEqReifConstraint` | (x == y) <-> b |
+| `int_eq_imp` | `IntEqImpConstraint` | b -> (x == y) |
 | `int_ne` | `IntNeConstraint` | x != y |
 | `int_ne_reif` | `IntNeReifConstraint` | (x != y) <-> b |
 | `int_lt` | `IntLtConstraint` | x < y |

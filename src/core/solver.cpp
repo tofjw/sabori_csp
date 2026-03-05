@@ -66,7 +66,17 @@ bool Solver::init_search(Model& model) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return false;
     }
-    if (verbose_) std::cerr << "% [verbose] presolve done\n";
+    if (verbose_) {
+        std::cerr << "% [verbose] presolve done\n";
+        size_t n_vars = model.variables().size();
+        size_t n_defined = 0;
+        for (size_t i = 0; i < n_vars; ++i) {
+            if (model.is_defined_var(i)) ++n_defined;
+        }
+        std::cerr << "% [verbose] vars: total=" << n_vars
+                  << " decision=" << (n_vars - n_defined)
+                  << " defined=" << n_defined << "\n";
+    }
     if (community_analysis_.is_enabled()) {
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);
@@ -74,6 +84,11 @@ bool Solver::init_search(Model& model) {
         update_bump_activity_flag();
     }
     var_selector_.init_tracking(model);
+    if (verbose_) {
+        std::cerr << "% [verbose] search vars: decision=" << var_selector_.decision_var_end()
+                  << " defined=" << (var_selector_.var_order().size() - var_selector_.decision_var_end())
+                  << "\n";
+    }
     unassigned_trail_.clear();
     return true;
 }
