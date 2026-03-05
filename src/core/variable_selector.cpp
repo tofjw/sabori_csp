@@ -17,7 +17,7 @@ void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
 
     for (size_t i = 0; i < variables.size(); ++i) {
         if (model.is_eliminated(i)) continue;
-        if (model.is_defined_var(i)) {
+        if (model.is_defined_var(i) || model.is_instantiated(i)) {
             defined_vars.push_back(i);
         } else {
             var_order_.push_back(i);
@@ -135,6 +135,7 @@ size_t VariableSelector::select_linear(const Model& model,
     for (size_t j = 0; j < n; ++j) {
         size_t k = begin + (start + j) % n;
         size_t i = var_order_[k];
+        if (model.is_instantiated(i)) continue;
         size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
         int ta = temporal_activity[i];
         bool better = false;
