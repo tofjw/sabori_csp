@@ -423,6 +423,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 }
 
                 if (!process_queue(model)) {
+                    if (stopped_) break;  // timeout → fall through to timeout path
                     // 伝播で UNSAT → 最適解が確定
                     model.clear_pending_updates();
                     sync_nogood_stats();
@@ -523,6 +524,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 }
 
                                 if (!process_queue(model)) {
+                                    if (stopped_) break;  // timeout → fall through
                                     model.clear_pending_updates();
                                     sync_nogood_stats();
                                     if (verbose_) {
@@ -540,6 +542,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                     model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                                 }
                                 if (!process_queue(model)) {
+                                    if (stopped_) break;  // timeout → fall through
                                     model.clear_pending_updates();
                                     sync_nogood_stats();
                                     return best_solution_;
@@ -560,6 +563,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                             }
                             if (!process_queue(model)) {
+                                if (stopped_) break;  // timeout → fall through
                                 model.clear_pending_updates();
                                 sync_nogood_stats();
                                 if (verbose_) {
@@ -576,6 +580,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                             }
                             if (!process_queue(model)) {
+                                if (stopped_) break;  // timeout → fall through
                                 model.clear_pending_updates();
                                 sync_nogood_stats();
                                 return best_solution_;
