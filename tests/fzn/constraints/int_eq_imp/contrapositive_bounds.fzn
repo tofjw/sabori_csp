@@ -1,0 +1,10 @@
+% x in {1..5}, y in {1..5}, but int_lt forces x < y.
+% When x=5, y must be > 5 which is impossible → that branch fails.
+% When x=4, y=5, bounds don't overlap for equality → b=0.
+% b should always be 0 except when x==y is still possible but
+% int_lt prevents x==y, so b is always forced to 0 by contrapositive.
+var 1..3: x :: output_var;
+var 4..6: y :: output_var;
+var 0..1: b :: output_var;
+constraint int_eq_imp(x, y, b);
+solve :: int_search([x, y, b], input_order, indomain_min, complete) satisfy;

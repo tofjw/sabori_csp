@@ -1,0 +1,8 @@
+% x=1 is fixed. y has {1,2,3} but int_ne forces y != 1, removing 1 from y.
+% After removal, y no longer contains x's value → contrapositive forces b=0.
+var 1..1: x;
+var 1..3: y :: output_var;
+var 0..1: b :: output_var;
+constraint int_eq_imp(x, y, b);
+constraint int_ne(x, y);
+solve :: int_search([y, b], input_order, indomain_min, complete) satisfy;
