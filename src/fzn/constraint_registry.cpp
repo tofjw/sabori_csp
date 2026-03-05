@@ -121,7 +121,11 @@ static std::optional<ConstraintPtr> make_bool_not(const ConstraintDecl& decl, Fz
     if (decl.args.size() != 2) throw std::runtime_error("bool_not requires 2 arguments");
     auto a = ctx.get_var(decl.args[0]);
     auto b = ctx.get_var(decl.args[1]);
-    return std::make_unique<BoolNotConstraint>(a, b);
+    if (!ctx.model->is_defined_var(a->id()) && !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
+    return std::make_unique<IntLinEqConstraint>(
+        std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{a, b}, int64_t{1});
 }
 
 static std::optional<ConstraintPtr> make_bool_xor(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -129,6 +133,10 @@ static std::optional<ConstraintPtr> make_bool_xor(const ConstraintDecl& decl, Fz
     auto a = ctx.get_var(decl.args[0]);
     auto b = ctx.get_var(decl.args[1]);
     auto c = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(a->id()) && !ctx.model->is_defined_var(b->id()) &&
+        !ctx.model->is_defined_var(c->id())) {
+        ctx.model->set_defined_var(c->id());
+    }
     return std::make_unique<BoolXorConstraint>(a, b, c);
 }
 
@@ -222,6 +230,12 @@ static std::optional<ConstraintPtr> make_array_bool_or(const ConstraintDecl& dec
         ctx.model->set_defined_var(r->id());
     }
     return std::make_unique<ArrayBoolOrConstraint>(vars, r);
+}
+
+static std::optional<ConstraintPtr> make_array_bool_xor(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 1) throw std::runtime_error("array_bool_xor requires 1 argument (array)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    return std::make_unique<ArrayBoolXorConstraint>(vars);
 }
 
 static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -725,6 +739,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_circuit", make_circuit);
     registry.register_constraint("array_bool_and", make_array_bool_and);
     registry.register_constraint("array_bool_or", make_array_bool_or);
+    registry.register_constraint("array_bool_xor", make_array_bool_xor);
     registry.register_constraint("bool_clause", make_bool_clause);
     registry.register_constraint("array_int_maximum", make_array_int_maximum);
     registry.register_constraint("array_int_minimum", make_array_int_minimum);

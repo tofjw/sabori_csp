@@ -1,0 +1,9 @@
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: c :: output_var;
+
+constraint array_bool_xor([a, b, c]);
+constraint int_eq(a, 1);
+constraint int_eq(b, 0);
+
+solve satisfy;

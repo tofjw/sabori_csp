@@ -168,15 +168,6 @@ void ModelSimplifier::find_elimination_candidates(
         if (y_vars_.count(x_id)) continue;
         if (subst_map_.count(y_id)) continue;  // 連鎖防止
 
-        // エイリアス変数は消去しない
-        {
-            const auto& aliases = model.variable_aliases();
-            bool is_alias = false;
-            for (const auto& [alias_name, alias_id] : aliases) {
-                if (alias_id == x_id) { is_alias = true; break; }
-            }
-            if (is_alias) continue;
-        }
 
         SubstitutionInfo info;
         info.x_id = x_id;

@@ -230,6 +230,32 @@ private:
 };
 
 /**
+ * @brief array_bool_xor制約: XOR(b1, b2, ..., bn) = true
+ *
+ * 配列の全要素のXOR（パリティ）が true（1が奇数個）であることを要求する。
+ * 結果変数を持たない（FlatZinc仕様: array_bool_xor(array[int] of var bool)）。
+ */
+class ArrayBoolXorConstraint : public Constraint {
+public:
+    ArrayBoolXorConstraint(std::vector<VariablePtr> vars);
+
+    std::string name() const override;
+    PresolveResult presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                size_t last_var_internal_idx) override;
+
+private:
+    size_t n_;
+    std::unordered_map<size_t, size_t> var_id_to_idx_;
+};
+
+/**
  * @brief bool_xor制約: c = (a XOR b)
  *
  * 3つのbool変数 a, b, c について c = (a != b) を双方向に伝播する。

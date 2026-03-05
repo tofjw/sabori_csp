@@ -1020,6 +1020,121 @@ bool BoolNotConstraint::on_final_instantiate(const Model& model) {
 }
 
 // ============================================================================
+// ArrayBoolXorConstraint implementation
+// ============================================================================
+
+ArrayBoolXorConstraint::ArrayBoolXorConstraint(std::vector<VariablePtr> vars)
+    : Constraint(extract_var_ids(vars))
+    , n_(vars.size()) {
+
+    for (size_t i = 0; i < n_; ++i) {
+        var_id_to_idx_[var_ids_[i]] = i;
+    }
+}
+
+std::string ArrayBoolXorConstraint::name() const {
+    return "array_bool_xor";
+}
+
+PresolveResult ArrayBoolXorConstraint::presolve(Model& model) {
+    size_t assigned_count = 0;
+    size_t ones_count = 0;
+    size_t last_unassigned = SIZE_MAX;
+
+    for (size_t i = 0; i < n_; ++i) {
+        auto* v = model.variable(var_ids_[i]);
+        if (v->is_assigned()) {
+            assigned_count++;
+            if (v->assigned_value().value() == 1) {
+                ones_count++;
+            }
+        } else {
+            last_unassigned = i;
+        }
+    }
+
+    if (assigned_count == n_) {
+        // 全確定: パリティチェック（奇数個の1で充足）
+        return (ones_count % 2 == 1) ? PresolveResult::Unchanged : PresolveResult::Contradiction;
+    }
+
+    if (assigned_count == n_ - 1) {
+        // 残り1変数: パリティを合わせる
+        // 現在の1の個数が偶数なら残りは1、奇数なら0
+        Domain::value_type needed = (ones_count % 2 == 0) ? 1 : 0;
+        auto* v = model.variable(var_ids_[last_unassigned]);
+        if (!v->domain().contains(needed)) {
+            return PresolveResult::Contradiction;
+        }
+        v->assign(needed);
+        return PresolveResult::Changed;
+    }
+
+    return PresolveResult::Unchanged;
+}
+
+bool ArrayBoolXorConstraint::on_instantiate(Model& model, int save_point,
+                                             size_t var_idx, size_t internal_var_idx,
+                                             Domain::value_type value,
+                                             Domain::value_type prev_min,
+                                             Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    // 確定済み変数の数と1の個数をカウント
+    size_t assigned_count = 0;
+    size_t ones_count = 0;
+    size_t last_unassigned = SIZE_MAX;
+
+    for (size_t i = 0; i < n_; ++i) {
+        if (model.is_instantiated(var_ids_[i])) {
+            assigned_count++;
+            if (model.value(var_ids_[i]) == 1) {
+                ones_count++;
+            }
+        } else {
+            last_unassigned = i;
+        }
+    }
+
+    if (assigned_count == n_ - 1 && last_unassigned != SIZE_MAX) {
+        // 残り1変数: パリティを合わせる
+        Domain::value_type needed = (ones_count % 2 == 0) ? 1 : 0;
+        model.enqueue_instantiate(var_ids_[last_unassigned], needed);
+    }
+
+    return true;
+}
+
+bool ArrayBoolXorConstraint::on_final_instantiate(const Model& model) {
+    size_t ones_count = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        if (model.value(var_ids_[i]) == 1) {
+            ones_count++;
+        }
+    }
+    return ones_count % 2 == 1;
+}
+
+bool ArrayBoolXorConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
+                                                     size_t last_var_internal_idx) {
+    // 他の全変数のパリティを計算
+    size_t ones_count = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        if (i != last_var_internal_idx) {
+            if (model.value(var_ids_[i]) == 1) {
+                ones_count++;
+            }
+        }
+    }
+    Domain::value_type needed = (ones_count % 2 == 0) ? 1 : 0;
+    model.enqueue_instantiate(var_ids_[last_var_internal_idx], needed);
+    return true;
+}
+
+// ============================================================================
 // BoolXorConstraint implementation
 // ============================================================================
 
