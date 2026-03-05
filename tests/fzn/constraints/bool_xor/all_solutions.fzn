@@ -1,0 +1,8 @@
+% bool_xor all solutions test
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: c :: output_var;
+
+constraint bool_xor(a, b, c);
+
+solve satisfy;

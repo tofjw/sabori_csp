@@ -124,6 +124,14 @@ static std::optional<ConstraintPtr> make_bool_not(const ConstraintDecl& decl, Fz
     return std::make_unique<BoolNotConstraint>(a, b);
 }
 
+static std::optional<ConstraintPtr> make_bool_xor(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3) throw std::runtime_error("bool_xor requires 3 arguments");
+    auto a = ctx.get_var(decl.args[0]);
+    auto b = ctx.get_var(decl.args[1]);
+    auto c = ctx.get_var(decl.args[2]);
+    return std::make_unique<BoolXorConstraint>(a, b, c);
+}
+
 static std::optional<ConstraintPtr> make_int_min(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 3) throw std::runtime_error("int_min requires 3 arguments (x, y, m)");
     auto x = ctx.get_var(decl.args[0]);
@@ -691,6 +699,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("int_ne_reif", make_int_ne_reif);
     registry.register_constraint("int_le_reif", make_int_le_reif);
     registry.register_constraint("bool_not", make_bool_not);
+    registry.register_constraint("bool_xor", make_bool_xor);
     registry.register_constraint("int_min", make_int_min);
     registry.register_constraint("int_max", make_int_max);
     registry.register_constraint("int_times", make_int_times);

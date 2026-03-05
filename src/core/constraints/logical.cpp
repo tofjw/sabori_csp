@@ -1019,4 +1019,103 @@ bool BoolNotConstraint::on_final_instantiate(const Model& model) {
     return model.value(a_id_) != model.value(b_id_);
 }
 
+// ============================================================================
+// BoolXorConstraint implementation
+// ============================================================================
+
+BoolXorConstraint::BoolXorConstraint(VariablePtr a, VariablePtr b, VariablePtr c)
+    : Constraint(extract_var_ids({a, b, c}))
+    , a_id_(a->id())
+    , b_id_(b->id())
+    , c_id_(c->id()) {}
+
+std::string BoolXorConstraint::name() const {
+    return "bool_xor";
+}
+
+PresolveResult BoolXorConstraint::presolve(Model& model) {
+    auto* va = model.variable(a_id_);
+    auto* vb = model.variable(b_id_);
+    auto* vc = model.variable(c_id_);
+
+    int assigned_count = (va->is_assigned() ? 1 : 0)
+                       + (vb->is_assigned() ? 1 : 0)
+                       + (vc->is_assigned() ? 1 : 0);
+
+    if (assigned_count < 2) {
+        return PresolveResult::Unchanged;
+    }
+
+    // 2変数以上確定 → 残りを決定
+    if (va->is_assigned() && vb->is_assigned()) {
+        auto expected = (va->assigned_value().value() != vb->assigned_value().value()) ? 1 : 0;
+        if (vc->is_assigned()) {
+            return vc->assigned_value().value() == expected
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
+        }
+        if (!vc->domain().contains(expected)) return PresolveResult::Contradiction;
+        vc->assign(expected);
+        return PresolveResult::Changed;
+    }
+    if (va->is_assigned() && vc->is_assigned()) {
+        auto expected = (va->assigned_value().value() != vc->assigned_value().value()) ? 1 : 0;
+        if (vb->is_assigned()) {
+            return vb->assigned_value().value() == expected
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
+        }
+        if (!vb->domain().contains(expected)) return PresolveResult::Contradiction;
+        vb->assign(expected);
+        return PresolveResult::Changed;
+    }
+    // vb->is_assigned() && vc->is_assigned()
+    {
+        auto expected = (vb->assigned_value().value() != vc->assigned_value().value()) ? 1 : 0;
+        if (va->is_assigned()) {
+            return va->assigned_value().value() == expected
+                ? PresolveResult::Unchanged : PresolveResult::Contradiction;
+        }
+        if (!va->domain().contains(expected)) return PresolveResult::Contradiction;
+        va->assign(expected);
+        return PresolveResult::Changed;
+    }
+}
+
+bool BoolXorConstraint::on_instantiate(Model& model, int save_point,
+                                        size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                        Domain::value_type prev_min,
+                                        Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+
+    bool a_inst = model.is_instantiated(a_id_);
+    bool b_inst = model.is_instantiated(b_id_);
+    bool c_inst = model.is_instantiated(c_id_);
+
+    int inst_count = (a_inst ? 1 : 0) + (b_inst ? 1 : 0) + (c_inst ? 1 : 0);
+
+    if (inst_count < 2) {
+        return true;  // まだ伝播できない
+    }
+
+    if (a_inst && b_inst && !c_inst) {
+        auto expected = (model.value(a_id_) != model.value(b_id_)) ? 1 : 0;
+        model.enqueue_instantiate(c_id_, expected);
+    } else if (a_inst && c_inst && !b_inst) {
+        auto expected = (model.value(a_id_) != model.value(c_id_)) ? 1 : 0;
+        model.enqueue_instantiate(b_id_, expected);
+    } else if (b_inst && c_inst && !a_inst) {
+        auto expected = (model.value(b_id_) != model.value(c_id_)) ? 1 : 0;
+        model.enqueue_instantiate(a_id_, expected);
+    }
+    // 3つ全部確定: on_final_instantiate でチェック
+
+    return true;
+}
+
+bool BoolXorConstraint::on_final_instantiate(const Model& model) {
+    return model.value(c_id_) == ((model.value(a_id_) != model.value(b_id_)) ? 1 : 0);
+}
+
 } // namespace sabori_csp
