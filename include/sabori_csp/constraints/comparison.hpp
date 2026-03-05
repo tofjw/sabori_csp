@@ -66,7 +66,10 @@ public:
     bool on_final_instantiate(const Model& model) override;
 
 private:
+    bool find_new_support(const Model& model);
+
     size_t x_id_, y_id_, b_id_;
+    Domain::value_type support_value_ = 0;
 };
 
 /**

@@ -157,13 +157,7 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
     if (model.is_instantiated(b_id_)) {
         if (model.value(b_id_) == 1) {
             // x == y を満たす共通値が必要
-            bool has_common = false;
-            model.variable(x_id_)->domain().for_each_value([&](Domain::value_type v) {
-                if (!has_common && model.variable(y_id_)->domain().contains(v)) {
-                    has_common = true;
-                }
-            });
-            if (!has_common) {
+            if (!find_new_support(model)) {
                 return false;
             }
         } else {
@@ -173,9 +167,35 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
                 return false;
             }
         }
+    } else {
+        // b 未確定: support を探しておく（あれば後続イベントでスキップできる）
+        find_new_support(model);
     }
 
     return true;
+}
+
+bool IntEqReifConstraint::find_new_support(const Model& model) {
+    // 小さい方のドメインを走査して、もう片方に contains() で存在確認
+    const auto& x_dom = model.variable(x_id_)->domain();
+    const auto& y_dom = model.variable(y_id_)->domain();
+    bool found = false;
+    if (x_dom.size() <= y_dom.size()) {
+        x_dom.for_each_value([&](Domain::value_type v) {
+            if (!found && y_dom.contains(v)) {
+                support_value_ = v;
+                found = true;
+            }
+        });
+    } else {
+        y_dom.for_each_value([&](Domain::value_type v) {
+            if (!found && x_dom.contains(v)) {
+                support_value_ = v;
+                found = true;
+            }
+        });
+    }
+    return found;
 }
 
 PresolveResult IntEqReifConstraint::presolve(Model& model) {
@@ -336,12 +356,12 @@ bool IntEqReifConstraint::on_set_min(Model& model, int /*save_point*/,
                                       Domain::value_type /*old_min*/) {
     // (x == y) <-> b
     if (!model.is_instantiated(b_id_)) {
-        // bounds で x == y が不可能かチェック
-        auto x_min = model.var_min(x_id_);
-        auto x_max = model.var_max(x_id_);
-        auto y_min = model.var_min(y_id_);
-        auto y_max = model.var_max(y_id_);
-        if (x_min > y_max || x_max < y_min) {
+        // support がまだ両方のドメインに存在するなら共通値あり → スキップ
+        if (model.contains(x_id_, support_value_) && model.contains(y_id_, support_value_)) {
+            return true;
+        }
+        // support 無効 → 再探索
+        if (!find_new_support(model)) {
             model.enqueue_instantiate(b_id_, 0);
         }
     } else if (model.value(b_id_) == 1) {
@@ -361,11 +381,12 @@ bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
                                       Domain::value_type /*old_max*/) {
     // (x == y) <-> b
     if (!model.is_instantiated(b_id_)) {
-        auto x_min = model.var_min(x_id_);
-        auto x_max = model.var_max(x_id_);
-        auto y_min = model.var_min(y_id_);
-        auto y_max = model.var_max(y_id_);
-        if (x_min > y_max || x_max < y_min) {
+        // support がまだ両方のドメインに存在するなら共通値あり → スキップ
+        if (model.contains(x_id_, support_value_) && model.contains(y_id_, support_value_)) {
+            return true;
+        }
+        // support 無効 → 再探索
+        if (!find_new_support(model)) {
             model.enqueue_instantiate(b_id_, 0);
         }
     } else if (model.value(b_id_) == 1) {
@@ -382,25 +403,17 @@ bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
 
 bool IntEqReifConstraint::on_remove_value(Model& model, int /*save_point*/,
                                            size_t var_idx, size_t /*internal_var_idx*/, Domain::value_type removed_value) {
-    (void)removed_value;
+    (void)var_idx;
 
-    // x または y から値が削除された場合、b を更新
     if (!model.is_instantiated(b_id_)) {
-        // y がシングルトンで、x から値が削除された場合
-        if (model.is_instantiated(y_id_) && var_idx == x_id_) {
-            auto y_val = model.value(y_id_);
-            // x の現在のドメインに y_val がない場合、b = 0
-            if (!model.contains(x_id_, y_val)) {
-                model.enqueue_instantiate(b_id_, 0);
-            }
+        // support が削除されていない & 両ドメインに存在 → 共通値あり
+        if (removed_value != support_value_ &&
+            model.contains(x_id_, support_value_) && model.contains(y_id_, support_value_)) {
+            return true;
         }
-        // x がシングルトンで、y から値が削除された場合
-        if (model.is_instantiated(x_id_) && var_idx == y_id_) {
-            auto x_val = model.value(x_id_);
-            // y の現在のドメインに x_val がない場合、b = 0
-            if (!model.contains(y_id_, x_val)) {
-                model.enqueue_instantiate(b_id_, 0);
-            }
+        // support 無効 → 再探索
+        if (!find_new_support(model)) {
+            model.enqueue_instantiate(b_id_, 0);
         }
     }
 
