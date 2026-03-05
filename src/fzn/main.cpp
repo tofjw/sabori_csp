@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
     bool find_all = false;
     const char* filename = nullptr;
     int timeout_sec = 0;
-    int bisection_threshold = 8;
+    int bisection_threshold = g_bisection_threshold;
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
