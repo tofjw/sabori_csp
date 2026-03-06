@@ -476,6 +476,11 @@ public:
     }
 
     /**
+     * @brief 保留中の更新操作の数を取得
+     */
+    size_t pending_updates_size() const { return pending_updates_.size(); }
+
+    /**
      * @brief 保留中の更新操作があるか
      */
     bool has_pending_updates() const { return pending_read_idx_ < pending_updates_.size(); }

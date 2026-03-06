@@ -9,6 +9,8 @@
 #include <limits>
 #include <csignal>
 #include <atomic>
+#include <algorithm>
+#include <iomanip>
 
 std::atomic<bool> g_timeout_flag{false};
 sabori_csp::Solver* g_current_solver = nullptr;
@@ -63,6 +65,34 @@ void print_stats(const sabori_csp::Solver& solver) {
             std::cerr << " " << len << ":" << count;
         }
         std::cerr << "\n";
+    }
+
+    // 制約タイプ別統計（verbose モード時のみ）
+    const auto& cstats = solver.constraint_stats();
+    if (!cstats.empty()) {
+        std::vector<std::pair<std::string, sabori_csp::ConstraintStats>> sorted_stats(cstats.begin(), cstats.end());
+        std::sort(sorted_stats.begin(), sorted_stats.end(),
+                  [](const auto& a, const auto& b) { return a.second.call_count > b.second.call_count; });
+
+        std::cerr << "% Constraint statistics:\n";
+        std::cerr << "%   " << std::left << std::setw(24) << "Name"
+                  << std::right << std::setw(10) << "Calls"
+                  << std::setw(12) << "Reductions"
+                  << std::setw(10) << "Fails"
+                  << std::setw(14) << "AvgFailDepth" << "\n";
+        for (const auto& [name, cs] : sorted_stats) {
+            std::cerr << "%   " << std::left << std::setw(24) << name
+                      << std::right << std::setw(10) << cs.call_count
+                      << std::setw(12) << cs.reduction_count
+                      << std::setw(10) << cs.fail_count;
+            if (cs.fail_count > 0) {
+                std::cerr << std::setw(14) << std::fixed << std::setprecision(1)
+                          << (double)cs.fail_depth_sum / cs.fail_count;
+            } else {
+                std::cerr << std::setw(14) << "-";
+            }
+            std::cerr << "\n";
+        }
     }
 }
 

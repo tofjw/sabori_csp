@@ -1098,10 +1098,24 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
-        if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
-            bump_activity(model, w.constraint_idx, var_idx);
-            return false;
+        if (verbose_) {
+            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+            cs.call_count++;
+            size_t before = model.pending_updates_size();
+            if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
+                                        var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
+                cs.fail_count++;
+                cs.fail_depth_sum += current_decision_;
+                bump_activity(model, w.constraint_idx, var_idx);
+                return false;
+            }
+            if (model.pending_updates_size() > before) cs.reduction_count++;
+        } else {
+            if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
+                                        var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
+                bump_activity(model, w.constraint_idx, var_idx);
+                return false;
+            }
         }
     }
 
@@ -1373,10 +1387,24 @@ bool Solver::process_queue(Model& model) {
                 auto actual_new_min = model.var_min(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
-                    if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                                         var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
-                        bump_activity(model, w.constraint_idx, var_idx);
-                        return false;
+                    if (verbose_) {
+                        auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                        cs.call_count++;
+                        size_t before = model.pending_updates_size();
+                        if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
+                                                             var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
+                            cs.fail_count++;
+                            cs.fail_depth_sum += current_decision_;
+                            bump_activity(model, w.constraint_idx, var_idx);
+                            return false;
+                        }
+                        if (model.pending_updates_size() > before) cs.reduction_count++;
+                    } else {
+                        if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
+                                                             var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
+                            bump_activity(model, w.constraint_idx, var_idx);
+                            return false;
+                        }
                     }
                 }
                 // Bound NoGood 伝播
@@ -1404,10 +1432,24 @@ bool Solver::process_queue(Model& model) {
                 auto actual_new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
-                    if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                                         var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
-                        bump_activity(model, w.constraint_idx, var_idx);
-                        return false;
+                    if (verbose_) {
+                        auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                        cs.call_count++;
+                        size_t before = model.pending_updates_size();
+                        if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
+                                                             var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
+                            cs.fail_count++;
+                            cs.fail_depth_sum += current_decision_;
+                            bump_activity(model, w.constraint_idx, var_idx);
+                            return false;
+                        }
+                        if (model.pending_updates_size() > before) cs.reduction_count++;
+                    } else {
+                        if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
+                                                             var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
+                            bump_activity(model, w.constraint_idx, var_idx);
+                            return false;
+                        }
                     }
                 }
                 // Bound NoGood 伝播
@@ -1438,10 +1480,24 @@ bool Solver::process_queue(Model& model) {
                 // 下限が変化した場合 → on_set_min
                 if (new_min > prev_min) {
                     for (const auto& w : constraint_indices) {
-                        if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                                             var_idx, w.internal_var_idx, new_min, prev_min)) {
-                            bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                        if (verbose_) {
+                            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            cs.call_count++;
+                            size_t before = model.pending_updates_size();
+                            if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
+                                                                 var_idx, w.internal_var_idx, new_min, prev_min)) {
+                                cs.fail_count++;
+                                cs.fail_depth_sum += current_decision_;
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
+                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                        } else {
+                            if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
+                                                                 var_idx, w.internal_var_idx, new_min, prev_min)) {
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
                         }
                     }
                     // Bound NoGood 伝播
@@ -1452,10 +1508,24 @@ bool Solver::process_queue(Model& model) {
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
                     for (const auto& w : constraint_indices) {
-                        if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                                             var_idx, w.internal_var_idx, new_max, prev_max)) {
-                            bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                        if (verbose_) {
+                            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            cs.call_count++;
+                            size_t before = model.pending_updates_size();
+                            if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
+                                                                 var_idx, w.internal_var_idx, new_max, prev_max)) {
+                                cs.fail_count++;
+                                cs.fail_depth_sum += current_decision_;
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
+                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                        } else {
+                            if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
+                                                                 var_idx, w.internal_var_idx, new_max, prev_max)) {
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
                         }
                     }
                     // Bound NoGood 伝播
@@ -1466,10 +1536,24 @@ bool Solver::process_queue(Model& model) {
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
                 if (removed_value > new_min && removed_value < new_max) {
                     for (const auto& w : constraint_indices) {
-                        if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
-                                                                  var_idx, w.internal_var_idx, removed_value)) {
-                            bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                        if (verbose_) {
+                            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            cs.call_count++;
+                            size_t before = model.pending_updates_size();
+                            if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
+                                                                      var_idx, w.internal_var_idx, removed_value)) {
+                                cs.fail_count++;
+                                cs.fail_depth_sum += current_decision_;
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
+                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                        } else {
+                            if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
+                                                                      var_idx, w.internal_var_idx, removed_value)) {
+                                bump_activity(model, w.constraint_idx, var_idx);
+                                return false;
+                            }
                         }
                     }
                 }

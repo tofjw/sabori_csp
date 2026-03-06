@@ -12,6 +12,7 @@
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
 #include <map>
+#include <unordered_map>
 #include <random>
 #include <atomic>
 #include <limits>
@@ -97,6 +98,16 @@ struct NoGood {
         : literals(std::move(lits))
         , w1(0)
         , w2(literals.size() > 1 ? 1 : 0) {}
+};
+
+/**
+ * @brief 制約タイプ別統計情報
+ */
+struct ConstraintStats {
+    size_t call_count = 0;
+    size_t reduction_count = 0;
+    size_t fail_count = 0;
+    size_t fail_depth_sum = 0;
 };
 
 /**
@@ -247,6 +258,11 @@ public:
      * @brief 停止フラグを確認
      */
     bool is_stopped() const { return stopped_; }
+
+    /**
+     * @brief 制約タイプ別統計を取得
+     */
+    const std::unordered_map<std::string, ConstraintStats>& constraint_stats() const { return constraint_stats_; }
 
     /**
      * @brief verbose モードを有効/無効にする
@@ -504,6 +520,7 @@ private:
 
     // 統計
     SolverStats stats_;
+    std::unordered_map<std::string, ConstraintStats> constraint_stats_;
 
     // 変数選択
     VariableSelector var_selector_;
