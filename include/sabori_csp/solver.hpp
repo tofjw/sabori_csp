@@ -401,20 +401,11 @@ private:
     /**
      * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
      */
-    inline void bump_activity(const Model& model, size_t constraint_idx) {
+    inline void bump_activity(const Model& model, size_t constraint_idx, size_t trigger_var_idx) {
         if (!bump_activity_enabled_) return;
         const auto& constraint = model.constraints()[constraint_idx];
-        const auto& var_ids = constraint->var_ids_ref();
-        size_t n = var_ids.size();
         bool need_rescale = false;
-        for (size_t vid : var_ids) {
-            if (model.is_instantiated(vid)) {
-                activity_[vid] += activity_inc_ / n;
-                if (activity_[vid] > 10000.0) {
-                    need_rescale = true;
-                }
-            }
-        }
+        constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale);
         if (need_rescale) {
             rescale_activities();
         }

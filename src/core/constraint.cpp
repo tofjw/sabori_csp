@@ -176,6 +176,18 @@ bool Constraint::on_remove_value(Model& /*model*/, int /*save_point*/,
     return true;
 }
 
+void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
+                               double* activity, double activity_inc,
+                               bool& need_rescale) const {
+    size_t n = var_ids_.size();
+    double inc = activity_inc / n;
+    for (size_t vid : var_ids_) {
+        if (model.is_instantiated(vid)) {
+            bump_variable_activity(activity, vid, inc, need_rescale);
+        }
+    }
+}
+
 void Constraint::check_initial_consistency() {
     // デフォルト: 何もしない（presolve / prepare_propagation で検出）
 }

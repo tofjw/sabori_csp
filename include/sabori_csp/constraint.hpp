@@ -267,6 +267,33 @@ public:
      */
     virtual void rewind_to(int /*save_point*/) {}
 
+    /**
+     * @brief 制約伝播失敗時の activity bump（制約固有化可能）
+     *
+     * デフォルトでは全 instantiated 変数に均等加算。
+     * サブクラスでオーバーライドして矛盾に関連する変数のみ bump できる。
+     *
+     * @param model モデルへの参照
+     * @param trigger_var_idx 矛盾のトリガーとなった変数のインデックス
+     * @param activity Solver の activity 配列へのポインタ
+     * @param activity_inc 加算する activity 値
+     * @param need_rescale rescale が必要なら true にセット
+     */
+    virtual void bump_activity(const Model& model, size_t trigger_var_idx,
+                               double* activity, double activity_inc,
+                               bool& need_rescale) const;
+
+    /**
+     * @brief 単一変数の activity を加算し、rescale 閾値をチェック
+     */
+    static void bump_variable_activity(double* activity, size_t vid,
+                                      double inc, bool& need_rescale) {
+        activity[vid] += inc;
+        if (activity[vid] > 10000.0) {
+            need_rescale = true;
+        }
+    }
+
 protected:
     /**
      * @brief コンストラクタ

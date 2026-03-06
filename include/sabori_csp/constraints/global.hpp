@@ -55,6 +55,16 @@ public:
      */
     size_t pool_size() const { return pool_n_; }
 
+    /**
+     * @brief 制約固有の activity bump
+     *
+     * 値重複の場合は同じ値を持つ変数のみ bump。
+     * 鳩の巣原理による矛盾の場合はデフォルト動作。
+     */
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale) const override;
+
 protected:
     /**
      * @brief 初期整合性チェック

@@ -1100,7 +1100,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     for (const auto& w : constraint_indices) {
         if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
 						    var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
-            bump_activity(model, w.constraint_idx);
+            bump_activity(model, w.constraint_idx, var_idx);
             return false;
         }
     }
@@ -1375,7 +1375,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
-                        bump_activity(model, w.constraint_idx);
+                        bump_activity(model, w.constraint_idx, var_idx);
                         return false;
                     }
                 }
@@ -1406,7 +1406,7 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                          var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
-                        bump_activity(model, w.constraint_idx);
+                        bump_activity(model, w.constraint_idx, var_idx);
                         return false;
                     }
                 }
@@ -1440,7 +1440,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_min, prev_min)) {
-                            bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx, var_idx);
                             return false;
                         }
                     }
@@ -1454,7 +1454,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, new_max, prev_max)) {
-                            bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx, var_idx);
                             return false;
                         }
                     }
@@ -1468,7 +1468,7 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                   var_idx, w.internal_var_idx, removed_value)) {
-                            bump_activity(model, w.constraint_idx);
+                            bump_activity(model, w.constraint_idx, var_idx);
                             return false;
                         }
                     }
