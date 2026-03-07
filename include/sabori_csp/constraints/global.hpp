@@ -45,6 +45,20 @@ public:
     bool on_last_uninstantiated(Model& model, int save_point,
                                  size_t last_var_internal_idx) override;
 
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
     /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
@@ -72,6 +86,10 @@ protected:
 
 
 private:
+    /**
+     * @brief サイズ2のドメインペアによる Hall set 検出
+     */
+    bool check_hall_pair(Model& model, size_t trigger_var_idx);
     // 値プール（Sparse Set）
     std::vector<Domain::value_type> pool_values_;  // Dense 配列
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス

@@ -183,6 +183,14 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
+    // 確定した値を他の未確定変数のドメインから削除
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto vid = var_ids_[i];
+        if (!model.is_instantiated(vid) && model.contains(vid, value)) {
+            model.enqueue_remove_value(vid, value);
+        }
+    }
+
     if (unfixed_count_ <= 1) {
       size_t last_idx = SIZE_MAX;
       if (!model.is_instantiated(var_ids_[watch1()])) {
@@ -242,6 +250,67 @@ bool AllDifferentConstraint::on_final_instantiate(const Model& model) {
         used_values.insert(val);
     }
     return true;
+}
+
+bool AllDifferentConstraint::check_hall_pair(Model& model, size_t trigger_var_idx) {
+    auto& vd = model.var_data(trigger_var_idx);
+    if (vd.size != 2) return true;
+
+    auto v1 = vd.min;
+    auto v2 = vd.max;
+
+    // 同じ {v1, v2} ドメインを持つ未確定変数を数える
+    size_t match_count = 0;
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto vid = var_ids_[i];
+        if (model.is_instantiated(vid)) continue;
+        auto& d = model.var_data(vid);
+        if (d.size == 2 && d.min == v1 && d.max == v2) {
+            ++match_count;
+        }
+    }
+
+    if (match_count >= 3) {
+        return false;
+    }
+
+    if (match_count == 2) {
+        // 残りの変数から v1, v2 を削除
+        for (size_t i = 0; i < var_ids_.size(); ++i) {
+            auto vid = var_ids_[i];
+            if (model.is_instantiated(vid)) continue;
+            auto& d = model.var_data(vid);
+            if (d.size == 2 && d.min == v1 && d.max == v2) continue;
+            if (model.contains(vid, v1)) {
+                model.enqueue_remove_value(vid, v1);
+            }
+            if (model.contains(vid, v2)) {
+                model.enqueue_remove_value(vid, v2);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool AllDifferentConstraint::on_remove_value(Model& model, int save_point,
+                                              size_t var_idx, size_t internal_var_idx,
+                                              Domain::value_type removed_value) {
+    return check_hall_pair(model, var_idx);
+}
+
+bool AllDifferentConstraint::on_set_min(Model& model, int save_point,
+                                         size_t var_idx, size_t internal_var_idx,
+                                         Domain::value_type new_min,
+                                         Domain::value_type old_min) {
+    return check_hall_pair(model, var_idx);
+}
+
+bool AllDifferentConstraint::on_set_max(Model& model, int save_point,
+                                         size_t var_idx, size_t internal_var_idx,
+                                         Domain::value_type new_max,
+                                         Domain::value_type old_max) {
+    return check_hall_pair(model, var_idx);
 }
 
 void AllDifferentConstraint::rewind_to(int save_point) {
