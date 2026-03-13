@@ -70,6 +70,11 @@ public:
     size_t pool_size() const { return pool_n_; }
 
     /**
+     * @brief 未確定変数の数を取得
+     */
+    size_t unfixed_count() const { return unfixed_count_; }
+
+    /**
      * @brief 制約固有の activity bump
      *
      * 値重複の場合は同じ値を持つ変数のみ bump。
@@ -80,23 +85,19 @@ public:
                        bool& need_rescale) const override;
 
 protected:
-    /**
-     * @brief 初期整合性チェック
-     */
-
-
-private:
-    /**
-     * @brief サイズ2のドメインペアによる Hall set 検出
-     */
-    bool check_hall_pair(Model& model, size_t trigger_var_idx);
-    // 値プール（Sparse Set）
+    // 値プール（Sparse Set）— サブクラスからアクセス可能
     std::vector<Domain::value_type> pool_values_;  // Dense 配列
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス
     size_t pool_n_;  // 有効な値の数
 
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
+
+private:
+    /**
+     * @brief サイズ2のドメインペアによる Hall set 検出
+     */
+    bool check_hall_pair(Model& model, size_t trigger_var_idx);
 
     // Trail: (save_point, (old_pool_n, old_unfixed_count))
     struct TrailEntry {

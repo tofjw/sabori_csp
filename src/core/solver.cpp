@@ -1,4 +1,5 @@
 #include "sabori_csp/solver.hpp"
+#include "sabori_csp/constraints/global.hpp"
 #include <algorithm>
 #include <limits>
 #include <numeric>
@@ -76,6 +77,20 @@ bool Solver::init_search(Model& model) {
         std::cerr << "% [verbose] vars: total=" << n_vars
                   << " decision=" << (n_vars - n_defined)
                   << " defined=" << n_defined << "\n";
+
+        // all_different 制約の変数数・値数・比率を表示
+        for (const auto& c : model.constraints()) {
+            auto* ad = dynamic_cast<const AllDifferentConstraint*>(c.get());
+            if (!ad) continue;
+            size_t total = ad->var_ids_ref().size();
+            size_t unfixed = ad->unfixed_count();
+            size_t vals = ad->pool_size();
+            double ratio = vals > 0 ? static_cast<double>(unfixed) / vals : 0.0;
+            std::cerr << "% [verbose] all_different: vars=" << total
+                      << " (unfixed=" << unfixed << ")"
+                      << " vals=" << vals
+                      << " ratio=" << std::fixed << std::setprecision(2) << ratio << "\n";
+        }
     }
     if (community_analysis_.is_enabled()) {
         community_analysis_.build_vig(model);
