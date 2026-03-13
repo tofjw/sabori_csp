@@ -328,9 +328,12 @@ public:
 
 protected:
     /**
-     * @brief 初期整合性チェック
+     * @brief 各変数の境界を絞り込む
+     * @param model モデル
+     * @param skip_idx この変数はスキップ（SIZE_MAX なら全変数対象）
+     * @return false なら矛盾
      */
-
+    bool propagate_bounds(Model& model, size_t skip_idx);
 
 private:
     std::vector<int64_t> coeffs_;
@@ -1021,7 +1024,15 @@ public:
     void rewind_to(int save_point);
 
 protected:
+    /**
+     * @brief b=1 時の bounds propagation（sum <= bound）
+     */
+    bool propagate_bounds_le(Model& model, size_t skip_idx);
 
+    /**
+     * @brief b=0 時の bounds propagation（sum > bound）
+     */
+    bool propagate_bounds_gt(Model& model, size_t skip_idx);
 
 private:
     std::vector<int64_t> coeffs_;

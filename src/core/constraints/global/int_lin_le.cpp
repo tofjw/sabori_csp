@@ -53,7 +53,72 @@ std::string IntLinLeConstraint::name() const {
 }
 
 PresolveResult IntLinLeConstraint::presolve(Model& model) {
-    return PresolveResult::Unchanged;
+    if (var_ids_.empty()) {
+        return bound_ >= 0 ? PresolveResult::Unchanged : PresolveResult::Contradiction;
+    }
+
+    bool changed = false;
+    bool progress = true;
+
+    while (progress) {
+        progress = false;
+
+        // 全変数の最小寄与合計を計算
+        int64_t total_min = 0;
+        for (size_t i = 0; i < var_ids_.size(); ++i) {
+            int64_t c = coeffs_[i];
+            auto* var = model.variable(var_ids_[i]);
+            if (c >= 0) {
+                total_min += c * var->min();
+            } else {
+                total_min += c * var->max();
+            }
+        }
+
+        if (total_min > bound_) {
+            return PresolveResult::Contradiction;
+        }
+
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            int64_t c = coeffs_[j];
+            auto* var = model.variable(var_ids_[j]);
+            if (var->is_assigned()) continue;
+
+            // rest_min = total_min minus j's contribution
+            int64_t rest_min;
+            if (c >= 0) {
+                rest_min = total_min - c * var->min();
+            } else {
+                rest_min = total_min - c * var->max();
+            }
+            int64_t available = bound_ - rest_min;  // c * x_j <= available
+
+            if (c > 0) {
+                int64_t new_max = available / c;  // floor division (available >= 0)
+                if (new_max < var->max()) {
+                    if (!var->remove_above(new_max)) return PresolveResult::Contradiction;
+                    progress = true;
+                    changed = true;
+                }
+            } else {
+                int64_t abs_c = -c;
+                // c * x_j <= available → x_j >= ceil(-available / abs_c)
+                int64_t new_min;
+                if (available >= 0) {
+                    new_min = -(available / abs_c);
+                } else {
+                    new_min = ((-available) + abs_c - 1) / abs_c;
+                }
+                if (new_min > var->min()) {
+                    if (!var->remove_below(new_min)) return PresolveResult::Contradiction;
+                    progress = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
 bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
@@ -80,7 +145,7 @@ bool IntLinLeConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    return true;
+    return propagate_bounds(model, internal_idx);
 }
 
 bool IntLinLeConstraint::on_final_instantiate(const Model& model) {
@@ -164,6 +229,8 @@ bool IntLinLeConstraint::on_set_min(Model& model, int save_point,
         if (current_fixed_sum_ + min_rem_potential_ > bound_) {
             return false;
         }
+
+        return propagate_bounds(model, idx);
     }
     return true;
 }
@@ -183,6 +250,8 @@ bool IntLinLeConstraint::on_set_max(Model& model, int save_point,
         if (current_fixed_sum_ + min_rem_potential_ > bound_) {
             return false;
         }
+
+        return propagate_bounds(model, idx);
     }
     return true;
 }
@@ -192,6 +261,48 @@ bool IntLinLeConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
                                           Domain::value_type /*removed_value*/) {
     // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
     // 内部値の除去では bounds が変わらず potentials も不変。
+    return true;
+}
+
+bool IntLinLeConstraint::propagate_bounds(Model& model, size_t skip_idx) {
+    int64_t slack = bound_ - current_fixed_sum_;
+    // slack >= min_rem_potential_ is guaranteed (checked before calling)
+
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
+        if (j == skip_idx) continue;
+        size_t vid = var_ids_[j];
+        if (model.is_instantiated(vid)) continue;
+
+        int64_t c = coeffs_[j];
+
+        // rest_min = min_rem_potential_ minus j's min contribution
+        int64_t rest_min;
+        if (c >= 0) {
+            rest_min = min_rem_potential_ - c * model.var_min(vid);
+        } else {
+            rest_min = min_rem_potential_ - c * model.var_max(vid);
+        }
+        int64_t available = slack - rest_min;  // c * x_j <= available
+
+        if (c > 0) {
+            int64_t new_max = available / c;  // floor division (available >= 0)
+            if (new_max < model.var_max(vid)) {
+                model.enqueue_set_max(vid, new_max);
+            }
+        } else {
+            int64_t abs_c = -c;
+            // c * x_j <= available → x_j >= ceil(-available / abs_c)
+            int64_t new_min;
+            if (available >= 0) {
+                new_min = -(available / abs_c);
+            } else {
+                new_min = ((-available) + abs_c - 1) / abs_c;
+            }
+            if (new_min > model.var_min(vid)) {
+                model.enqueue_set_min(vid, new_min);
+            }
+        }
+    }
     return true;
 }
 

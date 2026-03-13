@@ -110,7 +110,8 @@ static std::optional<ConstraintPtr> make_int_le_reif(const ConstraintDecl& decl,
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
     auto b = ctx.get_var(decl.args[2]);
-    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
+    if (!x->is_assigned() && !y->is_assigned() &&
+        !ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
         !ctx.model->is_defined_var(b->id())) {
         ctx.model->set_defined_var(b->id());
     }
