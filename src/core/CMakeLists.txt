@@ -15,6 +15,7 @@ add_library(sabori_csp_core
   constraints/logical.cpp
   # Global constraints (split into separate files)
   constraints/global/all_different.cpp
+  constraints/global/all_different_gac.cpp
   constraints/global/all_different_except_0.cpp
   constraints/global/int_lin_eq.cpp
   constraints/global/int_lin_le.cpp

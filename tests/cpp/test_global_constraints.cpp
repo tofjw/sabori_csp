@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "sabori_csp/constraint.hpp"
 #include "sabori_csp/constraints/logical.hpp"
+#include "sabori_csp/constraints/all_different_gac.hpp"
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/domain.hpp"
 #include "sabori_csp/model.hpp"
@@ -167,6 +168,109 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
     // Rewind to level 0
     c.rewind_to(0);
     REQUIRE(c.pool_size() == 3);
+}
+
+// ============================================================================
+// AllDifferentConstraint GAC (Régin's algorithm) tests
+// ============================================================================
+
+TEST_CASE("AllDifferentConstraint GAC Hall set detection", "[constraint][all_different][gac]") {
+    // vars x1={1,2}, x2={1,2}, x3={1,2,3}, x4={1,2,3,4}
+    // Hall set {x1,x2}→{1,2} should prune 1,2 from x3 and x4
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(std::vector<int64_t>{1, 2}));
+    auto* x2 = model.create_variable("x2", Domain(std::vector<int64_t>{1, 2}));
+    auto* x3 = model.create_variable("x3", Domain(std::vector<int64_t>{1, 2, 3}));
+    auto* x4 = model.create_variable("x4", Domain(std::vector<int64_t>{1, 2, 3, 4}));
+
+    model.add_constraint(std::make_unique<AllDifferentGACConstraint>(
+        std::vector<Variable*>{x1, x2, x3, x4}));
+
+    Solver solver;
+    auto solutions = std::vector<Solution>();
+    solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    // All solutions must have x3 ∈ {3,4} and x4 ∈ {3,4} (but only one of each)
+    // Actually x3 can only be 3 (since D(x3)={1,2,3} and 1,2 pruned → {3})
+    // x4 can be 3 or 4 but with x3=3, x4=4
+    // Total solutions: x1∈{1,2}, x2∈{2,1} (2 permutations), x3=3, x4=4 → 2 solutions
+    REQUIRE(solutions.size() == 2);
+    for (const auto& sol : solutions) {
+        REQUIRE(sol.at("x3") == 3);
+        REQUIRE(sol.at("x4") == 4);
+    }
+}
+
+TEST_CASE("AllDifferentConstraint GAC infeasibility detection", "[constraint][all_different][gac]") {
+    // 4 vars all with domain {1,2,3} → pigeonhole: impossible
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(std::vector<int64_t>{1, 2, 3}));
+    auto* x2 = model.create_variable("x2", Domain(std::vector<int64_t>{1, 2, 3}));
+    auto* x3 = model.create_variable("x3", Domain(std::vector<int64_t>{1, 2, 3}));
+    auto* x4 = model.create_variable("x4", Domain(std::vector<int64_t>{1, 2, 3}));
+
+    model.add_constraint(std::make_unique<AllDifferentGACConstraint>(
+        std::vector<Variable*>{x1, x2, x3, x4}));
+
+    Solver solver;
+    auto result = solver.solve(model);
+    REQUIRE_FALSE(result.has_value());
+}
+
+TEST_CASE("AllDifferentConstraint GAC correctness: 5 vars", "[constraint][all_different][gac]") {
+    // 5 vars with domains that GAC can prune
+    // x1={1,2}, x2={1,2}, x3={1,2,3}, x4={3,4}, x5={3,4,5}
+    // Hall set {x1,x2}→{1,2} prunes 1,2 from x3 → x3={3}
+    // Then Hall set {x3,x4} where x3={3}, x4={3,4} → x4 must be 4
+    // x5={3,4,5}, 3 and 4 pruned → x5={5}
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(std::vector<int64_t>{1, 2}));
+    auto* x2 = model.create_variable("x2", Domain(std::vector<int64_t>{1, 2}));
+    auto* x3 = model.create_variable("x3", Domain(std::vector<int64_t>{1, 2, 3}));
+    auto* x4 = model.create_variable("x4", Domain(std::vector<int64_t>{3, 4}));
+    auto* x5 = model.create_variable("x5", Domain(std::vector<int64_t>{3, 4, 5}));
+
+    model.add_constraint(std::make_unique<AllDifferentGACConstraint>(
+        std::vector<Variable*>{x1, x2, x3, x4, x5}));
+
+    Solver solver;
+    auto solutions = std::vector<Solution>();
+    solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    // x3=3, x4=4, x5=5, x1∈{1,2}, x2∈{2,1} → 2 solutions
+    REQUIRE(solutions.size() == 2);
+    for (const auto& sol : solutions) {
+        REQUIRE(sol.at("x3") == 3);
+        REQUIRE(sol.at("x4") == 4);
+        REQUIRE(sol.at("x5") == 5);
+    }
+}
+
+TEST_CASE("AllDifferentGACConstraint disabled for small constraints", "[constraint][all_different][gac]") {
+    // 3 vars: GAC should be disabled (unfixed_count_ < 4), fall back to forward check + hall pair
+    Model model;
+    auto* x = model.create_variable("x", Domain(1, 3));
+    auto* y = model.create_variable("y", Domain(1, 3));
+    auto* z = model.create_variable("z", Domain(1, 3));
+
+    model.add_constraint(std::make_unique<AllDifferentGACConstraint>(
+        std::vector<Variable*>{x, y, z}));
+
+    Solver solver;
+    auto solutions = std::vector<Solution>();
+    solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    // 3! = 6 solutions
+    REQUIRE(solutions.size() == 6);
 }
 
 // ============================================================================
