@@ -1146,6 +1146,16 @@ private:
      * @brief trail 保存ヘルパー
      */
     void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief b=1 時の bounds propagation（int_lin_le と同じロジック）
+     */
+    bool propagate_bounds(Model& model, size_t skip_idx);
+
+    /**
+     * @brief 対偶推論: min_sum > bound → b=0
+     */
+    bool check_contrapositive(Model& model);
 };
 
 /**
