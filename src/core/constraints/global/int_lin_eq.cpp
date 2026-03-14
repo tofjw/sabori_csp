@@ -196,13 +196,19 @@ bool IntLinEqConstraint::on_instantiate(Model& model, int save_point,
             if (!on_last_uninstantiated(model, save_point, last_idx)) {
                 return false;
             }
+            return true;
         }
     }
     else {
         return on_final_instantiate(model);
     }
 
-    return true;
+    // 残り 2+ 変数: 両方向の bounds propagation
+    // instantiate では min/max 両ポテンシャルが変化するため両方必要
+    if (!propagate_lower_bounds(model, internal_idx)) {
+        return false;
+    }
+    return propagate_upper_bounds(model, internal_idx);
 }
 
 bool IntLinEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
