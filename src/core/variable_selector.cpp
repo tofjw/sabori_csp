@@ -136,7 +136,7 @@ size_t VariableSelector::select_linear(const Model& model,
         size_t k = begin + (start + j) % n;
         size_t i = var_order_[k];
         if (model.is_instantiated(i)) continue;
-        size_t domain_size = static_cast<size_t>(model.var_max(i) - model.var_min(i) + 1);
+        size_t domain_size = model.var_size(i);
         int ta = temporal_activity[i];
         bool better = false;
         bool tied = false;
