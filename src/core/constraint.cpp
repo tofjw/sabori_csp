@@ -187,13 +187,13 @@ void Constraint::compute_search_var_count(const Model& model) {
 
 void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
                                double* activity, double activity_inc,
-                               bool& need_rescale) const {
+                               bool& need_rescale, std::mt19937& rng) const {
     // 探索開始時に未確定だった変数数で割る（最初から固定の変数を除外）
     size_t n = search_var_count_ > 0 ? search_var_count_ : var_ids_.size();
     double inc = activity_inc / n;
     for (size_t vid : var_ids_) {
         if (model.is_instantiated(vid)) {
-            bump_variable_activity(activity, vid, inc, need_rescale);
+            bump_variable_activity(activity, vid, inc, need_rescale, rng);
         }
     }
 }

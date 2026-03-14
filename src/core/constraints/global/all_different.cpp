@@ -324,10 +324,10 @@ void AllDifferentConstraint::rewind_to(int save_point) {
 
 void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                            double* activity, double activity_inc,
-                                           bool& need_rescale) const {
+                                           bool& need_rescale, std::mt19937& rng) const {
     // trigger 変数が instantiated でなければデフォルト
     if (!model.is_instantiated(trigger_var_idx)) {
-        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale);
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
         return;
     }
 
@@ -346,14 +346,14 @@ void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_va
         double inc = activity_inc / count;
         for (size_t vid : var_ids_) {
             if (model.is_instantiated(vid) && model.value(vid) == val) {
-                bump_variable_activity(activity, vid, inc, need_rescale);
+                bump_variable_activity(activity, vid, inc, need_rescale, rng);
             }
         }
         return;
     }
 
     // 鳩の巣原理等: デフォルト動作
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale);
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
 }
 
 }  // namespace sabori_csp

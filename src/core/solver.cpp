@@ -775,7 +775,10 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
-    activity_[frame.var_idx] += activity_inc_;
+    {
+        std::uniform_real_distribution<double> jitter(0.9, 1.0);
+        activity_[frame.var_idx] += activity_inc_ * jitter(rng_);
+    }
     temporal_activity_[frame.var_idx]++;
 
     stats_.fail_count++;
@@ -794,7 +797,7 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
     ascending = true;
 }
 
-void Solver::order_values(size_t var_idx) {
+void Solver::order_values(const Model& model, size_t var_idx) {
     auto& values = value_buffer_;
 
     // 疑似勾配ヒント（対象変数のみ）
@@ -827,6 +830,21 @@ void Solver::order_values(size_t var_idx) {
         auto it = std::find(values.begin(), values.end(), best_val);
         if (it != values.end() && it != values.begin()) {
             std::swap(*it, values[0]);
+        }
+    } else if (model.var_data(var_idx).randomize_value_order && values.size() > 1) {
+        // 値の試行順をランダム化
+        for (size_t i = values.size() - 1; i > 0; --i) {
+            size_t j = rng_() % (i + 1);
+            if (i != j) std::swap(values[i], values[j]);
+        }
+    } else {
+        // preferred_value が設定されていれば先頭に移動
+        auto pref = model.preferred_value(var_idx);
+        if (pref != std::numeric_limits<Domain::value_type>::min()) {
+            auto it = std::find(values.begin(), values.end(), pref);
+            if (it != values.end() && it != values.begin()) {
+                std::swap(*it, values[0]);
+            }
         }
     }
 }
@@ -984,7 +1002,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
     } else {
         stats_.enumerate_count++;
         domain.copy_values_to(value_buffer_);
-        order_values(var_idx);
+        order_values(model, var_idx);
 
         SearchFrame frame;
         frame.var_idx = var_idx;

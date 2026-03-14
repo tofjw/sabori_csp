@@ -54,6 +54,8 @@ struct VarData {
     int last_saved_level = -1;
     bool is_defined_var = false;
     bool no_bisect = false;
+    bool randomize_value_order = false;  ///< 値の試行順をランダム化
+    Domain::value_type preferred_value = std::numeric_limits<Domain::value_type>::min();  ///< 優先試行値（未設定なら min()）
 };
 
 /**
@@ -272,6 +274,21 @@ public:
     void set_defined_var(size_t var_idx);
 
     /**
+     * @brief 変数の is_defined_var を解除
+     */
+    void unset_defined_var(size_t var_idx) { var_data_[var_idx].is_defined_var = false; }
+
+    /**
+     * @brief 変数の優先試行値を設定
+     */
+    void set_preferred_value(size_t var_idx, int64_t value) { var_data_[var_idx].preferred_value = value; }
+
+    /**
+     * @brief 変数の優先試行値を取得
+     */
+    int64_t preferred_value(size_t var_idx) const { return var_data_[var_idx].preferred_value; }
+
+    /**
      * @brief 変数が no_bisect（bisect対象外）か
      */
     bool is_no_bisect(size_t var_idx) const { return var_data_[var_idx].no_bisect; }
@@ -280,6 +297,11 @@ public:
      * @brief 変数を no_bisect としてマーク
      */
     void set_no_bisect(size_t var_idx) { var_data_[var_idx].no_bisect = true; }
+
+    /**
+     * @brief 変数の値試行順をランダム化するフラグを設定
+     */
+    void set_randomize_value_order(size_t var_idx) { var_data_[var_idx].randomize_value_order = true; }
 
     // ===== ドメイン操作（Trail 付き） =====
 

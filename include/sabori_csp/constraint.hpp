@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <random>
 
 namespace sabori_csp {
 
@@ -281,7 +282,7 @@ public:
      */
     virtual void bump_activity(const Model& model, size_t trigger_var_idx,
                                double* activity, double activity_inc,
-                               bool& need_rescale) const;
+                               bool& need_rescale, std::mt19937& rng) const;
 
     /**
      * @brief 探索開始時の未確定変数数を計算・記録
@@ -295,8 +296,10 @@ public:
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,
-                                      double inc, bool& need_rescale) {
-        activity[vid] += inc;
+                                      double inc, bool& need_rescale,
+                                      std::mt19937& rng) {
+        static std::uniform_real_distribution<double> jitter(0.9, 1.0);
+        activity[vid] += inc * jitter(rng);
         if (activity[vid] > 10000.0) {
             need_rescale = true;
         }

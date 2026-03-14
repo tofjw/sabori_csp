@@ -82,7 +82,7 @@ public:
      */
     void bump_activity(const Model& model, size_t trigger_var_idx,
                        double* activity, double activity_inc,
-                       bool& need_rescale) const override;
+                       bool& need_rescale, std::mt19937& rng) const override;
 
 protected:
     // 値プール（Sparse Set）— サブクラスからアクセス可能

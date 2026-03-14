@@ -348,8 +348,8 @@ private:
                         std::vector<SearchFrame>& stack,
                         SearchResult& result, bool& ascending);
 
-    /// 勾配ヒント・ベスト解ヒントによる値の並べ替え
-    void order_values(size_t var_idx);
+    /// 勾配ヒント・ベスト解ヒント・preferred_value による値の並べ替え
+    void order_values(const Model& model, size_t var_idx);
 
     /// Enumerate モードの値ループ
     void try_enumerate_values(Model& model, SearchFrame& frame,
@@ -421,7 +421,7 @@ private:
         if (!bump_activity_enabled_) return;
         const auto& constraint = model.constraints()[constraint_idx];
         bool need_rescale = false;
-        constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale);
+        constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
         if (need_rescale) {
             rescale_activities();
         }
