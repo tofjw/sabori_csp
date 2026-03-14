@@ -284,6 +284,14 @@ public:
                                bool& need_rescale) const;
 
     /**
+     * @brief 探索開始時の未確定変数数を計算・記録
+     *
+     * Model::prepare_propagation() から呼ばれる。
+     * bump_activity の分母に使用し、最初から固定の変数を除外する。
+     */
+    void compute_search_var_count(const Model& model);
+
+    /**
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,
@@ -358,6 +366,9 @@ private:
 
     // 初期矛盾フラグ
     bool is_initially_inconsistent_ = false;
+
+    // 探索開始時に未確定だった変数数（bump_activity の分母に使用）
+    size_t search_var_count_ = 0;
 };
 
 using ConstraintPtr = std::unique_ptr<Constraint>;

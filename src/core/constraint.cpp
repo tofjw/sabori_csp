@@ -176,10 +176,20 @@ bool Constraint::on_remove_value(Model& /*model*/, int /*save_point*/,
     return true;
 }
 
+void Constraint::compute_search_var_count(const Model& model) {
+    search_var_count_ = 0;
+    for (size_t vid : var_ids_) {
+        if (!model.is_instantiated(vid)) {
+            ++search_var_count_;
+        }
+    }
+}
+
 void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
                                double* activity, double activity_inc,
                                bool& need_rescale) const {
-    size_t n = var_ids_.size();
+    // 探索開始時に未確定だった変数数で割る（最初から固定の変数を除外）
+    size_t n = search_var_count_ > 0 ? search_var_count_ : var_ids_.size();
     double inc = activity_inc / n;
     for (size_t vid : var_ids_) {
         if (model.is_instantiated(vid)) {

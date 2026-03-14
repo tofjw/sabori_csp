@@ -607,6 +607,8 @@ bool Model::prepare_propagation() {
         }
         // 2WL 監視変数を Model の状態に基づいて再設定
         constraint->refine_watches(*this);
+        // 探索開始時の未確定変数数を記録（bump_activity の分母用）
+        constraint->compute_search_var_count(*this);
     }
 
     // prepare_propagation 後にデータを同期
