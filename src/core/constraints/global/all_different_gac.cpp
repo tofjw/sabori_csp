@@ -4,6 +4,7 @@
 #include <set>
 #include <queue>
 
+
 namespace sabori_csp {
 
 // ============================================================================
@@ -267,32 +268,33 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
     while (queue_head < queue_tail) {
         int node = bfs_queue_[queue_head++];
         if (node >= static_cast<int>(n)) {
+            // 値ノード j: 非マッチングエッジで j をドメインに持つ変数へ
             int j = node - static_cast<int>(n);
-            int matched_var = match_val_[j];
-            if (matched_var != -1 && !reachable_[matched_var]) {
-                reachable_[matched_var] = true;
-                bfs_queue_[queue_tail++] = matched_var;
+            auto val = gac_idx_to_val_[j];
+            for (size_t i = 0; i < n; ++i) {
+                if (reachable_[i]) continue;
+                if (model.is_instantiated(var_ids_[i])) continue;
+                if (match_var_[i] == j) continue;  // マッチングエッジはスキップ
+                if (model.contains(var_ids_[i], val)) {
+                    reachable_[i] = true;
+                    bfs_queue_[queue_tail++] = static_cast<int>(i);
+                }
             }
         } else {
+            // 変数ノード i: マッチング相手の値へ
             int i = node;
-            if (model.is_instantiated(var_ids_[i])) continue;
-            model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
-                auto it = gac_val_to_idx_.find(val);
-                if (it == gac_val_to_idx_.end()) return;
-                int j = it->second;
-                if (!is_val_in_pool(j)) return;
-                if (match_var_[i] == j) return;
+            if (match_var_[i] != -1) {
+                int j = match_var_[i];
                 if (!reachable_[n + j]) {
                     reachable_[n + j] = true;
                     bfs_queue_[queue_tail++] = static_cast<int>(n + j);
                 }
-            });
+            }
         }
     }
 
     // 2. Tarjan SCC
     std::fill(scc_num_.begin(), scc_num_.begin() + total_nodes, -1);
-    std::fill(scc_low_.begin(), scc_low_.begin() + total_nodes, -1);
     std::fill(scc_id_.begin(), scc_id_.begin() + total_nodes, -1);
     std::fill(on_stack_.begin(), on_stack_.begin() + total_nodes, false);
     scc_stack_.clear();
@@ -335,83 +337,75 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
 void AllDifferentGACConstraint::tarjan_dfs(Model& model, int u) {
     size_t n = var_ids_.size();
 
+    // 各ノードの近隣リストを事前構築
+    size_t total_nodes = n + total_values_;
+    std::vector<std::vector<int>> adj(total_nodes);
+    for (size_t i = 0; i < n; ++i) {
+        if (model.is_instantiated(var_ids_[i])) continue;
+        model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
+            auto it = gac_val_to_idx_.find(val);
+            if (it == gac_val_to_idx_.end()) return;
+            int j = it->second;
+            if (!is_val_in_pool(j)) return;
+            if (match_var_[i] != j) {
+                adj[i].push_back(static_cast<int>(n) + j);
+            }
+        });
+    }
+    for (size_t j = 0; j < total_values_; ++j) {
+        if (!is_val_in_pool(j)) continue;
+        if (match_val_[j] != -1) {
+            adj[n + j].push_back(match_val_[j]);
+        }
+    }
+
+    // Iterative Tarjan
     struct Frame {
         int node;
-        int phase;
-        size_t neighbor_idx;
-        std::vector<int> neighbors;
+        int next_idx;  // 次に処理する近隣のインデックス
     };
 
-    std::vector<Frame> call_stack;
-    call_stack.push_back({u, 0, 0, {}});
+    std::vector<Frame> stack;
+    stack.push_back({u, 0});
+    scc_num_[u] = scc_low_[u] = tarjan_counter_++;
+    scc_stack_.push_back(u);
+    on_stack_[u] = true;
 
-    while (!call_stack.empty()) {
-        auto& frame = call_stack.back();
-        int node = frame.node;
+    while (!stack.empty()) {
+        auto& [cur, next] = stack.back();
 
-        if (frame.phase == 0) {
-            scc_num_[node] = scc_low_[node] = tarjan_counter_++;
-            scc_stack_.push_back(node);
-            on_stack_[node] = true;
+        if (next < static_cast<int>(adj[cur].size())) {
+            int w = adj[cur][next];
+            next++;
 
-            frame.neighbors.clear();
-            if (node < static_cast<int>(n)) {
-                int i = node;
-                if (!model.is_instantiated(var_ids_[i])) {
-                    model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
-                        auto it = gac_val_to_idx_.find(val);
-                        if (it == gac_val_to_idx_.end()) return;
-                        int j = it->second;
-                        if (!is_val_in_pool(j)) return;
-                        if (match_var_[i] != j) {
-                            frame.neighbors.push_back(static_cast<int>(n) + j);
-                        }
-                    });
-                }
-            } else {
-                int j = node - static_cast<int>(n);
-                if (match_val_[j] != -1) {
-                    frame.neighbors.push_back(match_val_[j]);
-                }
+            if (scc_num_[w] == -1) {
+                // 未訪問: DFS で下る
+                scc_num_[w] = scc_low_[w] = tarjan_counter_++;
+                scc_stack_.push_back(w);
+                on_stack_[w] = true;
+                stack.push_back({w, 0});
+            } else if (on_stack_[w]) {
+                scc_low_[cur] = std::min(scc_low_[cur], scc_num_[w]);
             }
-
-            frame.phase = 1;
-            frame.neighbor_idx = 0;
-        }
-
-        if (frame.phase == 1) {
-            bool pushed_child = false;
-            while (frame.neighbor_idx < frame.neighbors.size()) {
-                int w = frame.neighbors[frame.neighbor_idx];
-                frame.neighbor_idx++;
-
-                if (scc_num_[w] == -1) {
-                    call_stack.push_back({w, 0, 0, {}});
-                    pushed_child = true;
-                    break;
-                } else if (on_stack_[w]) {
-                    scc_low_[node] = std::min(scc_low_[node], scc_num_[w]);
-                }
-            }
-
-            if (pushed_child) continue;
-
-            if (scc_low_[node] == scc_num_[node]) {
+        } else {
+            // 全近隣処理完了: SCC ルートチェック & ポップ
+            if (scc_low_[cur] == scc_num_[cur]) {
                 int w;
                 do {
                     w = scc_stack_.back();
                     scc_stack_.pop_back();
                     on_stack_[w] = false;
                     scc_id_[w] = scc_count_;
-                } while (w != node);
+                } while (w != cur);
                 scc_count_++;
             }
 
-            call_stack.pop_back();
+            int finished = cur;
+            stack.pop_back();
 
-            if (!call_stack.empty()) {
-                auto& parent = call_stack.back();
-                scc_low_[parent.node] = std::min(scc_low_[parent.node], scc_low_[node]);
+            if (!stack.empty()) {
+                auto& parent = stack.back();
+                scc_low_[parent.node] = std::min(scc_low_[parent.node], scc_low_[finished]);
             }
         }
     }

@@ -2,6 +2,7 @@
 #include "sabori_csp/constraints/arithmetic.hpp"
 #include "sabori_csp/constraints/comparison.hpp"
 #include "sabori_csp/constraints/global.hpp"
+#include "sabori_csp/constraints/all_different_gac.hpp"
 #include "sabori_csp/constraints/logical.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -200,7 +201,7 @@ static std::optional<ConstraintPtr> make_int_abs(const ConstraintDecl& decl, Fzn
 // ============================================================
 static std::optional<ConstraintPtr> make_all_different(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("all_different_int requires 1 argument (array)");
-    return std::make_unique<AllDifferentConstraint>(resolve_vars(decl.args[0], ctx));
+    return std::make_unique<AllDifferentGACConstraint>(resolve_vars(decl.args[0], ctx));
 }
 
 static std::optional<ConstraintPtr> make_alldifferent_except_0(const ConstraintDecl& decl, FznBuildContext& ctx) {
