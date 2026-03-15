@@ -70,7 +70,7 @@ bool Model::set_var_lower_bound(const std::string& name, Domain::value_type lb) 
     return true;
 }
 
-std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
+std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) const {
     auto model = std::make_unique<sabori_csp::Model>();
     std::map<std::string, VariablePtr> var_map;
 
@@ -147,7 +147,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose) const {
 
     // ビルドコンテキスト構築
     FznBuildContext ctx{model.get(), var_map, var_decls_, array_decls_,
-                        constant_arrays, alias_map, verbose};
+                        constant_arrays, alias_map, verbose, use_gac};
 
     // FlatZinc アノテーション由来の is_defined_var 集合を記録
     // （ヒューリスティックで追加したものと区別するため）

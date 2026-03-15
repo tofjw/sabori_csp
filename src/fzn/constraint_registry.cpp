@@ -201,7 +201,11 @@ static std::optional<ConstraintPtr> make_int_abs(const ConstraintDecl& decl, Fzn
 // ============================================================
 static std::optional<ConstraintPtr> make_all_different(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("all_different_int requires 1 argument (array)");
-    return std::make_unique<AllDifferentGACConstraint>(resolve_vars(decl.args[0], ctx));
+    auto vars = resolve_vars(decl.args[0], ctx);
+    if (ctx.use_gac) {
+        return std::make_unique<AllDifferentGACConstraint>(std::move(vars));
+    }
+    return std::make_unique<AllDifferentConstraint>(std::move(vars));
 }
 
 static std::optional<ConstraintPtr> make_alldifferent_except_0(const ConstraintDecl& decl, FznBuildContext& ctx) {

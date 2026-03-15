@@ -29,6 +29,7 @@ struct FznBuildContext {
     const std::map<std::string, std::vector<Domain::value_type>>& constant_arrays;
     const std::map<std::string, std::string>& alias_map;
     bool verbose;
+    bool use_gac = false;  ///< all_different に GAC (Régin) を使用
 
     /**
      * @brief 引数から変数を取得（変数名 or 定数リテラル）

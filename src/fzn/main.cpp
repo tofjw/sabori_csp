@@ -32,6 +32,7 @@ void print_usage(const char* program) {
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -p N    Probe fail limit for improvement probe (default: 10, 0=disable)\n";
+    std::cerr << "  -G      Use GAC (Régin's algorithm) for all_different\n";
     std::cerr << "  -N      Disable nogood learning\n";
     std::cerr << "  -E      Disable variable elimination\n";
 }
@@ -41,6 +42,7 @@ bool g_verbose = false;
 bool g_no_nogood = false;
 bool g_no_elimination = false;
 bool g_community_analysis = false;
+bool g_use_gac = false;
 
 void print_stats(const sabori_csp::Solver& solver) {
     if (!g_print_stats) return;
@@ -185,7 +187,7 @@ int g_bisection_threshold = 8;
 int g_probe_fail_limit = 5;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
-    auto model = fzn_model.to_model(g_verbose);
+    auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
@@ -231,7 +233,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
 void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minimize) {
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
-    auto model = fzn_model.to_model(g_verbose);
+    auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
@@ -306,6 +308,8 @@ int main(int argc, char* argv[]) {
             g_probe_fail_limit = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-c") == 0) {
             g_community_analysis = true;
+        } else if (std::strcmp(argv[i], "-G") == 0) {
+            g_use_gac = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
         } else if (std::strcmp(argv[i], "-E") == 0) {

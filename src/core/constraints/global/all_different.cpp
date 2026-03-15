@@ -84,6 +84,7 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
             }
         } else {
             ++unfixed_count_;
+            model.set_no_bisect(vid);
         }
     }
 
