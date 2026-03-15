@@ -81,6 +81,8 @@ private:
     std::vector<int> scc_num_;
     std::vector<bool> on_stack_;
     std::vector<Domain::value_type> domain_buf_;
+    std::vector<std::vector<int>> val_to_vars_;
+    std::vector<std::vector<int>> adj_;
     int tarjan_counter_ = 0;
     int scc_count_ = 0;
 
@@ -90,7 +92,7 @@ private:
     bool hk_bfs(Model& model);
     bool hk_dfs(Model& model, int u);
     void compute_sccs_and_filter(Model& model);
-    void tarjan_dfs(Model& model, int u);
+    void tarjan_dfs(int u, const std::vector<std::vector<int>>& adj);
 
     /// 値がプール内（未消費）かチェック
     inline bool is_val_in_pool(int val_idx) const {

@@ -242,26 +242,31 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
     size_t m = total_values_;
     size_t total_nodes = n + m;
 
+    // 0. val_to_vars 逆引きインデックスを1回構築: O(n * avg_domain_size)
+    val_to_vars_.resize(m);
+    for (size_t j = 0; j < m; ++j) val_to_vars_[j].clear();
+    for (size_t i = 0; i < n; ++i) {
+        if (model.is_instantiated(var_ids_[i])) continue;
+        model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
+            auto it = gac_val_to_idx_.find(val);
+            if (it == gac_val_to_idx_.end()) return;
+            int j = it->second;
+            if (!is_val_in_pool(j)) return;
+            val_to_vars_[j].push_back(static_cast<int>(i));
+        });
+    }
+
     // 1. 自由値ノードからの到達可能性 (BFS on residual graph)
     std::fill(reachable_.begin(), reachable_.begin() + total_nodes, false);
     int queue_head = 0, queue_tail = 0;
     bfs_queue_.resize(total_nodes);
 
+    // free value 初期化: val_to_vars で O(1) 判定
     for (size_t j = 0; j < m; ++j) {
         if (!is_val_in_pool(j)) continue;
-        if (match_val_[j] == -1) {
-            bool exists_in_some_domain = false;
-            auto val = gac_idx_to_val_[j];
-            for (size_t i = 0; i < n; ++i) {
-                if (!model.is_instantiated(var_ids_[i]) && model.contains(var_ids_[i], val)) {
-                    exists_in_some_domain = true;
-                    break;
-                }
-            }
-            if (exists_in_some_domain) {
-                reachable_[n + j] = true;
-                bfs_queue_[queue_tail++] = static_cast<int>(n + j);
-            }
+        if (match_val_[j] == -1 && !val_to_vars_[j].empty()) {
+            reachable_[n + j] = true;
+            bfs_queue_[queue_tail++] = static_cast<int>(n + j);
         }
     }
 
@@ -270,15 +275,11 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
         if (node >= static_cast<int>(n)) {
             // 値ノード j: 非マッチングエッジで j をドメインに持つ変数へ
             int j = node - static_cast<int>(n);
-            auto val = gac_idx_to_val_[j];
-            for (size_t i = 0; i < n; ++i) {
+            for (int i : val_to_vars_[j]) {
                 if (reachable_[i]) continue;
-                if (model.is_instantiated(var_ids_[i])) continue;
                 if (match_var_[i] == j) continue;  // マッチングエッジはスキップ
-                if (model.contains(var_ids_[i], val)) {
-                    reachable_[i] = true;
-                    bfs_queue_[queue_tail++] = static_cast<int>(i);
-                }
+                reachable_[i] = true;
+                bfs_queue_[queue_tail++] = i;
             }
         } else {
             // 変数ノード i: マッチング相手の値へ
@@ -293,7 +294,24 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
         }
     }
 
-    // 2. Tarjan SCC
+    // 2. Tarjan 用隣接リストを1回構築 (val_to_vars を活用)
+    adj_.resize(total_nodes);
+    for (size_t k = 0; k < total_nodes; ++k) adj_[k].clear();
+    for (size_t j = 0; j < m; ++j) {
+        if (!is_val_in_pool(j)) continue;
+        // 値ノード → マッチング相手の変数（マッチングエッジ）
+        if (match_val_[j] != -1) {
+            adj_[n + j].push_back(match_val_[j]);
+        }
+        // 変数 → 値ノード（非マッチングエッジ）
+        for (int i : val_to_vars_[j]) {
+            if (match_var_[i] != static_cast<int>(j)) {
+                adj_[i].push_back(static_cast<int>(n + j));
+            }
+        }
+    }
+
+    // Tarjan SCC
     std::fill(scc_num_.begin(), scc_num_.begin() + total_nodes, -1);
     std::fill(scc_id_.begin(), scc_id_.begin() + total_nodes, -1);
     std::fill(on_stack_.begin(), on_stack_.begin() + total_nodes, false);
@@ -303,12 +321,12 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
 
     for (size_t i = 0; i < n; ++i) {
         if (!model.is_instantiated(var_ids_[i]) && scc_num_[i] == -1) {
-            tarjan_dfs(model, static_cast<int>(i));
+            tarjan_dfs(static_cast<int>(i), adj_);
         }
     }
     for (size_t j = 0; j < m; ++j) {
         if (is_val_in_pool(j) && match_val_[j] != -1 && scc_num_[n + j] == -1) {
-            tarjan_dfs(model, static_cast<int>(n + j));
+            tarjan_dfs(static_cast<int>(n + j), adj_);
         }
     }
 
@@ -334,35 +352,11 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
     }
 }
 
-void AllDifferentGACConstraint::tarjan_dfs(Model& model, int u) {
-    size_t n = var_ids_.size();
-
-    // 各ノードの近隣リストを事前構築
-    size_t total_nodes = n + total_values_;
-    std::vector<std::vector<int>> adj(total_nodes);
-    for (size_t i = 0; i < n; ++i) {
-        if (model.is_instantiated(var_ids_[i])) continue;
-        model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
-            auto it = gac_val_to_idx_.find(val);
-            if (it == gac_val_to_idx_.end()) return;
-            int j = it->second;
-            if (!is_val_in_pool(j)) return;
-            if (match_var_[i] != j) {
-                adj[i].push_back(static_cast<int>(n) + j);
-            }
-        });
-    }
-    for (size_t j = 0; j < total_values_; ++j) {
-        if (!is_val_in_pool(j)) continue;
-        if (match_val_[j] != -1) {
-            adj[n + j].push_back(match_val_[j]);
-        }
-    }
-
+void AllDifferentGACConstraint::tarjan_dfs(int u, const std::vector<std::vector<int>>& adj) {
     // Iterative Tarjan
     struct Frame {
         int node;
-        int next_idx;  // 次に処理する近隣のインデックス
+        int next_idx;
     };
 
     std::vector<Frame> stack;
@@ -379,7 +373,6 @@ void AllDifferentGACConstraint::tarjan_dfs(Model& model, int u) {
             next++;
 
             if (scc_num_[w] == -1) {
-                // 未訪問: DFS で下る
                 scc_num_[w] = scc_low_[w] = tarjan_counter_++;
                 scc_stack_.push_back(w);
                 on_stack_[w] = true;
@@ -388,7 +381,6 @@ void AllDifferentGACConstraint::tarjan_dfs(Model& model, int u) {
                 scc_low_[cur] = std::min(scc_low_[cur], scc_num_[w]);
             }
         } else {
-            // 全近隣処理完了: SCC ルートチェック & ポップ
             if (scc_low_[cur] == scc_num_[cur]) {
                 int w;
                 do {
