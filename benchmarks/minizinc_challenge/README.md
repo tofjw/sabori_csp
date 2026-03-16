@@ -31,7 +31,7 @@ benchmarks/minizinc_challenge_2025/
 cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
 
 # Sabori で実行
-./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" \
+./squashfs-root/usr/bin/minizinc --solver sabori_csp \
     mznc2025_probs/<problem>/<problem>.mzn \
     mznc2025_probs/<problem>/<data>.dzn
 
@@ -41,13 +41,13 @@ cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
     mznc2025_probs/<problem>/<data>.dzn
 
 # タイムアウト付き
-timeout 30 ./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" ...
+timeout 30 ./squashfs-root/usr/bin/minizinc --solver sabori_csp ...
 ```
 
 ### FlatZinc のみ生成（デバッグ用）
 
 ```bash
-./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" -c \
+./squashfs-root/usr/bin/minizinc --solver sabori_csp -c \
     mznc2025_probs/<problem>/<problem>.mzn \
     mznc2025_probs/<problem>/<data>.dzn \
     -o /tmp/output.fzn
@@ -62,7 +62,7 @@ timeout 30 ./squashfs-root/usr/bin/minizinc --solver "Sabori CSP" ...
 ```json
 {
   "id": "org.sabori.sabori_csp",
-  "name": "Sabori CSP",
+  "name": sabori_csp,
   "mznlib": "../sabori_csp",
   "executable": "/path/to/sabori_csp/build/src/fzn/fzn_sabori",
   ...
@@ -95,7 +95,7 @@ include "nosets.mzn";
 ## 注意事項
 
 1. **直接 fzn_sabori を実行しない** - redefinitions.mzn が適用されず、未サポート制約でエラーになる
-2. **ソルバー名は "Sabori CSP"** - `--solver sabori` ではなく `--solver "Sabori CSP"`
+2. **ソルバー名は sabori_csp** - `--solver sabori` ではなく `--solver sabori_csp`
 3. **作業ディレクトリ** - `benchmarks/minizinc_challenge_2025/` から実行すること
 
 ## ベンチマーク実行条件

@@ -48,7 +48,7 @@ cmake --build build
 Install the solver configuration so that MiniZinc can discover it, then run:
 
 ```bash
-minizinc --solver "Sabori CSP" model.mzn data.dzn
+minizinc --solver sabori_csp model.mzn data.dzn
 ```
 
 ## Testing

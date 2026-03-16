@@ -94,7 +94,7 @@ def main():
 
     solvers = []
     if args.solver in ('sabori', 'both'):
-        solvers.append(('Sabori', 'Sabori CSP'))
+        solvers.append(('Sabori', 'sabori_csp'))
     if args.solver in ('cpsat', 'both'):
         solvers.append(('CP-SAT', 'cp-sat'))
 
