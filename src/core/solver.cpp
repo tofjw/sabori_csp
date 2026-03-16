@@ -779,10 +779,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
-    {
-        std::uniform_real_distribution<double> jitter(0.9, 1.0);
-        activity_[frame.var_idx] += activity_inc_ * jitter(rng_);
-    }
+    activity_[frame.var_idx] += activity_inc_;
     temporal_activity_[frame.var_idx]++;
 
     stats_.fail_count++;
