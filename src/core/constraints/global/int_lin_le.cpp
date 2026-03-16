@@ -268,6 +268,21 @@ bool IntLinLeConstraint::propagate_bounds(Model& model, size_t skip_idx) {
     int64_t slack = bound_ - current_fixed_sum_;
     // slack >= min_rem_potential_ is guaranteed (checked before calling)
 
+    // Entailment check: if max possible remaining sum <= slack, constraint is
+    // satisfied regardless of future assignments — skip propagation entirely.
+    {
+        int64_t max_rem = 0;
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            size_t vid = var_ids_[j];
+            if (model.is_instantiated(vid)) continue;
+            int64_t c = coeffs_[j];
+            max_rem += (c >= 0) ? c * model.var_max(vid) : c * model.var_min(vid);
+            if (max_rem > slack) goto not_entailed;
+        }
+        return true;  // Entailed
+    }
+not_entailed:
+
     for (size_t j = 0; j < var_ids_.size(); ++j) {
         if (j == skip_idx) continue;
         size_t vid = var_ids_[j];
