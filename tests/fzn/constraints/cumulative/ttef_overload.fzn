@@ -1,0 +1,43 @@
+% TTEF overload: 3 tasks with total energy > capacity × span, but no mandatory parts
+% Task 1: start in [0,2], dur=3, req=2  (energy=6, mandatory part only if lst<ect: lst=2, ect=3 → [2,3) req=2)
+% Task 2: start in [0,2], dur=3, req=2  (same)
+% Task 3: start in [0,2], dur=3, req=2  (same)
+% Capacity = 3, span [0,5), area = 15
+% Total energy = 18 > 15 → UNSAT
+% TimeTabling: mandatory profile peak = 6 at [2,3) which exceeds cap=3 → actually TT catches this too
+%
+% Better: tasks with NO mandatory parts at all
+% Task 1: start in [0,3], dur=3, req=2  (lst=3, ect=3, lst=ect → no mandatory part)
+% Task 2: start in [0,3], dur=3, req=2
+% Task 3: start in [0,3], dur=3, req=2
+% Capacity = 3, LCT_max = 6, EST_min = 0, span [0,6), area = 18
+% Total energy = 18, tt_energy = 0, free = 18
+% extra_theta = 18 - 0 = 18, free = 18 → just fits, no overload
+%
+% Make it tighter:
+% Task 1: start in [0,2], dur=4, req=2  (lst=2, ect=4 → mandatory [2,4) req=2)
+% Task 2: start in [0,2], dur=4, req=2
+% Task 3: start in [0,2], dur=4, req=2
+% Capacity = 3
+% mandatory profile: [2,4) usage=6 > 3 → TT catches this
+%
+% Use tasks where mandatory parts don't overlap but energy overloads:
+% Task 1: start in [0,4], dur=3, req=2  (no mandatory: lst=4 >= ect=3)
+% Task 2: start in [0,4], dur=3, req=2
+% Task 3: start in [0,4], dur=3, req=2
+% Capacity = 2
+% LCT_max = 7, EST_min = 0, span [0,7), area = 14
+% Total energy = 18 > 14 → UNSAT by energy
+% TT: no mandatory parts → no pruning
+var 0..4: s1 :: output_var;
+var 0..4: s2 :: output_var;
+var 0..4: s3 :: output_var;
+var 3..3: d1;
+var 3..3: d2;
+var 3..3: d3;
+var 2..2: r1;
+var 2..2: r2;
+var 2..2: r3;
+var 2..2: cap;
+constraint fzn_cumulative([s1, s2, s3], [d1, d2, d3], [r1, r2, r3], cap);
+solve satisfy;

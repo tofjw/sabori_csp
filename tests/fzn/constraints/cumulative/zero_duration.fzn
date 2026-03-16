@@ -1,0 +1,16 @@
+% Task with duration=0 should not consume resources
+% Task 1: dur=3, req=2; Task 2: dur=0, req=2; Task 3: dur=3, req=2
+% Capacity = 3
+% Task 2 has dur=0 so it doesn't matter, tasks 1 and 3 cannot overlap
+var 0..3: s1 :: output_var;
+var 0..3: s2 :: output_var;
+var 0..3: s3 :: output_var;
+var 3..3: d1;
+var 0..0: d2;
+var 3..3: d3;
+var 2..2: r1;
+var 2..2: r2;
+var 2..2: r3;
+var 3..3: cap;
+constraint fzn_cumulative([s1, s2, s3], [d1, d2, d3], [r1, r2, r3], cap);
+solve satisfy;

@@ -1,0 +1,16 @@
+% Adjacent tasks: task 1 ends exactly when task 2 starts
+% Task 1: start=0, dur=3, req=1; Task 2: start=3, dur=2, req=1
+% Capacity = 1
+% Half-open intervals: task1=[0,3), task2=[3,5) → no overlap, usage never exceeds 1
+% Regression test for sweep-line event ordering bug in on_final_instantiate:
+% if start events (+delta) are processed before end events (-delta) at the same
+% time point, usage temporarily exceeds capacity causing a false UNSAT.
+var 0..0: s1 :: output_var;
+var 3..3: s2 :: output_var;
+var 3..3: d1;
+var 2..2: d2;
+var 1..1: r1;
+var 1..1: r2;
+var 1..1: cap;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve satisfy;

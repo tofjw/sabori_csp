@@ -1,0 +1,15 @@
+% Variable capacity: capacity is not fixed, solver must choose it
+% Task 1: start=0, dur=3, req=2
+% Task 2: start=0, dur=3, req=2
+% Capacity is variable [3..10] — should be feasible (cap >= 4)
+% Bug: using var_min(cap) = 3 for overload check would give false UNSAT
+%   because mandatory profile peak = 4 > 3
+var 0..0: s1 :: output_var;
+var 0..0: s2 :: output_var;
+var 3..3: d1;
+var 3..3: d2;
+var 2..2: r1;
+var 2..2: r2;
+var 3..10: cap :: output_var;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve satisfy;

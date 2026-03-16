@@ -34,6 +34,7 @@ add_library(sabori_csp_core
   constraints/global/count_eq.cpp
   constraints/global/disjunctive.cpp
   constraints/global/diffn.cpp
+  constraints/global/cumulative.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC

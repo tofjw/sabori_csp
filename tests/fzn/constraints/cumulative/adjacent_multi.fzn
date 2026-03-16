@@ -1,0 +1,23 @@
+% Multiple tasks ending and starting at the same time point
+% Tasks 1,2 end at t=5; tasks 3,4 start at t=5
+% Each has req=3, capacity=5
+% At t=5: tasks 1,2 finish (half-open), tasks 3,4 start → usage = 3+3 = 6 > 5 if overlap
+% But half-open intervals mean no overlap at t=5 → max usage = max(3+3, 3+3) = 6 > 5
+% Wait: tasks 1+2 run [0,5) with req 3 each → usage=6 > cap=5. Need to fix.
+% Use req=2 each: tasks 1+2 at [0,5) usage=4, tasks 3+4 at [5,8) usage=4, both ≤ 5. SAT.
+% Regression: without the sweep-line fix, at t=5 the usage would spike to 4+4=8 > 5.
+var 0..0: s1 :: output_var;
+var 0..0: s2 :: output_var;
+var 5..5: s3 :: output_var;
+var 5..5: s4 :: output_var;
+var 5..5: d1;
+var 5..5: d2;
+var 3..3: d3;
+var 3..3: d4;
+var 2..2: r1;
+var 2..2: r2;
+var 2..2: r3;
+var 2..2: r4;
+var 4..4: cap;
+constraint fzn_cumulative([s1, s2, s3, s4], [d1, d2, d3, d4], [r1, r2, r3, r4], cap);
+solve satisfy;

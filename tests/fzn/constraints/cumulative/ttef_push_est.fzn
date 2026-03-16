@@ -1,0 +1,20 @@
+% TTEF EST push test: energy reasoning pushes task 3's start time
+% Task 1: start in [0,3], dur=3, req=1 (no mandatory part: lst=3 >= ect=3)
+% Task 2: start in [0,3], dur=3, req=1 (no mandatory part)
+% Task 3: start in [0,6], dur=2, req=1
+% Capacity = 1
+% Tasks 1+2 need 6 units of energy in [0,6) with capacity 1 → fills it entirely.
+% Task 3 cannot start before 6. TTEF detects this via energy reasoning.
+% TimeTabling has no mandatory parts, so it cannot prune anything.
+var 0..3: s1 :: output_var;
+var 0..3: s2 :: output_var;
+var 0..6: s3 :: output_var;
+var 3..3: d1;
+var 3..3: d2;
+var 2..2: d3;
+var 1..1: r1;
+var 1..1: r2;
+var 1..1: r3;
+var 1..1: cap;
+constraint fzn_cumulative([s1, s2, s3], [d1, d2, d3], [r1, r2, r3], cap);
+solve satisfy;

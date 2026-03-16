@@ -208,6 +208,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `count_eq` | `CountEqConstraint` | count(x[i] == target) = c |
 | `fzn_diffn` | `DiffnConstraint` | n個の矩形が互いに重ならない（strict） |
 | `fzn_diffn_nonstrict` | `DiffnConstraint` | n個の矩形が互いに重ならない（サイズ0許可） |
+| `fzn_cumulative` | `CumulativeConstraint` | リソース容量制約（スケジューリング） |
 
 #### table_int 制約
 

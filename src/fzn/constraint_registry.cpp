@@ -284,6 +284,17 @@ static std::optional<ConstraintPtr> make_diffn(const ConstraintDecl& decl, FznBu
         std::move(dx_vars), std::move(dy_vars), strict);
 }
 
+static std::optional<ConstraintPtr> make_cumulative(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 4) throw std::runtime_error("fzn_cumulative requires 4 arguments (starts, durations, requirements, capacity)");
+    auto starts = resolve_vars(decl.args[0], ctx);
+    auto durations = resolve_vars(decl.args[1], ctx);
+    auto requirements = resolve_vars(decl.args[2], ctx);
+    auto capacity = ctx.get_var(decl.args[3]);
+    return std::make_unique<CumulativeConstraint>(
+        std::move(starts), std::move(durations),
+        std::move(requirements), std::move(capacity));
+}
+
 static std::optional<ConstraintPtr> make_disjunctive(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error(decl.name + " requires 2 arguments (starts, durations)");
     auto starts = resolve_vars(decl.args[0], ctx);
@@ -753,6 +764,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("sabori_table_int", make_table_int);
     registry.register_constraint("fzn_diffn", make_diffn);
     registry.register_constraint("fzn_diffn_nonstrict", make_diffn);
+    registry.register_constraint("fzn_cumulative", make_cumulative);
     registry.register_constraint("fzn_disjunctive", make_disjunctive);
     registry.register_constraint("fzn_disjunctive_strict", make_disjunctive);
 

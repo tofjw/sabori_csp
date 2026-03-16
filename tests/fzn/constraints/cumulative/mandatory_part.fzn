@@ -1,0 +1,14 @@
+% Task 1 has mandatory part that pushes Task 2
+% Task 1: start in [1,3], dur=4, req=2 → mandatory part [3,5)
+% Task 2: start in [0,6], dur=2, req=2
+% Capacity = 3
+% Task 2 cannot start in [2,4] because mandatory part of task 1 would cause overload
+var 1..3: s1 :: output_var;
+var 0..6: s2 :: output_var;
+var 4..4: d1;
+var 2..2: d2;
+var 2..2: r1;
+var 2..2: r2;
+var 3..3: cap;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve satisfy;

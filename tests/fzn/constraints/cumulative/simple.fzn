@@ -1,0 +1,11 @@
+% 2 tasks, capacity=1 (disjunctive-equivalent)
+% Task 1: dur=2, req=1; Task 2: dur=3, req=1
+var 0..5: s1 :: output_var;
+var 0..5: s2 :: output_var;
+var 2..2: d1;
+var 3..3: d2;
+var 1..1: r1;
+var 1..1: r2;
+var 1..1: cap;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve satisfy;

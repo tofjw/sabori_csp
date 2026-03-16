@@ -1,6 +1,7 @@
 #include "sabori_csp/fzn/model.hpp"
 #include "sabori_csp/solver.hpp"
 #include "sabori_csp/model_simplifier.hpp"
+#include "sabori_csp/constraints/global.hpp"
 #include "fzn_parser.hpp"
 #include <iostream>
 #include <string>
@@ -44,7 +45,7 @@ bool g_no_elimination = false;
 bool g_community_analysis = false;
 bool g_use_gac = false;
 
-void print_stats(const sabori_csp::Solver& solver) {
+void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* model = nullptr) {
     if (!g_print_stats) return;
     const auto& s = solver.stats();
     std::cerr << "% Stats: fails=" << s.fail_count
@@ -94,6 +95,23 @@ void print_stats(const sabori_csp::Solver& solver) {
                 std::cerr << std::setw(14) << "-";
             }
             std::cerr << "\n";
+        }
+    }
+
+    // Per-engine cumulative stats
+    if (model) {
+        for (const auto& c : model->constraints()) {
+            auto* cum = dynamic_cast<sabori_csp::CumulativeConstraint*>(c.get());
+            if (!cum) continue;
+            auto names = cum->engine_names();
+            const auto& estats = cum->engine_stats();
+            for (size_t i = 0; i < names.size(); ++i) {
+                std::cerr << "% Cumulative engine: " << names[i]
+                          << " calls=" << estats[i].call_count
+                          << " reductions=" << estats[i].reduction_count
+                          << " contradictions=" << estats[i].contradiction_count
+                          << "\n";
+            }
         }
     }
 }
@@ -203,7 +221,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
             return true;
         });
 
-        print_stats(solver);
+        print_stats(solver, model.get());
         if (count == 0) {
             if (solver.is_stopped()) {
                 std::cout << "=====UNKNOWN=====\n";
@@ -215,7 +233,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
         }
     } else {
         auto sol = solver.solve(*model);
-        print_stats(solver);
+        print_stats(solver, model.get());
         if (sol) {
             print_solution(*sol, fzn_model);
             std::cout << "==========\n";
@@ -266,7 +284,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
             return true;
         });
 
-    print_stats(solver);
+    print_stats(solver, model.get());
 
     if (!found_any) {
         if (solver.is_stopped()) {

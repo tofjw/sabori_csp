@@ -1744,6 +1744,183 @@ private:
     bool propagate_pairwise_direct(Model& model);
 };
 
+// ============================================================================
+// Cumulative constraint
+// ============================================================================
+
+/**
+ * @brief Cumulative propagator の統計情報
+ */
+struct CumulativeEngineStats {
+    size_t call_count = 0;
+    size_t reduction_count = 0;
+    size_t contradiction_count = 0;
+};
+
+/**
+ * @brief Cumulative propagator の抽象基底クラス
+ *
+ * 各種伝播アルゴリズム（Time-Tabling, Edge-Finding等）を
+ * 独立した戦略として実装するためのインターフェース。
+ */
+class CumulativePropagator {
+public:
+    virtual ~CumulativePropagator() = default;
+
+    /** @brief エンジン名を返す */
+    virtual std::string engine_name() const = 0;
+
+    /** @brief presolve 時の伝播 */
+    virtual PresolveResult propagate_presolve(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) = 0;
+
+    /** @brief 探索時の伝播 */
+    virtual bool propagate_search(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) = 0;
+};
+
+/**
+ * @brief Profile-based sweep-line time-tabling propagator
+ *
+ * Mandatory part を用いた resource profile を構築し、
+ * 過負荷チェックと開始時刻のプルーニングを行う。
+ */
+class TimeTablingPropagator : public CumulativePropagator {
+public:
+    std::string engine_name() const override { return "TimeTabling"; }
+
+    PresolveResult propagate_presolve(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) override;
+
+    bool propagate_search(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) override;
+
+private:
+    /** @brief profile イベント */
+    struct Event {
+        int64_t time;
+        int64_t delta;  // +req or -req
+    };
+
+    /**
+     * @brief 共通の伝播ロジック
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, size_t n,
+                        const std::vector<size_t>& var_ids,
+                        bool direct, bool& changed);
+};
+
+/**
+ * @brief Time-Table Edge-Finding propagator (Vilím 2011)
+ *
+ * TimeTabling の mandatory profile に加え、エネルギー推論で
+ * 早期に枝刈りする。Forward pass で EST を引き上げ、
+ * backward pass で LST を引き下げる。
+ */
+class TTEFPropagator : public CumulativePropagator {
+public:
+    std::string engine_name() const override { return "TTEF"; }
+
+    PresolveResult propagate_presolve(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) override;
+
+    bool propagate_search(
+        Model& model, size_t n, const std::vector<size_t>& var_ids,
+        CumulativeEngineStats& stats) override;
+
+private:
+    struct TaskInfo {
+        size_t idx;        // original task index
+        int64_t est, lst, ect, lct;
+        int64_t dur, req, energy;
+    };
+
+    struct ProfileEntry {
+        int64_t time;
+        int64_t usage;
+    };
+
+    std::vector<TaskInfo> tasks_;
+    std::vector<ProfileEntry> profile_;
+    std::vector<int64_t> prefix_energy_;  // prefix sum for profile integral
+
+    bool propagate_impl(Model& model, size_t n,
+                        const std::vector<size_t>& var_ids,
+                        bool direct, bool& changed);
+
+    void build_tasks(const Model& model, size_t n,
+                     const std::vector<size_t>& var_ids);
+    void build_profile();
+    int64_t profile_integral(int64_t lo, int64_t hi) const;
+
+    bool forward_pass(Model& model, const std::vector<size_t>& var_ids,
+                      int64_t cap_max, bool direct, bool& changed);
+    bool backward_pass(Model& model, const std::vector<size_t>& var_ids,
+                       int64_t cap_max, bool direct, bool& changed);
+};
+
+/**
+ * @brief cumulative 制約: リソース容量制約
+ *
+ * n 個のタスクがあり、タスク i は時刻 start[i] から duration[i] の間、
+ * requirement[i] だけリソースを使用する。任意の時点でリソース使用量の
+ * 合計が capacity を超えないことを保証する。
+ *
+ * var_ids_ レイアウト: [s0..sn-1, d0..dn-1, r0..rn-1, capacity]
+ */
+class CumulativeConstraint : public Constraint {
+public:
+    CumulativeConstraint(std::vector<VariablePtr> starts,
+                         std::vector<VariablePtr> durations,
+                         std::vector<VariablePtr> requirements,
+                         VariablePtr capacity);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+
+    void rewind_to(int save_point) override;
+
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
+    /** @brief per-engine 統計を取得 */
+    const std::vector<CumulativeEngineStats>& engine_stats() const { return engine_stats_; }
+    /** @brief エンジン名のリストを取得 */
+    std::vector<std::string> engine_names() const;
+
+private:
+    size_t n_;  // タスク数
+
+    // Propagator エンジン
+    std::vector<std::unique_ptr<CumulativePropagator>> engines_;
+    std::vector<CumulativeEngineStats> engine_stats_;
+
+    /** @brief 全エンジンの伝播を実行 */
+    bool run_all_engines(Model& model);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

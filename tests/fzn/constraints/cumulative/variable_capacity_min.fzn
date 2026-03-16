@@ -1,0 +1,16 @@
+% Variable capacity with minimize: capacity lower bound should be tightened
+% Task 1: start in [0,0], dur=5, req=3
+% Task 2: start in [0,0], dur=5, req=2
+% Both fully overlap → usage = 5 at all times → cap >= 5
+% Capacity is variable [1..10], minimize cap → optimal cap = 5
+% Bug: using var_min(cap) = 1 for overload check would give false UNSAT
+%   because mandatory profile peak = 5 > 1
+var 0..0: s1 :: output_var;
+var 0..0: s2 :: output_var;
+var 5..5: d1;
+var 5..5: d2;
+var 3..3: r1;
+var 2..2: r2;
+var 1..10: cap :: output_var;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve minimize cap;

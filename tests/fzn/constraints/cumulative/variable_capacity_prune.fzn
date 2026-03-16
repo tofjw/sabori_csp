@@ -1,0 +1,16 @@
+% Variable capacity: pruning must use cap_max, not cap_min
+% Task 1: start in [0,2], dur=3, req=3 → mandatory part [2,3) with cap_min usage
+% Task 2: start in [0,4], dur=2, req=3
+% Capacity = [4..6]
+% With cap_max=6, task 2 can coexist with task 1's mandatory part (3+3=6 <= 6)
+% Bug: using cap_min=4 for pruning would incorrectly prune task 2 starts
+%   where overlap with task 1 mandatory part has usage 3+3=6 > 4
+var 0..2: s1 :: output_var;
+var 0..4: s2 :: output_var;
+var 3..3: d1;
+var 2..2: d2;
+var 3..3: r1;
+var 3..3: r2;
+var 4..6: cap :: output_var;
+constraint fzn_cumulative([s1, s2], [d1, d2], [r1, r2], cap);
+solve satisfy;
