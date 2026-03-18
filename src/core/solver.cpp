@@ -203,6 +203,13 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                     nogood_mgr_.add_solution_nogood(model, stats_.restart_count);
                     backtrack(model, root_point);
 
+                    // If still all assigned after backtrack, no decisions were undone
+                    // (presolve fully solved the problem) — no more solutions exist.
+                    if (var_selector_.all_assigned()) {
+                        sync_nogood_stats();
+                        return std::nullopt;
+                    }
+
                     if (!apply_unit_nogoods(model)) {
                         model.clear_pending_updates();
                         sync_nogood_stats();
@@ -221,6 +228,11 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                             model.clear_pending_updates();
                             nogood_mgr_.add_solution_nogood(model, stats_.restart_count);
                             backtrack(model, root_point);
+                            // If still all assigned after backtrack, no decisions to undo
+                            if (var_selector_.all_assigned()) {
+                                sync_nogood_stats();
+                                return std::nullopt;
+                            }
                             if (!apply_unit_nogoods(model)) {
                                 model.clear_pending_updates();
                                 sync_nogood_stats();
