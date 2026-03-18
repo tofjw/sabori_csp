@@ -1,0 +1,5 @@
+% int_div all solutions: x div 3 = z, x in 1..9
+var 1..9: x :: output_var;
+var 0..3: z :: output_var;
+constraint int_div(x, 3, z);
+solve satisfy;

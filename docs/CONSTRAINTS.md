@@ -21,6 +21,7 @@
 | 制約名 | クラス | 説明 |
 |--------|--------|------|
 | `int_times` | `IntTimesConstraint` | x * y = z |
+| `int_div` | `IntDivConstraint` | x div y = z (truncated division) |
 | `int_mod` | `IntModConstraint` | x mod y = z (truncated division) |
 | `int_abs` | `IntAbsConstraint` | \|x\| = y |
 
@@ -46,6 +47,32 @@ auto z = make_var("z", 1, 25);
 IntTimesConstraint c(x, y, z);
 
 // x=3, y=4 の場合 → z=12
+```
+
+#### int_div 制約
+
+整数除算制約 `x div y = z`。truncated division セマンティクス（C++ の `/` と同じ、0 方向への切り捨て）。
+
+**引数:**
+- `x`: 被除数
+- `y`: 除数（0 以外）
+- `z`: 商
+
+**伝播ロジック:**
+- y != 0 を強制
+- z の bounds は x / y の端点から計算
+- 2変数確定時: 残りの1変数のドメインをフィルタ
+- y, z 確定時: x の範囲を [z*y, z*y + |y|-1] (x>=0) または [z*y - |y|+1, z*y] (x<0) に制限
+
+**例:**
+```cpp
+auto x = make_var("x", -10, 10);
+auto y = make_var("y", 1, 5);
+auto z = make_var("z", -10, 10);
+IntDivConstraint c(x, y, z);
+
+// x=7, y=3 → z=2
+// x=-7, y=3 → z=-2
 ```
 
 #### int_mod 制約

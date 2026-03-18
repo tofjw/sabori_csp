@@ -175,6 +175,17 @@ static std::optional<ConstraintPtr> make_int_times(const ConstraintDecl& decl, F
     return std::make_unique<IntTimesConstraint>(x, y, z);
 }
 
+static std::optional<ConstraintPtr> make_int_div(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3) throw std::runtime_error("int_div requires 3 arguments (x, y, z)");
+    auto x = ctx.get_var(decl.args[0]);
+    auto y = ctx.get_var(decl.args[1]);
+    auto z = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(z->id())) {
+        ctx.model->set_defined_var(z->id());
+    }
+    return std::make_unique<IntDivConstraint>(x, y, z);
+}
+
 static std::optional<ConstraintPtr> make_int_mod(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 3) throw std::runtime_error("int_mod requires 3 arguments (x, y, z)");
     auto x = ctx.get_var(decl.args[0]);
@@ -741,6 +752,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("int_min", make_int_min);
     registry.register_constraint("int_max", make_int_max);
     registry.register_constraint("int_times", make_int_times);
+    registry.register_constraint("int_div", make_int_div);
     registry.register_constraint("int_mod", make_int_mod);
     registry.register_constraint("int_abs", make_int_abs);
 

@@ -1,0 +1,8 @@
+% int_div with negative divisor: 7 div -3 = -2
+var -10..10: x :: output_var;
+var -10..-1: y :: output_var;
+var -10..10: z :: output_var;
+constraint int_eq(x, 7);
+constraint int_eq(y, -3);
+constraint int_div(x, y, z);
+solve satisfy;
