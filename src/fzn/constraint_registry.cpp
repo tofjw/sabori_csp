@@ -295,6 +295,13 @@ static std::optional<ConstraintPtr> make_cumulative(const ConstraintDecl& decl, 
         std::move(requirements), std::move(capacity));
 }
 
+static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
+    auto f = resolve_vars(decl.args[0], ctx);
+    auto invf = resolve_vars(decl.args[1], ctx);
+    return std::make_unique<InverseConstraint>(std::move(f), std::move(invf));
+}
+
 static std::optional<ConstraintPtr> make_disjunctive(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error(decl.name + " requires 2 arguments (starts, durations)");
     auto starts = resolve_vars(decl.args[0], ctx);
@@ -767,6 +774,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_cumulative", make_cumulative);
     registry.register_constraint("fzn_disjunctive", make_disjunctive);
     registry.register_constraint("fzn_disjunctive_strict", make_disjunctive);
+    registry.register_constraint("fzn_inverse", make_inverse);
 
     // Pattern C: Linear + substitution
     registry.register_constraint("int_lin_eq", make_int_lin_eq);

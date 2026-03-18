@@ -15,6 +15,7 @@ include "fzn_disjunctive.mzn";
 include "fzn_disjunctive_strict.mzn";
 include "fzn_diffn.mzn";
 include "fzn_diffn_nonstrict.mzn";
+include "fzn_inverse.mzn";
 
 predicate int_lin_le_imp(array[int] of int: as, array[int] of var int: bs,
                          int: c, var bool: r);

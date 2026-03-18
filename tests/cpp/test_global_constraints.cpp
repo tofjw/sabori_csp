@@ -4173,3 +4173,112 @@ TEST_CASE("CountEqConstraint solver integration", "[constraint][count_eq]") {
         REQUIRE(count == 6);
     }
 }
+
+// ============================================================================
+// InverseConstraint tests
+// ============================================================================
+
+TEST_CASE("InverseConstraint name", "[constraint][inverse]") {
+    Model model;
+    auto* f1 = model.create_variable("f1", Domain(1, 2));
+    auto* f2 = model.create_variable("f2", Domain(1, 2));
+    auto* g1 = model.create_variable("g1", Domain(1, 2));
+    auto* g2 = model.create_variable("g2", Domain(1, 2));
+    InverseConstraint c({f1, f2}, {g1, g2});
+    REQUIRE(c.name() == "inverse");
+}
+
+TEST_CASE("InverseConstraint on_final_instantiate", "[constraint][inverse]") {
+    SECTION("valid inverse pair") {
+        Model model;
+        auto* f1 = model.create_variable("f1", Domain(2, 2));
+        auto* f2 = model.create_variable("f2", Domain(1, 1));
+        auto* g1 = model.create_variable("g1", Domain(2, 2));
+        auto* g2 = model.create_variable("g2", Domain(1, 1));
+        InverseConstraint c({f1, f2}, {g1, g2});
+        REQUIRE(c.on_final_instantiate(model) == true);
+    }
+
+    SECTION("invalid inverse pair") {
+        Model model;
+        auto* f1 = model.create_variable("f1", Domain(2, 2));
+        auto* f2 = model.create_variable("f2", Domain(1, 1));
+        auto* g1 = model.create_variable("g1", Domain(1, 1));
+        auto* g2 = model.create_variable("g2", Domain(2, 2));
+        InverseConstraint c({f1, f2}, {g1, g2});
+        REQUIRE(c.on_final_instantiate(model) == false);
+    }
+}
+
+TEST_CASE("InverseConstraint solver integration", "[constraint][inverse]") {
+    SECTION("3 variables - all solutions") {
+        Model model;
+        auto* f1 = model.create_variable("f1", Domain(1, 3));
+        auto* f2 = model.create_variable("f2", Domain(1, 3));
+        auto* f3 = model.create_variable("f3", Domain(1, 3));
+        auto* g1 = model.create_variable("g1", Domain(1, 3));
+        auto* g2 = model.create_variable("g2", Domain(1, 3));
+        auto* g3 = model.create_variable("g3", Domain(1, 3));
+        model.add_constraint(std::make_unique<InverseConstraint>(
+            std::vector<Variable*>{f1, f2, f3},
+            std::vector<Variable*>{g1, g2, g3}));
+
+        Solver solver;
+        std::vector<Solution> solutions;
+        size_t count = solver.solve_all(model, [&solutions](const Solution& sol) {
+            solutions.push_back(sol);
+            return true;
+        });
+
+        // 3! = 6 permutations, each is a valid inverse
+        REQUIRE(count == 6);
+
+        // Verify each solution satisfies f[i]=j <-> g[j]=i
+        for (const auto& sol : solutions) {
+            auto fv1 = sol.at("f1"), fv2 = sol.at("f2"), fv3 = sol.at("f3");
+            auto gv1 = sol.at("g1"), gv2 = sol.at("g2"), gv3 = sol.at("g3");
+            std::vector<int64_t> f = {fv1, fv2, fv3};
+            std::vector<int64_t> g = {gv1, gv2, gv3};
+            for (int i = 0; i < 3; ++i) {
+                REQUIRE(g[static_cast<size_t>(f[i] - 1)] == i + 1);
+                REQUIRE(f[static_cast<size_t>(g[i] - 1)] == i + 1);
+            }
+        }
+    }
+
+    SECTION("2 variables with partial assignment") {
+        Model model;
+        auto* f1 = model.create_variable("f1", Domain(2, 2));  // f[1] = 2 fixed
+        auto* f2 = model.create_variable("f2", Domain(1, 2));
+        auto* g1 = model.create_variable("g1", Domain(1, 2));
+        auto* g2 = model.create_variable("g2", Domain(1, 2));
+        model.add_constraint(std::make_unique<InverseConstraint>(
+            std::vector<Variable*>{f1, f2},
+            std::vector<Variable*>{g1, g2}));
+
+        Solver solver;
+        auto result = solver.solve(model);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->at("f1") == 2);
+        REQUIRE(result->at("f2") == 1);
+        REQUIRE(result->at("g1") == 2);
+        REQUIRE(result->at("g2") == 1);
+    }
+
+    SECTION("2 variables with partial assignment - solve_all") {
+        Model model;
+        auto* f1 = model.create_variable("f1", Domain(2, 2));
+        auto* f2 = model.create_variable("f2", Domain(1, 2));
+        auto* g1 = model.create_variable("g1", Domain(1, 2));
+        auto* g2 = model.create_variable("g2", Domain(1, 2));
+        model.add_constraint(std::make_unique<InverseConstraint>(
+            std::vector<Variable*>{f1, f2},
+            std::vector<Variable*>{g1, g2}));
+
+        Solver solver;
+        // restarts enabled by default — this was the infinite loop case
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 1);
+    }
+}

@@ -1921,6 +1921,50 @@ private:
     bool run_all_engines(Model& model);
 };
 
+// ============================================================================
+// Inverse constraint
+// ============================================================================
+
+/**
+ * @brief inverse 制約: f[i] = j <-> invf[j] = i
+ *
+ * f と invf は同サイズの配列で、互いに逆関数の関係を持つ。
+ * 暗黙的に f と invf は各々 all_different。
+ * FlatZinc では 1-indexed（値域は 1..n）。
+ *
+ * var_ids_ レイアウト: [f[0], ..., f[n-1], invf[0], ..., invf[n-1]]
+ */
+class InverseConstraint : public Constraint {
+public:
+    InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+
+    void rewind_to(int save_point) override;
+
+private:
+    size_t n_;           ///< 配列サイズ
+    int64_t offset_;     ///< FlatZinc 1-indexed → 0-indexed offset (通常 1)
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP
