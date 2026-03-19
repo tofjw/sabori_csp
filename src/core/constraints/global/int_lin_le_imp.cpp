@@ -219,9 +219,8 @@ void IntLinLeImpConstraint::rewind_to(int save_point) {
 bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合: b -> (0 <= bound)
     if (coeffs_.empty()) {
-        auto* bvar = model.variable(b_id_);
         // b = 1 で bound < 0 なら矛盾
-        if (bvar->is_assigned() && bvar->assigned_value().value() == 1 && bound_ < 0) {
+        if (model.is_instantiated(b_id_) && model.value(b_id_) == 1 && bound_ < 0) {
             return false;
         }
         return true;
@@ -234,10 +233,9 @@ bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
     size_t n_linear = coeffs_.size();
     for (size_t i = 0; i < n_linear; ++i) {
         int64_t c = coeffs_[i];
-        auto* var = model.variable(var_ids_[i]);
 
-        if (var->is_assigned()) {
-            current_fixed_sum_ += c * var->assigned_value().value();
+        if (model.is_instantiated(var_ids_[i])) {
+            current_fixed_sum_ += c * model.value(var_ids_[i]);
         } else {
             auto min_val = model.var_min(var_ids_[i]);
             auto max_val = model.var_max(var_ids_[i]);
@@ -257,8 +255,7 @@ bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
     trail_.clear();
 
     // 初期整合性チェック
-    auto* bvar = model.variable(b_id_);
-    if (bvar->is_assigned() && bvar->assigned_value().value() == 1) {
+    if (model.is_instantiated(b_id_) && model.value(b_id_) == 1) {
         if (current_fixed_sum_ + min_rem_potential_ > bound_) {
             return false;
         }

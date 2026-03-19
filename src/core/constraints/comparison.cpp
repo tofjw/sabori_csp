@@ -176,20 +176,20 @@ bool IntEqReifConstraint::prepare_propagation(Model& model) {
 }
 
 bool IntEqReifConstraint::find_new_support(const Model& model) {
-    // 小さい方のドメインを走査して、もう片方に contains() で存在確認
+    // 小さい方のドメインを走査して、もう片方に model.contains() で存在確認
     const auto& x_dom = model.variable(x_id_)->domain();
     const auto& y_dom = model.variable(y_id_)->domain();
     bool found = false;
     if (x_dom.size() <= y_dom.size()) {
         x_dom.for_each_value([&](Domain::value_type v) {
-            if (!found && y_dom.contains(v)) {
+            if (!found && model.contains(y_id_, v)) {
                 support_value_ = v;
                 found = true;
             }
         });
     } else {
         y_dom.for_each_value([&](Domain::value_type v) {
-            if (!found && x_dom.contains(v)) {
+            if (!found && model.contains(x_id_, v)) {
                 support_value_ = v;
                 found = true;
             }
@@ -342,10 +342,19 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    // x と y が両方確定したら b を決定
-    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(b_id_)) {
-        bool eq = (model.value(x_id_) == model.value(y_id_));
-        model.enqueue_instantiate(b_id_, eq ? 1 : 0);
+    // b が未確定の場合: x or y の確定で b を決定できるか
+    if (!model.is_instantiated(b_id_)) {
+        if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+            // 両方確定 → b を即決定
+            bool eq = (model.value(x_id_) == model.value(y_id_));
+            model.enqueue_instantiate(b_id_, eq ? 1 : 0);
+        } else if (model.is_instantiated(x_id_) && !model.contains(y_id_, model.value(x_id_))) {
+            // x 確定、y に x の値がない → b = 0
+            model.enqueue_instantiate(b_id_, 0);
+        } else if (model.is_instantiated(y_id_) && !model.contains(x_id_, model.value(y_id_))) {
+            // y 確定、x に y の値がない → b = 0
+            model.enqueue_instantiate(b_id_, 0);
+        }
     }
 
     return true;
@@ -731,7 +740,7 @@ bool IntNeReifConstraint::prepare_propagation(Model& model) {
             // x == y を満たす共通値が必要
             bool has_common = false;
             model.variable(x_id_)->domain().for_each_value([&](Domain::value_type v) {
-                if (!has_common && model.variable(y_id_)->domain().contains(v)) {
+                if (!has_common && model.contains(y_id_, v)) {
                     has_common = true;
                 }
             });
@@ -888,10 +897,19 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    // x と y が両方確定したら b を決定
-    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(b_id_)) {
-        bool ne = (model.value(x_id_) != model.value(y_id_));
-        model.enqueue_instantiate(b_id_, ne ? 1 : 0);
+    // b が未確定の場合: x or y の確定で b を決定できるか
+    if (!model.is_instantiated(b_id_)) {
+        if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+            // 両方確定 → b を即決定
+            bool ne = (model.value(x_id_) != model.value(y_id_));
+            model.enqueue_instantiate(b_id_, ne ? 1 : 0);
+        } else if (model.is_instantiated(x_id_) && !model.contains(y_id_, model.value(x_id_))) {
+            // x 確定、y に x の値がない → 必ず x != y → b = 1
+            model.enqueue_instantiate(b_id_, 1);
+        } else if (model.is_instantiated(y_id_) && !model.contains(x_id_, model.value(y_id_))) {
+            // y 確定、x に y の値がない → 必ず x != y → b = 1
+            model.enqueue_instantiate(b_id_, 1);
+        }
     }
 
     return true;

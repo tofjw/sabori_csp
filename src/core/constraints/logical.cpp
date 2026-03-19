@@ -886,11 +886,13 @@ bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point
         last_lit = it->second;
     }
 
-    if (last_lit != SIZE_MAX) {
+    if (last_lit != SIZE_MAX && can_satisfy(model, last_lit)) {
         model.enqueue_instantiate(last_var_id, satisfying_value(last_lit));
+        return true;
     }
 
-    return true;
+    // 最後の変数でも充足できない → 矛盾
+    return false;
 }
 
 bool BoolClauseConstraint::can_satisfy(const Model& model, size_t lit_idx) const {

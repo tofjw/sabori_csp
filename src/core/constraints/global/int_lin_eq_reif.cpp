@@ -237,15 +237,12 @@ void IntLinEqReifConstraint::rewind_to(int save_point) {
 bool IntLinEqReifConstraint::prepare_propagation(Model& model) {
     // 全ての係数が0の場合の特別処理
     if (coeffs_.empty()) {
-        auto* bvar = model.variable(b_id_);
         bool trivially_true = (target_ == 0);
-        if (bvar->is_assigned()) {
-            bool b_val = (bvar->assigned_value().value() == 1);
+        if (model.is_instantiated(b_id_)) {
+            bool b_val = (model.value(b_id_) == 1);
             if (b_val != trivially_true) {
                 return false;  // 矛盾
             }
-        } else {
-            bvar->assign(trivially_true ? 1 : 0);
         }
         return true;
     }
@@ -260,10 +257,9 @@ bool IntLinEqReifConstraint::prepare_propagation(Model& model) {
     size_t n_linear = coeffs_.size();
     for (size_t i = 0; i < n_linear; ++i) {
         int64_t c = coeffs_[i];
-        auto* var = model.variable(var_ids_[i]);
 
-        if (var->is_assigned()) {
-            current_fixed_sum_ += c * var->assigned_value().value();
+        if (model.is_instantiated(var_ids_[i])) {
+            current_fixed_sum_ += c * model.value(var_ids_[i]);
         } else {
             ++unfixed_count_;
             auto min_val = model.var_min(var_ids_[i]);
@@ -289,9 +285,8 @@ bool IntLinEqReifConstraint::prepare_propagation(Model& model) {
     int64_t min_sum = current_fixed_sum_ + min_rem_potential_;
     int64_t max_sum = current_fixed_sum_ + max_rem_potential_;
 
-    auto* bvar = model.variable(b_id_);
-    if (bvar->is_assigned()) {
-        if (bvar->assigned_value().value() == 1) {
+    if (model.is_instantiated(b_id_)) {
+        if (model.value(b_id_) == 1) {
             // sum == target が必要
             if (target_ < min_sum || target_ > max_sum) {
                 return false;  // 矛盾

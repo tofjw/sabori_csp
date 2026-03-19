@@ -864,7 +864,7 @@ public:
                          size_t var_idx, size_t internal_var_idx,
                          Domain::value_type removed_value) override;
 
-    void rewind_to(int save_point);
+    void rewind_to(int save_point) override;
 
 protected:
 
@@ -1143,7 +1143,7 @@ public:
     /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
-    void rewind_to(int save_point);
+    void rewind_to(int save_point) override;
 
 protected:
 
@@ -1241,7 +1241,7 @@ public:
     /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
-    void rewind_to(int save_point);
+    void rewind_to(int save_point) override;
 
 protected:
 

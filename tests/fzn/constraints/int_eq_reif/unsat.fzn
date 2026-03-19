@@ -1,0 +1,6 @@
+% int_eq_reif: UNSAT when b=true but domains are disjoint
+var 1..2: x :: output_var;
+var 3..4: y :: output_var;
+var bool: b = true;
+constraint int_eq_reif(x, y, b);
+solve satisfy;

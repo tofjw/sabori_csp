@@ -1,0 +1,6 @@
+% int_eq_reif: b=false forces x != y
+var 1..3: x :: output_var;
+var 1..3: y :: output_var;
+var bool: b = false;
+constraint int_eq_reif(x, y, b);
+solve satisfy;
