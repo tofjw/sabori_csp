@@ -367,6 +367,7 @@ bool TTEFPropagator::forward_pass(
             // Energy of task j in [L, R) when starting at est_j
             int64_t overlap = std::min(R, tj.ect) - std::max(L, tj.est);
             if (overlap <= 0) continue;
+            overlap = std::min(overlap, tj.dur);
             int64_t energy_j_in_LR = tj.req * overlap;
 
             // Subtract mandatory contribution already in profile
