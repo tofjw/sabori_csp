@@ -1,0 +1,9 @@
+% Hall pair test: x1, x2 both have {1, 2} → Hall pair
+% x3 has {1, 2, 3} → must take 3 (1 and 2 pruned by Hall pair)
+% x4 has {3, 4} → must take 4
+var {1, 2}: x1 :: output_var;
+var {1, 2}: x2 :: output_var;
+var {1, 2, 3}: x3 :: output_var;
+var {3, 4}: x4 :: output_var;
+constraint fzn_alldifferent_except_0([x1, x2, x3, x4]);
+solve :: int_search([x1, x2, x3, x4], input_order, indomain_min) satisfy;

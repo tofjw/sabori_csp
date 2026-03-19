@@ -1,0 +1,8 @@
+% {0, 1} is NOT a Hall pair because 0 is repeatable
+% x1, x2, x3 all have {0, 1} → valid: multiple vars can take 0
+% Should have solutions where multiple vars are 0
+var {0, 1}: x1 :: output_var;
+var {0, 1}: x2 :: output_var;
+var {0, 1}: x3 :: output_var;
+constraint fzn_alldifferent_except_0([x1, x2, x3]);
+solve :: int_search([x1, x2, x3], input_order, indomain_min) satisfy;

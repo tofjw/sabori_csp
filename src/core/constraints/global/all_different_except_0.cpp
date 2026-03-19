@@ -93,6 +93,7 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
             // 値0の場合はプール操作をスキップ
         } else {
             ++unfixed_count_;
+            model.set_no_bisect(var_ids_[i]);
         }
     }
 
@@ -210,7 +211,13 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
     pool_sparse_[value] = last_idx;
     --pool_n_;
 
-    // 鳩の巣原理は適用不可（unfixed変数は0を取れるため）
+    // 確定した非0値を他の未確定変数のドメインから削除
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto vid = var_ids_[i];
+        if (!model.is_instantiated(vid) && model.contains(vid, value)) {
+            model.enqueue_remove_value(vid, value);
+        }
+    }
 
     if (unfixed_count_ <= 1) {
         size_t last_var_idx = SIZE_MAX;
@@ -287,6 +294,111 @@ void AllDifferentExcept0Constraint::rewind_to(int save_point) {
         unfixed_count_ = entry.old_unfixed_count;
         pool_trail_.pop_back();
     }
+}
+
+bool AllDifferentExcept0Constraint::check_hall_pair(Model& model, size_t trigger_var_idx) {
+    auto& vd = model.var_data(trigger_var_idx);
+    if (vd.size != 2) return true;
+
+    auto v1 = vd.min;
+    auto v2 = vd.max;
+
+    // 0を含むドメインは Hall pair 候補としない（0は重複可能）
+    if (v1 == 0 || v2 == 0) return true;
+
+    // 同じ {v1, v2} ドメインを持つ未確定変数を数える
+    size_t match_count = 0;
+    for (size_t i = 0; i < var_ids_.size(); ++i) {
+        auto vid = var_ids_[i];
+        if (model.is_instantiated(vid)) continue;
+        auto& d = model.var_data(vid);
+        if (d.size == 2 && d.min == v1 && d.max == v2) {
+            ++match_count;
+        }
+    }
+
+    if (match_count >= 3) {
+        return false;
+    }
+
+    if (match_count == 2) {
+        // 残りの変数から v1, v2 を削除
+        for (size_t i = 0; i < var_ids_.size(); ++i) {
+            auto vid = var_ids_[i];
+            if (model.is_instantiated(vid)) continue;
+            auto& d = model.var_data(vid);
+            if (d.size == 2 && d.min == v1 && d.max == v2) continue;
+            if (model.contains(vid, v1)) {
+                model.enqueue_remove_value(vid, v1);
+            }
+            if (model.contains(vid, v2)) {
+                model.enqueue_remove_value(vid, v2);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool AllDifferentExcept0Constraint::on_remove_value(Model& model, int save_point,
+                                                     size_t var_idx, size_t internal_var_idx,
+                                                     Domain::value_type removed_value) {
+    return check_hall_pair(model, var_idx);
+}
+
+bool AllDifferentExcept0Constraint::on_set_min(Model& model, int save_point,
+                                                size_t var_idx, size_t internal_var_idx,
+                                                Domain::value_type new_min,
+                                                Domain::value_type old_min) {
+    return check_hall_pair(model, var_idx);
+}
+
+bool AllDifferentExcept0Constraint::on_set_max(Model& model, int save_point,
+                                                size_t var_idx, size_t internal_var_idx,
+                                                Domain::value_type new_max,
+                                                Domain::value_type old_max) {
+    return check_hall_pair(model, var_idx);
+}
+
+void AllDifferentExcept0Constraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                                   double* activity, double activity_inc,
+                                                   bool& need_rescale, std::mt19937& rng) const {
+    // trigger 変数が instantiated でなければデフォルト
+    if (!model.is_instantiated(trigger_var_idx)) {
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+        return;
+    }
+
+    auto val = model.value(trigger_var_idx);
+
+    // 値が0の場合はデフォルト動作（0は重複可能）
+    if (val == 0) {
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+        return;
+    }
+
+    auto it = pool_sparse_.find(val);
+
+    // 値重複: val が既にプール外 → 同じ値を持つ変数のみ bump
+    if (it != pool_sparse_.end() && it->second >= pool_n_) {
+        size_t count = 0;
+        for (size_t vid : var_ids_) {
+            if (model.is_instantiated(vid) && model.value(vid) == val) {
+                ++count;
+            }
+        }
+        if (count == 0) count = 1;
+        double inc = activity_inc / count;
+        for (size_t vid : var_ids_) {
+            if (model.is_instantiated(vid) && model.value(vid) == val) {
+                bump_variable_activity(activity, vid, inc, need_rescale, rng);
+            }
+        }
+        return;
+    }
+
+    // デフォルト動作
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
 }
 
 }  // namespace sabori_csp

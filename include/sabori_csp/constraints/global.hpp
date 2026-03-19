@@ -134,12 +134,31 @@ public:
     bool on_final_instantiate(const Model& model) override;
     bool on_last_uninstantiated(Model& model, int save_point,
                                  size_t last_var_internal_idx) override;
+
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
     void rewind_to(int save_point);
+
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
 
 protected:
 
 
 private:
+    bool check_hall_pair(Model& model, size_t trigger_var_idx);
+
     std::vector<Domain::value_type> pool_values_;
     std::unordered_map<Domain::value_type, size_t> pool_sparse_;
     size_t pool_n_;

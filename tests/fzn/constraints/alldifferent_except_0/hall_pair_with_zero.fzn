@@ -1,0 +1,8 @@
+% Hall pair with zero: x1, x2 have {1, 2} → Hall pair (non-zero)
+% x3 has {0, 1, 2, 3} → 1,2 pruned by Hall pair → {0, 3}
+% All solutions should have x3 in {0, 3}
+var {1, 2}: x1 :: output_var;
+var {1, 2}: x2 :: output_var;
+var {0, 1, 2, 3}: x3 :: output_var;
+constraint fzn_alldifferent_except_0([x1, x2, x3]);
+solve :: int_search([x1, x2, x3], input_order, indomain_min) satisfy;
