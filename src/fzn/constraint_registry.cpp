@@ -313,6 +313,31 @@ static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, Fzn
     return std::make_unique<InverseConstraint>(std::move(f), std::move(invf));
 }
 
+static std::optional<ConstraintPtr> make_all_equal(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 1) throw std::runtime_error("fzn_all_equal_int requires 1 argument (array)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    if (vars.size() <= 1) return std::nullopt;
+
+    // is_defined_var heuristic: 1つだけ残して残りを is_defined_var にする
+    // まず既に is_defined_var でない変数を探す
+    size_t kept = vars.size(); // 残す変数のインデックス（未定）
+    for (size_t i = 0; i < vars.size(); ++i) {
+        if (!ctx.model->is_defined_var(vars[i]->id())) {
+            if (kept == vars.size()) {
+                kept = i;  // 最初の非defined変数を残す
+            } else {
+                ctx.model->set_defined_var(vars[i]->id());
+            }
+        }
+    }
+
+    // int_eq のチェインに分解: vars[0]=vars[1], vars[0]=vars[2], ...
+    for (size_t i = 1; i < vars.size(); ++i) {
+        ctx.model->add_constraint(std::make_unique<IntEqConstraint>(vars[0], vars[i]));
+    }
+    return std::nullopt;  // 全て add_constraint で追加済み
+}
+
 static std::optional<ConstraintPtr> make_disjunctive(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error(decl.name + " requires 2 arguments (starts, durations)");
     auto starts = resolve_vars(decl.args[0], ctx);
@@ -787,6 +812,8 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_disjunctive", make_disjunctive);
     registry.register_constraint("fzn_disjunctive_strict", make_disjunctive);
     registry.register_constraint("fzn_inverse", make_inverse);
+    registry.register_constraint("fzn_all_equal_int", make_all_equal);
+    registry.register_constraint("all_equal_int", make_all_equal);
 
     // Pattern C: Linear + substitution
     registry.register_constraint("int_lin_eq", make_int_lin_eq);

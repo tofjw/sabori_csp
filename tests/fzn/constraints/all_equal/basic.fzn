@@ -1,0 +1,5 @@
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: z :: output_var;
+constraint fzn_all_equal_int([x, y, z]);
+solve satisfy;
