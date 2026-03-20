@@ -639,6 +639,43 @@ PresolveResult IntDivConstraint::presolve(Model& model) {
         }
     }
 
+    // x, z 確定 → y のドメインをフィルタ
+    if (model.variable(x_id_)->is_assigned() && model.variable(z_id_)->is_assigned()
+        && !model.variable(y_id_)->is_assigned()) {
+        auto x_val = model.variable(x_id_)->assigned_value().value();
+        auto z_val = model.variable(z_id_)->assigned_value().value();
+        auto y_var = model.variable(y_id_);
+        // 削除対象を先に収集（イテレーション中の remove を避ける）
+        std::vector<Domain::value_type> to_remove;
+        for (auto it = y_var->domain().begin(); it != y_var->domain().end(); ++it) {
+            if (*it == 0 || x_val / *it != z_val) {
+                to_remove.push_back(*it);
+            }
+        }
+        for (auto v : to_remove) {
+            if (!y_var->remove(v)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+    }
+
+    // y, z 確定 → x のドメインをフィルタ
+    if (model.variable(y_id_)->is_assigned() && model.variable(z_id_)->is_assigned()
+        && !model.variable(x_id_)->is_assigned()) {
+        auto y_val = model.variable(y_id_)->assigned_value().value();
+        auto z_val = model.variable(z_id_)->assigned_value().value();
+        if (y_val == 0) return PresolveResult::Contradiction;
+        auto [x_lo, x_hi] = compute_x_range(z_val, y_val);
+        auto x_var = model.variable(x_id_);
+        if (x_var->min() < x_lo) {
+            if (!x_var->remove_below(x_lo)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+        if (x_var->max() > x_hi) {
+            if (!x_var->remove_above(x_hi)) return PresolveResult::Contradiction;
+            changed = true;
+        }
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
@@ -724,6 +761,67 @@ bool IntDivConstraint::propagate_bounds(Model& model) {
         }
         model.enqueue_set_min(x_id_, x_lo);
         model.enqueue_set_max(x_id_, x_hi);
+    }
+
+    // Backward: y の bounds を計算（z が確定している場合のみ）
+    // x / y = z, z ≠ 0 のとき:
+    //   z > 0, y > 0: x/(z+1) < y ≤ x/z  → y_lo = floor(x_min/(z+1))+1, y_hi = floor(x_max/z)
+    //   z > 0, y < 0: 同様に |y| で計算し符号反転
+    // x が正負に跨る場合は正側・負側で y の符号が異なるため、
+    // 両方の範囲の outer bounds（和集合の外接）を使う
+    if (z_min_cur == z_max_cur && z_min_cur != 0) {
+        auto zv = z_min_cur;
+        auto az = std::abs(zv);
+        Domain::value_type y_lo_all = y_max, y_hi_all = y_min;  // will be overwritten
+        bool has_range = false;
+
+        auto merge_y_range = [&](Domain::value_type yl, Domain::value_type yh) {
+            if (!has_range) {
+                y_lo_all = yl;
+                y_hi_all = yh;
+                has_range = true;
+            } else {
+                y_lo_all = std::min(y_lo_all, yl);
+                y_hi_all = std::max(y_hi_all, yh);
+            }
+        };
+
+        // x > 0 の部分: y は z と同符号
+        if (x_max > 0) {
+            // x > 0 の範囲: [max(x_min,1), x_max]
+            auto ax_lo = std::max(x_min, static_cast<Domain::value_type>(1));
+            auto ax_hi = x_max;
+            auto abs_y_lo = ax_lo / (az + 1) + 1;
+            auto abs_y_hi = ax_hi / az;
+            if (abs_y_lo <= abs_y_hi) {
+                if (zv > 0) {
+                    merge_y_range(abs_y_lo, abs_y_hi);
+                } else {
+                    merge_y_range(-abs_y_hi, -abs_y_lo);
+                }
+            }
+        }
+        // x < 0 の部分: y は z と異符号
+        if (x_min < 0) {
+            // |x| の範囲 (x < 0): [1, |x_min|]  (x_max >= 0 なら min |x| = 1)
+            auto ax_lo = (x_max >= 0) ? static_cast<Domain::value_type>(1)
+                                       : static_cast<Domain::value_type>(-x_max);
+            auto ax_hi = -x_min;
+            auto abs_y_lo = ax_lo / (az + 1) + 1;
+            auto abs_y_hi = ax_hi / az;
+            if (abs_y_lo <= abs_y_hi) {
+                if (zv > 0) {
+                    merge_y_range(-abs_y_hi, -abs_y_lo);
+                } else {
+                    merge_y_range(abs_y_lo, abs_y_hi);
+                }
+            }
+        }
+
+        if (has_range) {
+            model.enqueue_set_min(y_id_, y_lo_all);
+            model.enqueue_set_max(y_id_, y_hi_all);
+        }
     }
 
     return true;

@@ -1,0 +1,8 @@
+% int_div y backward with x straddling 0: x in [-10,10], z=3
+% Valid: x>0 → y in [1,3], x<0 → y in [-3,-1]
+% y must not be falsely pruned when x straddles 0
+var -10..10: x :: output_var;
+var -100..100: y :: output_var;
+var 3..3: z :: output_var;
+constraint int_div(x, y, z);
+solve satisfy;

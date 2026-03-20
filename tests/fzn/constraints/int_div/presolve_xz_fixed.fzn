@@ -1,0 +1,7 @@
+% int_div presolve: x=12, z=3 both fixed-domain, only y free
+% Tests that presolve filters y to {4} when 2WL cannot fire
+var 12..12: x :: output_var;
+var 1..100: y :: output_var;
+var 3..3: z :: output_var;
+constraint int_div(x, y, z);
+solve satisfy;

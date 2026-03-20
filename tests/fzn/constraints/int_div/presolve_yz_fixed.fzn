@@ -1,0 +1,7 @@
+% int_div presolve: y=3, z=2 both fixed-domain, only x free
+% Tests that presolve tightens x to [6,8] via compute_x_range
+var -100..100: x :: output_var;
+var 3..3: y :: output_var;
+var 2..2: z :: output_var;
+constraint int_div(x, y, z);
+solve satisfy;

@@ -1,0 +1,7 @@
+% int_div backward y propagation: x in [10,15], z=3, find y
+% x/y = 3 → valid (x,y) pairs: (10,3), (11,3), (12,3), (12,4), (13,4), (14,4), (15,4), (15,5)
+var 10..15: x :: output_var;
+var 1..100: y :: output_var;
+var 3..3: z :: output_var;
+constraint int_div(x, y, z);
+solve satisfy;
