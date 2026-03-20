@@ -58,6 +58,7 @@ bool Solver::init_search(Model& model) {
     current_best_assignment_.assign(variables.size(), kNoValue);
     current_decision_ = 0;
     stats_ = SolverStats{};
+    instance_stats_.assign(model.constraints().size(), ConstraintStats{});
     model.resize_var_ng_bloom(variables.size());
     ng_usage_bloom_ = Bloom512{};
     restart_ctrl_.reset();
@@ -1151,16 +1152,20 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     for (const auto& w : constraint_indices) {
         if (verbose_) {
             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+            auto& is = instance_stats_[w.constraint_idx];
             cs.call_count++;
+            is.call_count++;
             size_t before = model.pending_updates_size();
             if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
                                         var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
                 cs.fail_count++;
                 cs.fail_depth_sum += current_decision_;
+                is.fail_count++;
+                is.fail_depth_sum += current_decision_;
                 bump_activity(model, w.constraint_idx, var_idx);
                 return false;
             }
-            if (model.pending_updates_size() > before) cs.reduction_count++;
+            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
         } else {
             if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
                                         var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
@@ -1440,16 +1445,20 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                        auto& is = instance_stats_[w.constraint_idx];
                         cs.call_count++;
+                        is.call_count++;
                         size_t before = model.pending_updates_size();
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
                             cs.fail_count++;
                             cs.fail_depth_sum += current_decision_;
+                            is.fail_count++;
+                            is.fail_depth_sum += current_decision_;
                             bump_activity(model, w.constraint_idx, var_idx);
                             return false;
                         }
-                        if (model.pending_updates_size() > before) cs.reduction_count++;
+                        if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                     } else {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
@@ -1485,16 +1494,20 @@ bool Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                        auto& is = instance_stats_[w.constraint_idx];
                         cs.call_count++;
+                        is.call_count++;
                         size_t before = model.pending_updates_size();
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
                             cs.fail_count++;
                             cs.fail_depth_sum += current_decision_;
+                            is.fail_count++;
+                            is.fail_depth_sum += current_decision_;
                             bump_activity(model, w.constraint_idx, var_idx);
                             return false;
                         }
-                        if (model.pending_updates_size() > before) cs.reduction_count++;
+                        if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                     } else {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
@@ -1533,16 +1546,20 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            auto& is = instance_stats_[w.constraint_idx];
                             cs.call_count++;
+                            is.call_count++;
                             size_t before = model.pending_updates_size();
                             if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_min, prev_min)) {
                                 cs.fail_count++;
                                 cs.fail_depth_sum += current_decision_;
+                                is.fail_count++;
+                                is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
                                 return false;
                             }
-                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_min, prev_min)) {
@@ -1561,16 +1578,20 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            auto& is = instance_stats_[w.constraint_idx];
                             cs.call_count++;
+                            is.call_count++;
                             size_t before = model.pending_updates_size();
                             if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_max, prev_max)) {
                                 cs.fail_count++;
                                 cs.fail_depth_sum += current_decision_;
+                                is.fail_count++;
+                                is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
                                 return false;
                             }
-                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_max, prev_max)) {
@@ -1589,16 +1610,20 @@ bool Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
+                            auto& is = instance_stats_[w.constraint_idx];
                             cs.call_count++;
+                            is.call_count++;
                             size_t before = model.pending_updates_size();
                             if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                       var_idx, w.internal_var_idx, removed_value)) {
                                 cs.fail_count++;
                                 cs.fail_depth_sum += current_decision_;
+                                is.fail_count++;
+                                is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
                                 return false;
                             }
-                            if (model.pending_updates_size() > before) cs.reduction_count++;
+                            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                       var_idx, w.internal_var_idx, removed_value)) {

@@ -167,6 +167,9 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
 
         auto result = registry.create(decl.name, decl, ctx);
         if (result.has_value() && *result) {
+            if (decl.line > 0) {
+                (*result)->set_label(decl.name + ":L" + std::to_string(decl.line));
+            }
             model->add_constraint(std::move(*result));
         }
     }

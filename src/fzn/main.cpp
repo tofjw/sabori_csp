@@ -12,6 +12,7 @@
 #include <atomic>
 #include <algorithm>
 #include <iomanip>
+#include <numeric>
 
 std::atomic<bool> g_timeout_flag{false};
 sabori_csp::Solver* g_current_solver = nullptr;
@@ -95,6 +96,48 @@ void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* mode
                 std::cerr << std::setw(14) << "-";
             }
             std::cerr << "\n";
+        }
+    }
+
+    // Per-instance constraint stats (Top 20 by call_count)
+    if (model) {
+        const auto& istats = solver.instance_stats();
+        const auto& constraints = model->constraints();
+        if (!istats.empty()) {
+            // Build index sorted by call_count descending
+            std::vector<size_t> indices(istats.size());
+            std::iota(indices.begin(), indices.end(), 0);
+            std::sort(indices.begin(), indices.end(),
+                      [&](size_t a, size_t b) { return istats[a].call_count > istats[b].call_count; });
+
+            size_t top_n = std::min<size_t>(20, indices.size());
+            // Skip if top entry has 0 calls
+            if (top_n > 0 && istats[indices[0]].call_count > 0) {
+                std::cerr << "% Top constraint instances:\n";
+                std::cerr << "%   " << std::left << std::setw(30) << "Label"
+                          << std::right << std::setw(10) << "Calls"
+                          << std::setw(12) << "Reductions"
+                          << std::setw(10) << "Fails"
+                          << std::setw(14) << "AvgFailDepth" << "\n";
+                for (size_t i = 0; i < top_n; ++i) {
+                    size_t idx = indices[i];
+                    const auto& is = istats[idx];
+                    if (is.call_count == 0) break;
+                    const auto& lbl = constraints[idx]->label();
+                    const std::string& display = lbl.empty() ? constraints[idx]->name() : lbl;
+                    std::cerr << "%   " << std::left << std::setw(30) << display
+                              << std::right << std::setw(10) << is.call_count
+                              << std::setw(12) << is.reduction_count
+                              << std::setw(10) << is.fail_count;
+                    if (is.fail_count > 0) {
+                        std::cerr << std::setw(14) << std::fixed << std::setprecision(1)
+                                  << (double)is.fail_depth_sum / is.fail_count;
+                    } else {
+                        std::cerr << std::setw(14) << "-";
+                    }
+                    std::cerr << "\n";
+                }
+            }
         }
     }
 

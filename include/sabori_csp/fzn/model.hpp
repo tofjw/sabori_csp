@@ -66,6 +66,7 @@ using ConstraintArg = std::variant<
 struct ConstraintDecl {
     std::string name;
     std::vector<ConstraintArg> args;
+    int line = 0;  ///< FlatZinc ファイル内の行番号
 };
 
 /**

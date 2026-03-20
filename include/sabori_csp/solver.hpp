@@ -265,6 +265,11 @@ public:
     const std::unordered_map<std::string, ConstraintStats>& constraint_stats() const { return constraint_stats_; }
 
     /**
+     * @brief 制約インスタンス別統計を取得
+     */
+    const std::vector<ConstraintStats>& instance_stats() const { return instance_stats_; }
+
+    /**
      * @brief verbose モードを有効/無効にする
      */
     void set_verbose(bool enabled) { verbose_ = enabled; }
@@ -521,6 +526,7 @@ private:
     // 統計
     SolverStats stats_;
     std::unordered_map<std::string, ConstraintStats> constraint_stats_;
+    std::vector<ConstraintStats> instance_stats_;  ///< 制約インスタンス別統計
 
     // 変数選択
     VariableSelector var_selector_;

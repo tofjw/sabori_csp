@@ -72,6 +72,16 @@ public:
     virtual std::string name() const = 0;
 
     /**
+     * @brief ラベルを設定（例: "int_lin_eq:L42"）
+     */
+    void set_label(std::string label) { label_ = std::move(label); }
+
+    /**
+     * @brief ラベルを取得（空なら未設定。表示側で name() にフォールバックすること）
+     */
+    const std::string& label() const { return label_; }
+
+    /**
      * @brief 変数IDリストへの const 参照を返す（shared_ptr デリファレンス回避）
      */
     const std::vector<size_t>& var_ids_ref() const { return var_ids_; }
@@ -380,6 +390,9 @@ private:
 
     // 初期矛盾フラグ
     bool is_initially_inconsistent_ = false;
+
+    // ラベル（例: "int_lin_eq:L42"）
+    std::string label_;
 
     // 探索開始時に未確定だった変数数（bump_activity の分母に使用）
     size_t search_var_count_ = 0;

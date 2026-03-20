@@ -533,6 +533,7 @@ constraint_decl:
         {
             ConstraintDecl decl;
             decl.name = *$2;
+            decl.line = @1.first_line;
             if ($4) {
                 decl.args = std::move(*$4);
                 delete $4;
