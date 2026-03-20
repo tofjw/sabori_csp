@@ -248,6 +248,8 @@ public:
      */
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
 
+    void init_activity(const Model& model, double* activity) const override;
+
 protected:
     /**
      * @brief 初期整合性チェック
@@ -344,6 +346,8 @@ public:
                          Domain::value_type removed_value) override;
 
     void rewind_to(int save_point);
+
+    void init_activity(const Model& model, double* activity) const override;
 
 protected:
     /**
@@ -530,6 +534,8 @@ public:
      * @brief 係数リストを取得
      */
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
+
+    void init_activity(const Model& model, double* activity) const override;
 
 protected:
 
@@ -866,6 +872,8 @@ public:
 
     void rewind_to(int save_point) override;
 
+    void init_activity(const Model& model, double* activity) const override;
+
 protected:
 
 
@@ -954,6 +962,8 @@ public:
 
     void rewind_to(int save_point);
 
+    void init_activity(const Model& model, double* activity) const override;
+
 protected:
 
 
@@ -1041,6 +1051,8 @@ public:
                          Domain::value_type removed_value) override;
 
     void rewind_to(int save_point);
+
+    void init_activity(const Model& model, double* activity) const override;
 
 protected:
     /**
@@ -1144,6 +1156,8 @@ public:
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point) override;
+
+    void init_activity(const Model& model, double* activity) const override;
 
 protected:
 

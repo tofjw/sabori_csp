@@ -92,6 +92,11 @@ bool Solver::init_search(Model& model) {
                       << " ratio=" << std::fixed << std::setprecision(2) << ratio << "\n";
         }
     }
+    // 制約固有の初期 activity を設定
+    for (const auto& c : model.constraints()) {
+        c->init_activity(model, activity_.data());
+    }
+
     if (community_analysis_.is_enabled()) {
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);

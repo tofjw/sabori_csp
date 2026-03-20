@@ -293,6 +293,17 @@ public:
     void compute_search_var_count(const Model& model);
 
     /**
+     * @brief activity 配列の初期値を設定する
+     *
+     * デフォルトでは何もしない。サブクラスでオーバーライドして
+     * 制約固有の初期 activity を加算できる。
+     *
+     * @param model モデルへの参照
+     * @param activity Solver の activity 配列へのポインタ
+     */
+    virtual void init_activity(const Model& model, double* activity) const;
+
+    /**
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,

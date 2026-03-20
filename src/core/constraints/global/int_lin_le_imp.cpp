@@ -382,4 +382,25 @@ bool IntLinLeImpConstraint::check_contrapositive(Model& model) {
     return true;
 }
 
+void IntLinLeImpConstraint::init_activity(const Model& model, double* activity) const {
+    int64_t max_abs = 0;
+    for (auto c : coeffs_) {
+        int64_t a = c < 0 ? -c : c;
+        if (a > max_abs) max_abs = a;
+    }
+    if (max_abs <= 100) return;
+
+    double sum_abs = 0.0;
+    for (auto c : coeffs_) {
+        sum_abs += std::abs(static_cast<double>(c));
+    }
+
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        if (!model.is_instantiated(vid)) {
+            activity[vid] += std::abs(static_cast<double>(coeffs_[i])) / sum_abs;
+        }
+    }
+}
+
 }  // namespace sabori_csp

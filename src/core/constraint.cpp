@@ -198,6 +198,11 @@ void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
     }
 }
 
+
+void Constraint::init_activity(const Model& /*model*/, double* /*activity*/) const {
+    // デフォルトでは何もしない
+}
+
 void Constraint::check_initial_consistency() {
     // デフォルト: 何もしない（presolve / prepare_propagation で検出）
 }
