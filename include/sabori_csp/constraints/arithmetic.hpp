@@ -103,6 +103,10 @@ private:
     size_t x_id_, y_id_, z_id_;
 
     bool propagate_bounds(Model& model);
+
+    /// z_val と y_val から x の有効範囲 [x_lo, x_hi] を計算
+    static std::pair<Domain::value_type, Domain::value_type>
+    compute_x_range(Domain::value_type z_val, Domain::value_type y_val);
 };
 
 /**

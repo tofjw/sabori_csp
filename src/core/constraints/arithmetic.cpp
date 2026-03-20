@@ -642,6 +642,24 @@ PresolveResult IntDivConstraint::presolve(Model& model) {
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
+std::pair<Domain::value_type, Domain::value_type>
+IntDivConstraint::compute_x_range(Domain::value_type z_val, Domain::value_type y_val) {
+    // x / y = z (truncated) → x = z * y + r, |r| < |y|, sign(r) = sign(x) or r = 0
+    // 有効範囲は base (= z*y) の符号で決まる
+    auto base = z_val * y_val;
+    auto abs_y = std::abs(y_val);
+    if (base > 0) {
+        // x は正: r ∈ [0, |y|-1]
+        return {base, base + abs_y - 1};
+    } else if (base < 0) {
+        // x は負: r ∈ [-(|y|-1), 0]
+        return {base - (abs_y - 1), base};
+    } else {
+        // z = 0: x は正負どちらもあり得る
+        return {-(abs_y - 1), abs_y - 1};
+    }
+}
+
 bool IntDivConstraint::propagate_bounds(Model& model) {
     auto x_min = model.var_min(x_id_);
     auto x_max = model.var_max(x_id_);
@@ -739,30 +757,11 @@ bool IntDivConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // y と z が確定 → x のドメインをフィルタ
-    // x / y = z → x ∈ [z*y, z*y + (|y|-1)*sign] (truncated)
     if (model.is_instantiated(y_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(x_id_)) {
         auto y_val = model.value(y_id_);
         auto z_val = model.value(z_id_);
         if (y_val == 0) return false;
-        // x / y = z (truncated) → x ∈ { v : v / y_val == z_val }
-        // x = z * y + r, where |r| < |y| and sign(r) = sign(x) or r = 0
-        // base = z * y
-        auto base = z_val * y_val;
-        auto abs_y = std::abs(y_val);
-        Domain::value_type x_lo, x_hi;
-        if (z_val > 0) {
-            // x は正: x ∈ [base, base + |y| - 1]
-            x_lo = base;
-            x_hi = base + abs_y - 1;
-        } else if (z_val < 0) {
-            // x は負: x ∈ [base - (|y| - 1), base]
-            x_lo = base - (abs_y - 1);
-            x_hi = base;
-        } else {
-            // z = 0: x ∈ [-(|y| - 1), |y| - 1]
-            x_lo = -(abs_y - 1);
-            x_hi = abs_y - 1;
-        }
+        auto [x_lo, x_hi] = compute_x_range(z_val, y_val);
         model.enqueue_set_min(x_id_, x_lo);
         model.enqueue_set_max(x_id_, x_hi);
         return true;
@@ -839,20 +838,7 @@ bool IntDivConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         auto y_val = model.value(y_id_);
         auto z_val = model.value(z_id_);
         if (y_val == 0) return false;
-        // x / y = z → x ∈ { v : v / y_val == z_val }
-        auto base = z_val * y_val;
-        auto abs_y = std::abs(y_val);
-        Domain::value_type x_lo, x_hi;
-        if (z_val > 0) {
-            x_lo = base;
-            x_hi = base + abs_y - 1;
-        } else if (z_val < 0) {
-            x_lo = base - (abs_y - 1);
-            x_hi = base;
-        } else {
-            x_lo = -(abs_y - 1);
-            x_hi = abs_y - 1;
-        }
+        auto [x_lo, x_hi] = compute_x_range(z_val, y_val);
         model.enqueue_set_min(x_id_, x_lo);
         model.enqueue_set_max(x_id_, x_hi);
         // ドメイン内の値もフィルタ
