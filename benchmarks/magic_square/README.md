@@ -100,11 +100,9 @@ This represents the classic 3×3 magic square:
 
 | Instance | Order | Status | Time (first) | Time (all) | Solutions |
 |----------|-------|--------|--------------|------------|-----------|
-| small | 3 | SAT | ~0.003s | ~0.005s | 8 |
-| medium | 4 | SAT | ~0.28s | - | - |
-| large | 5 | - | >60s | - | - |
-
-Note: 5×5 magic squares require more sophisticated search strategies or symmetry breaking.
+| small | 3 | SAT | ~0.003s | ~0.003s | 8 |
+| medium | 4 | SAT | ~0.003s | ~8.3s | 7,040 |
+| large | 5 | SAT | ~0.008s | - | - |
 
 ## Mathematical Background
 
