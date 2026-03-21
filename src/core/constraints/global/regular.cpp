@@ -196,6 +196,36 @@ bool RegularConstraint::on_instantiate(Model& model, int save_point,
     return compute_and_filter(model);
 }
 
+bool RegularConstraint::on_remove_value(Model& model, int save_point,
+                                         size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                         Domain::value_type /*removed_value*/) {
+    if (trail_save_points_.empty() || trail_save_points_.back() != save_point) {
+        trail_save_points_.push_back(save_point);
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+    return compute_and_filter(model);
+}
+
+bool RegularConstraint::on_set_min(Model& model, int save_point,
+                                    size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                    Domain::value_type /*new_min*/, Domain::value_type /*old_min*/) {
+    if (trail_save_points_.empty() || trail_save_points_.back() != save_point) {
+        trail_save_points_.push_back(save_point);
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+    return compute_and_filter(model);
+}
+
+bool RegularConstraint::on_set_max(Model& model, int save_point,
+                                    size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                    Domain::value_type /*new_max*/, Domain::value_type /*old_max*/) {
+    if (trail_save_points_.empty() || trail_save_points_.back() != save_point) {
+        trail_save_points_.push_back(save_point);
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+    return compute_and_filter(model);
+}
+
 bool RegularConstraint::on_final_instantiate(const Model& model) {
     // Verify: simulate DFA on the assigned values
     int state = q0_;
