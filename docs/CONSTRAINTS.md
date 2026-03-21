@@ -237,6 +237,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `fzn_diffn_nonstrict` | `DiffnConstraint` | n個の矩形が互いに重ならない（サイズ0許可） |
 | `fzn_cumulative` | `CumulativeConstraint` | リソース容量制約（スケジューリング） |
 | `fzn_inverse` | `InverseConstraint` | f[i]=j <-> invf[j]=i（逆関数制約） |
+| `fzn_regular` / `sabori_regular` | `RegularConstraint` | DFA による正規言語制約 |
 
 #### table_int 制約
 

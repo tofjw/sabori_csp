@@ -1998,6 +1998,78 @@ private:
     int64_t offset_;     ///< FlatZinc 1-indexed → 0-indexed offset (通常 1)
 };
 
+/**
+ * @brief regular制約: DFA（決定性有限オートマトン）による正規言語制約
+ *
+ * 変数列 x[0..n-1] が DFA の受理する文字列であることを要求する。
+ * DFA は状態数 Q、シンボル数 S、遷移テーブル、初期状態、受理状態集合で定義。
+ *
+ * Forward/backward reachability による GAC フィルタリングを実装。
+ */
+class RegularConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param vars 入力変数列
+     * @param num_states 状態数 Q（状態 1..Q）
+     * @param num_symbols シンボル数 S（シンボル 1..S）
+     * @param transition_flat 遷移テーブル（Q×S をフラット化、1-indexed、0=不受理）
+     * @param initial_state 初期状態
+     * @param accepting_states 受理状態集合
+     */
+    RegularConstraint(std::vector<VariablePtr> vars,
+                      int num_states, int num_symbols,
+                      std::vector<int> transition_flat,
+                      int initial_state,
+                      std::vector<int> accepting_states);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    void rewind_to(int save_point) override;
+
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
+private:
+    int Q_;   ///< 状態数
+    int S_;   ///< シンボル数
+    /// transition_[q * (S_+1) + s] = next state (0 = fail)
+    /// 行0・列0 は全て 0（不受理）
+    std::vector<int> transition_;
+    int q0_;  ///< 初期状態
+    std::vector<bool> accepting_;  ///< accepting_[q] = true if q is accepting
+
+    size_t n_;  ///< 変数の数
+
+    /// 各位置で到達可能な状態集合（ビットベクタ）
+    /// reachable_from_[i] は位置 i に入る時点で到達可能な状態
+    /// reachable_to_[i] は位置 i から受理状態まで逆到達可能な状態
+    std::vector<std::vector<bool>> reachable_from_;
+    std::vector<std::vector<bool>> reachable_to_;
+
+    /// Trail: save points where mark_constraint_dirty was called
+    /// reachable sets are always recomputed from model state, no need to save them
+    std::vector<int> trail_save_points_;
+
+    /// 遷移テーブル参照
+    int transition(int q, int s) const {
+        return transition_[q * (S_ + 1) + s];
+    }
+
+    /// Forward/backward reachability を計算してドメインをフィルタ
+    bool compute_and_filter(Model& model);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

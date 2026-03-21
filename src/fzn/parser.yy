@@ -696,6 +696,8 @@ type_inst:
     | VAR int_literal DOTDOT int_literal
     | VAR SET OF INT
     | VAR SET OF int_literal DOTDOT int_literal
+    | SET OF INT
+    | SET OF int_literal DOTDOT int_literal
     | INT
     | BOOL
     | ARRAY '[' INT ']' OF VAR INT

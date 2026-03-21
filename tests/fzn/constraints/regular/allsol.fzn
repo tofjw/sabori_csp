@@ -1,0 +1,14 @@
+% All solutions regular constraint test
+% DFA: accepts strings of length 2 over {1,2} where sum of symbols is even
+% i.e., (1,1), (2,2)
+% States: 1 (start, even), 2 (odd)
+% Transitions:
+%   state 1, symbol 1 -> state 2 (odd)
+%   state 1, symbol 2 -> state 1 (even)
+%   state 2, symbol 1 -> state 1 (even)
+%   state 2, symbol 2 -> state 2 (odd)
+var 1..2: x1 :: output_var;
+var 1..2: x2 :: output_var;
+array [1..4] of int: d = [2, 1, 1, 2];
+constraint fzn_regular([x1, x2], 2, 2, d, 1, {1});
+solve :: int_search([x1, x2], input_order, indomain_min) satisfy;

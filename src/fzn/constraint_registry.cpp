@@ -760,6 +760,38 @@ static std::optional<ConstraintPtr> make_count_eq(const ConstraintDecl& decl, Fz
 }
 
 // ============================================================
+// Pattern G: Regular constraint
+// ============================================================
+static std::optional<ConstraintPtr> make_regular(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 6) throw std::runtime_error("regular requires 6 arguments (x, Q, S, d, q0, F)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    auto Q = std::get<Domain::value_type>(decl.args[1]);
+    auto S = std::get<Domain::value_type>(decl.args[2]);
+    auto d = ctx.resolve_int_array(decl.args[3]);
+    auto q0 = std::get<Domain::value_type>(decl.args[4]);
+
+    // F can be a set literal {1,3}, a range 1..7, or an array reference
+    std::vector<int> accepting;
+    if (std::holds_alternative<IntRange>(decl.args[5])) {
+        const auto& range = std::get<IntRange>(decl.args[5]);
+        for (auto v = range.lb; v <= range.ub; ++v) {
+            accepting.push_back((int)v);
+        }
+    } else {
+        auto F = ctx.resolve_int_array(decl.args[5]);
+        accepting.assign(F.begin(), F.end());
+    }
+
+    for (const auto& v : vars) {
+        ctx.model->set_no_bisect(v->id());
+    }
+    return std::make_unique<RegularConstraint>(
+        std::move(vars), (int)Q, (int)S,
+        std::vector<int>(d.begin(), d.end()),
+        (int)q0, std::move(accepting));
+}
+
+// ============================================================
 // Registration
 // ============================================================
 void register_all_constraints(ConstraintRegistry& registry) {
@@ -841,6 +873,10 @@ void register_all_constraints(ConstraintRegistry& registry) {
     // Pattern F: Count
     registry.register_constraint("fzn_count_eq", make_count_eq);
     registry.register_constraint("count_eq", make_count_eq);
+
+    // Pattern G: Regular
+    registry.register_constraint("fzn_regular", make_regular);
+    registry.register_constraint("sabori_regular", make_regular);
 }
 
 } // namespace fzn

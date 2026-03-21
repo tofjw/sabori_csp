@@ -1,0 +1,12 @@
+% Unsatisfiable regular constraint
+% DFA: only accepts symbol 1, but variable forced to 2
+% States: 1 (start), 2 (accepting)
+% Transitions:
+%   state 1, symbol 1 -> state 2
+%   state 1, symbol 2 -> 0 (fail)
+%   state 2, symbol 1 -> state 2
+%   state 2, symbol 2 -> 0 (fail)
+var 2..2: x1 :: output_var;
+array [1..4] of int: d = [2, 0, 2, 0];
+constraint fzn_regular([x1], 2, 2, d, 1, {2});
+solve satisfy;
