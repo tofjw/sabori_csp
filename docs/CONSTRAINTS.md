@@ -238,6 +238,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `fzn_cumulative` | `CumulativeConstraint` | リソース容量制約（スケジューリング） |
 | `fzn_inverse` | `InverseConstraint` | f[i]=j <-> invf[j]=i（逆関数制約） |
 | `fzn_regular` / `sabori_regular` | `RegularConstraint` | DFA による正規言語制約 |
+| `fzn_nvalue` | `NValueConstraint` | n = \|{x[i] : i ∈ index_set(x)}\| (異なる値の数) |
 
 #### table_int 制約
 

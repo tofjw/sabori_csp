@@ -792,6 +792,16 @@ static std::optional<ConstraintPtr> make_regular(const ConstraintDecl& decl, Fzn
 }
 
 // ============================================================
+// Pattern I: NValue constraint
+// ============================================================
+static std::optional<ConstraintPtr> make_nvalue(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 2) throw std::runtime_error("fzn_nvalue requires 2 arguments (n, x)");
+    auto n_var = ctx.get_var(decl.args[0]);
+    auto x_vars = resolve_vars(decl.args[1], ctx);
+    return std::make_unique<NValueConstraint>(std::move(n_var), std::move(x_vars));
+}
+
+// ============================================================
 // Registration
 // ============================================================
 void register_all_constraints(ConstraintRegistry& registry) {
@@ -877,6 +887,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
     // Pattern G: Regular
     registry.register_constraint("fzn_regular", make_regular);
     registry.register_constraint("sabori_regular", make_regular);
+
+    // Pattern I: NValue
+    registry.register_constraint("fzn_nvalue", make_nvalue);
 }
 
 } // namespace fzn

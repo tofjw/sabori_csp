@@ -37,6 +37,7 @@ add_library(sabori_csp_core
   constraints/global/cumulative.cpp
   constraints/global/inverse.cpp
   constraints/global/regular.cpp
+  constraints/global/nvalue.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC

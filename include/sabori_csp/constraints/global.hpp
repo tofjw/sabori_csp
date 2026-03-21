@@ -2079,6 +2079,80 @@ private:
     bool compute_and_filter(Model& model);
 };
 
+/**
+ * @brief nvalue制約: 配列中の異なる値の数を制約する
+ *
+ * n = |{x[i] : i ∈ index_set(x)}|
+ * 各値の support count をビットマップで追跡し、差分更新で伝播。
+ */
+class NValueConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param n_var 異なる値の数を表す変数
+     * @param x_vars 対象変数列
+     */
+    NValueConstraint(VariablePtr n_var, std::vector<VariablePtr> x_vars);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    void rewind_to(int save_point) override;
+
+private:
+    size_t num_x_;        ///< x 変数数
+    size_t num_values_;   ///< 値域のユニオンサイズ
+    size_t n_id_;         ///< n 変数の ID
+
+    std::vector<Domain::value_type> sorted_values_;       ///< 全値（ソート済み）
+    std::unordered_map<Domain::value_type, size_t> value_index_;  ///< 値→インデックス
+
+    std::vector<int> support_count_;      ///< [value_idx] この値をドメインに含む変数数
+    std::vector<bool> var_support_bitmap_; ///< [var_i * num_values_ + val_idx]
+    std::vector<bool> definite_;          ///< [value_idx] 確定変数がこの値を取るか
+
+    size_t definite_count_;   ///< 確定した異なる値の数
+    size_t possible_count_;   ///< ドメインに残っている異なる値の数
+
+    // Trail
+    struct TrailEntry {
+        size_t definite_count;
+        size_t possible_count;
+        std::vector<std::pair<size_t, int>> support_count_changes;  ///< (value_idx, old_count)
+        std::vector<std::pair<size_t, bool>> definite_changes;      ///< (value_idx, old_value)
+        std::vector<size_t> bitmap_changes;                         ///< flat_idx (true→false)
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    void save_trail_if_needed(Model& model, int save_point);
+    bool propagate(Model& model);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

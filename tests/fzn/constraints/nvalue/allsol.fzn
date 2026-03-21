@@ -1,0 +1,5 @@
+var 1..2: x1 :: output_var;
+var 1..2: x2 :: output_var;
+var 1..2: n :: output_var;
+constraint fzn_nvalue(n, [x1, x2]);
+solve satisfy;
