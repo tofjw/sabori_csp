@@ -2124,6 +2124,10 @@ public:
 
     void rewind_to(int save_point) override;
 
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
 private:
     size_t num_x_;        ///< x 変数数
     size_t num_values_;   ///< 値域のユニオンサイズ

@@ -476,4 +476,115 @@ bool NValueConstraint::propagate(Model& model) {
     return true;
 }
 
+void NValueConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                      double* activity, double activity_inc,
+                                      bool& need_rescale, std::mt19937& rng) const {
+    auto def = static_cast<Domain::value_type>(definite_count_);
+    auto poss = static_cast<Domain::value_type>(possible_count_);
+    auto n_min = model.var_min(n_id_);
+    auto n_max = model.var_max(n_id_);
+
+    // --- Case 1: def > n_max (異なる値が多すぎ) ---
+    // 新しいユニークな値を導入した変数を bump（値の多様化が原因）
+    if (def > n_max) {
+        // definite な値を持つ確定変数のうち、その値が unique contributor のものを重く bump
+        // まず各 definite 値の contributor 数を数える
+        size_t blame_count = 0;
+        for (size_t i = 0; i < num_x_; ++i) {
+            auto vid = var_ids_[i];
+            if (model.is_instantiated(vid)) {
+                auto val = model.value(vid);
+                auto it = value_index_.find(val);
+                if (it != value_index_.end() && definite_[it->second]) {
+                    // この値を持つ確定変数が1つだけ → unique contributor
+                    int cnt = 0;
+                    for (size_t j = 0; j < num_x_; ++j) {
+                        if (model.is_instantiated(var_ids_[j]) && model.value(var_ids_[j]) == val) {
+                            ++cnt;
+                        }
+                    }
+                    if (cnt == 1) {
+                        ++blame_count;
+                    }
+                }
+            }
+        }
+        if (blame_count > 0) {
+            double inc = activity_inc / blame_count;
+            for (size_t i = 0; i < num_x_; ++i) {
+                auto vid = var_ids_[i];
+                if (model.is_instantiated(vid)) {
+                    auto val = model.value(vid);
+                    auto it = value_index_.find(val);
+                    if (it != value_index_.end() && definite_[it->second]) {
+                        int cnt = 0;
+                        for (size_t j = 0; j < num_x_; ++j) {
+                            if (model.is_instantiated(var_ids_[j]) && model.value(var_ids_[j]) == val) {
+                                ++cnt;
+                            }
+                        }
+                        if (cnt == 1) {
+                            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    // --- Case 2: poss < n_min (値のバリエーション不足) ---
+    // 同じ値を多く使っている変数群が原因（もっと多様な値を選ぶべきだった）
+    if (poss < n_min) {
+        // 最も多くの変数が共有する definite 値を見つけ、その変数を bump
+        size_t max_sharing = 0;
+        Domain::value_type most_shared_val = 0;
+        for (size_t vi = 0; vi < num_values_; ++vi) {
+            if (!definite_[vi]) continue;
+            size_t cnt = 0;
+            for (size_t i = 0; i < num_x_; ++i) {
+                if (model.is_instantiated(var_ids_[i]) && model.value(var_ids_[i]) == sorted_values_[vi]) {
+                    ++cnt;
+                }
+            }
+            if (cnt > max_sharing) {
+                max_sharing = cnt;
+                most_shared_val = sorted_values_[vi];
+            }
+        }
+        if (max_sharing > 1) {
+            double inc = activity_inc / max_sharing;
+            for (size_t i = 0; i < num_x_; ++i) {
+                auto vid = var_ids_[i];
+                if (model.is_instantiated(vid) && model.value(vid) == most_shared_val) {
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+            return;
+        }
+    }
+
+    // --- Case 3: n 変数がトリガー ---
+    // n のドメイン変更で矛盾 → x 変数の確定済みのものを bump
+    if (trigger_var_idx == n_id_) {
+        size_t count = 0;
+        for (size_t i = 0; i < num_x_; ++i) {
+            if (model.is_instantiated(var_ids_[i])) ++count;
+        }
+        if (count > 0) {
+            double inc = activity_inc / count;
+            for (size_t i = 0; i < num_x_; ++i) {
+                auto vid = var_ids_[i];
+                if (model.is_instantiated(vid)) {
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+            return;
+        }
+    }
+
+    // --- Default ---
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+}
+
 }  // namespace sabori_csp
