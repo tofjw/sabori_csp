@@ -1,0 +1,17 @@
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "sabori-csp"
+version = "0.1.0"
+description = "A constraint solver with Python bindings"
+requires-python = ">=3.9"
+
+[tool.scikit-build]
+cmake.args = ["-DBUILD_FZN=OFF", "-DBUILD_TESTS=OFF", "-DBUILD_PYTHON_BINDINGS=ON"]
+cmake.build-type = "Release"
+wheel.packages = ["python/sabori_csp"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

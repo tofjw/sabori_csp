@@ -398,7 +398,7 @@ private:
     size_t search_var_count_ = 0;
 };
 
-using ConstraintPtr = std::unique_ptr<Constraint>;
+using ConstraintPtr = std::shared_ptr<Constraint>;
 
 } // namespace sabori_csp
 

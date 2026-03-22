@@ -1,2 +1,5 @@
 add_subdirectory(core)
-add_subdirectory(fzn)
+
+if(BUILD_FZN)
+  add_subdirectory(fzn)
+endif()

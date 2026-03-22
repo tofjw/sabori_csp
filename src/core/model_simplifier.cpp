@@ -219,7 +219,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinEqConstraint>(std::move(coeffs), std::move(vars), rhs));
+                std::make_shared<IntLinEqConstraint>(std::move(coeffs), std::move(vars), rhs));
             continue;
         }
 
@@ -241,7 +241,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinLeConstraint>(std::move(coeffs), std::move(vars), rhs));
+                std::make_shared<IntLinLeConstraint>(std::move(coeffs), std::move(vars), rhs));
             continue;
         }
 
@@ -263,7 +263,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinNeConstraint>(std::move(coeffs), std::move(vars), rhs));
+                std::make_shared<IntLinNeConstraint>(std::move(coeffs), std::move(vars), rhs));
             continue;
         }
 
@@ -289,7 +289,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : lin_vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinEqReifConstraint>(
+                std::make_shared<IntLinEqReifConstraint>(
                     std::move(coeffs), std::move(vars), rhs, model.variable(b_vid)));
             continue;
         }
@@ -315,7 +315,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : lin_vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinNeReifConstraint>(
+                std::make_shared<IntLinNeReifConstraint>(
                     std::move(coeffs), std::move(vars), rhs, model.variable(b_vid)));
             continue;
         }
@@ -341,7 +341,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : lin_vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinLeReifConstraint>(
+                std::make_shared<IntLinLeReifConstraint>(
                     std::move(coeffs), std::move(vars), rhs, model.variable(b_vid)));
             continue;
         }
@@ -366,7 +366,7 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             std::vector<VariablePtr> vars;
             for (size_t vid : lin_vids) vars.push_back(model.variable(vid));
             model.replace_constraint(ci,
-                std::make_unique<IntLinLeImpConstraint>(
+                std::make_shared<IntLinLeImpConstraint>(
                     std::move(coeffs), std::move(vars), rhs, model.variable(b_vid)));
             continue;
         }

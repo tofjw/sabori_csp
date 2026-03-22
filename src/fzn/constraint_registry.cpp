@@ -50,28 +50,28 @@ static std::optional<ConstraintPtr> make_int_eq(const ConstraintDecl& decl, FznB
     if (decl.args.size() != 2) throw std::runtime_error("int_eq requires 2 arguments");
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
-    return std::make_unique<IntEqConstraint>(x, y);
+    return std::make_shared<IntEqConstraint>(x, y);
 }
 
 static std::optional<ConstraintPtr> make_int_ne(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("int_ne requires 2 arguments");
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
-    return std::make_unique<IntNeConstraint>(x, y);
+    return std::make_shared<IntNeConstraint>(x, y);
 }
 
 static std::optional<ConstraintPtr> make_int_lt(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("int_lt requires 2 arguments");
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
-    return std::make_unique<IntLtConstraint>(x, y);
+    return std::make_shared<IntLtConstraint>(x, y);
 }
 
 static std::optional<ConstraintPtr> make_int_le(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("int_le requires 2 arguments");
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
-    return std::make_unique<IntLeConstraint>(x, y);
+    return std::make_shared<IntLeConstraint>(x, y);
 }
 
 static std::optional<ConstraintPtr> make_int_eq_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -83,7 +83,7 @@ static std::optional<ConstraintPtr> make_int_eq_reif(const ConstraintDecl& decl,
         !ctx.model->is_defined_var(b->id())) {
         ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntEqReifConstraint>(x, y, b);
+    return std::make_shared<IntEqReifConstraint>(x, y, b);
 }
 
 static std::optional<ConstraintPtr> make_int_eq_imp(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -91,7 +91,7 @@ static std::optional<ConstraintPtr> make_int_eq_imp(const ConstraintDecl& decl, 
     auto x = ctx.get_var(decl.args[0]);
     auto y = ctx.get_var(decl.args[1]);
     auto b = ctx.get_var(decl.args[2]);
-    return std::make_unique<IntEqImpConstraint>(x, y, b);
+    return std::make_shared<IntEqImpConstraint>(x, y, b);
 }
 
 static std::optional<ConstraintPtr> make_int_ne_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -103,7 +103,7 @@ static std::optional<ConstraintPtr> make_int_ne_reif(const ConstraintDecl& decl,
         !ctx.model->is_defined_var(b->id())) {
         ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntNeReifConstraint>(x, y, b);
+    return std::make_shared<IntNeReifConstraint>(x, y, b);
 }
 
 static std::optional<ConstraintPtr> make_int_le_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -116,7 +116,7 @@ static std::optional<ConstraintPtr> make_int_le_reif(const ConstraintDecl& decl,
         !ctx.model->is_defined_var(b->id())) {
         ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntLeReifConstraint>(x, y, b);
+    return std::make_shared<IntLeReifConstraint>(x, y, b);
 }
 
 static std::optional<ConstraintPtr> make_bool_not(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -126,7 +126,7 @@ static std::optional<ConstraintPtr> make_bool_not(const ConstraintDecl& decl, Fz
     if (!ctx.model->is_defined_var(a->id()) && !ctx.model->is_defined_var(b->id())) {
         ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntLinEqConstraint>(
+    return std::make_shared<IntLinEqConstraint>(
         std::vector<int64_t>{1, 1}, std::vector<VariablePtr>{a, b}, int64_t{1});
 }
 
@@ -139,7 +139,7 @@ static std::optional<ConstraintPtr> make_bool_xor(const ConstraintDecl& decl, Fz
         !ctx.model->is_defined_var(c->id())) {
         ctx.model->set_defined_var(c->id());
     }
-    return std::make_unique<BoolXorConstraint>(a, b, c);
+    return std::make_shared<BoolXorConstraint>(a, b, c);
 }
 
 static std::optional<ConstraintPtr> make_int_min(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -150,7 +150,7 @@ static std::optional<ConstraintPtr> make_int_min(const ConstraintDecl& decl, Fzn
     if (!ctx.model->is_defined_var(m->id())) {
         ctx.model->set_defined_var(m->id());
     }
-    return std::make_unique<IntMinConstraint>(x, y, m);
+    return std::make_shared<IntMinConstraint>(x, y, m);
 }
 
 static std::optional<ConstraintPtr> make_int_max(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -161,7 +161,7 @@ static std::optional<ConstraintPtr> make_int_max(const ConstraintDecl& decl, Fzn
     if (!ctx.model->is_defined_var(m->id())) {
         ctx.model->set_defined_var(m->id());
     }
-    return std::make_unique<IntMaxConstraint>(x, y, m);
+    return std::make_shared<IntMaxConstraint>(x, y, m);
 }
 
 static std::optional<ConstraintPtr> make_int_times(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -172,7 +172,7 @@ static std::optional<ConstraintPtr> make_int_times(const ConstraintDecl& decl, F
     if (!ctx.model->is_defined_var(z->id())) {
         ctx.model->set_defined_var(z->id());
     }
-    return std::make_unique<IntTimesConstraint>(x, y, z);
+    return std::make_shared<IntTimesConstraint>(x, y, z);
 }
 
 static std::optional<ConstraintPtr> make_int_div(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -183,7 +183,7 @@ static std::optional<ConstraintPtr> make_int_div(const ConstraintDecl& decl, Fzn
     if (!ctx.model->is_defined_var(z->id())) {
         ctx.model->set_defined_var(z->id());
     }
-    return std::make_unique<IntDivConstraint>(x, y, z);
+    return std::make_shared<IntDivConstraint>(x, y, z);
 }
 
 static std::optional<ConstraintPtr> make_int_mod(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -194,7 +194,7 @@ static std::optional<ConstraintPtr> make_int_mod(const ConstraintDecl& decl, Fzn
     if (!ctx.model->is_defined_var(z->id())) {
         ctx.model->set_defined_var(z->id());
     }
-    return std::make_unique<IntModConstraint>(x, y, z);
+    return std::make_shared<IntModConstraint>(x, y, z);
 }
 
 static std::optional<ConstraintPtr> make_int_abs(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -204,7 +204,7 @@ static std::optional<ConstraintPtr> make_int_abs(const ConstraintDecl& decl, Fzn
     if (!ctx.model->is_defined_var(y->id())) {
         ctx.model->set_defined_var(y->id());
     }
-    return std::make_unique<IntAbsConstraint>(x, y);
+    return std::make_shared<IntAbsConstraint>(x, y);
 }
 
 // ============================================================
@@ -214,19 +214,19 @@ static std::optional<ConstraintPtr> make_all_different(const ConstraintDecl& dec
     if (decl.args.size() != 1) throw std::runtime_error("all_different_int requires 1 argument (array)");
     auto vars = resolve_vars(decl.args[0], ctx);
     if (ctx.use_gac) {
-        return std::make_unique<AllDifferentGACConstraint>(std::move(vars));
+        return std::make_shared<AllDifferentGACConstraint>(std::move(vars));
     }
-    return std::make_unique<AllDifferentConstraint>(std::move(vars));
+    return std::make_shared<AllDifferentConstraint>(std::move(vars));
 }
 
 static std::optional<ConstraintPtr> make_alldifferent_except_0(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("alldifferent_except_0 requires 1 argument (array)");
-    return std::make_unique<AllDifferentExcept0Constraint>(resolve_vars(decl.args[0], ctx));
+    return std::make_shared<AllDifferentExcept0Constraint>(resolve_vars(decl.args[0], ctx));
 }
 
 static std::optional<ConstraintPtr> make_circuit(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("circuit requires 1 argument (array)");
-    return std::make_unique<CircuitConstraint>(resolve_vars(decl.args[0], ctx));
+    return std::make_shared<CircuitConstraint>(resolve_vars(decl.args[0], ctx));
 }
 
 static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -236,7 +236,7 @@ static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& de
     if (!ctx.model->is_defined_var(r->id())) {
         ctx.model->set_defined_var(r->id());
     }
-    return std::make_unique<ArrayBoolAndConstraint>(vars, r);
+    return std::make_shared<ArrayBoolAndConstraint>(vars, r);
 }
 
 static std::optional<ConstraintPtr> make_array_bool_or(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -246,41 +246,41 @@ static std::optional<ConstraintPtr> make_array_bool_or(const ConstraintDecl& dec
     if (!ctx.model->is_defined_var(r->id())) {
         ctx.model->set_defined_var(r->id());
     }
-    return std::make_unique<ArrayBoolOrConstraint>(vars, r);
+    return std::make_shared<ArrayBoolOrConstraint>(vars, r);
 }
 
 static std::optional<ConstraintPtr> make_array_bool_xor(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("array_bool_xor requires 1 argument (array)");
     auto vars = resolve_vars(decl.args[0], ctx);
-    return std::make_unique<ArrayBoolXorConstraint>(vars);
+    return std::make_shared<ArrayBoolXorConstraint>(vars);
 }
 
 static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("bool_clause requires 2 arguments");
     auto pos_vars = resolve_vars(decl.args[0], ctx);
     auto neg_vars = resolve_vars(decl.args[1], ctx);
-    return std::make_unique<BoolClauseConstraint>(pos_vars, neg_vars);
+    return std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
 }
 
 static std::optional<ConstraintPtr> make_array_int_maximum(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("array_int_maximum requires 2 arguments (max_var, array)");
     auto m = ctx.get_var(decl.args[0]);
     auto vars = resolve_vars(decl.args[1], ctx);
-    return std::make_unique<ArrayIntMaximumConstraint>(m, vars);
+    return std::make_shared<ArrayIntMaximumConstraint>(m, vars);
 }
 
 static std::optional<ConstraintPtr> make_array_int_minimum(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("array_int_minimum requires 2 arguments (min_var, array)");
     auto m = ctx.get_var(decl.args[0]);
     auto vars = resolve_vars(decl.args[1], ctx);
-    return std::make_unique<ArrayIntMinimumConstraint>(m, vars);
+    return std::make_shared<ArrayIntMinimumConstraint>(m, vars);
 }
 
 static std::optional<ConstraintPtr> make_table_int(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("table_int requires 2 arguments (vars, tuples)");
     auto vars = resolve_vars(decl.args[0], ctx);
     auto tuples = ctx.resolve_int_array(decl.args[1]);
-    return std::make_unique<TableConstraint>(vars, tuples);
+    return std::make_shared<TableConstraint>(vars, tuples);
 }
 
 static std::optional<ConstraintPtr> make_diffn(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -290,7 +290,7 @@ static std::optional<ConstraintPtr> make_diffn(const ConstraintDecl& decl, FznBu
     auto dx_vars = resolve_vars(decl.args[2], ctx);
     auto dy_vars = resolve_vars(decl.args[3], ctx);
     bool strict = (decl.name == "fzn_diffn");
-    return std::make_unique<DiffnConstraint>(
+    return std::make_shared<DiffnConstraint>(
         std::move(x_vars), std::move(y_vars),
         std::move(dx_vars), std::move(dy_vars), strict);
 }
@@ -301,7 +301,7 @@ static std::optional<ConstraintPtr> make_cumulative(const ConstraintDecl& decl, 
     auto durations = resolve_vars(decl.args[1], ctx);
     auto requirements = resolve_vars(decl.args[2], ctx);
     auto capacity = ctx.get_var(decl.args[3]);
-    return std::make_unique<CumulativeConstraint>(
+    return std::make_shared<CumulativeConstraint>(
         std::move(starts), std::move(durations),
         std::move(requirements), std::move(capacity));
 }
@@ -310,7 +310,7 @@ static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, Fzn
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
     auto invf = resolve_vars(decl.args[1], ctx);
-    return std::make_unique<InverseConstraint>(std::move(f), std::move(invf));
+    return std::make_shared<InverseConstraint>(std::move(f), std::move(invf));
 }
 
 static std::optional<ConstraintPtr> make_all_equal(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -333,7 +333,7 @@ static std::optional<ConstraintPtr> make_all_equal(const ConstraintDecl& decl, F
 
     // int_eq のチェインに分解: vars[0]=vars[1], vars[0]=vars[2], ...
     for (size_t i = 1; i < vars.size(); ++i) {
-        ctx.model->add_constraint(std::make_unique<IntEqConstraint>(vars[0], vars[i]));
+        ctx.model->add_constraint(std::make_shared<IntEqConstraint>(vars[0], vars[i]));
     }
     return std::nullopt;  // 全て add_constraint で追加済み
 }
@@ -343,7 +343,7 @@ static std::optional<ConstraintPtr> make_disjunctive(const ConstraintDecl& decl,
     auto starts = resolve_vars(decl.args[0], ctx);
     auto durations = resolve_vars(decl.args[1], ctx);
     bool strict = (decl.name == "fzn_disjunctive_strict");
-    return std::make_unique<DisjunctiveConstraint>(
+    return std::make_shared<DisjunctiveConstraint>(
         std::move(starts), std::move(durations), strict);
 }
 
@@ -362,7 +362,7 @@ static std::optional<ConstraintPtr> make_int_lin_eq(const ConstraintDecl& decl, 
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-    auto constraint = std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
+    auto constraint = std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
 
     // defined_var heuristic
     bool any_defined = false;
@@ -402,7 +402,7 @@ static std::optional<ConstraintPtr> make_int_lin_le(const ConstraintDecl& decl, 
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-    return std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
+    return std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
 }
 
 static std::optional<ConstraintPtr> make_int_lin_ne(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -417,7 +417,7 @@ static std::optional<ConstraintPtr> make_int_lin_ne(const ConstraintDecl& decl, 
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-    return std::make_unique<IntLinNeConstraint>(coeffs, vars, target);
+    return std::make_shared<IntLinNeConstraint>(coeffs, vars, target);
 }
 
 static std::optional<ConstraintPtr> make_int_lin_eq_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -440,7 +440,7 @@ static std::optional<ConstraintPtr> make_int_lin_eq_reif(const ConstraintDecl& d
         }
         if (!any_defined) ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntLinEqReifConstraint>(coeffs, vars, target, b);
+    return std::make_shared<IntLinEqReifConstraint>(coeffs, vars, target, b);
 }
 
 static std::optional<ConstraintPtr> make_int_lin_ne_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -463,7 +463,7 @@ static std::optional<ConstraintPtr> make_int_lin_ne_reif(const ConstraintDecl& d
         }
         if (!any_defined) ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntLinNeReifConstraint>(coeffs, vars, target, b);
+    return std::make_shared<IntLinNeReifConstraint>(coeffs, vars, target, b);
 }
 
 static std::optional<ConstraintPtr> make_int_lin_le_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -486,7 +486,7 @@ static std::optional<ConstraintPtr> make_int_lin_le_reif(const ConstraintDecl& d
         }
         if (!any_defined) ctx.model->set_defined_var(b->id());
     }
-    return std::make_unique<IntLinLeReifConstraint>(coeffs, vars, bound, b);
+    return std::make_shared<IntLinLeReifConstraint>(coeffs, vars, bound, b);
 }
 
 static std::optional<ConstraintPtr> make_int_lin_le_imp(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -502,7 +502,7 @@ static std::optional<ConstraintPtr> make_int_lin_le_imp(const ConstraintDecl& de
 
     std::vector<VariablePtr> vars;
     for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-    return std::make_unique<IntLinLeImpConstraint>(coeffs, vars, bound, b);
+    return std::make_shared<IntLinLeImpConstraint>(coeffs, vars, bound, b);
 }
 
 static std::optional<ConstraintPtr> make_bool_lin_eq(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -516,14 +516,14 @@ static std::optional<ConstraintPtr> make_bool_lin_eq(const ConstraintDecl& decl,
         auto sum = std::get<Domain::value_type>(decl.args[2]);
         std::vector<VariablePtr> vars;
         for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-        return std::make_unique<IntLinEqConstraint>(coeffs, vars, sum);
+        return std::make_shared<IntLinEqConstraint>(coeffs, vars, sum);
     } else {
         auto rhs_var = ctx.get_var(decl.args[2]);
         std::vector<VariablePtr> vars;
         for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         coeffs.push_back(-1);
         vars.push_back(rhs_var);
-        return std::make_unique<IntLinEqConstraint>(coeffs, vars, 0);
+        return std::make_shared<IntLinEqConstraint>(coeffs, vars, 0);
     }
 }
 
@@ -538,14 +538,14 @@ static std::optional<ConstraintPtr> make_bool_lin_le(const ConstraintDecl& decl,
         auto bound = std::get<Domain::value_type>(decl.args[2]);
         std::vector<VariablePtr> vars;
         for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
-        return std::make_unique<IntLinLeConstraint>(coeffs, vars, bound);
+        return std::make_shared<IntLinLeConstraint>(coeffs, vars, bound);
     } else {
         auto rhs_var = ctx.get_var(decl.args[2]);
         std::vector<VariablePtr> vars;
         for (const auto& name : var_names) vars.push_back(ctx.get_var_by_name(name));
         coeffs.push_back(-1);
         vars.push_back(rhs_var);
-        return std::make_unique<IntLinLeConstraint>(coeffs, vars, 0);
+        return std::make_shared<IntLinLeConstraint>(coeffs, vars, 0);
     }
 }
 
@@ -563,7 +563,7 @@ static std::optional<ConstraintPtr> make_bool2int(const ConstraintDecl& decl, Fz
     if (!ctx.model->is_defined_var(i->id())) {
         ctx.model->set_defined_var(i->id());
     }
-    return std::make_unique<IntEqConstraint>(b, i);
+    return std::make_shared<IntEqConstraint>(b, i);
 }
 
 static std::optional<ConstraintPtr> make_set_in(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -573,8 +573,8 @@ static std::optional<ConstraintPtr> make_set_in(const ConstraintDecl& decl, FznB
         const auto& range = std::get<IntRange>(decl.args[1]);
         auto lb_var = ctx.model->create_variable("__set_in_lb_" + x->name(), range.lb);
         auto ub_var = ctx.model->create_variable("__set_in_ub_" + x->name(), range.ub);
-        ctx.model->add_constraint(std::make_unique<IntLeConstraint>(lb_var, x));
-        ctx.model->add_constraint(std::make_unique<IntLeConstraint>(x, ub_var));
+        ctx.model->add_constraint(std::make_shared<IntLeConstraint>(lb_var, x));
+        ctx.model->add_constraint(std::make_shared<IntLeConstraint>(x, ub_var));
         return std::nullopt;
     } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
         const auto& values = std::get<std::vector<Domain::value_type>>(decl.args[1]);
@@ -608,9 +608,9 @@ static std::optional<ConstraintPtr> make_set_in_reif(const ConstraintDecl& decl,
         auto b2 = ctx.model->create_variable("__sir_b2_" + std::to_string(id), 0, 1);
         ctx.model->set_defined_var(b1->id());
         ctx.model->set_defined_var(b2->id());
-        ctx.model->add_constraint(std::make_unique<IntLeReifConstraint>(lb_var, x, b1));
-        ctx.model->add_constraint(std::make_unique<IntLeReifConstraint>(x, ub_var, b2));
-        ctx.model->add_constraint(std::make_unique<ArrayBoolAndConstraint>(
+        ctx.model->add_constraint(std::make_shared<IntLeReifConstraint>(lb_var, x, b1));
+        ctx.model->add_constraint(std::make_shared<IntLeReifConstraint>(x, ub_var, b2));
+        ctx.model->add_constraint(std::make_shared<ArrayBoolAndConstraint>(
             std::vector<VariablePtr>{b1, b2}, b));
         return std::nullopt;
     } else if (std::holds_alternative<std::vector<Domain::value_type>>(decl.args[1])) {
@@ -624,10 +624,10 @@ static std::optional<ConstraintPtr> make_set_in_reif(const ConstraintDecl& decl,
             auto bi = ctx.model->create_variable(
                 "__sir_bi_" + std::to_string(id) + "_" + std::to_string(i), 0, 1);
             ctx.model->set_defined_var(bi->id());
-            ctx.model->add_constraint(std::make_unique<IntEqReifConstraint>(x, vi_var, bi));
+            ctx.model->add_constraint(std::make_shared<IntEqReifConstraint>(x, vi_var, bi));
             bool_vars.push_back(bi);
         }
-        ctx.model->add_constraint(std::make_unique<ArrayBoolOrConstraint>(bool_vars, b));
+        ctx.model->add_constraint(std::make_shared<ArrayBoolOrConstraint>(bool_vars, b));
         return std::nullopt;
     }
     throw std::runtime_error("set_in_reif requires range or set argument");
@@ -701,10 +701,10 @@ static std::optional<ConstraintPtr> make_int_element(const ConstraintDecl& decl,
         auto mono = non_decreasing
             ? IntElementMonotonicConstraint::Monotonicity::NON_DECREASING
             : IntElementMonotonicConstraint::Monotonicity::NON_INCREASING;
-        constraint = std::make_unique<IntElementMonotonicConstraint>(
+        constraint = std::make_shared<IntElementMonotonicConstraint>(
             index_var, array, result_var, mono, false);
     } else {
-        constraint = std::make_unique<IntElementConstraint>(index_var, array, result_var, false);
+        constraint = std::make_shared<IntElementConstraint>(index_var, array, result_var, false);
     }
 
     if (!((non_decreasing || non_increasing) && array.size() > 1)) {
@@ -726,7 +726,7 @@ static std::optional<ConstraintPtr> make_array_var_int_element(const ConstraintD
     auto array_vars = resolve_vars(decl.args[1], ctx);
     VariablePtr result_var = ctx.get_var(decl.args[2]);
 
-    auto constraint = std::make_unique<ArrayVarIntElementConstraint>(
+    auto constraint = std::make_shared<ArrayVarIntElementConstraint>(
         index_var, array_vars, result_var, false);
     ctx.model->set_no_bisect(index_var->id());
     if (!ctx.model->is_defined_var(result_var->id())) {
@@ -746,14 +746,14 @@ static std::optional<ConstraintPtr> make_count_eq(const ConstraintDecl& decl, Fz
 
     if (std::holds_alternative<Domain::value_type>(decl.args[1])) {
         auto target_val = std::get<Domain::value_type>(decl.args[1]);
-        return std::make_unique<CountEqConstraint>(x_vars, target_val, c_var);
+        return std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
     } else if (std::holds_alternative<std::string>(decl.args[1])) {
         auto y_var = ctx.get_var(decl.args[1]);
         if (y_var->is_assigned()) {
             auto target_val = y_var->assigned_value().value();
-            return std::make_unique<CountEqConstraint>(x_vars, target_val, c_var);
+            return std::make_shared<CountEqConstraint>(x_vars, target_val, c_var);
         } else {
-            return std::make_unique<CountEqVarTargetConstraint>(x_vars, y_var, c_var);
+            return std::make_shared<CountEqVarTargetConstraint>(x_vars, y_var, c_var);
         }
     }
     throw std::runtime_error("fzn_count_eq: target (y) must be an integer or variable");
@@ -785,7 +785,7 @@ static std::optional<ConstraintPtr> make_regular(const ConstraintDecl& decl, Fzn
     for (const auto& v : vars) {
         ctx.model->set_no_bisect(v->id());
     }
-    return std::make_unique<RegularConstraint>(
+    return std::make_shared<RegularConstraint>(
         std::move(vars), (int)Q, (int)S,
         std::vector<int>(d.begin(), d.end()),
         (int)q0, std::move(accepting));
@@ -798,7 +798,7 @@ static std::optional<ConstraintPtr> make_nvalue(const ConstraintDecl& decl, FznB
     if (decl.args.size() != 2) throw std::runtime_error("fzn_nvalue requires 2 arguments (n, x)");
     auto n_var = ctx.get_var(decl.args[0]);
     auto x_vars = resolve_vars(decl.args[1], ctx);
-    return std::make_unique<NValueConstraint>(std::move(n_var), std::move(x_vars));
+    return std::make_shared<NValueConstraint>(std::move(n_var), std::move(x_vars));
 }
 
 // ============================================================

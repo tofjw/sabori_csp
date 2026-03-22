@@ -44,5 +44,10 @@ target_include_directories(sabori_csp_core PUBLIC
   ${CMAKE_SOURCE_DIR}/include
 )
 
+# Enable PIC when building Python bindings (shared library requires it)
+if(BUILD_PYTHON_BINDINGS)
+  set_target_properties(sabori_csp_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # Alias for cleaner usage
 add_library(sabori_csp::core ALIAS sabori_csp_core)
