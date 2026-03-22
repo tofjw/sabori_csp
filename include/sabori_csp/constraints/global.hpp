@@ -1257,6 +1257,10 @@ public:
      */
     void rewind_to(int save_point) override;
 
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
 protected:
 
 

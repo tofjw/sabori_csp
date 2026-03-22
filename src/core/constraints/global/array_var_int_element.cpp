@@ -443,4 +443,37 @@ void ArrayVarIntElementConstraint::rewind_to(int save_point) {
     }
 }
 
+void ArrayVarIntElementConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                                   double* activity, double activity_inc,
+                                                   bool& need_rescale, std::mt19937& rng) const {
+    // index が確定済み → index, result, array[index] の3変数に集中。
+    // デフォルトだと無関係な配列要素にも activity が分散する。
+    // 矛盾に関係するのは index の選択と、その結果の array[index] と result の
+    // 値の不整合であるため、これら3変数だけに bump を集中させる。
+    if (model.is_instantiated(index_id_)) {
+        auto idx = model.value(index_id_);
+        auto idx_0based = index_to_0based(idx);
+
+        size_t count = 1;  // index
+        if (model.is_instantiated(result_id_)) ++count;
+        bool arr_valid = (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_);
+        size_t arr_id = 0;
+        if (arr_valid) {
+            arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
+            if (model.is_instantiated(arr_id)) ++count;
+        }
+
+        double inc = activity_inc / count;
+        bump_variable_activity(activity, index_id_, inc, need_rescale, rng);
+        if (model.is_instantiated(result_id_))
+            bump_variable_activity(activity, result_id_, inc, need_rescale, rng);
+        if (arr_valid && model.is_instantiated(arr_id))
+            bump_variable_activity(activity, arr_id, inc, need_rescale, rng);
+        return;
+    }
+
+    // index 未確定 → デフォルト動作
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+}
+
 }  // namespace sabori_csp
