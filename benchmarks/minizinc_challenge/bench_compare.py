@@ -510,12 +510,42 @@ def generate_html(results, problems, year, output_path=None, prob_types=None, da
         f.write(html)
     print(f"\nHTML report saved to: {output_path}")
 
+MZN_CHALLENGE_REPO = "https://github.com/MiniZinc/mzn-challenge.git"
+
+def fetch_problems(year):
+    """MiniZinc Challenge リポジトリから問題セットを取得"""
+    probs_dir = BASE_DIR / f"mznc{year}_probs"
+    print(f"Fetching MiniZinc Challenge {year} problems...")
+
+    # sparse checkout で指定年度のみ取得
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir) / "mzn-challenge"
+        subprocess.run(
+            ["git", "clone", "--filter=blob:none", "--sparse", "--branch", "develop",
+             MZN_CHALLENGE_REPO, str(tmp)],
+            check=True, capture_output=True, text=True
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp), "sparse-checkout", "set", str(year)],
+            check=True, capture_output=True, text=True
+        )
+        src = tmp / str(year)
+        if not src.exists():
+            print(f"ERROR: Year {year} not found in mzn-challenge repository")
+            return False
+
+        import shutil
+        shutil.copytree(src, probs_dir)
+
+    print(f"Downloaded to {probs_dir}")
+    return True
+
 def run_year(year):
     """指定年のベンチマークを実行"""
     probs_dir = BASE_DIR / f"mznc{year}_probs"
     if not probs_dir.exists():
-        print(f"ERROR: {probs_dir} does not exist")
-        return
+        if not fetch_problems(year):
+            return
 
     problems = sorted(
         [p.name for p in probs_dir.iterdir() if p.is_dir()],
