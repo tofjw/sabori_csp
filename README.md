@@ -43,13 +43,32 @@ cmake --build build
 ./build/src/fzn/fzn_sabori -a problem.fzn
 ```
 
-### Use with MiniZinc
+### Install as a MiniZinc solver
 
-Install the solver configuration so that MiniZinc can discover it, then run:
+After building, register the solver so that MiniZinc can discover it:
+
+```bash
+# Copy the solver config to MiniZinc's search path
+mkdir -p ~/.minizinc/solvers
+cp build/share/minizinc/solvers/sabori_csp.msc ~/.minizinc/solvers/
+
+# Copy the solver library (redefinitions, predicate files)
+cp -r build/share/minizinc/sabori_csp ~/.minizinc/
+```
+
+Verify the installation:
+
+```bash
+minizinc --solvers | grep sabori
+```
+
+Then run:
 
 ```bash
 minizinc --solver sabori_csp model.mzn data.dzn
 ```
+
+**Note:** The `.msc` file contains absolute paths to `fzn_sabori` and the solver library directory. If you move the build directory, regenerate by re-running `cmake --build build`.
 
 ## Python
 
