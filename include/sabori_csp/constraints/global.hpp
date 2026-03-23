@@ -1257,6 +1257,10 @@ public:
      */
     void rewind_to(int save_point) override;
 
+    bool on_remove_value(Model& model, int save_point,
+                         size_t var_idx, size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
     void bump_activity(const Model& model, size_t trigger_var_idx,
                        double* activity, double activity_inc,
                        bool& need_rescale, std::mt19937& rng) const override;
@@ -1270,51 +1274,30 @@ private:
     size_t index_id_;
     size_t result_id_;
 
+    // Support tracking mode (elem_dom が小さい問題でのみ有効)
+    bool use_support_tracking_ = false;
+
     // Bounds support tracking
-    // result の下限をサポートするインデックス（array[i].min が最小のもの）
-    Domain::value_type current_result_min_support_;  // サポートしている最小値
-    // result の上限をサポートするインデックス（array[i].max が最大のもの）
-    Domain::value_type current_result_max_support_;  // サポートしている最大値
+    Domain::value_type current_result_min_support_;  ///< result の下限サポート値
+    Domain::value_type current_result_max_support_;  ///< result の上限サポート値
+    size_t min_support_arr_idx_ = SIZE_MAX;  ///< result min を提供する配列要素の 0-based index
+    size_t max_support_arr_idx_ = SIZE_MAX;  ///< result max を提供する配列要素の 0-based index
 
     // Trail for bounds support
     struct TrailEntry {
         Domain::value_type min_support;
         Domain::value_type max_support;
+        size_t min_support_idx;
+        size_t max_support_idx;
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
-    /**
-     * @brief index を 0-based に変換
-     */
     Domain::value_type index_to_0based(Domain::value_type idx) const;
-
-    /**
-     * @brief 0-based index を 1-based (or 0-based) に変換
-     */
     Domain::value_type index_from_0based(size_t idx_0based) const;
 
-    /**
-     * @brief bounds consistency を維持
-     * @param model モデル参照
-     * @param save_point セーブポイント（-1 の場合は直接ドメイン操作）
-     * @return 矛盾がなければ true
-     */
     bool propagate_bounds(Model& model, int save_point = -1);
-
-    /**
-     * @brief キュー経由で bounds 伝播（探索中に使用）
-     *
-     * propagate_bounds と同じロジックだが、model.enqueue_* を使って
-     * 他の制約にも通知が届くようにする。
-     *
-     * @param model モデル参照
-     * @return 矛盾がなければ true
-     */
     bool propagate_via_queue(Model& model);
-
-    /**
-     * @brief result の bounds support を再計算
-     */
+    bool filter_index_against_result(Model& model);
     void recompute_bounds_support(Model& model);
 };
 
