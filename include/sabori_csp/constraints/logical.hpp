@@ -2,6 +2,7 @@
 #define SABORI_CSP_CONSTRAINTS_LOGICAL_HPP
 
 #include "sabori_csp/constraint.hpp"
+#include <unordered_map>
 #include <vector>
 #include <utility>
 
