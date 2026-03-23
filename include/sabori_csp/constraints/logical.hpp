@@ -39,9 +39,9 @@ public:
     bool on_last_uninstantiated(Model& model, int save_point,
                                 size_t last_var_internal_idx) override;
 
-    /**
-     * @brief バックトラック時に watched literal の状態を復元
-     */
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
 
 protected:
 

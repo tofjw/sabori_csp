@@ -374,6 +374,20 @@ void ArrayBoolAndConstraint::move_watch(Model& model, int /*save_point*/, int wh
     }
 }
 
+void ArrayBoolAndConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                            double* activity, double activity_inc,
+                                            bool& need_rescale, std::mt19937& rng) const {
+    // AND で r=1 は全 bi=1 が必要で、配列が長いほど指数的に稀になる。
+    // r=1 での矛盾は「r=1 を選んだこと自体」が強いシグナルなので、
+    // r に全 bump を集中して早期判定を促す。r=0 はデフォルト。
+    if (model.is_instantiated(r_id_) && model.value(r_id_) == 1) {
+        bump_variable_activity(activity, r_id_, activity_inc, need_rescale, rng);
+        return;
+    }
+
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+}
+
 // ============================================================================
 // ArrayBoolOrConstraint implementation
 // ============================================================================
