@@ -85,10 +85,13 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
                 const auto& b_name = std::get<std::string>(decl.args[0]);
                 const auto& i_name = std::get<std::string>(decl.args[1]);
                 // 両方が固定値でない場合のみエイリアス化
+                // lb == ub の変数は実質固定値なのでエイリアス化しない
+                // （ドメイン制約が正規変数に伝播されないバグを防ぐ）
                 auto b_it = var_decls_.find(b_name);
                 auto i_it = var_decls_.find(i_name);
                 if (b_it != var_decls_.end() && i_it != var_decls_.end() &&
-                    !b_it->second.fixed_value && !i_it->second.fixed_value) {
+                    !b_it->second.fixed_value && !i_it->second.fixed_value &&
+                    b_it->second.lb != b_it->second.ub && i_it->second.lb != i_it->second.ub) {
                     alias_map[i_name] = b_name;
                 }
             }
