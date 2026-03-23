@@ -119,6 +119,20 @@ static std::optional<ConstraintPtr> make_int_le_reif(const ConstraintDecl& decl,
     return std::make_shared<IntLeReifConstraint>(x, y, b);
 }
 
+static std::optional<ConstraintPtr> make_int_lt_reif(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3) throw std::runtime_error("int_lt_reif requires 3 arguments");
+    auto x = ctx.get_var(decl.args[0]);
+    auto y = ctx.get_var(decl.args[1]);
+    auto b = ctx.get_var(decl.args[2]);
+    if (!ctx.model->is_defined_var(x->id()) && !ctx.model->is_defined_var(y->id()) &&
+        !ctx.model->is_defined_var(b->id())) {
+        ctx.model->set_defined_var(b->id());
+    }
+    // x < y <-> b  ≡  x - y <= -1 <-> b
+    return std::make_shared<IntLinLeReifConstraint>(
+        std::vector<int64_t>{1, -1}, std::vector<VariablePtr>{x, y}, int64_t{-1}, b);
+}
+
 static std::optional<ConstraintPtr> make_bool_not(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("bool_not requires 2 arguments");
     auto a = ctx.get_var(decl.args[0]);
@@ -814,6 +828,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("int_eq_imp", make_int_eq_imp);
     registry.register_constraint("int_ne_reif", make_int_ne_reif);
     registry.register_constraint("int_le_reif", make_int_le_reif);
+    registry.register_constraint("int_lt_reif", make_int_lt_reif);
     registry.register_constraint("bool_not", make_bool_not);
     registry.register_constraint("bool_xor", make_bool_xor);
     registry.register_constraint("int_min", make_int_min);
@@ -831,6 +846,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("bool_eq_reif", make_int_eq_reif);
     registry.register_constraint("bool_eq_imp", make_int_eq_imp);
     registry.register_constraint("bool_le_reif", make_int_le_reif);
+    registry.register_constraint("bool_lt_reif", make_int_lt_reif);
 
     // Pattern B: Array constraints
     registry.register_constraint("all_different_int", make_all_different);

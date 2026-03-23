@@ -101,7 +101,7 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
     // Create variables
     for (const auto& [name, decl] : var_decls_) {
         // エイリアス対象の変数はスキップ
-        if (alias_map.count(name)) {
+        if (alias_map.count(name) || decl.alias_target) {
             continue;
         }
         VariablePtr var;
@@ -125,6 +125,17 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
         if (it != var_map.end()) {
             var_map[alias_name] = it->second;
             model->add_variable_alias(alias_name, it->second->id());
+        }
+    }
+
+    // Handle var aliases (e.g., var 0..10000: objective = X_INTRODUCED_1111_)
+    for (const auto& [name, decl] : var_decls_) {
+        if (decl.alias_target) {
+            auto it = var_map.find(*decl.alias_target);
+            if (it != var_map.end()) {
+                var_map[name] = it->second;
+                model->add_variable_alias(name, it->second->id());
+            }
         }
     }
 

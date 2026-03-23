@@ -28,6 +28,7 @@ struct VarDecl {
     bool is_defined_var = false;  // true if annotated with is_defined_var
     std::optional<Domain::value_type> fixed_value;  // For par (constant) values
     std::vector<Domain::value_type> domain_values;  // For set domain: var {1,3,5}: x
+    std::optional<std::string> alias_target;  // For var alias: var 0..10: x = y;
 };
 
 /**

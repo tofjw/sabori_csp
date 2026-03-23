@@ -65,6 +65,19 @@ std::vector<Domain::value_type> FznBuildContext::resolve_int_array(const Constra
         }
         throw std::runtime_error("Unknown constant array: " + name);
     }
+    if (std::holds_alternative<std::vector<std::string>>(arg)) {
+        const auto& str_vec = std::get<std::vector<std::string>>(arg);
+        std::vector<Domain::value_type> result;
+        result.reserve(str_vec.size());
+        for (const auto& s : str_vec) {
+            if (s.rfind("__inline_", 0) == 0) {
+                result.push_back(std::stoll(s.substr(9)));
+            } else {
+                throw std::runtime_error("Expected integer array, got variable name: " + s);
+            }
+        }
+        return result;
+    }
     throw std::runtime_error("Expected array of integers");
 }
 

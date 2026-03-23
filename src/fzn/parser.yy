@@ -157,6 +157,24 @@ var_decl:
             ctx->model->add_var_decl(std::move(decl));
             delete $6;
         }
+    | VAR int_literal DOTDOT int_literal ':' identifier annotations '=' identifier ';'
+        {
+            VarDecl decl;
+            decl.name = *$6;
+            decl.lb = $2;
+            decl.ub = $4;
+            decl.alias_target = *$9;
+            if ($7) {
+                for (const auto& ann : *$7) {
+                    if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
+                }
+                delete $7;
+            }
+            ctx->model->add_var_decl(std::move(decl));
+            delete $6;
+            delete $9;
+        }
     | VAR INT ':' identifier annotations ';'
         {
             // var int with no explicit bounds - use default range
@@ -173,6 +191,24 @@ var_decl:
             }
             ctx->model->add_var_decl(std::move(decl));
             delete $4;
+        }
+    | VAR INT ':' identifier annotations '=' identifier ';'
+        {
+            VarDecl decl;
+            decl.name = *$4;
+            decl.lb = -1000000000;
+            decl.ub = 1000000000;
+            decl.alias_target = *$7;
+            if ($5) {
+                for (const auto& ann : *$5) {
+                    if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
+                }
+                delete $5;
+            }
+            ctx->model->add_var_decl(std::move(decl));
+            delete $4;
+            delete $7;
         }
     | VAR BOOL ':' identifier annotations ';'
         {
@@ -208,6 +244,25 @@ var_decl:
             }
             ctx->model->add_var_decl(std::move(decl));
             delete $4;
+        }
+    | VAR BOOL ':' identifier annotations '=' identifier ';'
+        {
+            VarDecl decl;
+            decl.name = *$4;
+            decl.lb = 0;
+            decl.ub = 1;
+            decl.is_bool = true;
+            decl.alias_target = *$7;
+            if ($5) {
+                for (const auto& ann : *$5) {
+                    if (ann == "output_var") decl.is_output = true;
+                    if (ann == "is_defined_var") decl.is_defined_var = true;
+                }
+                delete $5;
+            }
+            ctx->model->add_var_decl(std::move(decl));
+            delete $4;
+            delete $7;
         }
     | VAR SET OF int_literal DOTDOT int_literal ':' identifier annotations ';'
         {
@@ -570,11 +625,6 @@ constraint_arg:
         {
             $$ = new ConstraintArg(*$1);
             delete $1;
-        }
-    | '[' int_list_inner ']'
-        {
-            $$ = new ConstraintArg(std::move(*$2));
-            delete $2;
         }
     | '[' id_list_inner ']'
         {
