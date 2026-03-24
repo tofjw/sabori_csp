@@ -1,13 +1,13 @@
-# MiniZinc Challenge 2025 ベンチマーク
+# MiniZinc Challenge ベンチマーク
 
 ## 概要
 
-MiniZinc Challenge 2025 の問題を使用した sabori_csp のベンチマーク環境。
+MiniZinc Challenge の問題を使用した sabori_csp のベンチマーク環境。
 
 ## ディレクトリ構成
 
 ```
-benchmarks/minizinc_challenge_2025/
+benchmarks/minizinc_challenge/
 ├── mznc2025_probs/           # MiniZinc Challenge 2025 問題セット
 ├── squashfs-root/            # MiniZinc バンドル（AppImage展開）
 │   └── usr/share/minizinc/
@@ -15,7 +15,7 @@ benchmarks/minizinc_challenge_2025/
 │       │   └── sabori.msc    # Sabori ソルバー設定
 │       └── sabori_csp/
 │           └── redefinitions.mzn  # Sabori 用制約定義
-├── run_single.py             # 単一問題実行スクリプト
+├── bench_compare.py             # 単一問題実行スクリプト
 └── README.md
 ```
 
@@ -94,9 +94,8 @@ include "nosets.mzn";
 
 ## 注意事項
 
-1. **直接 fzn_sabori を実行しない** - redefinitions.mzn が適用されず、未サポート制約でエラーになる
-2. **ソルバー名は sabori_csp** - `--solver sabori` ではなく `--solver sabori_csp`
-3. **作業ディレクトリ** - `benchmarks/minizinc_challenge_2025/` から実行すること
+1. **ソルバー名は sabori_csp** - `--solver sabori` ではなく `--solver sabori_csp`
+2. **作業ディレクトリ** - `benchmarks/minizinc_challenge/` から実行すること
 
 ## ベンチマーク実行条件
 
@@ -125,42 +124,20 @@ include "nosets.mzn";
 | UNSAT | 充足不能 |
 | ERROR | パースエラーまたは未サポート制約 |
 
-### 既知の制限事項
-- `set_in_reif` + 集合リテラル `{1,3,5}` はパース未対応
-  - 影響: carpet-cutting, skill-allocation, stripboard
-
 ## ベンチマークスクリプト
 
-### run_single.py - 単一問題実行
+### bench_compare.py - 年度別全問題ベンチマーク
 
-個別の問題をデバッグ・テストするためのスクリプト。
+指定年度の全問題で Sabori と CP-SAT を比較し、HTML レポートを生成する。
 
 ```bash
-cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
+cd benchmarks/minizinc_challenge
 
-# 基本: 最小インスタンスを両ソルバーで実行
-./run_single.py atsp
+# 単年度
+python3 bench_compare.py 2024
 
-# インスタンス指定
-./run_single.py atsp instance1_0p05
-
-# ソルバー指定
-./run_single.py hitori h5-1 --solver sabori
-./run_single.py hitori h5-1 --solver cpsat
-
-# タイムアウト指定（デフォルト30秒）
-./run_single.py fbd1 --timeout 60
-
-# 組み合わせ
-./run_single.py mondoku 8-8-4 --solver both --timeout 120
+# 複数年度
+python3 bench_compare.py 2022 2023 2024 2025
 ```
 
-**オプション**:
-| オプション | 説明 | デフォルト |
-|-----------|------|-----------|
-| `problem` | 問題名（mznc2025_probs/のディレクトリ名） | 必須 |
-| `instance` | インスタンス名（.dzn/.json拡張子なし） | 最小番号 |
-| `--solver` | `sabori` / `cpsat` / `both` | `both` |
-| `--timeout` | タイムアウト秒数 | 30 |
-
-**出力**: 解の出力、ステータス（`==========` で最適解証明）、エラーメッセージ
+各問題の最小インスタンスを自動選択し、30秒タイムアウト・最大4並列で実行。結果は `sabori_benchmark_<年度>_<日時>.html` に出力される。
