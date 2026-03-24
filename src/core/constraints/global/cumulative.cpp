@@ -26,10 +26,23 @@ bool TimeTablingPropagator::propagate_impl(
     for (size_t i = 0; i < n; ++i) {
         int64_t dur_min = model.var_min(var_ids[n + i]);
         int64_t req_min = model.var_min(var_ids[2 * n + i]);
-        if (dur_min <= 0 || req_min <= 0) continue;
+        if (dur_min < 0 || req_min <= 0) continue;
 
         int64_t est = model.var_min(var_ids[i]);          // earliest start
         int64_t lst = model.var_max(var_ids[i]);          // latest start
+
+        // Gecode 互換: dur=0 のポイントタスクも開始時点でリソースを消費する。
+        // FlatZinc 仕様上は s[i] <= t < s[i]+d[i] なので dur=0 は空区間だが、
+        // Gecode/Chuffed はポイントタスクをカウントする。MiniZinc Challenge の
+        // 問題はこのセマンティクスを前提としているため、互換性のため合わせる。
+        if (dur_min == 0) {
+            if (est == lst) {
+                events.push_back({est, req_min});
+                events.push_back({est + 1, -req_min});
+            }
+            continue;
+        }
+
         int64_t ect = est + dur_min;                       // earliest completion
 
         // Mandatory part exists when LST < ECT
@@ -91,7 +104,10 @@ bool TimeTablingPropagator::propagate_impl(
 
         int64_t dur_min = model.var_min(d_id);
         int64_t req_min = model.var_min(r_id);
-        if (dur_min <= 0 || req_min <= 0) continue;
+        if (dur_min < 0 || req_min <= 0) continue;
+        // dur=0 ポイントタスクは Step 1 のプロファイルでカウント済み。
+        // EST/LST の刈り込みは duration > 0 のタスクのみ対象。
+        if (dur_min == 0) continue;
         if (direct && model.variable(s_id)->is_assigned()) continue;
         if (!direct && model.is_instantiated(s_id)) continue;
 
@@ -229,7 +245,10 @@ void TTEFPropagator::build_tasks(const Model& model, size_t n,
     for (size_t i = 0; i < n; ++i) {
         int64_t dur = model.var_min(var_ids[n + i]);
         int64_t req = model.var_min(var_ids[2 * n + i]);
-        if (dur <= 0 || req <= 0) continue;
+        if (dur < 0 || req <= 0) continue;
+        // dur=0 ポイントタスクは TimeTabling で処理。TTEF のエネルギー計算では
+        // energy=dur*req=0 となり刈り込みに寄与しないためスキップ。
+        if (dur == 0) continue;
 
         int64_t est = model.var_min(var_ids[i]);
         int64_t lst = model.var_max(var_ids[i]);
