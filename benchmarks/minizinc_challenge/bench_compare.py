@@ -175,8 +175,8 @@ def verify_solution(mzn, data, solution, timeout=10):
                 return "CHECK_OK"
             elif "=====UNSATISFIABLE=====" in stdout:
                 return "CHECK_FAIL"
-            elif proc.returncode != 0 and ("Error:" in stderr or "error:" in stderr):
-                # Gecode compilation error — retry with Chuffed
+            elif proc.returncode != 0:
+                # Gecode error (compilation error, crash, etc.) — retry with Chuffed
                 cmd_chuffed = [MINIZINC, "--solver", "chuffed", str(checker_path)]
                 if data:
                     cmd_chuffed.append(data)
@@ -207,7 +207,7 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
     if data:
         cmd.append(data)
 
-    start = time.time()
+    start = time.monotonic()
     proc = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -234,7 +234,7 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
 
             return (problem, solver_name, "TIMEOUT", TIMEOUT, obj, None, data_label, check)
 
-        elapsed = time.time() - start
+        elapsed = time.monotonic() - start
         output = stdout
 
         if "==========\n" in output:
