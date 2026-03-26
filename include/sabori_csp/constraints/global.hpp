@@ -1958,7 +1958,8 @@ private:
  */
 class InverseConstraint : public Constraint {
 public:
-    InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf);
+    InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf,
+                      int64_t offset = 0);
 
     std::string name() const override;
 

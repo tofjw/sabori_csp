@@ -54,9 +54,12 @@ class _Table(_GlobalConstraint):
 
 
 class _Inverse(_GlobalConstraint):
-    def __init__(self, f: Sequence[IntVar], invf: Sequence[IntVar]) -> None:
+    def __init__(
+        self, f: Sequence[IntVar], invf: Sequence[IntVar], offset: int = 0
+    ) -> None:
         self.f = list(f)
         self.invf = list(invf)
+        self.offset = offset
 
 
 class _Cumulative(_GlobalConstraint):
@@ -179,9 +182,15 @@ def table(
     return _Table(vars, tuples)
 
 
-def inverse(f: Sequence[IntVar], invf: Sequence[IntVar]) -> _Inverse:
-    """f and invf are inverse permutations."""
-    return _Inverse(f, invf)
+def inverse(
+    f: Sequence[IntVar], invf: Sequence[IntVar], offset: int = 0
+) -> _Inverse:
+    """f and invf are inverse permutations (0-based by default).
+
+    With offset=0: f[i] = j ⟺ invf[j] = i, values in {0, ..., n-1}.
+    With offset=1: f[i] = j ⟺ invf[j-1] = i+1, values in {1, ..., n} (FlatZinc convention).
+    """
+    return _Inverse(f, invf, offset)
 
 
 def cumulative(

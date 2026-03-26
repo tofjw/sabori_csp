@@ -111,17 +111,29 @@ class TestTable:
 
 
 class TestInverse:
-    def test_basic(self, ms):
+    def test_0based(self, ms):
+        """Default offset=0: f[i]=j ⟺ g[j]=i, values in {0,1,2}."""
         m, s = ms
-        # inverse uses 1-based indexing (FlatZinc convention)
-        f = [m.int_var(1, 3, f"f{i}") for i in range(3)]
-        g = [m.int_var(1, 3, f"g{i}") for i in range(3)]
+        f = [m.int_var(0, 2, f"f{i}") for i in range(3)]
+        g = [m.int_var(0, 2, f"g{i}") for i in range(3)]
         m.add(inverse(f, g))
         m.add(all_different(f))
         s.solve(m)
         fv = [s.value(v) for v in f]
         gv = [s.value(v) for v in g]
-        # f[i] = j ⟹ g[j-1] = i+1 (1-based)
+        for i in range(3):
+            assert gv[fv[i]] == i
+
+    def test_1based(self, ms):
+        """offset=1 (FlatZinc): f[i]=j ⟺ g[j-1]=i+1, values in {1,2,3}."""
+        m, s = ms
+        f = [m.int_var(1, 3, f"f{i}") for i in range(3)]
+        g = [m.int_var(1, 3, f"g{i}") for i in range(3)]
+        m.add(inverse(f, g, offset=1))
+        m.add(all_different(f))
+        s.solve(m)
+        fv = [s.value(v) for v in f]
+        gv = [s.value(v) for v in g]
         for i in range(3):
             assert gv[fv[i] - 1] == i + 1
 

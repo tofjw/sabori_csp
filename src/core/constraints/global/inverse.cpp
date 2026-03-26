@@ -7,10 +7,11 @@ namespace sabori_csp {
 // InverseConstraint implementation
 // ============================================================================
 
-InverseConstraint::InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf)
+InverseConstraint::InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf,
+                                     int64_t offset)
     : Constraint()
     , n_(f.size())
-    , offset_(1)  // FlatZinc inverse is 1-indexed
+    , offset_(offset)
 {
     if (f.size() != invf.size()) {
         set_initially_inconsistent(true);

@@ -478,7 +478,9 @@ class CpModel:
         elif isinstance(ct, _Inverse):
             f_raw = [v._var for v in ct.f]
             invf_raw = [v._var for v in ct.invf]
-            self._model.add_constraint(core.InverseConstraint(f_raw, invf_raw))
+            self._model.add_constraint(
+                core.InverseConstraint(f_raw, invf_raw, ct.offset)
+            )
         elif isinstance(ct, _Cumulative):
             starts = [v._var for v in ct.starts]
             durs = [self._ensure_var(d)._var for d in ct.durations]

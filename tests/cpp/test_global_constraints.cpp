@@ -4180,45 +4180,45 @@ TEST_CASE("CountEqConstraint solver integration", "[constraint][count_eq]") {
 
 TEST_CASE("InverseConstraint name", "[constraint][inverse]") {
     Model model;
-    auto* f1 = model.create_variable("f1", Domain(1, 2));
-    auto* f2 = model.create_variable("f2", Domain(1, 2));
-    auto* g1 = model.create_variable("g1", Domain(1, 2));
-    auto* g2 = model.create_variable("g2", Domain(1, 2));
+    auto* f1 = model.create_variable("f1", Domain(0, 1));
+    auto* f2 = model.create_variable("f2", Domain(0, 1));
+    auto* g1 = model.create_variable("g1", Domain(0, 1));
+    auto* g2 = model.create_variable("g2", Domain(0, 1));
     InverseConstraint c({f1, f2}, {g1, g2});
     REQUIRE(c.name() == "inverse");
 }
 
 TEST_CASE("InverseConstraint on_final_instantiate", "[constraint][inverse]") {
-    SECTION("valid inverse pair") {
+    SECTION("valid inverse pair (0-based)") {
         Model model;
-        auto* f1 = model.create_variable("f1", Domain(2, 2));
-        auto* f2 = model.create_variable("f2", Domain(1, 1));
-        auto* g1 = model.create_variable("g1", Domain(2, 2));
-        auto* g2 = model.create_variable("g2", Domain(1, 1));
+        auto* f1 = model.create_variable("f1", Domain(1, 1));  // f[0]=1
+        auto* f2 = model.create_variable("f2", Domain(0, 0));  // f[1]=0
+        auto* g1 = model.create_variable("g1", Domain(1, 1));  // g[0]=1
+        auto* g2 = model.create_variable("g2", Domain(0, 0));  // g[1]=0
         InverseConstraint c({f1, f2}, {g1, g2});
         REQUIRE(c.on_final_instantiate(model) == true);
     }
 
-    SECTION("invalid inverse pair") {
+    SECTION("invalid inverse pair (0-based)") {
         Model model;
-        auto* f1 = model.create_variable("f1", Domain(2, 2));
-        auto* f2 = model.create_variable("f2", Domain(1, 1));
-        auto* g1 = model.create_variable("g1", Domain(1, 1));
-        auto* g2 = model.create_variable("g2", Domain(2, 2));
+        auto* f1 = model.create_variable("f1", Domain(1, 1));  // f[0]=1
+        auto* f2 = model.create_variable("f2", Domain(0, 0));  // f[1]=0
+        auto* g1 = model.create_variable("g1", Domain(0, 0));  // g[0]=0 — wrong
+        auto* g2 = model.create_variable("g2", Domain(1, 1));  // g[1]=1 — wrong
         InverseConstraint c({f1, f2}, {g1, g2});
         REQUIRE(c.on_final_instantiate(model) == false);
     }
 }
 
 TEST_CASE("InverseConstraint solver integration", "[constraint][inverse]") {
-    SECTION("3 variables - all solutions") {
+    SECTION("3 variables - all solutions (0-based)") {
         Model model;
-        auto* f1 = model.create_variable("f1", Domain(1, 3));
-        auto* f2 = model.create_variable("f2", Domain(1, 3));
-        auto* f3 = model.create_variable("f3", Domain(1, 3));
-        auto* g1 = model.create_variable("g1", Domain(1, 3));
-        auto* g2 = model.create_variable("g2", Domain(1, 3));
-        auto* g3 = model.create_variable("g3", Domain(1, 3));
+        auto* f1 = model.create_variable("f1", Domain(0, 2));
+        auto* f2 = model.create_variable("f2", Domain(0, 2));
+        auto* f3 = model.create_variable("f3", Domain(0, 2));
+        auto* g1 = model.create_variable("g1", Domain(0, 2));
+        auto* g2 = model.create_variable("g2", Domain(0, 2));
+        auto* g3 = model.create_variable("g3", Domain(0, 2));
         model.add_constraint(std::make_unique<InverseConstraint>(
             std::vector<Variable*>{f1, f2, f3},
             std::vector<Variable*>{g1, g2, g3}));
@@ -4233,25 +4233,25 @@ TEST_CASE("InverseConstraint solver integration", "[constraint][inverse]") {
         // 3! = 6 permutations, each is a valid inverse
         REQUIRE(count == 6);
 
-        // Verify each solution satisfies f[i]=j <-> g[j]=i
+        // Verify each solution satisfies f[i]=j <-> g[j]=i (0-based)
         for (const auto& sol : solutions) {
             auto fv1 = sol.at("f1"), fv2 = sol.at("f2"), fv3 = sol.at("f3");
             auto gv1 = sol.at("g1"), gv2 = sol.at("g2"), gv3 = sol.at("g3");
             std::vector<int64_t> f = {fv1, fv2, fv3};
             std::vector<int64_t> g = {gv1, gv2, gv3};
             for (int i = 0; i < 3; ++i) {
-                REQUIRE(g[static_cast<size_t>(f[i] - 1)] == i + 1);
-                REQUIRE(f[static_cast<size_t>(g[i] - 1)] == i + 1);
+                REQUIRE(g[static_cast<size_t>(f[i])] == i);
+                REQUIRE(f[static_cast<size_t>(g[i])] == i);
             }
         }
     }
 
-    SECTION("2 variables with partial assignment") {
+    SECTION("2 variables with partial assignment (0-based)") {
         Model model;
-        auto* f1 = model.create_variable("f1", Domain(2, 2));  // f[1] = 2 fixed
-        auto* f2 = model.create_variable("f2", Domain(1, 2));
-        auto* g1 = model.create_variable("g1", Domain(1, 2));
-        auto* g2 = model.create_variable("g2", Domain(1, 2));
+        auto* f1 = model.create_variable("f1", Domain(1, 1));  // f[0] = 1 fixed
+        auto* f2 = model.create_variable("f2", Domain(0, 1));
+        auto* g1 = model.create_variable("g1", Domain(0, 1));
+        auto* g2 = model.create_variable("g2", Domain(0, 1));
         model.add_constraint(std::make_unique<InverseConstraint>(
             std::vector<Variable*>{f1, f2},
             std::vector<Variable*>{g1, g2}));
@@ -4260,18 +4260,18 @@ TEST_CASE("InverseConstraint solver integration", "[constraint][inverse]") {
         auto result = solver.solve(model);
 
         REQUIRE(result.has_value());
-        REQUIRE(result->at("f1") == 2);
-        REQUIRE(result->at("f2") == 1);
-        REQUIRE(result->at("g1") == 2);
-        REQUIRE(result->at("g2") == 1);
+        REQUIRE(result->at("f1") == 1);
+        REQUIRE(result->at("f2") == 0);
+        REQUIRE(result->at("g1") == 1);
+        REQUIRE(result->at("g2") == 0);
     }
 
-    SECTION("2 variables with partial assignment - solve_all") {
+    SECTION("2 variables with partial assignment - solve_all (0-based)") {
         Model model;
-        auto* f1 = model.create_variable("f1", Domain(2, 2));
-        auto* f2 = model.create_variable("f2", Domain(1, 2));
-        auto* g1 = model.create_variable("g1", Domain(1, 2));
-        auto* g2 = model.create_variable("g2", Domain(1, 2));
+        auto* f1 = model.create_variable("f1", Domain(1, 1));
+        auto* f2 = model.create_variable("f2", Domain(0, 1));
+        auto* g1 = model.create_variable("g1", Domain(0, 1));
+        auto* g2 = model.create_variable("g2", Domain(0, 1));
         model.add_constraint(std::make_unique<InverseConstraint>(
             std::vector<Variable*>{f1, f2},
             std::vector<Variable*>{g1, g2}));

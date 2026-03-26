@@ -45,7 +45,15 @@ python -m build --wheel
 
 ### Examples
 
-- [Examples](examples/) — Runnable sample programs (N-Queens, scheduling, Sudoku, etc.)
+Each problem has two versions — core API and high-level API — so you can compare.
+
+| Problem | Core API | High-level API |
+|---------|----------|---------------|
+| Basic usage | [01_basic.py](examples/01_basic.py) | [06_basic_highlevel.py](examples/06_basic_highlevel.py) |
+| N-Queens | [02_nqueens.py](examples/02_nqueens.py) | [07_nqueens_highlevel.py](examples/07_nqueens_highlevel.py) |
+| Scheduling | [03_scheduling.py](examples/03_scheduling.py) | [08_scheduling_highlevel.py](examples/08_scheduling_highlevel.py) |
+| Sudoku | [04_sudoku.py](examples/04_sudoku.py) | [09_sudoku_highlevel.py](examples/09_sudoku_highlevel.py) |
+| Magic square | [05_magic_square.py](examples/05_magic_square.py) | [10_magic_square_highlevel.py](examples/10_magic_square_highlevel.py) |
 
 ## Requirements
 

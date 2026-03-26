@@ -369,8 +369,8 @@ PYBIND11_MODULE(_sabori_csp, m) {
 
     py::class_<InverseConstraint, Constraint, std::shared_ptr<InverseConstraint>>(
             m, "InverseConstraint")
-        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>>(),
-             py::arg("f"), py::arg("invf"));
+        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>, int64_t>(),
+             py::arg("f"), py::arg("invf"), py::arg("offset") = 0);
 
     py::class_<RegularConstraint, Constraint, std::shared_ptr<RegularConstraint>>(
             m, "RegularConstraint")

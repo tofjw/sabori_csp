@@ -324,7 +324,7 @@ static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, Fzn
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
     auto invf = resolve_vars(decl.args[1], ctx);
-    return std::make_shared<InverseConstraint>(std::move(f), std::move(invf));
+    return std::make_shared<InverseConstraint>(std::move(f), std::move(invf), 1);
 }
 
 static std::optional<ConstraintPtr> make_all_equal(const ConstraintDecl& decl, FznBuildContext& ctx) {
