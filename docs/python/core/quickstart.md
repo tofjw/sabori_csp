@@ -118,4 +118,5 @@ for var in model.variables():
 ## Next steps
 
 - [API Reference](reference.md) for the full list of constraints and methods
-- [Examples](examples/) for complete programs (N-Queens, scheduling, etc.)
+- [High-level API](../high-level/quickstart.md) for a more Pythonic modeling experience
+- [Examples](../examples/) for complete programs (N-Queens, scheduling, etc.)
