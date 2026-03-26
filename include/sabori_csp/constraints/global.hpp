@@ -84,6 +84,8 @@ public:
                        double* activity, double activity_inc,
                        bool& need_rescale, std::mt19937& rng) const override;
 
+    void init_activity(const Model& model, double* activity) const override;
+
 protected:
     // 値プール（Sparse Set）— サブクラスからアクセス可能
     std::vector<Domain::value_type> pool_values_;  // Dense 配列

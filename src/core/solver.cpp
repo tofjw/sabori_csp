@@ -97,6 +97,19 @@ bool Solver::init_search(Model& model) {
     for (const auto& c : model.constraints()) {
         c->init_activity(model, activity_.data());
     }
+    // 初期 activity を最大値 100.0 にスケーリング（探索中の bump が埋もれないように）
+    {
+        double max_act = 0.0;
+        for (const auto& a : activity_) {
+            if (a > max_act) max_act = a;
+        }
+        if (max_act > 0.0) {
+            double scale = 100.0 / max_act;
+            for (auto& a : activity_) {
+                a *= scale;
+            }
+        }
+    }
 
     if (community_analysis_.is_enabled()) {
         community_analysis_.build_vig(model);

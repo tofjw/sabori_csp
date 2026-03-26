@@ -1,6 +1,7 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 namespace sabori_csp {
@@ -355,6 +356,24 @@ void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_va
 
     // 鳩の巣原理等: デフォルト動作
     Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+}
+
+void AllDifferentConstraint::init_activity(const Model& model, double* activity) const {
+    size_t n = 0;
+    for (size_t vid : var_ids_) {
+        if (!model.is_instantiated(vid)) ++n;
+    }
+    if (n <= 1) return;
+    double nm1 = static_cast<double>(n - 1);
+    for (size_t vid : var_ids_) {
+        if (!model.is_instantiated(vid)) {
+            size_t d = model.var_size(vid);
+            if (d > 1) {
+                double dd = static_cast<double>(d);
+                activity[vid] += nm1 * (std::log(dd) - std::log(dd - 1.0));
+            }
+        }
+    }
 }
 
 }  // namespace sabori_csp
