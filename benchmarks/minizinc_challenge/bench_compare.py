@@ -267,8 +267,16 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
         if proc is not None:
             kill_process_tree(proc)
 
-def judge_winner(s_status, s_time, s_obj, c_status, c_time, c_obj, prob_type="SAT"):
+def judge_winner(s_status, s_time, s_obj, c_status, c_time, c_obj, prob_type="SAT", s_check=None):
     """勝者判定（MIN/MAX/SAT対応）"""
+    # CHECK_FAIL の場合、Sabori の解は不正なので無効にする。
+    # 既知の原因: MiniZinc 2.9.5 の -O1 最適化にエイリアス置換時に制約を
+    # 消失させるバグがあり、FZN レベルでは全制約を満たす解が MZN レベルでは
+    # 不正になるケースがある（例: mznc2021_probs/connect）。
+    # Sabori 以外のソルバーでは解が見つからないためバグが顕在化しない。
+    if s_check == "CHECK_FAIL":
+        s_status = "UNKNOWN"
+        s_obj = None
     s_ok = s_status in ("OPTIMAL", "SOL", "UNSAT")
     c_ok = c_status in ("OPTIMAL", "SOL", "UNSAT")
     s_has_sol = s_status in ("OPTIMAL", "SOL", "UNSAT", "TIMEOUT") and s_obj is not None
@@ -334,7 +342,7 @@ def generate_html(results, problems, year, output_path=None, prob_types=None, da
         c_status, c_time, c_obj, _ = c_res[:4]
 
         ptype = prob_types.get(prob, "?") if prob_types else "?"
-        winner, winner_class = judge_winner(s_status, s_time, s_obj, c_status, c_time, c_obj, ptype)
+        winner, winner_class = judge_winner(s_status, s_time, s_obj, c_status, c_time, c_obj, ptype, s_check=s_check)
         if winner == "Sabori":
             sabori_wins += 1
         elif winner == "CP-SAT":
@@ -627,7 +635,7 @@ def run_year(year):
         if s_check == "CHECK_FAIL":
             check_fail_count += 1
 
-        winner, _ = judge_winner(s_res[0], s_res[1], s_res[2], c_res[0], c_res[1], c_res[2], ptype)
+        winner, _ = judge_winner(s_res[0], s_res[1], s_res[2], c_res[0], c_res[1], c_res[2], ptype, s_check=s_check)
         if winner == "Sabori":
             sabori_wins += 1
         elif winner == "CP-SAT":

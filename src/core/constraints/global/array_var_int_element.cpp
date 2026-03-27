@@ -433,6 +433,15 @@ bool ArrayVarIntElementConstraint::on_last_uninstantiated(
     return true;
 }
 
+std::optional<bool> ArrayVarIntElementConstraint::is_satisfied(const Model& model) const {
+    if (!model.is_instantiated(index_id_) || !model.is_instantiated(result_id_)) return std::nullopt;
+    auto idx_0based = index_to_0based(model.value(index_id_));
+    if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) return false;
+    size_t arr_var_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
+    if (!model.is_instantiated(arr_var_id)) return std::nullopt;
+    return model.value(arr_var_id) == model.value(result_id_);
+}
+
 bool ArrayVarIntElementConstraint::on_final_instantiate(const Model& model) {
     if (!model.is_instantiated(index_id_) || !model.is_instantiated(result_id_)) return false;
     auto idx_0based = index_to_0based(model.value(index_id_));
