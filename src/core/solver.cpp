@@ -479,11 +479,11 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     return best_solution_;
                 }
 
-                // --- improvement probe: obj_lb 基準で ~5% 改善を軽量プローブで試みる ---
-                // minimize/maximize とも obj_lb + improvement を基準にする。
-                // maximize で obj_ub 基準にすると best から遠すぎる target になり
-                // UNSAT でもほとんどドメインを縮小できない。
-                // obj_lb 基準なら UNSAT 時に上位 95% をカットできる。
+                // --- improvement probe: best objective 側から ~5% 改善を軽量プローブで試みる ---
+                // minimize: target = obj_ub - improvement (上端側から探索)
+                //   SAT → best が大幅改善、UNSAT → 下位 5% をカット
+                // maximize: target = obj_lb + improvement (下端側から探索)
+                //   SAT → best が大幅改善、UNSAT → 上位 5% をカット
                 if (probe_fail_limit_ > 0) {
                     auto obj_lb = model.var_min(obj_var_idx_);
                     auto obj_ub = model.var_max(obj_var_idx_);
@@ -492,7 +492,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                     Domain::value_type target;
                     if (minimize_) {
-                        target = obj_lb + improvement - 1;  // obj <= target
+                        target = obj_ub - improvement;       // obj <= target
                     } else {
                         target = obj_lb + improvement;       // obj >= target
                     }
