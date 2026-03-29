@@ -274,28 +274,53 @@ void RegularConstraint::bump_activity(const Model& model, size_t trigger_var_idx
 }
 
 bool RegularConstraint::compute_and_filter(Model& model) {
+    const int S = S_;
+    const int Q = Q_;
+
     // Forward pass
     for (auto& v : reachable_from_) std::fill(v.begin(), v.end(), false);
     reachable_from_[0][q0_] = true;
 
     for (size_t i = 0; i < n_; ++i) {
         auto v_id = var_ids_[i];
-        auto dom_min = model.var_min(v_id);
-        auto dom_max = model.var_max(v_id);
-        for (auto s = std::max(dom_min, (Domain::value_type)1);
-             s <= std::min(dom_max, (Domain::value_type)S_); ++s) {
-            if (!model.contains(v_id, s)) continue;
-            for (int q = 1; q <= Q_; ++q) {
-                if (!reachable_from_[i][q]) continue;
-                int next = transition(q, (int)s);
-                if (next != 0) {
-                    reachable_from_[i + 1][next] = true;
+        if (model.is_instantiated(v_id)) {
+            auto s = model.value(v_id);
+            if (s >= 1 && s <= S) {
+                for (int q = 1; q <= Q; ++q) {
+                    if (!reachable_from_[i][q]) continue;
+                    int next = transition(q, (int)s);
+                    if (next != 0) reachable_from_[i + 1][next] = true;
+                }
+            }
+        } else {
+            auto& dom = model.variable(v_id)->domain();
+            if (dom.is_bounds_only()) {
+                auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
+                auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
+                for (auto s = lo; s <= hi; ++s) {
+                    if (!dom.contains(s)) continue;
+                    for (int q = 1; q <= Q; ++q) {
+                        if (!reachable_from_[i][q]) continue;
+                        int next = transition(q, (int)s);
+                        if (next != 0) reachable_from_[i + 1][next] = true;
+                    }
+                }
+            } else {
+                const auto& vals = dom.values_ref();
+                size_t dom_n = dom.size();
+                for (size_t vi = 0; vi < dom_n; ++vi) {
+                    auto s = vals[vi];
+                    if (s < 1 || s > S) continue;
+                    for (int q = 1; q <= Q; ++q) {
+                        if (!reachable_from_[i][q]) continue;
+                        int next = transition(q, (int)s);
+                        if (next != 0) reachable_from_[i + 1][next] = true;
+                    }
                 }
             }
         }
-        // Check if any state reachable
         bool any = false;
-        for (int q = 1; q <= Q_; ++q) {
+        for (int q = 1; q <= Q; ++q) {
             if (reachable_from_[i + 1][q]) { any = true; break; }
         }
         if (!any) return false;
@@ -303,14 +328,14 @@ bool RegularConstraint::compute_and_filter(Model& model) {
 
     // Backward pass
     for (auto& v : reachable_to_) std::fill(v.begin(), v.end(), false);
-    for (int q = 1; q <= Q_; ++q) {
+    for (int q = 1; q <= Q; ++q) {
         if (accepting_[q] && reachable_from_[n_][q]) {
             reachable_to_[n_][q] = true;
         }
     }
     {
         bool any = false;
-        for (int q = 1; q <= Q_; ++q) {
+        for (int q = 1; q <= Q; ++q) {
             if (reachable_to_[n_][q]) { any = true; break; }
         }
         if (!any) return false;
@@ -318,16 +343,45 @@ bool RegularConstraint::compute_and_filter(Model& model) {
 
     for (size_t i = n_; i > 0; --i) {
         auto v_id = var_ids_[i - 1];
-        auto dom_min = model.var_min(v_id);
-        auto dom_max = model.var_max(v_id);
-        for (int q = 1; q <= Q_; ++q) {
-            if (!reachable_from_[i - 1][q]) continue;
-            for (auto s = std::max(dom_min, (Domain::value_type)1);
-                 s <= std::min(dom_max, (Domain::value_type)S_); ++s) {
-                if (!model.contains(v_id, s)) continue;
-                int next = transition(q, (int)s);
-                if (next != 0 && reachable_to_[i][next]) {
-                    reachable_to_[i - 1][q] = true;
+        if (model.is_instantiated(v_id)) {
+            auto s = model.value(v_id);
+            if (s >= 1 && s <= S) {
+                for (int q = 1; q <= Q; ++q) {
+                    if (!reachable_from_[i - 1][q]) continue;
+                    int next = transition(q, (int)s);
+                    if (next != 0 && reachable_to_[i][next]) {
+                        reachable_to_[i - 1][q] = true;
+                    }
+                }
+            }
+        } else {
+            auto& dom = model.variable(v_id)->domain();
+            if (dom.is_bounds_only()) {
+                auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
+                auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
+                for (auto s = lo; s <= hi; ++s) {
+                    if (!dom.contains(s)) continue;
+                    for (int q = 1; q <= Q; ++q) {
+                        if (!reachable_from_[i - 1][q]) continue;
+                        int next = transition(q, (int)s);
+                        if (next != 0 && reachable_to_[i][next]) {
+                            reachable_to_[i - 1][q] = true;
+                        }
+                    }
+                }
+            } else {
+                const auto& vals = dom.values_ref();
+                size_t dom_n = dom.size();
+                for (size_t vi = 0; vi < dom_n; ++vi) {
+                    auto s = vals[vi];
+                    if (s < 1 || s > S) continue;
+                    for (int q = 1; q <= Q; ++q) {
+                        if (!reachable_from_[i - 1][q]) continue;
+                        int next = transition(q, (int)s);
+                        if (next != 0 && reachable_to_[i][next]) {
+                            reachable_to_[i - 1][q] = true;
+                        }
+                    }
                 }
             }
         }
@@ -338,22 +392,39 @@ bool RegularConstraint::compute_and_filter(Model& model) {
         auto v_id = var_ids_[i];
         if (model.is_instantiated(v_id)) continue;
 
-        auto dom_min = model.var_min(v_id);
-        auto dom_max = model.var_max(v_id);
-        for (auto s = std::max(dom_min, (Domain::value_type)1);
-             s <= std::min(dom_max, (Domain::value_type)S_); ++s) {
-            if (!model.contains(v_id, s)) continue;
-            bool valid = false;
-            for (int q = 1; q <= Q_; ++q) {
-                if (!reachable_from_[i][q]) continue;
-                int next = transition(q, (int)s);
-                if (next != 0 && reachable_to_[i + 1][next]) {
-                    valid = true;
-                    break;
+        auto& dom = model.variable(v_id)->domain();
+        if (dom.is_bounds_only()) {
+            auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
+            auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
+            for (auto s = lo; s <= hi; ++s) {
+                if (!dom.contains(s)) continue;
+                bool valid = false;
+                for (int q = 1; q <= Q; ++q) {
+                    if (!reachable_from_[i][q]) continue;
+                    int next = transition(q, (int)s);
+                    if (next != 0 && reachable_to_[i + 1][next]) {
+                        valid = true;
+                        break;
+                    }
                 }
+                if (!valid) model.enqueue_remove_value(v_id, s);
             }
-            if (!valid) {
-                model.enqueue_remove_value(v_id, s);
+        } else {
+            const auto& vals = dom.values_ref();
+            size_t dom_n = dom.size();
+            for (size_t vi = 0; vi < dom_n; ++vi) {
+                auto s = vals[vi];
+                if (s < 1 || s > S) continue;
+                bool valid = false;
+                for (int q = 1; q <= Q; ++q) {
+                    if (!reachable_from_[i][q]) continue;
+                    int next = transition(q, (int)s);
+                    if (next != 0 && reachable_to_[i + 1][next]) {
+                        valid = true;
+                        break;
+                    }
+                }
+                if (!valid) model.enqueue_remove_value(v_id, s);
             }
         }
     }
