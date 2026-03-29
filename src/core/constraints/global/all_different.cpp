@@ -340,15 +340,17 @@ void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_va
     if (it != pool_sparse_.end() && it->second >= pool_n_) {
         size_t count = 0;
         for (size_t vid : var_ids_) {
-            if (model.is_instantiated(vid) && model.value(vid) == val) {
+            // if (model.is_instantiated(vid) && model.value(vid) == val) {
+            if (model.contains(vid, val)) {
                 ++count;
             }
         }
         if (count == 0) count = 1;
         double inc = activity_inc / count;
         for (size_t vid : var_ids_) {
-            if (model.is_instantiated(vid) && model.value(vid) == val) {
-                bump_variable_activity(activity, vid, inc, need_rescale, rng);
+            if (model.contains(vid, val)) {
+                double a = inc / model.var_size(vid);
+                bump_variable_activity(activity, vid, a, need_rescale, rng);
             }
         }
         return;
