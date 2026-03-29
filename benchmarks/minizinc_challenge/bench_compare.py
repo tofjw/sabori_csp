@@ -144,6 +144,30 @@ def parse_last_solution(output):
     return solution if solution else None
 
 
+def _run_checker(cmd, timeout):
+    """checker プロセスを実行し、タイムアウト時もプロセスツリーを確実に停止する。
+
+    Returns: (stdout, returncode) or None on timeout/error.
+    """
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+    try:
+        stdout, _ = proc.communicate(timeout=timeout)
+        return stdout, proc.returncode
+    except subprocess.TimeoutExpired:
+        kill_process_tree(proc)
+        proc.wait()
+        return None, None
+    except Exception:
+        kill_process_tree(proc)
+        proc.wait()
+        return None, None
+    finally:
+        if proc.poll() is None:
+            kill_process_tree(proc)
+            proc.wait()
+
+
 def verify_solution(mzn, data, solution, timeout=10):
     """saboriの解をGecodeで検証する。
 
@@ -162,37 +186,33 @@ def verify_solution(mzn, data, solution, timeout=10):
                 lines.append(f'constraint {varname} = {value};')
             checker_path.write_text('\n'.join(lines) + '\n')
 
-            cmd = [MINIZINC, "--solver", "gecode", checker_path]
+            cmd = [MINIZINC, "--solver", "gecode", str(checker_path)]
             if data:
                 cmd.append(data)
 
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout
-            )
-            stdout = proc.stdout
-            stderr = proc.stderr
+            stdout, rc = _run_checker(cmd, timeout)
+            if stdout is None:
+                return "CHECK_TIMEOUT"
             if "----------" in stdout:
                 return "CHECK_OK"
             elif "=====UNSATISFIABLE=====" in stdout:
                 return "CHECK_FAIL"
-            elif proc.returncode != 0:
-                # Gecode error (compilation error, crash, etc.) — retry with Chuffed
+            elif rc != 0:
+                # Gecode error — retry with Chuffed
                 cmd_chuffed = [MINIZINC, "--solver", "chuffed", str(checker_path)]
                 if data:
                     cmd_chuffed.append(data)
-                proc2 = subprocess.run(
-                    cmd_chuffed, capture_output=True, text=True, timeout=timeout
-                )
-                if "----------" in proc2.stdout:
+                stdout2, _ = _run_checker(cmd_chuffed, timeout)
+                if stdout2 is None:
+                    return "CHECK_TIMEOUT"
+                if "----------" in stdout2:
                     return "CHECK_OK"
-                elif "=====UNSATISFIABLE=====" in proc2.stdout:
+                elif "=====UNSATISFIABLE=====" in stdout2:
                     return "CHECK_FAIL"
                 else:
                     return "CHECK_SKIP"
             else:
                 return "CHECK_FAIL"
-    except subprocess.TimeoutExpired:
-        return "CHECK_TIMEOUT"
     except Exception:
         return "CHECK_SKIP"
 
