@@ -262,14 +262,13 @@ void RegularConstraint::bump_activity(const Model& model, size_t trigger_var_idx
         return;
     }
 
-    // 前後はフル bump、それ以外は半分
     size_t n = n_ > 0 ? n_ : 1;
     double inc_full = activity_inc / n;
-    double inc_half = inc_full * 0.5;
     for (size_t i = 0; i < n_; ++i) {
-        if (!model.is_instantiated(var_ids_[i])) continue;
-        bool neighbor = (i + 1 == pos || i == pos + 1);
-        bump_variable_activity(activity, var_ids_[i], neighbor ? inc_full : inc_half, need_rescale, rng);
+        double a = inc_full;
+        if (pos != i)
+            a /= model.var_size(var_ids_[i]);
+        bump_variable_activity(activity, var_ids_[i], a, need_rescale, rng);
     }
 }
 
