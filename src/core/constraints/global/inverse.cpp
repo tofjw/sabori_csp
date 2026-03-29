@@ -218,8 +218,23 @@ bool InverseConstraint::on_instantiate(Model& model, int /*save_point*/,
     return true;
 }
 
+std::optional<bool> InverseConstraint::is_satisfied(const Model& model) const {
+    for (size_t i = 0; i < n_; ++i) {
+        if (!model.is_instantiated(var_ids_[i]) || !model.is_instantiated(var_ids_[n_ + i]))
+            return std::nullopt;
+    }
+    for (size_t i = 0; i < n_; ++i) {
+        auto f_val = model.value(var_ids_[i]);
+        size_t j = static_cast<size_t>(f_val - offset_);
+        if (j >= n_) return false;
+        auto invf_val = model.value(var_ids_[n_ + j]);
+        auto expected = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        if (invf_val != expected) return false;
+    }
+    return true;
+}
+
 bool InverseConstraint::on_final_instantiate(const Model& model) {
-    // Verify: f[i] = j <-> invf[j] = i for all i
     for (size_t i = 0; i < n_; ++i) {
         auto f_val = model.value(var_ids_[i]);
         size_t j = static_cast<size_t>(f_val - offset_);
@@ -256,11 +271,13 @@ bool InverseConstraint::on_remove_value(Model& model, int /*save_point*/,
 bool InverseConstraint::on_set_min(Model& model, int /*save_point*/,
                                     size_t /*var_idx*/, size_t internal_var_idx,
                                     Domain::value_type new_min, Domain::value_type old_min) {
-    // Values old_min..new_min-1 have been removed
-    for (auto v = old_min; v < new_min; ++v) {
+    // Values old_min..new_min-1 have been removed; clamp to valid range
+    auto val_min = static_cast<Domain::value_type>(offset_);
+    auto val_max = static_cast<Domain::value_type>(offset_ + static_cast<int64_t>(n_) - 1);
+    auto lo = std::max(old_min, val_min);
+    auto hi = std::min(new_min - 1, val_max);
+    for (auto v = lo; v <= hi; ++v) {
         size_t j = static_cast<size_t>(v - offset_);
-        if (j >= n_) continue;
-
         if (internal_var_idx < n_) {
             size_t i = internal_var_idx;
             auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
@@ -277,11 +294,13 @@ bool InverseConstraint::on_set_min(Model& model, int /*save_point*/,
 bool InverseConstraint::on_set_max(Model& model, int /*save_point*/,
                                     size_t /*var_idx*/, size_t internal_var_idx,
                                     Domain::value_type new_max, Domain::value_type old_max) {
-    // Values new_max+1..old_max have been removed
-    for (auto v = new_max + 1; v <= old_max; ++v) {
+    // Values new_max+1..old_max have been removed; clamp to valid range
+    auto val_min = static_cast<Domain::value_type>(offset_);
+    auto val_max = static_cast<Domain::value_type>(offset_ + static_cast<int64_t>(n_) - 1);
+    auto lo = std::max(new_max + 1, val_min);
+    auto hi = std::min(old_max, val_max);
+    for (auto v = lo; v <= hi; ++v) {
         size_t j = static_cast<size_t>(v - offset_);
-        if (j >= n_) continue;
-
         if (internal_var_idx < n_) {
             size_t i = internal_var_idx;
             auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
