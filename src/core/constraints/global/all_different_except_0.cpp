@@ -363,119 +363,53 @@ bool AllDifferentExcept0Constraint::on_set_max(Model& model, int save_point,
 void AllDifferentExcept0Constraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                                    double* activity, double activity_inc,
                                                    bool& need_rescale, std::mt19937& rng) const {
-    // --- Case 1: trigger 変数が未確定 (Hall pair 失敗等) ---
-    if (!model.is_instantiated(trigger_var_idx)) {
-        auto& vd = model.var_data(trigger_var_idx);
-        if (vd.size == 2) {
-            auto v1 = vd.min;
-            auto v2 = vd.max;
-            if (v1 != 0 && v2 != 0) {
-                // Hall pair 失敗: 同じ {v1,v2} ドメインを持つ未確定変数を bump
-                // + v1, v2 を既に使っている確定変数も bump（それらが Hall pair を作った原因）
-                size_t count = 0;
-                for (size_t vid : var_ids_) {
-                    if (model.is_instantiated(vid)) {
-                        auto v = model.value(vid);
-                        if (v == v1 || v == v2) ++count;
-                    } else {
-                        auto& d = model.var_data(vid);
-                        if (d.size == 2 && d.min == v1 && d.max == v2) ++count;
-                    }
+    if (model.is_instantiated(trigger_var_idx)) {
+        auto val = model.value(trigger_var_idx);
+        if (val == 0)
+            return;
+
+        auto it = pool_sparse_.find(val);
+        if (it != pool_sparse_.end() && it->second >= pool_n_) {
+            size_t count = 0;
+            for (size_t vid : var_ids_) {
+                if (model.contains(vid, val) && !model.contains(vid, 0)) {
+                    ++count;
                 }
-                if (count == 0) count = 1;
+            }
+
+            if (count > 0) {
                 double inc = activity_inc / count;
                 for (size_t vid : var_ids_) {
-                    if (model.is_instantiated(vid)) {
-                        auto v = model.value(vid);
-                        if (v == v1 || v == v2) {
-                            bump_variable_activity(activity, vid, inc, need_rescale, rng);
-                        }
-                    } else {
-                        auto& d = model.var_data(vid);
-                        if (d.size == 2 && d.min == v1 && d.max == v2) {
-                            bump_variable_activity(activity, vid, inc, need_rescale, rng);
-                        }
+                    if (model.contains(vid, val) && !model.contains(vid, 0)) {
+                        double a = inc / model.var_size(vid);
+                        bump_variable_activity(activity, vid, a, need_rescale, rng);
                     }
                 }
-                return;
             }
         }
-        // Hall pair 以外の未確定 trigger → デフォルト
-        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-        return;
     }
-
-    auto val = model.value(trigger_var_idx);
-
-    // --- Case 2: 値が 0 の場合 ---
-    if (val == 0) {
-        // プール枯渇が原因の可能性: 非0値を使った変数を優先的に bump
-        // (0を選んだこと自体は問題ないが、プールを使い切った変数が原因)
-        size_t nonzero_count = 0;
+    else {
+        size_t count = 0;
         for (size_t vid : var_ids_) {
-            if (model.is_instantiated(vid) && model.value(vid) != 0) {
-                ++nonzero_count;
+            if (model.is_instantiated(vid) && model.value(vid) == 0) {
+                continue;
             }
+
+            ++count;
         }
-        if (nonzero_count > 0 && pool_n_ == 0) {
-            // プール枯渇: 非0確定変数に重み付け bump
-            double inc = activity_inc / nonzero_count;
+
+        if (count > 0) {
+            double inc = activity_inc / count;
             for (size_t vid : var_ids_) {
-                if (model.is_instantiated(vid) && model.value(vid) != 0) {
-                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                if (model.is_instantiated(vid) && model.value(vid) == 0) {
+                    continue;
                 }
+
+                double a = inc / model.var_size(vid);
+                bump_variable_activity(activity, vid, a, need_rescale, rng);
             }
-            return;
         }
-        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-        return;
     }
-
-    // --- Case 3: 非0値の重複 ---
-    auto it = pool_sparse_.find(val);
-    if (it != pool_sparse_.end() && it->second >= pool_n_) {
-        // 主犯: 同じ非0値を持つ変数
-        // 共犯: 0を選んだが、conflicting value をドメインに持っていた変数
-        //        (0ではなくその値を選んでいれば衝突しなかった可能性)
-        size_t primary_count = 0;
-        size_t accomplice_count = 0;
-        for (size_t vid : var_ids_) {
-            if (model.is_instantiated(vid)) {
-                if (model.value(vid) == val) {
-                    ++primary_count;
-                }
-            }
-        }
-        if (primary_count == 0) primary_count = 1;
-
-        // 主犯に 70%, 共犯に 30% を分配
-        double primary_inc = activity_inc * 0.7 / primary_count;
-        for (size_t vid : var_ids_) {
-            if (model.is_instantiated(vid) && model.value(vid) == val) {
-                bump_variable_activity(activity, vid, primary_inc, need_rescale, rng);
-            }
-        }
-
-        // 未確定変数で、conflicting value をドメインに持つものも bump
-        // (次の判定で優先的に選ばれるように)
-        for (size_t vid : var_ids_) {
-            if (!model.is_instantiated(vid) && model.contains(vid, val)) {
-                ++accomplice_count;
-            }
-        }
-        if (accomplice_count > 0) {
-            double acc_inc = activity_inc * 0.3 / accomplice_count;
-            for (size_t vid : var_ids_) {
-                if (!model.is_instantiated(vid) && model.contains(vid, val)) {
-                    bump_variable_activity(activity, vid, acc_inc, need_rescale, rng);
-                }
-            }
-        }
-        return;
-    }
-
-    // --- Case 4: その他 (他の制約が原因の伝播失敗等) ---
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
 }
 
 }  // namespace sabori_csp
