@@ -1241,13 +1241,13 @@ bool Solver::verify_solution(const Model& model) const {
         auto satisfied = constraint->is_satisfied(model);
         if (satisfied.has_value() && !satisfied.value()) {
             std::cerr << "constraint verify error (is_satisfied): " << constraint->name()
-                      << " [" << constraint->label() << "]\n";
+                      << " [" << constraint->label() << "]" << std::endl;
             abort();
             return false;
         }
         if (!constraint->on_final_instantiate(model)) {
             std::cerr << "constraint verify error (on_final_instantiate): " << constraint->name()
-                      << " [" << constraint->label() << "]\n";
+                      << " [" << constraint->label() << "]" << std::endl;
             abort();
             return false;
         }
