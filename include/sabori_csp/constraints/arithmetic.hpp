@@ -94,6 +94,7 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
+    std::optional<bool> is_satisfied(const Model& model) const override;
     bool on_final_instantiate(const Model& model) override;
 
     bool on_last_uninstantiated(Model& model, int save_point,
@@ -131,6 +132,7 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
+    std::optional<bool> is_satisfied(const Model& model) const override;
     bool on_final_instantiate(const Model& model) override;
 
     bool on_last_uninstantiated(Model& model, int save_point,

@@ -923,6 +923,14 @@ bool IntDivConstraint::on_set_max(Model& model, int /*save_point*/,
     return propagate_bounds(model);
 }
 
+std::optional<bool> IntDivConstraint::is_satisfied(const Model& model) const {
+    if (!model.is_instantiated(x_id_) || !model.is_instantiated(y_id_) || !model.is_instantiated(z_id_))
+        return std::nullopt;
+    auto y_val = model.value(y_id_);
+    if (y_val == 0) return false;
+    return model.value(x_id_) / y_val == model.value(z_id_);
+}
+
 bool IntDivConstraint::on_final_instantiate(const Model& model) {
     auto y_val = model.value(y_id_);
     if (y_val == 0) return false;
@@ -1176,11 +1184,19 @@ bool IntModConstraint::on_set_min(Model& model, int /*save_point*/,
     return propagate_bounds(model);
 }
 
-bool IntModConstraint::on_set_max(Model& model, int save_point,
-                                   size_t var_idx, size_t internal_var_idx,
-                                   Domain::value_type new_max,
+bool IntModConstraint::on_set_max(Model& model, int /*save_point*/,
+                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   Domain::value_type /*new_max*/,
                                    Domain::value_type /*old_max*/) {
     return propagate_bounds(model);
+}
+
+std::optional<bool> IntModConstraint::is_satisfied(const Model& model) const {
+    if (!model.is_instantiated(x_id_) || !model.is_instantiated(y_id_) || !model.is_instantiated(z_id_))
+        return std::nullopt;
+    auto y_val = model.value(y_id_);
+    if (y_val == 0) return false;
+    return model.value(x_id_) % y_val == model.value(z_id_);
 }
 
 bool IntModConstraint::on_final_instantiate(const Model& model) {
