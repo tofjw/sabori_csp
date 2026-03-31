@@ -152,13 +152,19 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // x * y = z の伝播
-    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
-        // x と y が確定したら z を確定
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
+        // x と y が確定したら z を確定（x_id_ == y_id_ のケースも含む）
         auto product = model.value(x_id_) * model.value(y_id_);
-        if (!model.contains(z_id_, product)) {
-            return false;
+        if (!model.is_instantiated(z_id_)) {
+            if (!model.contains(z_id_, product)) {
+                return false;
+            }
+            model.enqueue_instantiate(z_id_, product);
+        } else {
+            // z も確定済み → 整合性チェック
+            if (model.value(z_id_) != product) return false;
         }
-        model.enqueue_instantiate(z_id_, product);
+        return true;
     }
 
     if (model.is_instantiated(x_id_) && model.is_instantiated(z_id_) && !model.is_instantiated(y_id_)) {
@@ -205,6 +211,58 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
             }
             model.enqueue_instantiate(x_id_, x_val);
         }
+    }
+
+    // x == y（同一変数）かつ z のみ確定の場合: x^2 = z の逆伝播
+    if (x_id_ == y_id_ && model.is_instantiated(z_id_) && !model.is_instantiated(x_id_)) {
+        auto z_val = model.value(z_id_);
+        if (z_val == 0) {
+            if (!model.contains(x_id_, 0)) return false;
+            model.enqueue_instantiate(x_id_, 0);
+        } else if (z_val < 0) {
+            // x^2 は非負なので z < 0 は矛盾
+            return false;
+        } else {
+            // z_val > 0: x^2 = z_val → x = ±√z_val
+            auto& dom = model.variable(x_id_)->domain();
+            if (dom.is_bounds_only()) {
+                // bounds-only: √z_val が整数でなければ矛盾、そうでなければ bounds 制限
+                Domain::value_type sq = static_cast<Domain::value_type>(std::sqrt(static_cast<double>(z_val)));
+                // 浮動小数点誤差を考慮して sq-1, sq, sq+1 をチェック
+                Domain::value_type root = 0;
+                bool found = false;
+                for (auto candidate = std::max(sq - 1, static_cast<Domain::value_type>(0)); candidate <= sq + 1; ++candidate) {
+                    if (static_cast<__int128>(candidate) * candidate == z_val) { root = candidate; found = true; break; }
+                }
+                if (!found) return false;  // z_val は完全平方数でない
+                // x ∈ {-root, root} に制限
+                if (root == 0) {
+                    if (!model.contains(x_id_, 0)) return false;
+                    model.enqueue_instantiate(x_id_, 0);
+                } else {
+                    // root と -root のどちらかがドメインに含まれなければ矛盾
+                    bool has_pos = model.contains(x_id_, root);
+                    bool has_neg = model.contains(x_id_, -root);
+                    if (!has_pos && !has_neg) return false;
+                    if (has_pos && !has_neg) {
+                        model.enqueue_instantiate(x_id_, root);
+                    } else if (!has_pos && has_neg) {
+                        model.enqueue_instantiate(x_id_, -root);
+                    } else {
+                        model.enqueue_set_min(x_id_, -root);
+                        model.enqueue_set_max(x_id_, root);
+                    }
+                }
+            } else {
+                // sparse set: 値ごとにフィルタ
+                dom.for_each_value([&](auto v) {
+                    if (static_cast<__int128>(v) * v != z_val) {
+                        model.enqueue_remove_value(x_id_, v);
+                    }
+                });
+            }
+        }
+        return true;
     }
 
     // 1変数のみ確定の場合、z のドメインをフィルタリング
