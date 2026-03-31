@@ -610,11 +610,25 @@ std::vector<std::string> CumulativeConstraint::engine_names() const {
 void CumulativeConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                           double* activity, double activity_inc,
                                           bool& need_rescale, std::mt19937& rng) const {
-    // デフォルトの bump（instantiated 変数に均等加算）
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-
-    // trigger 変数のタスクインデックスを特定
     // var_ids_ レイアウト: [s0..sn-1, d0..dn-1, r0..rn-1, capacity]
+    auto cap_max = model.var_max(var_ids_[3 * n_]);
+    if (cap_max <= 0) cap_max = 1;
+
+    // 各タスクのリソース面積重み（共有）
+    auto task_weight = [&](size_t i) -> double {
+        auto d_min = model.var_min(var_ids_[n_ + i]);
+        auto r_min = model.var_min(var_ids_[2 * n_ + i]);
+        if (d_min <= 0 || r_min <= 0) return 0.0;
+        return (static_cast<double>(r_min) / cap_max) * d_min;
+    };
+
+    double total_weight = 0.0;
+    for (size_t i = 0; i < n_; ++i) total_weight += task_weight(i);
+    if (total_weight <= 0.0) return;
+
+    // --- Part 1: trigger タスク + mandatory part 重なりの局所 bump (50%) ---
+    double local_inc = activity_inc * 0.5;
+
     size_t trigger_task = SIZE_MAX;
     for (size_t idx = 0; idx < 3 * n_; ++idx) {
         if (var_ids_[idx] == trigger_var_idx) {
@@ -622,48 +636,63 @@ void CumulativeConstraint::bump_activity(const Model& model, size_t trigger_var_
             break;
         }
     }
-    if (trigger_task == SIZE_MAX) return;
 
-    // trigger タスクの mandatory part [lst, ect) を計算
-    int64_t t_dur = model.var_min(var_ids_[n_ + trigger_task]);
-    int64_t t_req = model.var_min(var_ids_[2 * n_ + trigger_task]);
-    int64_t t_est = model.var_min(var_ids_[trigger_task]);
-    int64_t t_lst = model.var_max(var_ids_[trigger_task]);
-    int64_t t_ect = t_est + t_dur;
-    bool trigger_has_mandatory = (t_dur > 0 && t_req > 0 && t_lst < t_ect);
+    if (trigger_task != SIZE_MAX) {
+        int64_t t_dur = model.var_min(var_ids_[n_ + trigger_task]);
+        int64_t t_req = model.var_min(var_ids_[2 * n_ + trigger_task]);
+        int64_t t_est = model.var_min(var_ids_[trigger_task]);
+        int64_t t_lst = model.var_max(var_ids_[trigger_task]);
+        int64_t t_ect = t_est + t_dur;
+        bool trigger_has_mandatory = (t_dur > 0 && t_req > 0 && t_lst < t_ect);
 
-    // 同一タスクの兄弟変数 + mandatory part が重なる他タスクの変数を bump
-    double inc = activity_inc / 3.0;
-
-    // 同一タスクの兄弟
-    size_t trigger_vars[3] = {
-        var_ids_[trigger_task],
-        var_ids_[n_ + trigger_task],
-        var_ids_[2 * n_ + trigger_task]
-    };
-    for (size_t sid : trigger_vars) {
-        if (sid != trigger_var_idx) {
-            bump_variable_activity(activity, sid, inc, need_rescale, rng);
+        // 関与タスクの重みを集計
+        double involved_weight = task_weight(trigger_task);
+        std::vector<size_t> overlap_tasks;
+        if (trigger_has_mandatory) {
+            for (size_t i = 0; i < n_; ++i) {
+                if (i == trigger_task) continue;
+                int64_t di = model.var_min(var_ids_[n_ + i]);
+                int64_t ri = model.var_min(var_ids_[2 * n_ + i]);
+                if (di <= 0 || ri <= 0) continue;
+                int64_t ei = model.var_min(var_ids_[i]);
+                int64_t li = model.var_max(var_ids_[i]);
+                int64_t ecti = ei + di;
+                if (li < ecti && li < t_ect && ecti > t_lst) {
+                    overlap_tasks.push_back(i);
+                    involved_weight += task_weight(i);
+                }
+            }
         }
-    }
 
-    // mandatory part が重なる他タスク
-    if (trigger_has_mandatory) {
-        for (size_t i = 0; i < n_; ++i) {
-            if (i == trigger_task) continue;
-            int64_t di = model.var_min(var_ids_[n_ + i]);
-            int64_t ri = model.var_min(var_ids_[2 * n_ + i]);
-            if (di <= 0 || ri <= 0) continue;
-            int64_t ei = model.var_min(var_ids_[i]);
-            int64_t li = model.var_max(var_ids_[i]);
-            int64_t ecti = ei + di;
-            // mandatory part [li, ecti) が trigger の [t_lst, t_ect) と重なるか
-            if (li < ecti && li < t_ect && ecti > t_lst) {
+        if (involved_weight > 0.0) {
+            // trigger タスク
+            double w = task_weight(trigger_task) / involved_weight;
+            double inc = local_inc * w;
+            bump_variable_activity(activity, var_ids_[trigger_task], inc, need_rescale, rng);
+            bump_variable_activity(activity, var_ids_[n_ + trigger_task], inc, need_rescale, rng);
+            bump_variable_activity(activity, var_ids_[2 * n_ + trigger_task], inc, need_rescale, rng);
+
+            // 重なりタスク
+            for (size_t i : overlap_tasks) {
+                w = task_weight(i) / involved_weight;
+                inc = local_inc * w;
                 bump_variable_activity(activity, var_ids_[i], inc, need_rescale, rng);
                 bump_variable_activity(activity, var_ids_[n_ + i], inc, need_rescale, rng);
                 bump_variable_activity(activity, var_ids_[2 * n_ + i], inc, need_rescale, rng);
             }
         }
+    }
+
+    // --- Part 2: リソース面積による重み付け全タスク bump (50%) ---
+    double global_inc = activity_inc * 0.5;
+
+    for (size_t i = 0; i < n_; ++i) {
+        double w = task_weight(i);
+        if (w <= 0.0) continue;
+        double inc = global_inc * w / total_weight;
+        bump_variable_activity(activity, var_ids_[i], inc, need_rescale, rng);
+        bump_variable_activity(activity, var_ids_[n_ + i], inc, need_rescale, rng);
+        bump_variable_activity(activity, var_ids_[2 * n_ + i], inc, need_rescale, rng);
     }
 }
 
