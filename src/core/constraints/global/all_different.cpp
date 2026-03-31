@@ -327,37 +327,31 @@ void AllDifferentConstraint::rewind_to(int save_point) {
 void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                            double* activity, double activity_inc,
                                            bool& need_rescale, std::mt19937& rng) const {
-    // trigger 変数が instantiated でなければデフォルト
-    if (!model.is_instantiated(trigger_var_idx)) {
+    if (model.is_instantiated(trigger_var_idx)) {
+        auto val = model.value(trigger_var_idx);
+        auto it = pool_sparse_.find(val);
+        if (it != pool_sparse_.end() && it->second >= pool_n_) {
+            size_t count = 0;
+            for (size_t vid : var_ids_) {
+                if (model.contains(vid, val)) {
+                    ++count;
+                }
+            }
+
+            if (count > 0) {
+                double inc = activity_inc / count;
+                for (size_t vid : var_ids_) {
+                    if (model.contains(vid, val)) {
+                        double a = inc / model.var_size(vid);
+                        bump_variable_activity(activity, vid, a, need_rescale, rng);
+                    }
+                }
+            }
+        }
+    }
+    else {
         Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-        return;
     }
-
-    auto val = model.value(trigger_var_idx);
-    auto it = pool_sparse_.find(val);
-
-    // 値重複: val が既にプール外 → 同じ値を持つ変数のみ bump
-    if (it != pool_sparse_.end() && it->second >= pool_n_) {
-        size_t count = 0;
-        for (size_t vid : var_ids_) {
-            // if (model.is_instantiated(vid) && model.value(vid) == val) {
-            if (model.contains(vid, val)) {
-                ++count;
-            }
-        }
-        if (count == 0) count = 1;
-        double inc = activity_inc / count;
-        for (size_t vid : var_ids_) {
-            if (model.contains(vid, val)) {
-                double a = inc / model.var_size(vid);
-                bump_variable_activity(activity, vid, a, need_rescale, rng);
-            }
-        }
-        return;
-    }
-
-    // 鳩の巣原理等: デフォルト動作
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
 }
 
 void AllDifferentConstraint::init_activity(const Model& model, double* activity) const {
