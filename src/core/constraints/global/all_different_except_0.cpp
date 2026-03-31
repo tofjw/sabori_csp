@@ -272,15 +272,27 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
     return true;
 }
 
-bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {
-    // 非0値のみユニークチェック
+std::optional<bool> AllDifferentExcept0Constraint::is_satisfied(const Model& model) const {
+    for (size_t vid : var_ids_) {
+        if (!model.is_instantiated(vid)) return std::nullopt;
+    }
     std::set<Domain::value_type> used_values;
-    for (size_t i = 0; i < var_ids_.size(); ++i) {
-        auto val = model.value(var_ids_[i]);
+    for (size_t vid : var_ids_) {
+        auto val = model.value(vid);
         if (val != 0) {
-            if (used_values.count(val) > 0) {
-                return false;
-            }
+            if (used_values.count(val) > 0) return false;
+            used_values.insert(val);
+        }
+    }
+    return true;
+}
+
+bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {
+    std::set<Domain::value_type> used_values;
+    for (size_t vid : var_ids_) {
+        auto val = model.value(vid);
+        if (val != 0) {
+            if (used_values.count(val) > 0) return false;
             used_values.insert(val);
         }
     }
@@ -340,23 +352,23 @@ bool AllDifferentExcept0Constraint::check_hall_pair(Model& model, size_t trigger
     return true;
 }
 
-bool AllDifferentExcept0Constraint::on_remove_value(Model& model, int save_point,
-                                                     size_t var_idx, size_t internal_var_idx,
-                                                     Domain::value_type removed_value) {
+bool AllDifferentExcept0Constraint::on_remove_value(Model& model, int /*save_point*/,
+                                                     size_t var_idx, size_t /*internal_var_idx*/,
+                                                     Domain::value_type /*removed_value*/) {
     return check_hall_pair(model, var_idx);
 }
 
-bool AllDifferentExcept0Constraint::on_set_min(Model& model, int save_point,
-                                                size_t var_idx, size_t internal_var_idx,
-                                                Domain::value_type new_min,
-                                                Domain::value_type old_min) {
+bool AllDifferentExcept0Constraint::on_set_min(Model& model, int /*save_point*/,
+                                                size_t var_idx, size_t /*internal_var_idx*/,
+                                                Domain::value_type /*new_min*/,
+                                                Domain::value_type /*old_min*/) {
     return check_hall_pair(model, var_idx);
 }
 
-bool AllDifferentExcept0Constraint::on_set_max(Model& model, int save_point,
-                                                size_t var_idx, size_t internal_var_idx,
-                                                Domain::value_type new_max,
-                                                Domain::value_type old_max) {
+bool AllDifferentExcept0Constraint::on_set_max(Model& model, int /*save_point*/,
+                                                size_t var_idx, size_t /*internal_var_idx*/,
+                                                Domain::value_type /*new_max*/,
+                                                Domain::value_type /*old_max*/) {
     return check_hall_pair(model, var_idx);
 }
 
@@ -394,7 +406,6 @@ void AllDifferentExcept0Constraint::bump_activity(const Model& model, size_t tri
             if (model.is_instantiated(vid) && model.value(vid) == 0) {
                 continue;
             }
-
             ++count;
         }
 
@@ -404,9 +415,7 @@ void AllDifferentExcept0Constraint::bump_activity(const Model& model, size_t tri
                 if (model.is_instantiated(vid) && model.value(vid) == 0) {
                     continue;
                 }
-
-                double a = inc / model.var_size(vid);
-                bump_variable_activity(activity, vid, a, need_rescale, rng);
+                bump_variable_activity(activity, vid, inc, need_rescale, rng);
             }
         }
     }
