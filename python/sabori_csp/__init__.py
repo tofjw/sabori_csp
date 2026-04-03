@@ -61,4 +61,6 @@ __all__ = [
     "nvalue",
     "regular",
     "table",
+    # Helper module
+    "claude_helper",
 ]
