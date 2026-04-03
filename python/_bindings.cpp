@@ -167,7 +167,9 @@ PYBIND11_MODULE(_sabori_csp, m) {
     py::class_<Constraint, std::shared_ptr<Constraint>>(m, "Constraint")
         .def("name", &Constraint::name)
         .def("id", &Constraint::id)
-        .def("var_ids", &Constraint::var_ids_ref);
+        .def("var_ids", &Constraint::var_ids_ref)
+        .def("set_label", &Constraint::set_label, py::arg("label"))
+        .def("label", &Constraint::label);
 
     // ---- Comparison constraints ----
     py::class_<IntEqConstraint, Constraint, std::shared_ptr<IntEqConstraint>>(

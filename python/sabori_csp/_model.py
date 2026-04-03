@@ -1,6 +1,7 @@
 """CpModel: high-level constraint model builder."""
 from __future__ import annotations
 
+import inspect
 from typing import Sequence, Union
 
 from sabori_csp import core
@@ -99,14 +100,29 @@ class CpModel:
     def add(
         self,
         ct: Union[BoundedExpr, NonLinearBoundedExpr, _GlobalConstraint],
+        *,
+        name: str | None = None,
     ) -> None:
-        """Post a constraint to the model."""
+        """Post a constraint to the model.
+
+        Args:
+            ct: The constraint expression to add.
+            name: Optional label for the constraint. If not provided,
+                  defaults to ``"filename:lineno"`` of the caller.
+        """
+        if name is None:
+            frame = inspect.currentframe()
+            assert frame is not None
+            caller = frame.f_back
+            assert caller is not None
+            name = f"{caller.f_code.co_filename}:{caller.f_lineno}"
+            del frame
         if isinstance(ct, BoundedExpr):
-            self._post_bounded_expr(ct)
+            self._post_bounded_expr(ct, _label=name)
         elif isinstance(ct, NonLinearBoundedExpr):
-            self._post_nonlinear_bounded(ct)
+            self._post_nonlinear_bounded(ct, _label=name)
         elif isinstance(ct, _GlobalConstraint):
-            self._post_global(ct)
+            self._post_global(ct, _label=name)
         else:
             raise TypeError(
                 f"Cannot add {type(ct).__name__} as a constraint. "
@@ -186,7 +202,15 @@ class CpModel:
 
     # --- Constraint posting ---
 
-    def _post_bounded_expr(self, ct: BoundedExpr) -> None:
+    def _add_constraint(
+        self, constraint: core.Constraint, label: str = ""
+    ) -> None:
+        """Set label (if non-empty) and add constraint to the model."""
+        if label:
+            constraint.set_label(label)
+        self._model.add_constraint(constraint)
+
+    def _post_bounded_expr(self, ct: BoundedExpr, *, _label: str = "") -> None:
         expr = ct._expr
         op = ct._op
 
@@ -227,10 +251,10 @@ class CpModel:
         if len(sorted_items) == 2 and const == 0:
             (v1, c1), (v2, c2) = sorted_items
             if c1 == 1 and c2 == -1:
-                self._post_binary(v1, v2, op)
+                self._post_binary(v1, v2, op, _label)
                 return
             if c1 == -1 and c2 == 1:
-                self._post_binary(v2, v1, op)
+                self._post_binary(v2, v1, op, _label)
                 return
 
         # Single var == constant: also use binary if possible
@@ -240,21 +264,21 @@ class CpModel:
                 # v + const <op> 0  ⟹  v <op> -const
                 rhs = -const
                 k = self.constant(rhs)
-                self._post_binary(v, k, op)
+                self._post_binary(v, k, op, _label)
                 return
             if c == -1:
                 # -v + const <op> 0  ⟹  const <op> v  ⟹  depends on op
                 rhs = const
                 k = self.constant(rhs)
                 if op == ComparisonOp.EQ:
-                    self._post_binary(v, k, ComparisonOp.EQ)
+                    self._post_binary(v, k, ComparisonOp.EQ, _label)
                     return
                 elif op == ComparisonOp.NE:
-                    self._post_binary(v, k, ComparisonOp.NE)
+                    self._post_binary(v, k, ComparisonOp.NE, _label)
                     return
                 elif op == ComparisonOp.LE:
                     # -v + const <= 0  ⟹  const <= v  ⟹  v >= const
-                    self._post_binary(k, v, ComparisonOp.LE)
+                    self._post_binary(k, v, ComparisonOp.LE, _label)
                     return
 
         # General linear constraint
@@ -263,36 +287,40 @@ class CpModel:
         target = -const
 
         if op == ComparisonOp.EQ:
-            self._model.add_constraint(
-                core.IntLinEqConstraint(coeffs, raw_vars, target)
+            self._add_constraint(
+                core.IntLinEqConstraint(coeffs, raw_vars, target), _label
             )
         elif op == ComparisonOp.NE:
-            self._model.add_constraint(
-                core.IntLinNeConstraint(coeffs, raw_vars, target)
+            self._add_constraint(
+                core.IntLinNeConstraint(coeffs, raw_vars, target), _label
             )
         elif op == ComparisonOp.LE:
-            self._model.add_constraint(
-                core.IntLinLeConstraint(coeffs, raw_vars, target)
+            self._add_constraint(
+                core.IntLinLeConstraint(coeffs, raw_vars, target), _label
             )
 
-    def _post_binary(self, lhs: IntVar, rhs: IntVar, op: ComparisonOp) -> None:
+    def _post_binary(
+        self, lhs: IntVar, rhs: IntVar, op: ComparisonOp, _label: str = ""
+    ) -> None:
         """Post a binary comparison constraint: lhs <op> rhs."""
         lv = lhs._var
         rv = rhs._var
         if op == ComparisonOp.EQ:
-            self._model.add_constraint(core.IntEqConstraint(lv, rv))
+            self._add_constraint(core.IntEqConstraint(lv, rv), _label)
         elif op == ComparisonOp.NE:
-            self._model.add_constraint(core.IntNeConstraint(lv, rv))
+            self._add_constraint(core.IntNeConstraint(lv, rv), _label)
         elif op == ComparisonOp.LE:
-            self._model.add_constraint(core.IntLeConstraint(lv, rv))
+            self._add_constraint(core.IntLeConstraint(lv, rv), _label)
 
-    def _post_nonlinear_bounded(self, ct: NonLinearBoundedExpr) -> None:
+    def _post_nonlinear_bounded(
+        self, ct: NonLinearBoundedExpr, *, _label: str = ""
+    ) -> None:
         nl = ct._nl_expr
         op = ct._op
         rhs = ct._rhs
 
         if isinstance(nl, _AggregateExpr):
-            self._post_aggregate_bounded(nl, op, rhs)
+            self._post_aggregate_bounded(nl, op, rhs, _label=_label)
             return
 
         # Realize rhs as a single IntVar
@@ -300,14 +328,16 @@ class CpModel:
 
         if isinstance(nl, TimesExpr):
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.IntTimesConstraint(nl.left._var, nl.right._var, rhs_var._var)
+                self._add_constraint(
+                    core.IntTimesConstraint(nl.left._var, nl.right._var, rhs_var._var),
+                    _label,
                 )
             else:
                 # Create aux: aux = left * right, then aux <op> rhs
                 aux = self._new_aux_var(*self._estimate_times_bounds(nl))
-                self._model.add_constraint(
-                    core.IntTimesConstraint(nl.left._var, nl.right._var, aux._var)
+                self._add_constraint(
+                    core.IntTimesConstraint(nl.left._var, nl.right._var, aux._var),
+                    _label,
                 )
                 self._post_bounded_expr(
                     BoundedExpr(
@@ -317,16 +347,16 @@ class CpModel:
         elif isinstance(nl, AbsExpr):
             operand = self._realize(nl.operand)
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.IntAbsConstraint(operand._var, rhs_var._var)
+                self._add_constraint(
+                    core.IntAbsConstraint(operand._var, rhs_var._var), _label
                 )
             else:
                 lb = operand._var.min()
                 ub = operand._var.max()
                 abs_ub = max(abs(lb), abs(ub))
                 aux = self._new_aux_var(0, abs_ub)
-                self._model.add_constraint(
-                    core.IntAbsConstraint(operand._var, aux._var)
+                self._add_constraint(
+                    core.IntAbsConstraint(operand._var, aux._var), _label
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
@@ -335,16 +365,18 @@ class CpModel:
             dividend = self._realize(nl.dividend)
             divisor = self._realize(nl.divisor)
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.IntDivConstraint(dividend._var, divisor._var, rhs_var._var)
+                self._add_constraint(
+                    core.IntDivConstraint(dividend._var, divisor._var, rhs_var._var),
+                    _label,
                 )
             else:
                 aux = self._new_aux_var(
                     min(dividend._var.min(), -dividend._var.max()),
                     max(dividend._var.max(), -dividend._var.min()),
                 )
-                self._model.add_constraint(
-                    core.IntDivConstraint(dividend._var, divisor._var, aux._var)
+                self._add_constraint(
+                    core.IntDivConstraint(dividend._var, divisor._var, aux._var),
+                    _label,
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
@@ -353,14 +385,16 @@ class CpModel:
             dividend = self._realize(nl.dividend)
             divisor = self._realize(nl.divisor)
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.IntModConstraint(dividend._var, divisor._var, rhs_var._var)
+                self._add_constraint(
+                    core.IntModConstraint(dividend._var, divisor._var, rhs_var._var),
+                    _label,
                 )
             else:
                 dmax = max(abs(divisor._var.min()), abs(divisor._var.max()))
                 aux = self._new_aux_var(-(dmax - 1), dmax - 1)
-                self._model.add_constraint(
-                    core.IntModConstraint(dividend._var, divisor._var, aux._var)
+                self._add_constraint(
+                    core.IntModConstraint(dividend._var, divisor._var, aux._var),
+                    _label,
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
@@ -369,63 +403,68 @@ class CpModel:
             raise TypeError(f"Unsupported non-linear expression: {type(nl)}")
 
     def _post_aggregate_bounded(
-        self, agg: _AggregateExpr, op: ComparisonOp, rhs: LinearArg
+        self,
+        agg: _AggregateExpr,
+        op: ComparisonOp,
+        rhs: LinearArg,
+        *,
+        _label: str = "",
     ) -> None:
         rhs_var = self._realize(rhs)
         raw_vars = [v._var for v in agg.vars]
 
         if isinstance(agg, _MaxExpr):
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.ArrayIntMaximumConstraint(rhs_var._var, raw_vars)
+                self._add_constraint(
+                    core.ArrayIntMaximumConstraint(rhs_var._var, raw_vars), _label
                 )
             else:
                 all_mins = [v._var.min() for v in agg.vars]
                 all_maxs = [v._var.max() for v in agg.vars]
                 aux = self._new_aux_var(max(all_mins), max(all_maxs))
-                self._model.add_constraint(
-                    core.ArrayIntMaximumConstraint(aux._var, raw_vars)
+                self._add_constraint(
+                    core.ArrayIntMaximumConstraint(aux._var, raw_vars), _label
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
                 )
         elif isinstance(agg, _MinExpr):
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.ArrayIntMinimumConstraint(rhs_var._var, raw_vars)
+                self._add_constraint(
+                    core.ArrayIntMinimumConstraint(rhs_var._var, raw_vars), _label
                 )
             else:
                 all_mins = [v._var.min() for v in agg.vars]
                 all_maxs = [v._var.max() for v in agg.vars]
                 aux = self._new_aux_var(min(all_mins), min(all_maxs))
-                self._model.add_constraint(
-                    core.ArrayIntMinimumConstraint(aux._var, raw_vars)
+                self._add_constraint(
+                    core.ArrayIntMinimumConstraint(aux._var, raw_vars), _label
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
                 )
         elif isinstance(agg, _CountExpr):
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.CountEqConstraint(raw_vars, agg.value, rhs_var._var)
+                self._add_constraint(
+                    core.CountEqConstraint(raw_vars, agg.value, rhs_var._var), _label
                 )
             else:
                 aux = self._new_aux_var(0, len(agg.vars))
-                self._model.add_constraint(
-                    core.CountEqConstraint(raw_vars, agg.value, aux._var)
+                self._add_constraint(
+                    core.CountEqConstraint(raw_vars, agg.value, aux._var), _label
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
                 )
         elif isinstance(agg, _NValueExpr):
             if op == ComparisonOp.EQ:
-                self._model.add_constraint(
-                    core.NValueConstraint(rhs_var._var, raw_vars)
+                self._add_constraint(
+                    core.NValueConstraint(rhs_var._var, raw_vars), _label
                 )
             else:
                 aux = self._new_aux_var(0, len(agg.vars))
-                self._model.add_constraint(
-                    core.NValueConstraint(aux._var, raw_vars)
+                self._add_constraint(
+                    core.NValueConstraint(aux._var, raw_vars), _label
                 )
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
@@ -437,32 +476,30 @@ class CpModel:
         """Realize a list of LinearArg to IntVar, creating aux vars as needed."""
         return [self._realize(a) for a in args]
 
-    def _post_global(self, ct: _GlobalConstraint) -> None:
+    def _post_global(self, ct: _GlobalConstraint, *, _label: str = "") -> None:
         if isinstance(ct, _AllDifferent):
             vs = self._realize_list(ct.vars)
             raw = [v._var for v in vs]
-            self._model.add_constraint(core.AllDifferentConstraint(raw))
+            self._add_constraint(core.AllDifferentConstraint(raw), _label)
         elif isinstance(ct, _AllDifferentExcept0):
             vs = self._realize_list(ct.vars)
             raw = [v._var for v in vs]
-            self._model.add_constraint(core.AllDifferentExcept0Constraint(raw))
+            self._add_constraint(core.AllDifferentExcept0Constraint(raw), _label)
         elif isinstance(ct, _Circuit):
             raw = [v._var for v in ct.vars]
-            self._model.add_constraint(core.CircuitConstraint(raw))
+            self._add_constraint(core.CircuitConstraint(raw), _label)
         elif isinstance(ct, _Element):
             idx = ct.index._var
             res = ct.result._var
             if ct.array and all(isinstance(x, int) for x in ct.array):
-                # Constant array
                 arr = [int(x) for x in ct.array]
-                self._model.add_constraint(
-                    core.IntElementConstraint(idx, arr, res, True)
+                self._add_constraint(
+                    core.IntElementConstraint(idx, arr, res, True), _label
                 )
             else:
-                # Variable array
                 arr = [self._ensure_var(x)._var for x in ct.array]
-                self._model.add_constraint(
-                    core.ArrayVarIntElementConstraint(idx, arr, res, True)
+                self._add_constraint(
+                    core.ArrayVarIntElementConstraint(idx, arr, res, True), _label
                 )
         elif isinstance(ct, _Table):
             raw = [v._var for v in ct.vars]
@@ -474,34 +511,36 @@ class CpModel:
                         f"Tuple length {len(t)} does not match variable count {arity}"
                     )
                 flat.extend(t)
-            self._model.add_constraint(core.TableConstraint(raw, flat))
+            self._add_constraint(core.TableConstraint(raw, flat), _label)
         elif isinstance(ct, _Inverse):
             f_raw = [v._var for v in ct.f]
             invf_raw = [v._var for v in ct.invf]
-            self._model.add_constraint(
-                core.InverseConstraint(f_raw, invf_raw, ct.offset)
+            self._add_constraint(
+                core.InverseConstraint(f_raw, invf_raw, ct.offset), _label
             )
         elif isinstance(ct, _Cumulative):
             starts = [v._var for v in ct.starts]
             durs = [self._ensure_var(d)._var for d in ct.durations]
             demands = [self._ensure_var(d)._var for d in ct.demands]
             cap = self._ensure_var(ct.capacity)._var
-            self._model.add_constraint(
-                core.CumulativeConstraint(starts, durs, demands, cap)
+            self._add_constraint(
+                core.CumulativeConstraint(starts, durs, demands, cap), _label
             )
         elif isinstance(ct, _Disjunctive):
             starts = [v._var for v in ct.starts]
             durs = [self._ensure_var(d)._var for d in ct.durations]
-            self._model.add_constraint(core.DisjunctiveConstraint(starts, durs))
+            self._add_constraint(
+                core.DisjunctiveConstraint(starts, durs), _label
+            )
         elif isinstance(ct, _Diffn):
             x = [v._var for v in ct.x]
             y = [v._var for v in ct.y]
             dx = [self._ensure_var(d)._var for d in ct.dx]
             dy = [self._ensure_var(d)._var for d in ct.dy]
-            self._model.add_constraint(core.DiffnConstraint(x, y, dx, dy))
+            self._add_constraint(core.DiffnConstraint(x, y, dx, dy), _label)
         elif isinstance(ct, _Regular):
             raw = [v._var for v in ct.vars]
-            self._model.add_constraint(
+            self._add_constraint(
                 core.RegularConstraint(
                     raw,
                     ct.num_states,
@@ -509,7 +548,8 @@ class CpModel:
                     ct.transitions,
                     ct.initial_state,
                     ct.accepting_states,
-                )
+                ),
+                _label,
             )
         else:
             raise TypeError(f"Unsupported global constraint: {type(ct)}")
