@@ -1,0 +1,6 @@
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: r :: output_var;
+constraint bool_lt_reif(a, b, r);
+constraint bool_eq(r, 1);
+solve satisfy;
