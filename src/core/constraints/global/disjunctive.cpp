@@ -915,4 +915,72 @@ bool DisjunctiveConstraint::on_set_max(
     return propagate_bounds(model);
 }
 
+void DisjunctiveConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                           double* activity, double activity_inc,
+                                           bool& need_rescale, std::mt19937& rng) const {
+    // 重み = dur_min (capacity=1, requirement=1 なので簡略化)
+    auto task_weight = [&](size_t i) -> double {
+        return static_cast<double>(model.var_min(var_ids_[n_ + i]));  // dur_min
+    };
+
+    double total_weight = 0.0;
+    for (size_t i = 0; i < n_; ++i) total_weight += task_weight(i);
+    if (total_weight <= 0.0) return;
+
+    // trigger タスク特定
+    size_t trigger_task = SIZE_MAX;
+    for (size_t idx = 0; idx < 2 * n_; ++idx) {
+        if (var_ids_[idx] == trigger_var_idx) {
+            trigger_task = idx % n_;
+            break;
+        }
+    }
+
+    // Part 1 (50%): trigger + CP重なりタスクに局所bump
+    double local_inc = activity_inc * 0.5;
+    if (trigger_task != SIZE_MAX) {
+        double involved_weight = task_weight(trigger_task);
+        std::vector<size_t> overlap_tasks;
+
+        // trigger の CP が存在するか
+        if (cp_lo_[trigger_task] < cp_hi_[trigger_task]) {
+            int t_cp_lo = cp_lo_[trigger_task];
+            int t_cp_hi = cp_hi_[trigger_task];
+            for (size_t i = 0; i < n_; ++i) {
+                if (i == trigger_task) continue;
+                if (cp_lo_[i] >= cp_hi_[i]) continue;
+                // CP 重なり判定
+                if (cp_lo_[i] < t_cp_hi && cp_hi_[i] > t_cp_lo) {
+                    overlap_tasks.push_back(i);
+                    involved_weight += task_weight(i);
+                }
+            }
+        }
+
+        if (involved_weight > 0.0) {
+            double w = task_weight(trigger_task) / involved_weight;
+            double inc = local_inc * w;
+            bump_variable_activity(activity, var_ids_[trigger_task], inc, need_rescale, rng);
+            bump_variable_activity(activity, var_ids_[n_ + trigger_task], inc, need_rescale, rng);
+
+            for (size_t i : overlap_tasks) {
+                w = task_weight(i) / involved_weight;
+                inc = local_inc * w;
+                bump_variable_activity(activity, var_ids_[i], inc, need_rescale, rng);
+                bump_variable_activity(activity, var_ids_[n_ + i], inc, need_rescale, rng);
+            }
+        }
+    }
+
+    // Part 2 (50%): 全タスクに dur_min 重みでグローバルbump
+    double global_inc = activity_inc * 0.5;
+    for (size_t i = 0; i < n_; ++i) {
+        double w = task_weight(i);
+        if (w <= 0.0) continue;
+        double inc = global_inc * w / total_weight;
+        bump_variable_activity(activity, var_ids_[i], inc, need_rescale, rng);
+        bump_variable_activity(activity, var_ids_[n_ + i], inc, need_rescale, rng);
+    }
+}
+
 }  // namespace sabori_csp
