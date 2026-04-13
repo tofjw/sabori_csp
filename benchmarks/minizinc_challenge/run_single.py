@@ -17,7 +17,8 @@ import argparse
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-MINIZINC = str(BASE_DIR / "squashfs-root/usr/bin/minizinc")
+MINIZINC = "/snap/bin/minizinc"
+SABORI_MSC = str(Path(__file__).resolve().parent.parent.parent / "build" / "share" / "minizinc" / "solvers" / "sabori_csp.msc")
 DEFAULT_TIMEOUT = 30
 
 def natural_sort_key(s):
@@ -94,7 +95,7 @@ def main():
 
     solvers = []
     if args.solver in ('sabori', 'both'):
-        solvers.append(('Sabori', 'sabori_csp'))
+        solvers.append(('Sabori', SABORI_MSC))
     if args.solver in ('cpsat', 'both'):
         solvers.append(('CP-SAT', 'cp-sat'))
 

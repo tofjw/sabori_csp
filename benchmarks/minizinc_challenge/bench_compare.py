@@ -17,7 +17,8 @@ from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 BASE_DIR = Path(__file__).resolve().parent
-MINIZINC = str(BASE_DIR / "squashfs-root/usr/bin/minizinc")
+MINIZINC = "/snap/bin/minizinc"
+SABORI_MSC = str(Path(__file__).resolve().parent.parent.parent / "build" / "share" / "minizinc" / "solvers" / "sabori_csp.msc")
 TIMEOUT = 30  # seconds
 MAX_WORKERS = 4
 
@@ -595,7 +596,7 @@ def run_year(year):
         mzn, data, label = instances[0]
         ptype = detect_problem_type(mzn)
         prob_types[prob] = ptype
-        tasks.append((prob, "Sabori", "sabori_csp", mzn, data, ptype))
+        tasks.append((prob, "Sabori", SABORI_MSC, mzn, data, ptype))
         tasks.append((prob, "CP-SAT", "cp-sat", mzn, data, ptype))
 
     print(f"\n{'=' * 80}")
