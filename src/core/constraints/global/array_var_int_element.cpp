@@ -465,9 +465,14 @@ void ArrayVarIntElementConstraint::rewind_to(int save_point) {
 void ArrayVarIntElementConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                                    double* activity, double activity_inc,
                                                    bool& need_rescale, std::mt19937& rng) const {
+    if (n_ < 3) {
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+        return;
+    }
+
     if (model.is_instantiated(index_id_)) {
         auto idx_0based = index_to_0based(model.value(index_id_));
-        size_t count = 1;
+        size_t count = 1; // index
         if (model.is_instantiated(result_id_)) ++count;
         bool arr_valid = (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_);
         size_t arr_id = SIZE_MAX;
@@ -481,46 +486,26 @@ void ArrayVarIntElementConstraint::bump_activity(const Model& model, size_t trig
             bump_variable_activity(activity, result_id_, inc, need_rescale, rng);
         if (arr_valid && model.is_instantiated(arr_id))
             bump_variable_activity(activity, arr_id, inc, need_rescale, rng);
-        return;
+    }
+    else if (model.is_instantiated(result_id_)) {
+        size_t count = 2; // index, result
+        auto val = model.value(result_id_);
+        for (size_t i = 0; i < n_; i++) {
+            if (model.contains(var_ids_[2 + i], val))
+                count++;
+        }
+
+        double inc = activity_inc / count;
+        bump_variable_activity(activity, index_id_, inc, need_rescale, rng);
+        bump_variable_activity(activity, result_id_, inc, need_rescale, rng);
+
+        for (size_t i = 0; i < n_; i++) {
+            if (model.contains(var_ids_[2 + i], val))
+                bump_variable_activity(activity, var_ids_[2 + i], inc, need_rescale, rng);
+        }
     }
     else {
-        auto r_min = model.var_min(result_id_);
-        auto r_max = model.var_max(result_id_);
-        
-        // activity[index] += log(|Dom(index)|)
-        // idx_dim_size >= 2 (not instantiated)
-        auto idx_dom_size = model.var_size(index_id_);
-        double w = std::log(2.0) / std::log(idx_dom_size);
-        bump_variable_activity(activity, index_id_, activity_inc * w, need_rescale, rng);
-
-        size_t count = 0;
-        const auto& idx_dom = model.variable(index_id_)->domain();
-        
-        for (auto it = idx_dom.begin(); it != idx_dom.end(); ++it) {
-            auto idx_0based = index_to_0based(*it);
-            if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-                auto arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
-                if (model.var_max(arr_id) < r_min
-                    || r_max < model.var_min(arr_id)) {
-                    continue;
-                }
-                ++count;
-            }
-        }
-        
-        double inc = activity_inc / count;
-
-        for (auto it = idx_dom.begin(); it != idx_dom.end(); ++it) {
-            auto idx_0based = index_to_0based(*it);
-            if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-                auto arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
-                if (model.var_max(arr_id) < r_min
-                    || r_max < model.var_min(arr_id)) {
-                    continue;
-                }
-                bump_variable_activity(activity, arr_id, inc, need_rescale, rng);
-            }
-        }
+        bump_variable_activity(activity, index_id_, activity_inc / n_, need_rescale, rng);
     }
 }
 
