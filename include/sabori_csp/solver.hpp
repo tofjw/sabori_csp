@@ -484,6 +484,10 @@ private:
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     bool activity_first_ = false;  // false: MRV優先, true: Activity優先
+    // モード別の直近改善報酬 (index: activity_first ? 1 : 0)
+    double mode_reward_[2] = {1.0, 1.0};
+    static constexpr double kModeRewardDecay = 0.5;
+    static constexpr double kModeRewardFloor = 0.1;
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 

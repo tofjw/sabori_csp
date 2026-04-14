@@ -5,6 +5,7 @@
 #include "sabori_csp/variable_selector.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace sabori_csp {
 
@@ -194,53 +195,78 @@ size_t VariableSelector::select_linear(const Model& model,
     return best_idx;
 }
 
+namespace {
+// 候補集合から activity 比例で 1 つ確率的に選ぶ。
+// activity がすべて 0 の場合は一様ランダム。
+size_t pick_pivot(const std::vector<size_t>& candidates,
+                   const std::vector<double>& activity,
+                   std::mt19937& rng) {
+    if (candidates.empty()) return SIZE_MAX;
+
+    // 未使用 (activity==0) の変数があればそれらを優先
+    std::vector<size_t> untouched;
+    for (size_t v : candidates) {
+        if (activity[v] == 0.0) untouched.push_back(v);
+    }
+    const std::vector<size_t>& pool = untouched.empty() ? candidates : untouched;
+    std::uniform_int_distribution<size_t> ud(0, pool.size() - 1);
+    return pool[ud(rng)];
+}
+}  // namespace
+
 void VariableSelector::select_restart_pivot(const Model& model,
                                              const std::vector<double>& activity,
                                              const CommunityAnalysis& community_analysis,
-                                             size_t restart_count) {
+                                             size_t restart_count,
+                                             std::mt19937& rng) {
     community_first_var_ = SIZE_MAX;
 
+    // ターゲット変数集合（コミュニティ or グループ）を集める
+    std::vector<size_t> pool;
+    // 分割数 = log(決定変数の数)（最低 1）
+    size_t num_groups = decision_var_end_ > 1
+        ? static_cast<size_t>(std::log(static_cast<double>(decision_var_end_)))
+        : 1;
+    if (num_groups < 1) num_groups = 1;
+
     if (community_analysis.is_enabled()) {
-        // コミュニティベースのローテーション
-        const auto& tops = community_analysis.top_communities(5);
+        const auto& tops = community_analysis.top_communities(num_groups);
         if (!tops.empty()) {
             size_t target_comm = tops[restart_count % tops.size()];
             const auto& vars = community_analysis.community_vars(target_comm);
-            size_t best_size = SIZE_MAX;
-            double best_act = -1.0;
-            for (size_t v : vars) {
-                if (!model.is_instantiated(v)) {
-                    size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-                    if (ds < best_size || (ds == best_size && activity[v] > best_act)) {
-                        best_size = ds;
-                        best_act = activity[v];
-                        community_first_var_ = v;
-                    }
-                }
-            }
+            pool.assign(vars.begin(), vars.end());
         }
     } else if (decision_var_end_ > 0) {
-        // コミュニティ分析なし: var_order_ を均等グループに分割してローテーション
-        constexpr size_t num_groups = 5;
         size_t group_size = (decision_var_end_ + num_groups - 1) / num_groups;
         size_t group_idx = restart_count % num_groups;
         size_t begin = group_idx * group_size;
         size_t end = std::min(begin + group_size, decision_var_end_);
-
-        size_t best_size = SIZE_MAX;
-        double best_act = -1.0;
-        for (size_t k = begin; k < end; ++k) {
-            size_t v = var_order_[k];
-            if (!model.is_instantiated(v)) {
-                size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-                if (ds < best_size || (ds == best_size && activity[v] > best_act)) {
-                    best_size = ds;
-                    best_act = activity[v];
-                    community_first_var_ = v;
-                }
-            }
+        if (begin < end) {
+            pool.reserve(end - begin);
+            for (size_t k = begin; k < end; ++k) pool.push_back(var_order_[k]);
         }
     }
+
+    // MRV で最小ドメインサイズを特定し、そのサイズを持つ未割当変数だけを候補にする
+    size_t best_size = SIZE_MAX;
+    for (size_t v : pool) {
+        if (!model.is_instantiated(v)) {
+            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+            if (ds < best_size) best_size = ds;
+        }
+    }
+    if (best_size == SIZE_MAX) return;
+
+    std::vector<size_t> candidates;
+    candidates.reserve(pool.size());
+    for (size_t v : pool) {
+        if (!model.is_instantiated(v)) {
+            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+            if (ds == best_size) candidates.push_back(v);
+        }
+    }
+
+    community_first_var_ = pick_pivot(candidates, activity, rng);
 }
 
 void VariableSelector::shuffle(std::mt19937& rng) {

@@ -292,7 +292,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count);
+            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
@@ -304,8 +304,13 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Temporal activity リセット
             std::fill(temporal_activity_.begin(), temporal_activity_.end(), 0);
 
-            // domain_size 優先と activity 優先を交互に切り替え
-            activity_first_ = !activity_first_;
+            // 直近改善を多く生んだモードを優先的に再試行（重み付きサンプリング + 指数減衰）
+            for (double& r : mode_reward_) {
+                r = std::max(r * kModeRewardDecay, kModeRewardFloor);
+            }
+            std::uniform_real_distribution<double> mode_dist(
+                0.0, mode_reward_[0] + mode_reward_[1]);
+            activity_first_ = (mode_dist(rng_) >= mode_reward_[0]);
 
             // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
             var_selector_.shuffle(rng_);
@@ -386,6 +391,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     (!minimize_ && obj_val > *best_objective_);
 
                 if (improved) {
+                    mode_reward_[activity_first_ ? 1 : 0] += 1.0;
                     best_objective_ = obj_val;
                     best_solution_ = found_solution;
 
@@ -555,6 +561,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 (!minimize_ && probe_obj > *best_objective_);
 
                             if (probe_improved) {
+                                mode_reward_[activity_first_ ? 1 : 0] += 1.0;
                                 best_objective_ = probe_obj;
                                 best_solution_ = probe_solution;
 
@@ -684,7 +691,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count);
+            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
@@ -693,8 +700,13 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // Activity 減衰
             decay_activities();
 
-            // domain_size 優先と activity 優先を交互に切り替え
-            activity_first_ = !activity_first_;
+            // 直近改善を多く生んだモードを優先的に再試行（重み付きサンプリング + 指数減衰）
+            for (double& r : mode_reward_) {
+                r = std::max(r * kModeRewardDecay, kModeRewardFloor);
+            }
+            std::uniform_real_distribution<double> mode_dist(
+                0.0, mode_reward_[0] + mode_reward_[1]);
+            activity_first_ = (mode_dist(rng_) >= mode_reward_[0]);
 
             // スキャン順シャッフル
             var_selector_.shuffle(rng_);
@@ -1390,6 +1402,7 @@ void Solver::save_partial_assignment(const Model& model) {
     }
 
     // 前回より多い → 置き換え（未 instantiate の変数は前回の値を引き継ぐ）
+    mode_reward_[activity_first_ ? 1 : 0] += 1.0;
     best_num_instantiated_ = num_instantiated;
     size_t n_vars = model.variables().size();
     for (size_t i = 0; i < n_vars; ++i) {
