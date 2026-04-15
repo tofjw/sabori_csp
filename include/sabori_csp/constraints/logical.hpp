@@ -172,6 +172,9 @@ private:
     // 変数ID → リテラルインデックス（on_instantiate用、O(1)検索）
     std::unordered_map<size_t, size_t> var_id_to_lit_idx_;
 
+    // 同じ変数が pos と neg 両方に現れる場合、節は恒真 (x ∨ ¬x)
+    bool is_tautology_ = false;
+
     /**
      * @brief リテラルが節を充足できるか（Model参照版）
      */

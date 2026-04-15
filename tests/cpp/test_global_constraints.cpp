@@ -3137,6 +3137,73 @@ TEST_CASE("BoolClauseConstraint solver integration", "[constraint][bool_clause]"
     }
 }
 
+TEST_CASE("BoolClauseConstraint tautology (x in both pos and neg)",
+          "[constraint][bool_clause][tautology]") {
+    SECTION("x ∨ ¬x alone - always satisfied, x free") {
+        Model model;
+        auto x = model.create_variable("x", 0, 1);
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{x}, std::vector<Variable*>{x}));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 2);  // x=0 も x=1 も両方許容される
+    }
+
+    SECTION("x ∨ ¬x ∨ p - tautology dominates, p free") {
+        Model model;
+        auto x = model.create_variable("x", 0, 1);
+        auto p = model.create_variable("p", 0, 1);
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{x, p}, std::vector<Variable*>{x}));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 4);  // 全組み合わせ許容
+    }
+
+    SECTION("x ∨ ¬x with x fixed to 0 - still satisfied") {
+        Model model;
+        auto x = model.create_variable("x", 0);  // fixed
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{x}, std::vector<Variable*>{x}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("x") == 0);
+    }
+
+    SECTION("x ∨ ¬x with x fixed to 1 - still satisfied") {
+        Model model;
+        auto x = model.create_variable("x", 1);  // fixed
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{x}, std::vector<Variable*>{x}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("x") == 1);
+    }
+
+    SECTION("tautology does not over-propagate unrelated vars") {
+        // (x ∨ ¬x) ∧ (p ∨ q): tautology は何もしない、(p ∨ q) は通常通り
+        Model model;
+        auto x = model.create_variable("x", 0, 1);
+        auto p = model.create_variable("p", 0);  // fixed 0
+        auto q = model.create_variable("q", 0, 1);
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{x}, std::vector<Variable*>{x}));
+        model.add_constraint(std::make_unique<BoolClauseConstraint>(
+            std::vector<Variable*>{p, q}, std::vector<Variable*>{}));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+        REQUIRE(solution->at("q") == 1);  // p=0 なので q=1 が強制される
+    }
+}
+
 // ============================================================================
 // ArrayIntMaximumConstraint tests
 // ============================================================================

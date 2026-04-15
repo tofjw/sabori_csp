@@ -714,11 +714,14 @@ BoolClauseConstraint::BoolClauseConstraint(std::vector<VariablePtr> pos, std::ve
     }
 
     // 変数ID → リテラルインデックスマップを構築
+    // 同じ変数が pos と neg 両方にある場合 (x ∨ ¬x) は恒真節
     for (size_t i = 0; i < n_pos_; ++i) {
         var_id_to_lit_idx_[pos_ids_[i]] = i;
     }
     for (size_t i = 0; i < n_neg_; ++i) {
-        if (var_id_to_lit_idx_.find(neg_ids_[i]) == var_id_to_lit_idx_.end()) {
+        if (var_id_to_lit_idx_.find(neg_ids_[i]) != var_id_to_lit_idx_.end()) {
+            is_tautology_ = true;
+        } else {
             var_id_to_lit_idx_[neg_ids_[i]] = n_pos_ + i;
         }
     }
@@ -731,6 +734,7 @@ std::string BoolClauseConstraint::name() const {
 }
 
 bool BoolClauseConstraint::prepare_propagation(Model& model) {
+    if (is_tautology_) return true;  // 恒真節: 何もしない
     // watch を再初期化: 節を充足しうるリテラルを2つ探す
     w1_ = SIZE_MAX;
     w2_ = SIZE_MAX;
@@ -769,6 +773,7 @@ bool BoolClauseConstraint::prepare_propagation(Model& model) {
 }
 
 PresolveResult BoolClauseConstraint::presolve(Model& model) {
+    if (is_tautology_) return PresolveResult::Unchanged;  // 恒真節
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_; ++i) {
         auto* v = model.variable(pos_ids_[i]);
@@ -816,6 +821,7 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
                                            size_t var_idx, size_t internal_var_idx, Domain::value_type value,
                                            Domain::value_type prev_min,
                                            Domain::value_type prev_max) {
+    if (is_tautology_) return true;  // 恒真節: 何もしない
     if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
@@ -872,6 +878,7 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool BoolClauseConstraint::on_final_instantiate(const Model& model) {
+    if (is_tautology_) return true;  // 恒真節
     // いずれかのリテラルが充足しているか
     for (size_t i = 0; i < n_pos_; ++i) {
         if (model.value(pos_ids_[i]) == 1) return true;
@@ -884,6 +891,7 @@ bool BoolClauseConstraint::on_final_instantiate(const Model& model) {
 
 bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                     size_t last_var_internal_idx) {
+    if (is_tautology_) return true;  // 恒真節
     // 既に充足しているかチェック
     for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
         if (is_satisfied_by(model, i)) {
