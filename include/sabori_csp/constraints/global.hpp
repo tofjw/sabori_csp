@@ -435,6 +435,13 @@ public:
      */
     size_t pool_size() const { return pool_n_; }
 
+    /**
+     * @brief trigger と同じ値に確定した変数だけを bump する
+     */
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
 protected:
     /**
      * @brief 初期整合性チェック

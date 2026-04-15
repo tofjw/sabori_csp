@@ -339,6 +339,24 @@ void CircuitConstraint::rewind_to(int save_point) {
     }
 }
 
+void CircuitConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                       double* activity, double activity_inc,
+                                       bool& need_rescale, std::mt19937& rng) const {
+    if (!model.is_instantiated(trigger_var_idx)) return;
+
+    auto trigger_val = model.value(trigger_var_idx);
+
+    // 原因となる変数と衝突している変数の 2つがあるはず
+    const double inc = 0.5 * activity_inc;
+
+    for (size_t vid : var_ids_) {
+        if (!model.is_instantiated(vid)) continue;
+        if (model.value(vid) == trigger_val) {
+            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+        }
+    }
+}
+
 // ============================================================================
 
 }  // namespace sabori_csp
