@@ -55,7 +55,6 @@ struct VarData {
     bool is_defined_var = false;
     bool no_bisect = false;
     bool randomize_value_order = false;  ///< 値の試行順をランダム化
-    Domain::value_type preferred_value = std::numeric_limits<Domain::value_type>::min();  ///< 優先試行値（未設定なら min()）
 };
 
 /**
@@ -237,6 +236,18 @@ public:
      */
     size_t initial_range(size_t var_idx) const { return var_data_[var_idx].initial_range; }
 
+    Domain::value_type presolve_min(size_t var_idx) const { return presolve_min_[var_idx]; }
+    Domain::value_type presolve_max(size_t var_idx) const { return presolve_max_[var_idx]; }
+
+    void snapshot_presolve_bounds() {
+        presolve_min_.resize(var_data_.size());
+        presolve_max_.resize(var_data_.size());
+        for (size_t i = 0; i < var_data_.size(); ++i) {
+            presolve_min_[i] = var_data_[i].min;
+            presolve_max_[i] = var_data_[i].max;
+        }
+    }
+
     /**
      * @brief 変数が単一値に固定されているか
      */
@@ -277,16 +288,6 @@ public:
      * @brief 変数の is_defined_var を解除
      */
     void unset_defined_var(size_t var_idx) { var_data_[var_idx].is_defined_var = false; }
-
-    /**
-     * @brief 変数の優先試行値を設定
-     */
-    void set_preferred_value(size_t var_idx, int64_t value) { var_data_[var_idx].preferred_value = value; }
-
-    /**
-     * @brief 変数の優先試行値を取得
-     */
-    int64_t preferred_value(size_t var_idx) const { return var_data_[var_idx].preferred_value; }
 
     /**
      * @brief 変数が no_bisect（bisect対象外）か
@@ -542,6 +543,10 @@ private:
 
     // フェーズフラグ（デフォルト true: 構築・presolve 中は直接ドメイン操作可能）
     bool presolve_phase_ = true;
+
+    // presolve 後の bounds スナップショット（VarData のキャッシュライン汚染を避けるため別配列）
+    std::vector<Domain::value_type> presolve_min_;
+    std::vector<Domain::value_type> presolve_max_;
 
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
     std::vector<PendingUpdate> pending_updates_;

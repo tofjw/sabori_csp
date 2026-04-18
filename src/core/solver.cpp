@@ -68,6 +68,31 @@ bool Solver::init_search(Model& model) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return false;
     }
+
+    // 勾配に関わる変数インデックスを収集（勾配候補の高速列挙用）
+    {
+        const auto& all_constraints = model.constraints();
+        gradient_eligible_vars_.clear();
+        for (size_t vi = 0; vi < variables.size(); ++vi) {
+            if (model.is_eliminated(vi))
+                continue;
+
+            if (model.is_defined_var(vi))
+                continue;
+
+            if (model.is_instantiated(vi))
+                continue;
+
+            if (!model.is_no_bisect(vi))
+                continue;
+
+            if (model.presolve_max(vi) - model.presolve_min(vi) <= 3)
+                continue;
+
+            gradient_eligible_vars_.push_back(vi);
+        }
+    }
+
     if (verbose_) {
         std::cerr << "% [verbose] presolve done\n";
         size_t n_vars = model.variables().size();
@@ -358,7 +383,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
     int root_point = current_decision_;
 
     prev_improving_solution_.clear();  // empty() = true means no previous solution yet
-    gradient_ema_.clear();
+    gradient_.clear();
     gradient_var_idx_ = SIZE_MAX;
     gradient_direction_ = 0;
 
@@ -416,41 +441,31 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     // 疑似勾配の計算（移動平均で蓄積）
                     gradient_var_idx_ = SIZE_MAX;
                     gradient_direction_ = 0;
-                    if (!prev_improving_solution_.empty()) {
-                        constexpr double alpha = 0.3;
-                        if (gradient_ema_.empty()) {
-                            gradient_ema_.assign(variables.size(), 0.0);
+                    if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
+                        if (gradient_.empty()) {
+                            gradient_.assign(variables.size(), 0.0);
                         }
-                        for (size_t i = 0; i < var_selector_.decision_var_end(); ++i) {
-                            size_t vi = var_selector_.var_order()[i];
+                        for (size_t vi : gradient_eligible_vars_) {
                             if (prev_improving_solution_[vi] != kNoValue &&
                                 current_best_assignment_[vi] != kNoValue) {
                                 double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
-                                gradient_ema_[vi] = alpha * delta + (1.0 - alpha) * gradient_ema_[vi];
+                                if (delta < 0)
+                                    gradient_[vi] = -1.0;
+                                else if (delta > 0.0)
+                                    gradient_[vi] = 1.0;
+                                else
+                                    gradient_[vi] = 0.0;
                             }
                         }
-                        // EMA が有意かつ線形制約がかかっている変数から1つランダムに選択
-                        const auto& all_constraints = model.constraints();
-                        std::vector<size_t> candidates;
-                        for (size_t vi = 0; vi < gradient_ema_.size(); ++vi) {
-                            double ema = gradient_ema_[vi];
-                            if (ema >= 1.0 || ema <= -1.0) {
-                                bool has_lin = false;
-                                for (const auto& w : model.constraints_for_var(vi)) {
-                                    const auto& cname = all_constraints[w.constraint_idx]->name();
-                                    if (cname.compare(0, 8, "int_lin_") == 0 ||
-                                        cname.compare(0, 8, "bool_lin") == 0) {
-                                        has_lin = true;
-                                        break;
-                                    }
-                                }
-                                if (has_lin) candidates.push_back(vi);
-                            }
-                        }
-                        if (!candidates.empty()) {
-                            size_t vi = candidates[rng_() % candidates.size()];
+                        // 勾配対象変数から1つランダムに選択
+                        std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
+                        size_t vi = gradient_eligible_vars_[idist(rng_)];
+                        double g = gradient_[vi];
+                        if (g != 0.0
+                            && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                            && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
                             gradient_var_idx_ = vi;
-                            gradient_direction_ = (gradient_ema_[vi] > 0) ? +1 : -1;
+                            gradient_direction_ = (g > 0.0) ? +1 : -1;
                             gradient_ref_val_ = current_best_assignment_[vi];
                         }
                     }
@@ -713,22 +728,21 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             var_selector_.init_tracking(model);
             unassigned_trail_.clear();
 
-            // 解が見つからなかった場合: EMA有意な変数からランダムに選んで勾配を適用
-            if (!gradient_ema_.empty()) {
-                std::vector<size_t> candidates;
-                for (size_t vi = 0; vi < gradient_ema_.size(); ++vi) {
-                    double ema = gradient_ema_[vi];
-                    if (ema >= 1.0 || ema <= -1.0) {
-                        candidates.push_back(vi);
-                    }
-                }
-                if (!candidates.empty()) {
-                    size_t vi = candidates[rng_() % candidates.size()];
-                    if (current_best_assignment_[vi] != kNoValue) {
-                        gradient_var_idx_ = vi;
-                        gradient_direction_ = (gradient_ema_[vi] > 0) ? +1 : -1;
-                        gradient_ref_val_ = current_best_assignment_[vi];
-                    }
+            // 解が見つからなかった場合: 勾配有意な変数からランダムに選んで適用
+            if (!gradient_eligible_vars_.empty() && !gradient_.empty()) {
+                gradient_var_idx_ = SIZE_MAX;
+                gradient_direction_ = 0;
+
+                std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
+                size_t vi = gradient_eligible_vars_[idist(rng_)];
+                double g = gradient_[vi];
+                if (g != 0.0
+                    && current_best_assignment_[vi] != kNoValue
+                    && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                    && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
+                    gradient_var_idx_ = vi;
+                    gradient_direction_ = (g > 0.0) ? +1 : -1;
+                    gradient_ref_val_ = current_best_assignment_[vi];
                 }
             }
 
@@ -879,15 +893,6 @@ void Solver::order_values(const Model& model, size_t var_idx) {
         for (size_t i = values.size() - 1; i > 0; --i) {
             size_t j = rng_() % (i + 1);
             if (i != j) std::swap(values[i], values[j]);
-        }
-    } else {
-        // preferred_value が設定されていれば先頭に移動
-        auto pref = model.preferred_value(var_idx);
-        if (pref != std::numeric_limits<Domain::value_type>::min()) {
-            auto it = std::find(values.begin(), values.end(), pref);
-            if (it != values.end() && it != values.begin()) {
-                std::swap(*it, values[0]);
-            }
         }
     }
 }
@@ -1159,6 +1164,8 @@ bool Solver::presolve(Model& model) {
             return false;
         }
     }
+
+    model.snapshot_presolve_bounds();
 
     // presolve 終了 — 以降の直接ドメイン操作は（debug ビルドで）assertion failure になる
     model.set_presolve_phase(false);

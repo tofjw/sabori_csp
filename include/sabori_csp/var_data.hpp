@@ -27,7 +27,6 @@ struct VarData {
     int last_saved_level = -1;
     bool is_defined_var = false;
     bool no_bisect = false;
-    int64_t preferred_value = std::numeric_limits<int64_t>::min();  ///< 優先試行値（未設定なら min()）
 };
 
 /**

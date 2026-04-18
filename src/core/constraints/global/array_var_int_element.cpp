@@ -465,6 +465,9 @@ void ArrayVarIntElementConstraint::rewind_to(int save_point) {
 void ArrayVarIntElementConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                                    double* activity, double activity_inc,
                                                    bool& need_rescale, std::mt19937& rng) const {
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    return;
+    
     if (n_ < 3) {
         Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
         return;

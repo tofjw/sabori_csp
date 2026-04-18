@@ -344,5 +344,52 @@ void IntLinLeConstraint::init_activity(const Model& model, double* activity) con
     }
 }
 
+#if 0
+void IntLinLeConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                        double* activity, double activity_inc,
+                                        bool& need_rescale, std::mt19937& rng) const {
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    return;
+    
+    //    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    //    return;
+
+    size_t n = 0;
+    
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        // if (!model.is_instantiated(vid)) continue;
+        auto c = coeffs_[i];
+        // auto val = model.value(vid);
+
+        if ((c > 0 && model.var_max(vid) != model.presolve_min(vid))
+            || (c < 0 && model.var_min(vid) != model.presolve_max(vid))) {
+            n++;
+        }
+    }
+
+    if (n == 0) {
+        abort();
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+        return;
+    }
+    
+    double inc = activity_inc / n;
+
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        // if (!model.is_instantiated(vid)) continue;
+        auto c = coeffs_[i];
+        // auto val = model.value(vid);
+
+        if ((c > 0 && model.var_max(vid) != model.presolve_min(vid))
+            || (c < 0 && model.var_min(vid) != model.presolve_max(vid))) {
+            // double inc = activity_inc / n / model.var_size((vid));
+            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+        }
+    }
+}
+#endif
+
 }  // namespace sabori_csp
 

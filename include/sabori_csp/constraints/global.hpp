@@ -253,6 +253,12 @@ public:
 
     void init_activity(const Model& model, double* activity) const override;
 
+#if 0
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+#endif
+
 protected:
     /**
      * @brief 初期整合性チェック
@@ -351,6 +357,12 @@ public:
     void rewind_to(int save_point);
 
     void init_activity(const Model& model, double* activity) const override;
+
+#if 0
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+#endif
 
 protected:
     /**

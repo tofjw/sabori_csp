@@ -353,7 +353,7 @@ private:
                         std::vector<SearchFrame>& stack,
                         SearchResult& result, bool& ascending);
 
-    /// 勾配ヒント・ベスト解ヒント・preferred_value による値の並べ替え
+    /// 勾配ヒント・ベスト解ヒントによる値の並べ替え
     void order_values(const Model& model, size_t var_idx);
 
     /// Enumerate モードの値ループ
@@ -519,7 +519,8 @@ private:
 
     // 疑似勾配（最適化用）
     std::vector<Domain::value_type> prev_improving_solution_;
-    std::vector<double> gradient_ema_;  // 移動平均
+    std::vector<double> gradient_;  // 疑似勾配（直前の改善方向）
+    std::vector<size_t> gradient_eligible_vars_;  // 勾配を利用する変数インデックス
     size_t gradient_var_idx_ = SIZE_MAX;
     int gradient_direction_ = 0;
     Domain::value_type gradient_ref_val_ = 0;

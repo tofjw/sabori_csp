@@ -189,6 +189,8 @@ void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
                                double* activity, double activity_inc,
                                bool& need_rescale, std::mt19937& rng) const {
     // 探索開始時に未確定だった変数数で割る（最初から固定の変数を除外）
+#if 0
+    // 20260417_org_bump
     size_t n = search_var_count_ > 0 ? search_var_count_ : var_ids_.size();
     double inc = activity_inc / n;
     for (size_t vid : var_ids_) {
@@ -196,6 +198,53 @@ void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
             bump_variable_activity(activity, vid, inc, need_rescale, rng);
         }
     }
+#endif
+#if 1
+    // 20260417_pattern1
+    // 20260417_no_align
+    size_t n = 0;
+    for (size_t vid : var_ids_) {
+        if (model.var_min(vid) != model.presolve_min(vid)
+            || model.var_max(vid) != model.presolve_max(vid)) {
+            n++;
+        }
+    }
+    for (size_t vid : var_ids_) {
+        if (model.var_min(vid) != model.presolve_min(vid)
+            || model.var_max(vid) != model.presolve_max(vid)) {
+            double inc = activity_inc / n / model.var_size(vid);
+            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+        }
+    }
+#endif
+#if 0
+    // 20260417_bump2
+    #if 1
+    size_t n = 0;
+    size_t ni = 0;
+    for (size_t vid : var_ids_) {
+        auto p_min =  model.presolve_min(vid);
+        auto p_max =  model.presolve_max(vid);
+        auto range = p_max - p_min + 1;
+        if (range > 1) {
+            n++;
+            if (model.var_size(vid) <= range / 2) {
+                ni;
+            }
+        }
+    }
+    #endif
+    for (size_t vid : var_ids_) {
+        auto p_min =  model.presolve_min(vid);
+        auto p_max =  model.presolve_max(vid);
+        auto range = p_max - p_min + 1;
+        if (range > 1 && model.var_size(vid) <= range / 2) {
+            // double inc = activity_inc * 1.0 / range / std::sqrt(n);
+            double inc = activity_inc * (1.0 - ni / n) / model.var_size(vid);
+            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+        }
+    }
+#endif
 }
 
 

@@ -1,6 +1,8 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <set>
 
 namespace sabori_csp {
@@ -512,7 +514,6 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
-
 void IntLinEqConstraint::init_activity(const Model& model, double* activity) const {
     int64_t max_abs = 0;
     for (auto c : coeffs_) {
@@ -531,8 +532,145 @@ void IntLinEqConstraint::init_activity(const Model& model, double* activity) con
         if (!model.is_instantiated(vid)) {
             activity[vid] += std::abs(static_cast<double>(coeffs_[i])) / sum_abs;
         }
+     }
+     return;
+
+    // 各項 c_i * x_i の幅 |c_i| * (hi_i - lo_i) を計算し、その合計に対する
+    // 各項の比を初期 activity として設定する。
+    // 「変数が上下端に張り付いた時に取りうる総和の範囲のうち、その変数の項が
+    // どれだけ寄与するか」を表す。寄与の大きい項ほど伝播でよく触れられる。
+    if (coeffs_.empty()) return;
+
+    std::vector<double> term_width(coeffs_.size(), 0.0);
+    double total_max = 0.0;
+    double total_min = 0.0;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        if (model.is_instantiated(vid)) continue;
+
+        int64_t c = static_cast<double>(coeffs_[i]);
+        double x1 = c * model.var_max(vid);
+        double x2 = c * model.var_min(vid);
+        if (x1 < x2) {
+            std::swap(x1, x2);
+        }
+        // x1 > x2
+        total_max += x1;
+        total_min += x2;
+        
+        double a = static_cast<double>(c < 0 ? -c : c);
+        double range = static_cast<double>(model.var_max(vid) - model.var_min(vid));
+        if (range <= 0.0 || a == 0.0) continue;
+        double w = a * std::log(range);
+        term_width[i] = w;
+        // term_width[i] = a;
+    }
+
+    double total_width = total_max - total_min;
+    if (total_width <= 0.0) return;
+    
+    const double inv_total = 1.0 / total_width;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        if (term_width[i] <= 0.0) continue;
+        size_t vid = var_ids_[i];
+        if (model.is_instantiated(vid)) continue;
+        activity[vid] += term_width[i] * inv_total;
     }
 }
+
+#if 0
+void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
+                                        double* activity, double activity_inc,
+                                        bool& need_rescale, std::mt19937& rng) const {
+    //    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    //    return;
+    
+    // 各項 c_i * x_i の幅 |c_i| * (hi_i - lo_i) を計算し、その合計に対する
+    // 各項の比を初期 activity として設定する。
+    // 「変数が上下端に張り付いた時に取りうる総和の範囲のうち、その変数の項が
+    // どれだけ寄与するか」を表す。寄与の大きい項ほど伝播でよく触れられる。
+    if (coeffs_.empty()) return;
+
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    return;
+    
+#if 0
+    std::vector<double> term_width(coeffs_.size(), 0.0);
+    double total_max = 0.0;
+    double total_min = 0.0;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        int64_t c = static_cast<double>(coeffs_[i]);
+        double x1 = c * model.var_max(vid);
+        double x2 = c * model.var_min(vid);
+        if (x1 < x2) {
+            std::swap(x1, x2);
+        }
+        // x1 > x2
+        total_max += x1;
+        total_min += x2;
+        
+        double a = static_cast<double>(c < 0 ? -c : c);
+        double range = static_cast<double>(model.var_max(vid) - model.var_min(vid) + 1.0);
+        // double w = a * range;
+        double w = a;
+        term_width[i] = w;
+    }
+
+    double total_width = total_max - total_min + 1.0;
+    
+    const double inv_total = 1.0 / total_width;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        if (term_width[i] <= 0.0) continue;
+        size_t vid = var_ids_[i];
+        if (!model.is_instantiated(vid)) continue;
+        double inc = activity_inc * term_width[i] * inv_total;
+        // bump_variable_activity(activity, vid, inc, need_rescale, rng);
+    }
+    // Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    return;
+#endif
+    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    return;
+
+    std::vector<double> term_width(coeffs_.size(), 0.0);
+    double total = 0.0;
+    size_t n = 0;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        if (model.is_eliminated(vid)) continue;
+        if (model.is_defined_var(vid)) continue;
+        if (!model.is_instantiated(vid)) continue;
+        
+        double c = static_cast<double>(coeffs_[i]);
+        if (c == 0.0)
+            continue;
+        
+        double val = static_cast<double>(coeffs_[i]);
+        total += std::abs(c);
+        n++;
+    }
+
+    if (n == 0)
+        return;
+    
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        if (model.is_eliminated(vid)) continue;
+        if (model.is_defined_var(vid)) continue;
+        if (!model.is_instantiated(vid)) continue;
+        
+        double c = static_cast<double>(coeffs_[i]);
+        if (c == 0.0)
+            continue;
+        
+        double inc = std::abs(c) / total * activity_inc;
+        // bump_variable_activity(activity, vid, inc, need_rescale, rng);
+    }
+
+    
+}
+#endif
 
 }  // namespace sabori_csp
 
