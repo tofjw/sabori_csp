@@ -465,50 +465,35 @@ void ArrayVarIntElementConstraint::rewind_to(int save_point) {
 void ArrayVarIntElementConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                                    double* activity, double activity_inc,
                                                    bool& need_rescale, std::mt19937& rng) const {
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    return;
-    
-    if (n_ < 3) {
-        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-        return;
-    }
+    auto is_changed = [&](size_t vid) -> bool {
+        return model.var_min(vid) != model.presolve_min(vid)
+            || model.var_max(vid) != model.presolve_max(vid);
+    };
 
-    if (model.is_instantiated(index_id_)) {
-        auto idx_0based = index_to_0based(model.value(index_id_));
-        size_t count = 1; // index
-        if (model.is_instantiated(result_id_)) ++count;
-        bool arr_valid = (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_);
-        size_t arr_id = SIZE_MAX;
-        if (arr_valid) {
-            arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
-            if (model.is_instantiated(arr_id)) ++count;
-        }
-        double inc = activity_inc / count;
-        bump_variable_activity(activity, index_id_, inc, need_rescale, rng);
-        if (model.is_instantiated(result_id_))
-            bump_variable_activity(activity, result_id_, inc, need_rescale, rng);
-        if (arr_valid && model.is_instantiated(arr_id))
-            bump_variable_activity(activity, arr_id, inc, need_rescale, rng);
-    }
-    else if (model.is_instantiated(result_id_)) {
-        size_t count = 2; // index, result
-        auto val = model.value(result_id_);
-        for (size_t i = 0; i < n_; i++) {
-            if (model.contains(var_ids_[2 + i], val))
-                count++;
-        }
+    //
+    // don't bump result variable
+    //
+    size_t count = 0;
 
-        double inc = activity_inc / count;
-        bump_variable_activity(activity, index_id_, inc, need_rescale, rng);
-        bump_variable_activity(activity, result_id_, inc, need_rescale, rng);
+    if (is_changed(index_id_))
+        count++;
 
-        for (size_t i = 0; i < n_; i++) {
-            if (model.contains(var_ids_[2 + i], val))
-                bump_variable_activity(activity, var_ids_[2 + i], inc, need_rescale, rng);
+    auto i_min = index_to_0based(model.presolve_min(index_id_));
+    auto i_max = index_to_0based(model.presolve_max(index_id_));
+    count += i_max - i_min + 1;
+
+    double inc_base = activity_inc / count;
+
+    for (auto i = i_min; i <= i_max; i++) {
+        auto vid = var_ids_[2 + i];
+        if (is_changed(vid)) {
+            auto sz = model.var_size(vid);
+            bump_variable_activity(activity, vid, inc_base / sz, need_rescale, rng);
         }
     }
-    else {
-        bump_variable_activity(activity, index_id_, activity_inc / n_, need_rescale, rng);
+
+    if (is_changed(index_id_)) {
+        bump_variable_activity(activity, index_id_, inc_base / model.var_size(index_id_), need_rescale, rng);
     }
 }
 
