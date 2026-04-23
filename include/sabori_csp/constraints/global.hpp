@@ -253,7 +253,7 @@ public:
 
     void init_activity(const Model& model, double* activity) const override;
 
-#if 0
+#if 1
     void bump_activity(const Model& model, size_t trigger_var_idx,
                        double* activity, double activity_inc,
                        bool& need_rescale, std::mt19937& rng) const override;

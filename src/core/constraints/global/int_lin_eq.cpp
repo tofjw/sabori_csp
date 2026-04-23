@@ -532,8 +532,8 @@ void IntLinEqConstraint::init_activity(const Model& model, double* activity) con
         if (!model.is_instantiated(vid)) {
             activity[vid] += std::abs(static_cast<double>(coeffs_[i])) / sum_abs;
         }
-     }
-     return;
+    }
+    return;
 
     // 各項 c_i * x_i の幅 |c_i| * (hi_i - lo_i) を計算し、その合計に対する
     // 各項の比を初期 activity として設定する。
@@ -578,99 +578,116 @@ void IntLinEqConstraint::init_activity(const Model& model, double* activity) con
     }
 }
 
-#if 0
 void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                         double* activity, double activity_inc,
                                         bool& need_rescale, std::mt19937& rng) const {
-    //    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    //    return;
-    
-    // 各項 c_i * x_i の幅 |c_i| * (hi_i - lo_i) を計算し、その合計に対する
-    // 各項の比を初期 activity として設定する。
-    // 「変数が上下端に張り付いた時に取りうる総和の範囲のうち、その変数の項が
-    // どれだけ寄与するか」を表す。寄与の大きい項ほど伝播でよく触れられる。
-    if (coeffs_.empty()) return;
-
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    return;
-    
-#if 0
-    std::vector<double> term_width(coeffs_.size(), 0.0);
-    double total_max = 0.0;
-    double total_min = 0.0;
-    for (size_t i = 0; i < coeffs_.size(); ++i) {
-        size_t vid = var_ids_[i];
-        int64_t c = static_cast<double>(coeffs_[i]);
-        double x1 = c * model.var_max(vid);
-        double x2 = c * model.var_min(vid);
-        if (x1 < x2) {
-            std::swap(x1, x2);
-        }
-        // x1 > x2
-        total_max += x1;
-        total_min += x2;
-        
-        double a = static_cast<double>(c < 0 ? -c : c);
-        double range = static_cast<double>(model.var_max(vid) - model.var_min(vid) + 1.0);
-        // double w = a * range;
-        double w = a;
-        term_width[i] = w;
-    }
-
-    double total_width = total_max - total_min + 1.0;
-    
-    const double inv_total = 1.0 / total_width;
-    for (size_t i = 0; i < coeffs_.size(); ++i) {
-        if (term_width[i] <= 0.0) continue;
-        size_t vid = var_ids_[i];
-        if (!model.is_instantiated(vid)) continue;
-        double inc = activity_inc * term_width[i] * inv_total;
-        // bump_variable_activity(activity, vid, inc, need_rescale, rng);
-    }
-    // Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    return;
-#endif
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    return;
-
-    std::vector<double> term_width(coeffs_.size(), 0.0);
-    double total = 0.0;
-    size_t n = 0;
-    for (size_t i = 0; i < coeffs_.size(); ++i) {
-        size_t vid = var_ids_[i];
-        if (model.is_eliminated(vid)) continue;
-        if (model.is_defined_var(vid)) continue;
-        if (!model.is_instantiated(vid)) continue;
-        
-        double c = static_cast<double>(coeffs_[i]);
-        if (c == 0.0)
-            continue;
-        
-        double val = static_cast<double>(coeffs_[i]);
-        total += std::abs(c);
-        n++;
-    }
-
-    if (n == 0)
+    if (coeffs_.size() <= 3) {
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
         return;
-    
-    for (size_t i = 0; i < coeffs_.size(); ++i) {
-        size_t vid = var_ids_[i];
-        if (model.is_eliminated(vid)) continue;
-        if (model.is_defined_var(vid)) continue;
-        if (!model.is_instantiated(vid)) continue;
-        
-        double c = static_cast<double>(coeffs_[i]);
-        if (c == 0.0)
-            continue;
-        
-        double inc = std::abs(c) / total * activity_inc;
-        // bump_variable_activity(activity, vid, inc, need_rescale, rng);
     }
 
-    
-}
-#endif
+    double lower = 0;
+    double upper = 0;
 
+    double upper_delta = 0.0;
+    double lower_delta = 0.0;
+
+    static std::uniform_real_distribution<double> jitter(0.0, 1.0);
+
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        auto c = coeffs_[i];
+
+        if (c > 0) {
+            assert(c * (model.var_min(vid) - model.presolve_min(vid)) >= 0);
+            assert(c * (model.presolve_max(vid) - model.var_max(vid)) >= 0);
+
+            lower_delta += c * (model.var_min(vid) - model.presolve_min(vid));
+            upper_delta += c * (model.presolve_max(vid) - model.var_max(vid));
+
+            lower += c * model.var_min(vid);
+            upper += c * model.var_max(vid);
+        }
+        else if (c < 0) {
+            assert(-c * (model.presolve_max(vid) - model.var_max(vid)) >= 0);
+            assert(-c * (model.var_min(vid) - model.presolve_min(vid)) >= 0);
+
+            lower_delta += -c * (model.presolve_max(vid) - model.var_max(vid));
+            upper_delta += -c * (model.var_min(vid) - model.presolve_min(vid));
+
+            lower += c * model.var_max(vid);
+            upper += c * model.var_min(vid);
+        }
+    }
+
+    assert(upper_delta >= 0);
+    assert(lower_delta >= 0);
+
+    if (target_sum_ < lower) {
+        double delta = lower - target_sum_;
+
+        for (size_t i = 0; i < coeffs_.size(); ++i) {
+            auto c = coeffs_[i];
+
+            // integer eq: filter out coarse-grained variables
+            // that overshoot delta
+            if (delta < std::abs(c))
+                continue;
+
+            size_t vid = var_ids_[i];
+
+            if (c > 0) {
+                if (model.presolve_min(vid) < model.var_min(vid)) {
+                    double contrib = jitter(rng) / lower_delta;
+                    double inc = activity_inc * contrib / model.var_size(vid);
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+            else if (c < 0) {
+                if (model.presolve_max(vid) > model.var_max(vid)) {
+                    double contrib = jitter(rng) / upper_delta;
+                    double inc = activity_inc * contrib / model.var_size(vid);
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+        }
+    }
+    else if (target_sum_ > upper) {
+        double delta = target_sum_ - upper;
+
+        for (size_t i = 0; i < coeffs_.size(); ++i) {
+            auto c = coeffs_[i];
+
+            // integer eq: filter out coarse-grained variables
+            // that overshoot delta
+            if (delta < std::abs(c))
+                continue;
+
+            size_t vid = var_ids_[i];
+
+            if (c > 0) {
+                if (model.presolve_max(vid) > model.var_max(vid)) {
+                    double contrib = jitter(rng) / upper_delta;
+                    double inc = activity_inc * contrib / model.var_size(vid);
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+            else if (c < 0) {
+                if (model.presolve_min(vid) < model.var_min(vid)) {
+                    double contrib = jitter(rng) / lower_delta;
+                    double inc = activity_inc * contrib / model.var_size(vid);
+                    bump_variable_activity(activity, vid, inc, need_rescale, rng);
+                }
+            }
+        }
+    }
+    else {
+        assert(0);
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+    }
+
+    return;
+}
+    
 }  // namespace sabori_csp
 
