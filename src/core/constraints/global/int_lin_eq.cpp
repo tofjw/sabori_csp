@@ -592,7 +592,8 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
     double upper_delta = 0.0;
     double lower_delta = 0.0;
 
-    static std::uniform_real_distribution<double> jitter(0.0, 1.0);
+    size_t n_lower_changed = 0;
+    size_t n_upper_changed = 0;
 
     for (size_t i = 0; i < coeffs_.size(); ++i) {
         size_t vid = var_ids_[i];
@@ -601,6 +602,12 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
         if (c > 0) {
             assert(c * (model.var_min(vid) - model.presolve_min(vid)) >= 0);
             assert(c * (model.presolve_max(vid) - model.var_max(vid)) >= 0);
+
+            if (model.var_min(vid) - model.presolve_min(vid) > 0)
+                n_lower_changed++;
+
+            if (model.presolve_max(vid) - model.var_max(vid) > 0)
+                n_upper_changed++;
 
             lower_delta += c * (model.var_min(vid) - model.presolve_min(vid));
             upper_delta += c * (model.presolve_max(vid) - model.var_max(vid));
@@ -611,6 +618,12 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
         else if (c < 0) {
             assert(-c * (model.presolve_max(vid) - model.var_max(vid)) >= 0);
             assert(-c * (model.var_min(vid) - model.presolve_min(vid)) >= 0);
+
+            if (model.presolve_max(vid) - model.var_max(vid) > 0)
+                n_lower_changed++;
+
+            if (model.var_min(vid) - model.presolve_min(vid) > 0)
+                n_upper_changed++;
 
             lower_delta += -c * (model.presolve_max(vid) - model.var_max(vid));
             upper_delta += -c * (model.var_min(vid) - model.presolve_min(vid));
@@ -623,8 +636,10 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
     assert(upper_delta >= 0);
     assert(lower_delta >= 0);
 
-    if (target_sum_ < lower) {
+    if (target_sum_ < lower && n_lower_changed > 0) {
         double delta = lower - target_sum_;
+
+        std::uniform_real_distribution<double> jitter(0.0, std::min(1.0, 2.0 / n_lower_changed));
 
         for (size_t i = 0; i < coeffs_.size(); ++i) {
             auto c = coeffs_[i];
@@ -638,22 +653,24 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
 
             if (c > 0) {
                 if (model.presolve_min(vid) < model.var_min(vid)) {
-                    double contrib = jitter(rng) / lower_delta;
+                    double contrib = jitter(rng);
                     double inc = activity_inc * contrib / model.var_size(vid);
                     bump_variable_activity(activity, vid, inc, need_rescale, rng);
                 }
             }
             else if (c < 0) {
                 if (model.presolve_max(vid) > model.var_max(vid)) {
-                    double contrib = jitter(rng) / upper_delta;
+                    double contrib = jitter(rng);
                     double inc = activity_inc * contrib / model.var_size(vid);
                     bump_variable_activity(activity, vid, inc, need_rescale, rng);
                 }
             }
         }
     }
-    else if (target_sum_ > upper) {
+    else if (target_sum_ > upper && n_upper_changed > 0) {
         double delta = target_sum_ - upper;
+
+        std::uniform_real_distribution<double> jitter(0.0, std::min(1.0, 2.0 / n_upper_changed));
 
         for (size_t i = 0; i < coeffs_.size(); ++i) {
             auto c = coeffs_[i];
@@ -667,14 +684,14 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
 
             if (c > 0) {
                 if (model.presolve_max(vid) > model.var_max(vid)) {
-                    double contrib = jitter(rng) / upper_delta;
+                    double contrib = jitter(rng);
                     double inc = activity_inc * contrib / model.var_size(vid);
                     bump_variable_activity(activity, vid, inc, need_rescale, rng);
                 }
             }
             else if (c < 0) {
                 if (model.presolve_min(vid) < model.var_min(vid)) {
-                    double contrib = jitter(rng) / lower_delta;
+                    double contrib = jitter(rng);
                     double inc = activity_inc * contrib / model.var_size(vid);
                     bump_variable_activity(activity, vid, inc, need_rescale, rng);
                 }
@@ -688,6 +705,5 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
 
     return;
 }
-    
 }  // namespace sabori_csp
 
