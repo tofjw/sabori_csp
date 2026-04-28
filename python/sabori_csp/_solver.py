@@ -56,6 +56,12 @@ class CpSolver:
                 return SolveStatus.FEASIBLE
             return SolveStatus.INFEASIBLE
 
+    def solution(self) -> dict[str, int]:
+        """Get the full solution as a dict mapping variable names to values."""
+        if self._solution is None:
+            raise RuntimeError("No solution found. Call solve() first.")
+        return self._solution
+
     def value(self, var_or_expr: Union[IntVar, LinearExpr]) -> int:
         """Get the value of a variable or expression in the current solution."""
         if self._solution is None:
