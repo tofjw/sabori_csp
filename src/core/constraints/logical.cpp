@@ -836,6 +836,13 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
 
     // このリテラルが節を充足したか（O(1)）
     if (is_satisfied_by(model, assigned_lit)) {
+        // 不変条件維持: 節充足時は w1_/w2_ のいずれかが充足リテラル上にあること。
+        // assigned_lit が watch なら自動で満たされる。
+        if (assigned_lit != w1_ && assigned_lit != w2_
+            && !is_satisfied_by(model, w1_)
+            && !is_satisfied_by(model, w2_)) {
+            w2_ = assigned_lit;
+        }
         return true;
     }
 
@@ -874,6 +881,12 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
+    // 残り 1 変数なら on_last_uninstantiated を起動
+    size_t last_idx = find_last_uninstantiated(model);
+    if (last_idx != SIZE_MAX) {
+        return on_last_uninstantiated(model, save_point, last_idx);
+    }
+
     return true;
 }
 
@@ -892,11 +905,9 @@ bool BoolClauseConstraint::on_final_instantiate(const Model& model) {
 bool BoolClauseConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
                                                     size_t last_var_internal_idx) {
     if (is_tautology_) return true;  // 恒真節
-    // 既に充足しているかチェック
-    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
-        if (is_satisfied_by(model, i)) {
-            return true;
-        }
+    // 不変条件: 節が充足しているなら w1_/w2_ のいずれかが充足リテラル上にある（on_instantiate で維持）
+    if (is_satisfied_by(model, w1_) || is_satisfied_by(model, w2_)) {
+        return true;
     }
 
     // 最後の未確定変数を充足方向に確定
