@@ -1,5 +1,6 @@
 #include "sabori_csp/solver.hpp"
 #include "sabori_csp/constraints/global.hpp"
+#include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
 #include <limits>
 #include <numeric>
@@ -1159,6 +1160,17 @@ bool Solver::presolve(Model& model) {
                 }
             }
         }
+        // Phase 1 後: one-hot チャネリングの集約
+        // 同一 x に紐付く int_eq_reif(x, const, b_i) 群を IntOneHotChannel へ置換。
+        // prepare_propagation の前に行うことで、集約後の制約配列に対して watch
+        // 構造が初期化される。
+        OneHotChannelAggregator aggregator;
+        if (!aggregator.aggregate(model, verbose_)) {
+            return false;
+        }
+        // 制約配列が変化したため、変数 → 制約インデックスを再構築
+        model.build_constraint_watch_list();
+
         // Phase 1 後: 内部構造を再構築（ドメイン変更に対する整合性保証）
         if (!model.prepare_propagation()) {
             return false;

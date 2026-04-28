@@ -65,6 +65,17 @@ public:
                          Domain::value_type removed_value) override;
     bool on_final_instantiate(const Model& model) override;
 
+#if 0
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+#endif
+
+    // 集約 pass などからの読み取り用アクセサ
+    size_t x_id() const { return x_id_; }
+    size_t y_id() const { return y_id_; }
+    size_t b_id() const { return b_id_; }
+
 private:
     bool find_new_support(const Model& model);
 

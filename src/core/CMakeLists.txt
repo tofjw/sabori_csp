@@ -8,6 +8,7 @@ add_library(sabori_csp_core
   variable_selector.cpp
   model.cpp
   model_simplifier.cpp
+  one_hot_channel_aggregator.cpp
   community_analysis.cpp
   # Constraints
   constraints/arithmetic.cpp
@@ -38,6 +39,7 @@ add_library(sabori_csp_core
   constraints/global/inverse.cpp
   constraints/global/regular.cpp
   constraints/global/nvalue.cpp
+  constraints/global/int_one_hot_channel.cpp
 )
 
 target_include_directories(sabori_csp_core PUBLIC
