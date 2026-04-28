@@ -221,20 +221,43 @@ def verify_solution(mzn, data, solution, timeout=10):
 def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
     """ソルバーを実行して結果を返す"""
     data_label = Path(data).stem if data else None
-    cmd = [MINIZINC, "--solver", solver_id]
+    # cwd を challenge ルート（BASE_DIR）に固定して、引数は BASE_DIR からの
+    # 相対パスで渡す。理由は 2 つ:
+    # (1) MiniZinc 2.9.5 は特定の (mznlib, mzn, dzn) 組み合わせで .dzn を絶対
+    #     パスで渡すと flatten 中に SIGABRT することがある（例: mznc2016 の
+    #     gfd-schedule n25f5d20m10k3.dzn + sabori_csp.msc）。相対パスにすると
+    #     回避できる（詳細: repro_gfd_segv/README.md）。
+    # (2) MiniZinc は cwd / 引数の文字列によって変数導入順序が変わり、生成
+    #     される FZN の X_INTRODUCED_… 番号にずれが出る。これが探索軌跡を
+    #     左右する（mznc2019 median-string で obj=122 vs 210 と顕著）。
+    #     全問題で cwd を一定（BASE_DIR）にすれば結果が決定的かつ手動再現と
+    #     一致する。
+    mzn_arg = str(Path(mzn).resolve().relative_to(BASE_DIR))
+    data_arg = str(Path(data).resolve().relative_to(BASE_DIR)) if data else None
+    cwd = str(BASE_DIR)
+
+    # minizinc 自身の `-t` を使ってタイムアウトを処理させる。Python 側の
+    # communicate(timeout=…) を SIGKILL の起点にしてしまうと、fzn_sabori →
+    # solns2out → minizinc → Python のパイプライン上に未フラッシュのデータが
+    # 残ったまま落ち、最後に出力された obj/解が捕捉できない（バッファ消失）。
+    # minizinc 自前のタイムアウトは graceful 終了でバッファを保全する。
+    cmd = [MINIZINC, "--solver", solver_id, "-t", str(TIMEOUT * 1000)]
     if prob_type != "SAT":
         cmd.append("-a")
-    cmd.extend(["--output-objective", "--output-mode", "dzn", mzn])
-    if data:
-        cmd.append(data)
+    cmd.extend(["--output-objective", "--output-mode", "dzn", mzn_arg])
+    if data_arg:
+        cmd.append(data_arg)
 
     start = time.monotonic()
     proc = None
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, start_new_session=True)
+                                text=True, start_new_session=True, cwd=cwd)
         try:
-            stdout, stderr = proc.communicate(timeout=TIMEOUT)
+            # Popen 側の communicate timeout は安全網。minizinc が graceful
+            # に終わらない（パイプ詰まり等）ケースでのみ発火させたいので
+            # TIMEOUT より十分長く取る。
+            stdout, stderr = proc.communicate(timeout=TIMEOUT + 10)
         except subprocess.TimeoutExpired:
             kill_process_tree(proc)
             stdout, _ = proc.communicate()
@@ -264,6 +287,10 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
             status = "SOL"
         elif "=====UNSATISFIABLE=====" in output:
             status = "UNSAT"
+        elif elapsed >= TIMEOUT * 0.9:
+            # minizinc 自身の -t で時間切れになり、何も解を出さずに終了した
+            # ケース（UNKNOWN マーカーすら出さないこともある）は TIMEOUT 扱い。
+            status = "TIMEOUT"
         else:
             status = "UNKNOWN"
 
