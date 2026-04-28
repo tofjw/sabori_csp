@@ -40,6 +40,15 @@ enum class SearchResult {
 };
 
 /**
+ * @brief 伝播結果
+ */
+enum class PropagationResult {
+    Ok,        // 伝播成功（矛盾なし）
+    Conflict,  // 伝播で矛盾検出
+    Stopped    // タイムアウト等で中断（矛盾ではない）
+};
+
+/**
  * @brief リテラル（変数IDと値のペア + 型）
  */
 struct Literal {
@@ -449,9 +458,8 @@ private:
 
     /**
      * @brief Unit nogood をドメインに適用し、process_queue を実行
-     * @return false なら UNSAT
      */
-    bool apply_unit_nogoods(Model& model);
+    PropagationResult apply_unit_nogoods(Model& model);
 
     // ===== 部分解管理 =====
 
@@ -470,7 +478,7 @@ private:
     /**
      * @brief 伝播キューを処理
      */
-    bool process_queue(Model& model);
+    PropagationResult process_queue(Model& model);
 
     /**
      * @brief NoGoodManager の統計を SolverStats に同期

@@ -39,8 +39,8 @@ Literal Literal::negate() const {
     return *this;
 }
 
-bool Solver::apply_unit_nogoods(Model& model) {
-    if (nogood_mgr_.unit_nogoods().empty()) return true;
+PropagationResult Solver::apply_unit_nogoods(Model& model) {
+    if (nogood_mgr_.unit_nogoods().empty()) return PropagationResult::Ok;
     nogood_mgr_.enqueue_unit_nogoods(model);
     return process_queue(model);
 }
@@ -255,7 +255,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                         return std::nullopt;
                     }
 
-                    if (!apply_unit_nogoods(model)) {
+                    if (apply_unit_nogoods(model) != PropagationResult::Ok) {
+                        // Conflict (UNSAT) も Stopped (timeout) も探索終了。
+                        // 呼出側は is_stopped() で区別する。
                         model.clear_pending_updates();
                         sync_nogood_stats();
                         return std::nullopt;
@@ -278,7 +280,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                                 sync_nogood_stats();
                                 return std::nullopt;
                             }
-                            if (!apply_unit_nogoods(model)) {
+                            if (apply_unit_nogoods(model) != PropagationResult::Ok) {
                                 model.clear_pending_updates();
                                 sync_nogood_stats();
                                 return std::nullopt;
@@ -303,7 +305,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             model.clear_pending_updates();
             backtrack(model, root_point);
 
-            if (!apply_unit_nogoods(model)) {
+            if (apply_unit_nogoods(model) != PropagationResult::Ok) {
                 model.clear_pending_updates();
                 sync_nogood_stats();
                 return std::nullopt;
@@ -490,15 +492,18 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     model.enqueue_set_min(obj_var_idx_, obj_val + 1);
                 }
 
-                if (!process_queue(model)) {
-                    if (stopped_) break;  // timeout → fall through to timeout path
-                    // 伝播で UNSAT → 最適解が確定
-                    model.clear_pending_updates();
-                    sync_nogood_stats();
-                    if (verbose_) {
-                        std::cerr << "% [verbose] optimal (propagation proved no improvement)\n";
+                {
+                    auto pr = process_queue(model);
+                    if (pr == PropagationResult::Stopped) break;  // timeout → fall through
+                    if (pr == PropagationResult::Conflict) {
+                        // 伝播で UNSAT → 最適解が確定
+                        model.clear_pending_updates();
+                        sync_nogood_stats();
+                        if (verbose_) {
+                            std::cerr << "% [verbose] optimal (propagation proved no improvement)\n";
+                        }
+                        return best_solution_;
                     }
-                    return best_solution_;
                 }
 
                 // --- improvement probe: best objective 側から ~5% 改善を軽量プローブで試みる ---
@@ -542,7 +547,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         SearchResult res2 = SearchResult::UNKNOWN;
                         bool probe_propagation_ok = false;
 
-                        if (process_queue(model)) {
+                        if (process_queue(model) == PropagationResult::Ok) {
                             probe_propagation_ok = true;
                             res2 = run_search(model, probe_fail_limit_, 0,
                                               [&probe_solution](const Solution& sol) {
@@ -596,14 +601,17 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                     model.enqueue_set_min(obj_var_idx_, probe_obj + 1);
                                 }
 
-                                if (!process_queue(model)) {
-                                    if (stopped_) break;  // timeout → fall through
-                                    model.clear_pending_updates();
-                                    sync_nogood_stats();
-                                    if (verbose_) {
-                                        std::cerr << "% [verbose] optimal (probe proved optimality)\n";
+                                {
+                                    auto pr = process_queue(model);
+                                    if (pr == PropagationResult::Stopped) break;
+                                    if (pr == PropagationResult::Conflict) {
+                                        model.clear_pending_updates();
+                                        sync_nogood_stats();
+                                        if (verbose_) {
+                                            std::cerr << "% [verbose] optimal (probe proved optimality)\n";
+                                        }
+                                        return best_solution_;
                                     }
-                                    return best_solution_;
                                 }
                             } else {
                                 // プローブ解は改善なし（既に best_objective_ で縮小済み）
@@ -614,11 +622,14 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 } else {
                                     model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                                 }
-                                if (!process_queue(model)) {
-                                    if (stopped_) break;  // timeout → fall through
-                                    model.clear_pending_updates();
-                                    sync_nogood_stats();
-                                    return best_solution_;
+                                {
+                                    auto pr = process_queue(model);
+                                    if (pr == PropagationResult::Stopped) break;
+                                    if (pr == PropagationResult::Conflict) {
+                                        model.clear_pending_updates();
+                                        sync_nogood_stats();
+                                        return best_solution_;
+                                    }
                                 }
                             }
                         } else if (probe_unsat) {
@@ -635,14 +646,17 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 model.enqueue_set_max(obj_var_idx_, target - 1);
                                 model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                             }
-                            if (!process_queue(model)) {
-                                if (stopped_) break;  // timeout → fall through
-                                model.clear_pending_updates();
-                                sync_nogood_stats();
-                                if (verbose_) {
-                                    std::cerr << "% [verbose] optimal (probe UNSAT + bound tightening)\n";
+                            {
+                                auto pr = process_queue(model);
+                                if (pr == PropagationResult::Stopped) break;
+                                if (pr == PropagationResult::Conflict) {
+                                    model.clear_pending_updates();
+                                    sync_nogood_stats();
+                                    if (verbose_) {
+                                        std::cerr << "% [verbose] optimal (probe UNSAT + bound tightening)\n";
+                                    }
+                                    return best_solution_;
                                 }
-                                return best_solution_;
                             }
                         } else {
                             // UNKNOWN: 情報なし、root 状態を再構築
@@ -652,16 +666,19 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                             } else {
                                 model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
                             }
-                            if (!process_queue(model)) {
-                                if (stopped_) break;  // timeout → fall through
-                                model.clear_pending_updates();
-                                sync_nogood_stats();
-                                return best_solution_;
+                            {
+                                auto pr = process_queue(model);
+                                if (pr == PropagationResult::Stopped) break;
+                                if (pr == PropagationResult::Conflict) {
+                                    model.clear_pending_updates();
+                                    sync_nogood_stats();
+                                    return best_solution_;
+                                }
                             }
                         }
 
                         // 再初期化
-                        apply_unit_nogoods(model);
+                        (void)apply_unit_nogoods(model);
                         nogood_mgr_.rebuild_var_ng_blooms(model);
                         ng_usage_bloom_ = Bloom512{};
                     }
@@ -691,11 +708,15 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             backtrack(model, root_point);
             current_decision_ = root_point;
 
-            if (!apply_unit_nogoods(model)) {
-                // unit nogood の適用で UNSAT → 最適解が確定
-                model.clear_pending_updates();
-                sync_nogood_stats();
-                return best_solution_;
+            {
+                auto pr = apply_unit_nogoods(model);
+                if (pr == PropagationResult::Stopped) break;
+                if (pr == PropagationResult::Conflict) {
+                    // unit nogood の適用で UNSAT → 最適解が確定
+                    model.clear_pending_updates();
+                    sync_nogood_stats();
+                    return best_solution_;
+                }
             }
 
             stats_.restart_count++;
@@ -922,10 +943,10 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
 
         bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                    frame.prev_min, frame.prev_max);
-        bool queue_ok = false;
+        PropagationResult queue_res = PropagationResult::Conflict;
         if (propagate_ok) {
-            queue_ok = process_queue(model);
-            if (queue_ok) {
+            queue_res = process_queue(model);
+            if (queue_res == PropagationResult::Ok) {
                 decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
                 if (community_analysis_.is_enabled()) {
                     community_analysis_.on_decision(frame.var_idx);
@@ -939,12 +960,20 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
             }
         }
 
-        if (!propagate_ok || !queue_ok) {
+        if (!propagate_ok || queue_res != PropagationResult::Ok) {
             model.clear_pending_updates();
         }
 
         current_decision_--;
         backtrack(model, frame.save_point);
+
+        // タイムアウト等で中断された場合は矛盾扱いにせず UNKNOWN として上昇
+        if (queue_res == PropagationResult::Stopped) {
+            result = SearchResult::UNKNOWN;
+            ascending = true;
+            return;
+        }
+
         frame.value_idx++;
     }
 
@@ -981,8 +1010,8 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
             decision_lit = {frame.var_idx, frame.split_point + 1, Literal::Type::Geq};
         }
 
-        bool ok = process_queue(model);
-        if (ok) {
+        PropagationResult queue_res = process_queue(model);
+        if (queue_res == PropagationResult::Ok) {
             decision_trail_.push_back(decision_lit);
             if (community_analysis_.is_enabled()) {
                 community_analysis_.on_decision(frame.var_idx);
@@ -998,6 +1027,13 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         model.clear_pending_updates();
         current_decision_--;
         backtrack(model, frame.save_point);
+
+        // タイムアウト等で中断された場合は矛盾扱いにせず UNKNOWN として上昇
+        if (queue_res == PropagationResult::Stopped) {
+            result = SearchResult::UNKNOWN;
+            ascending = true;
+            return;
+        }
     }
 
     if (!found_branch) {
@@ -1435,11 +1471,11 @@ const std::vector<Domain::value_type>& Solver::select_best_assignment() {
     return best_assignment_;
 }
 
-bool Solver::process_queue(Model& model) {
+PropagationResult Solver::process_queue(Model& model) {
     const auto& constraints = model.constraints();
 
     while (model.has_pending_updates()) {
-        if (stopped_) return false;
+        if (stopped_) return PropagationResult::Stopped;
 
         // ここの update の内容は、まだ変数に反映されていないことに注意
         auto update = model.pop_pending_update();
@@ -1459,27 +1495,27 @@ bool Solver::process_queue(Model& model) {
             if (was_instantiated) {
                 // 既に確定済みで異なる値が要求されている場合は矛盾
                 if (model.value(var_idx) != update.value) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
                 // 二重に同じイベントを呼ばない
                 continue;
             }
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
-                return false;
+                return PropagationResult::Conflict;
             }
             if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
-                return false;
+                return PropagationResult::Conflict;
             }
             break;
         }
         case PendingUpdate::Type::SetMin: {
             if (update.value <= prev_min) continue;  // 変化なし
             if (!model.set_min(current_decision_, var_idx, update.value)) {
-                return false;
+                return PropagationResult::Conflict;
             }
             if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -1487,7 +1523,7 @@ bool Solver::process_queue(Model& model) {
             // 確定した場合は on_instantiate、そうでなければ on_set_min
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
             } else if (!was_instantiated) {
                 // ドメインのholeにより実際のminは要求値より大きい場合がある
@@ -1507,20 +1543,20 @@ bool Solver::process_queue(Model& model) {
                             is.fail_count++;
                             is.fail_depth_sum += current_decision_;
                             bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                            return PropagationResult::Conflict;
                         }
                         if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                     } else {
                         if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_min, prev_min)) {
                             bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                            return PropagationResult::Conflict;
                         }
                     }
                 }
                 // Bound NoGood 伝播
                 if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
             }
             break;
@@ -1528,7 +1564,7 @@ bool Solver::process_queue(Model& model) {
         case PendingUpdate::Type::SetMax: {
             if (update.value >= prev_max) continue;  // 変化なし
             if (!model.set_max(current_decision_, var_idx, update.value)) {
-                return false;
+                return PropagationResult::Conflict;
             }
             if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -1536,7 +1572,7 @@ bool Solver::process_queue(Model& model) {
             // 確定した場合は on_instantiate、そうでなければ on_set_max
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
             } else if (!was_instantiated) {
                 // ドメインのholeにより実際のmaxは要求値より小さい場合がある
@@ -1556,20 +1592,20 @@ bool Solver::process_queue(Model& model) {
                             is.fail_count++;
                             is.fail_depth_sum += current_decision_;
                             bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                            return PropagationResult::Conflict;
                         }
                         if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                     } else {
                         if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                              var_idx, w.internal_var_idx, actual_new_max, prev_max)) {
                             bump_activity(model, w.constraint_idx, var_idx);
-                            return false;
+                            return PropagationResult::Conflict;
                         }
                     }
                 }
                 // Bound NoGood 伝播
                 if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
             }
             break;
@@ -1578,14 +1614,14 @@ bool Solver::process_queue(Model& model) {
             auto removed_value = update.value;
             if (!model.contains(var_idx, removed_value)) continue;  // 既に存在しない
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
-                return false;
+                return PropagationResult::Conflict;
             }
             if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             if (!was_instantiated && model.is_instantiated(var_idx)) {
                 if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
-                    return false;
+                    return PropagationResult::Conflict;
                 }
             } else if (!was_instantiated) {
                 auto new_min = model.var_min(var_idx);
@@ -1608,20 +1644,20 @@ bool Solver::process_queue(Model& model) {
                                 is.fail_count++;
                                 is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_min, prev_min)) {
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                         }
                     }
                     // Bound NoGood 伝播
                     if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
-                        return false;
+                        return PropagationResult::Conflict;
                     }
                 }
                 // 上限が変化した場合 → on_set_max
@@ -1640,20 +1676,20 @@ bool Solver::process_queue(Model& model) {
                                 is.fail_count++;
                                 is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                                                  var_idx, w.internal_var_idx, new_max, prev_max)) {
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                         }
                     }
                     // Bound NoGood 伝播
                     if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
-                        return false;
+                        return PropagationResult::Conflict;
                     }
                 }
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
@@ -1672,14 +1708,14 @@ bool Solver::process_queue(Model& model) {
                                 is.fail_count++;
                                 is.fail_depth_sum += current_decision_;
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
                         } else {
                             if (!constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                                                       var_idx, w.internal_var_idx, removed_value)) {
                                 bump_activity(model, w.constraint_idx, var_idx);
-                                return false;
+                                return PropagationResult::Conflict;
                             }
                         }
                     }
@@ -1690,7 +1726,7 @@ bool Solver::process_queue(Model& model) {
         }
     }
 
-    return true;
+    return PropagationResult::Ok;
 }
 
 } // namespace sabori_csp
