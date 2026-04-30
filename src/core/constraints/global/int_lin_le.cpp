@@ -16,7 +16,8 @@ IntLinLeConstraint::IntLinLeConstraint(std::vector<int64_t> coeffs,
     : Constraint()
     , bound_(bound)
     , current_fixed_sum_(0)
-    , min_rem_potential_(0) {
+    , min_rem_potential_(0)
+    , is_easy_(false) {
     // 同一変数の係数を集約
     std::unordered_map<Variable*, int64_t> aggregated;
     for (size_t i = 0; i < vars.size(); ++i) {
@@ -204,6 +205,21 @@ bool IntLinLeConstraint::prepare_propagation(Model& model) {
         return false;  // 矛盾
     }
 
+    double sum_m = 0;
+
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        auto c = coeffs_[i];
+        double m = (double)c * 0.5 * (model.var_min(vid) + model.var_max(vid));
+        sum_m += m;
+    }
+
+    // 平均値の和 * 2(安全係数) が bound_ より小さければ初期ウェイトを設定しないなど考慮
+    // (ランダムに設定すれば満たせる)
+    if (sum_m / coeffs_.size() * 2 < bound_) {
+        is_easy_ = true;
+    }
+
     return true;
 }
 
@@ -324,72 +340,91 @@ not_entailed:
 // ============================================================================
 
 void IntLinLeConstraint::init_activity(const Model& model, double* activity) const {
-    int64_t max_abs = 0;
-    for (auto c : coeffs_) {
-        int64_t a = c < 0 ? -c : c;
-        if (a > max_abs) max_abs = a;
-    }
-    if (max_abs <= 100) return;
+    if (coeffs_.size() <= 2)
+        return;
 
-    double sum_abs = 0.0;
-    for (auto c : coeffs_) {
-        sum_abs += std::abs(static_cast<double>(c));
+    // 平均値の和 * 2(安全係数) が bound_ より小さければ初期ウェイトを設定しない
+    // (ランダムであっても制約を満たせる可能性が高いので余分なバイアスをいれない
+    if (is_easy_)
+        return;
+
+    double total = 0;
+
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        auto c = coeffs_[i];
+        auto size = model.var_size(vid);
+        size = std::log(size);
+        total += (double)std::abs(c) / size;
+
+        double m = (double)c * 0.5 * (model.var_min(vid) + model.var_max(vid));
     }
 
     for (size_t i = 0; i < coeffs_.size(); ++i) {
         size_t vid = var_ids_[i];
-        if (!model.is_instantiated(vid)) {
-            activity[vid] += std::abs(static_cast<double>(coeffs_[i])) / sum_abs;
-        }
+        auto c = coeffs_[i];
+        auto size = model.var_size(vid);
+        size = std::log(size);
+        activity[vid] += (double)std::abs(c) / size / total;
     }
 }
 
-#if 0
 void IntLinLeConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
                                         double* activity, double activity_inc,
                                         bool& need_rescale, std::mt19937& rng) const {
-    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    return;
-    
-    //    Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
-    //    return;
-
-    size_t n = 0;
-    
-    for (size_t i = 0; i < coeffs_.size(); ++i) {
-        size_t vid = var_ids_[i];
-        // if (!model.is_instantiated(vid)) continue;
-        auto c = coeffs_[i];
-        // auto val = model.value(vid);
-
-        if ((c > 0 && model.var_max(vid) != model.presolve_min(vid))
-            || (c < 0 && model.var_min(vid) != model.presolve_max(vid))) {
-            n++;
-        }
-    }
-
-    if (n == 0) {
-        abort();
+    if (is_easy_) {
         Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
         return;
     }
-    
-    double inc = activity_inc / n;
+
+    if (coeffs_.size() <= 2) {
+        Constraint::bump_activity(model, trigger_var_idx, activity, activity_inc, need_rescale, rng);
+        return;
+    }
+
+    double total = 0;
+    int64_t cur_bound = 0;
+    for (size_t i = 0; i < coeffs_.size(); ++i) {
+        size_t vid = var_ids_[i];
+        auto c = coeffs_[i];
+        int64_t d = 0;
+        if (c > 0) {
+            d = model.var_min(vid) - model.presolve_min(vid);
+            if (d == 0)
+                continue;
+        }
+        else if (c < 0) {
+            d = model.presolve_max(vid) - model.var_max(vid);
+            if (d == 0)
+                continue;
+        }
+
+        auto size = model.var_size(vid);
+        total += (double)std::abs(c) * d / size;
+    }
 
     for (size_t i = 0; i < coeffs_.size(); ++i) {
         size_t vid = var_ids_[i];
-        // if (!model.is_instantiated(vid)) continue;
         auto c = coeffs_[i];
-        // auto val = model.value(vid);
-
-        if ((c > 0 && model.var_max(vid) != model.presolve_min(vid))
-            || (c < 0 && model.var_min(vid) != model.presolve_max(vid))) {
-            // double inc = activity_inc / n / model.var_size((vid));
-            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+        int64_t d = 0;
+        if (c > 0) {
+            d = model.var_min(vid) - model.presolve_min(vid);
+            if (d == 0)
+                continue;
         }
+        else if (c < 0) {
+            d = model.presolve_max(vid) - model.var_max(vid);
+            if (d == 0)
+                continue;
+        }
+
+        auto size = model.var_size(vid);
+        double inc = activity_inc * std::abs(c) * d / size / total;
+        bump_variable_activity(activity, vid, inc, need_rescale, rng);
     }
+
+    return;
 }
-#endif
 
 }  // namespace sabori_csp
 
