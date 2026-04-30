@@ -19,20 +19,11 @@ RegularConstraint::RegularConstraint(std::vector<VariablePtr> vars,
     , q0_(initial_state)
     , n_(var_ids_.size())
 {
-    if (n_ == 0 || Q_ <= 0 || S_ <= 0) {
-        set_initially_inconsistent(true);
-        return;
-    }
-
-    if (q0_ < 1 || q0_ > Q_) {
-        set_initially_inconsistent(true);
-        return;
-    }
-
-    if (transition_flat.size() != static_cast<size_t>(Q_) * S_) {
-        set_initially_inconsistent(true);
-        return;
-    }
+    // 入力 sanity チェック (空配列 / 不正な状態数 / 初期状態 / 遷移表)
+    // — 矛盾自体は presolve()/prepare_propagation() で検出される
+    if (n_ == 0 || Q_ <= 0 || S_ <= 0) return;
+    if (q0_ < 1 || q0_ > Q_) return;
+    if (transition_flat.size() != static_cast<size_t>(Q_) * S_) return;
 
     // Build (Q+1) x (S+1) transition table with row 0 and col 0 = 0
     transition_.assign(static_cast<size_t>(Q_ + 1) * (S_ + 1), 0);
@@ -55,7 +46,7 @@ RegularConstraint::RegularConstraint(std::vector<VariablePtr> vars,
         }
     }
     if (!has_accepting) {
-        set_initially_inconsistent(true);
+        // 受理状態なし → 必ず UNSAT。presolve()/prepare_propagation() で検出される
         return;
     }
 

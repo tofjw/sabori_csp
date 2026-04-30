@@ -54,17 +54,10 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
             // 値を内部インデックス（0-based）に変換
             size_t j = static_cast<size_t>(val - base_offset_);
 
-            // 範囲チェック
-            if (j >= n_) {
-                set_initially_inconsistent(true);
-                return;
-            }
-
-            // 入次数チェック
-            if (in_degree_[j] > 0) {
-                set_initially_inconsistent(true);
-                return;
-            }
+            // 範囲チェック / 入次数チェック / サブサーキット検出は
+            // prepare_propagation() でも同等のチェックを行うためここでは早期 return のみ
+            if (j >= n_) return;
+            if (in_degree_[j] > 0) return;
 
             size_t h1 = find(i);
             size_t h2 = find(j);
@@ -73,7 +66,6 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
                 // 閉路形成
                 if (size_[h1] < n_) {
                     // サブサーキット
-                    set_initially_inconsistent(true);
                     return;
                 }
             } else {

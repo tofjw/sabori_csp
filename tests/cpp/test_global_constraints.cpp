@@ -1669,8 +1669,8 @@ TEST_CASE("CircuitConstraint is_satisfied", "[constraint][circuit]") {
         auto* x2 = model.create_variable("x2", Domain(0, 0));  // x[2] = 0
         CircuitConstraint c({x0, x1, x2});
 
-        // Duplicate value - should be initially inconsistent
-        REQUIRE(c.is_initially_inconsistent() == true);
+        // Duplicate value - prepare_propagation() should detect contradiction
+        REQUIRE(c.prepare_propagation(model) == false);
     }
 
     SECTION("not fully assigned") {
@@ -2053,8 +2053,8 @@ TEST_CASE("IntElementConstraint rewind_to", "[constraint][int_element][trail]") 
     c.rewind_to(5);
     c.rewind_to(-1);
 
-    // Constraint should still work
-    REQUIRE(c.is_initially_inconsistent() == false);
+    // Constraint should still be in a consistent state
+    REQUIRE(c.prepare_propagation(model) == true);
 }
 
 TEST_CASE("IntElementConstraint with duplicate values in array", "[constraint][int_element]") {
@@ -2066,7 +2066,7 @@ TEST_CASE("IntElementConstraint with duplicate values in array", "[constraint][i
     IntElementConstraint c(index, array, result);
 
     // Should be consistent - index can be 1 or 3
-    REQUIRE(c.is_initially_inconsistent() == false);
+    REQUIRE(c.prepare_propagation(model) == true);
 }
 
 TEST_CASE("IntElementConstraint solver integration", "[solver][int_element]") {
@@ -2627,8 +2627,8 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
         auto* constraint = constraint_uptr.get();
         model.add_constraint(std::move(constraint_uptr));
 
-        // Should be initially inconsistent
-        REQUIRE(constraint->is_initially_inconsistent() == true);
+        // prepare_propagation() should detect contradiction
+        REQUIRE(constraint->prepare_propagation(model) == false);
     }
 }
 
@@ -3981,7 +3981,8 @@ TEST_CASE("TableConstraint empty table", "[constraint][table]") {
     auto* x = model.create_variable("x", Domain(1, 3));
     auto* y = model.create_variable("y", Domain(1, 3));
     TableConstraint c({x, y}, {});
-    REQUIRE(c.is_initially_inconsistent() == true);
+    // Empty table = no allowed tuples = unconditional contradiction
+    REQUIRE(c.prepare_propagation(model) == false);
 }
 
 TEST_CASE("TableConstraint with Solver", "[constraint][table][solver]") {

@@ -17,13 +17,12 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
     , num_words_(0) {
 
     if (arity_ == 0) {
-        set_initially_inconsistent(true);
+        // 矛盾条件 (空配列 / 空テーブル) は presolve()/prepare_propagation() で検出される
         return;
     }
 
     num_tuples_ = flat_tuples_.size() / arity_;
     if (num_tuples_ == 0) {
-        set_initially_inconsistent(true);
         return;
     }
 
@@ -138,6 +137,9 @@ PresolveResult TableConstraint::presolve(Model& model) {
 }
 
 bool TableConstraint::prepare_propagation(Model& model) {
+    // 退化ケース: arity 0 またはテーブルが空 → 充足不可能
+    if (arity_ == 0 || num_tuples_ == 0) return false;
+
     // current_table_ を再構築: 各変数の現ドメインに基づいてフィルタ
     current_table_.assign(num_words_, ~0ULL);
     size_t remainder = num_tuples_ % 64;

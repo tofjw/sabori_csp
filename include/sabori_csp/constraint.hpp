@@ -45,7 +45,6 @@ inline std::vector<size_t> extract_var_ids(const std::vector<VariablePtr>& vars)
  *
  * 追加機能:
  * - 残り1変数での早期伝播 (on_last_uninstantiated)
- * - 初期矛盾の検出 (is_initially_inconsistent)
  */
 class Constraint {
 public:
@@ -222,17 +221,6 @@ public:
                                   Domain::value_type removed_value);
 
     /**
-     * @brief 初期状態で矛盾しているかどうか
-     *
-     * 制約設定時点で明らかに満たせない場合にtrueを返す。
-     * ソルバーは探索開始前にこのフラグをチェックし、
-     * 1つでも矛盾している制約があれば探索を打ち切る。
-     *
-     * @return 初期矛盾があればtrue
-     */
-    bool is_initially_inconsistent() const { return is_initially_inconsistent_; }
-
-    /**
      * @brief 監視変数1のインデックスを取得
      */
     int watch1() const { return w1_; }
@@ -346,28 +334,6 @@ protected:
      */
     void set_var_ids(std::vector<size_t> var_ids);
 
-    /**
-     * @brief 初期矛盾フラグを設定
-     *
-     * サブクラスのコンストラクタから呼び出して、
-     * 初期状態での矛盾を報告する。
-     *
-     * @param value trueで矛盾あり
-     */
-    void set_initially_inconsistent(bool value) { is_initially_inconsistent_ = value; }
-
-    /**
-     * @brief 初期整合性チェックを実行
-     *
-     * コンストラクタの最後に呼び出すことを推奨。
-     * 現在の変数のドメインで制約が満たせるか確認し、
-     * 満たせない場合は is_initially_inconsistent_ を設定する。
-     *
-     * デフォルト実装は is_satisfied() が false を返す場合に矛盾を設定。
-     * サブクラスでオーバーライドして、より詳細なチェックが可能。
-     */
-    virtual void check_initial_consistency();
-
     // 変数のModel内ID
     std::vector<size_t> var_ids_;
 
@@ -387,9 +353,6 @@ private:
     // 2-Watched Literal
     int w1_ = -1;  // 監視変数1のインデックス
     int w2_ = -1;  // 監視変数2のインデックス
-
-    // 初期矛盾フラグ
-    bool is_initially_inconsistent_ = false;
 
     // ラベル（例: "int_lin_eq:L42"）
     std::string label_;

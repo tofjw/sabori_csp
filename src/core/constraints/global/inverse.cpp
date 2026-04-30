@@ -14,7 +14,7 @@ InverseConstraint::InverseConstraint(std::vector<VariablePtr> f, std::vector<Var
     , offset_(offset)
 {
     if (f.size() != invf.size()) {
-        set_initially_inconsistent(true);
+        // 入力サイズ不一致は presolve()/prepare_propagation() で検出される
         return;
     }
 

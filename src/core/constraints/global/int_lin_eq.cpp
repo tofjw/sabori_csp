@@ -40,10 +40,8 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     }
 
     // 全ての係数が0になった場合: 0 == target_sum
+    // target_sum_ != 0 の矛盾は presolve() (total_min/max=0) で検出される
     if (unique_vars.empty()) {
-        if (target_sum_ != 0) {
-            set_initially_inconsistent(true);
-        }
         return;
     }
 

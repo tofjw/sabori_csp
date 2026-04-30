@@ -18,15 +18,13 @@ size_t Constraint::next_id_ = 0;
 Constraint::Constraint()
     : id_(next_id_++)
     , w1_(-1)
-    , w2_(-1)
-    , is_initially_inconsistent_(false) {}
+    , w2_(-1) {}
 
 Constraint::Constraint(std::vector<size_t> var_ids)
     : id_(next_id_++)
     , var_ids_(std::move(var_ids))
     , w1_(-1)
-    , w2_(-1)
-    , is_initially_inconsistent_(false) {
+    , w2_(-1) {
     init_watches();
 }
 
@@ -250,10 +248,6 @@ void Constraint::bump_activity(const Model& model, size_t /*trigger_var_idx*/,
 
 void Constraint::init_activity(const Model& /*model*/, double* /*activity*/) const {
     // デフォルトでは何もしない
-}
-
-void Constraint::check_initial_consistency() {
-    // デフォルト: 何もしない（presolve / prepare_propagation で検出）
 }
 
 bool Constraint::has_uninstantiated(const Model& model) const {
