@@ -1,0 +1,12 @@
+% Regression test for 2026-05-01 bug:
+% IntDivConstraint::propagate_bounds の forward bound 計算で y が完全に正の
+% とき y_min 端点が考慮されない不具合があった。
+%
+% x = 814, y ∈ [814, 8140] のとき、x/y の正しい範囲は [0, 1] (y=8140→0, y=814→1)。
+% 修正前は z の上限が 0 と誤って計算され、z=1 が伝播段階で除外された。
+% 修正後は z の領域に 1 が残り、両方の解 (z=0, z=1) が見つかる。
+var 814..814: x :: output_var;
+var 814..8140: y :: output_var;
+var 0..10: z :: output_var;
+constraint int_div(x, y, z);
+solve satisfy;

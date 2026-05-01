@@ -22,3 +22,14 @@ set_tests_properties(int_lin_eq_subst PROPERTIES
     LABELS "fzn;constraint;substitution"
     TIMEOUT 60
 )
+
+# int_div regressions
+add_test(
+    NAME int_div_regressions
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/fzn/constraints/int_div/test_int_div_regressions.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(int_div_regressions PROPERTIES
+    LABELS "fzn;constraint;int_div"
+    TIMEOUT 60
+)

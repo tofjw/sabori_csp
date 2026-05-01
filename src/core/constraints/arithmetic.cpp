@@ -669,8 +669,9 @@ PresolveResult IntDivConstraint::presolve(Model& model) {
             z_hi = std::max({z_hi, a, b});
         }
     };
-    if (y_min < 0) update_z(y_min);
-    if (y_max > 0) update_z(y_max);
+    // y の両端点を考慮（presolve 時点では y が 0 を含む可能性もあるが update_z 内で除外する）
+    if (y_min != 0) update_z(y_min);
+    if (y_max != 0) update_z(y_max);
     if (y_min <= -1 && y_max >= -1) update_z(-1);
     if (y_min <= 1 && y_max >= 1) update_z(1);
 
@@ -765,7 +766,7 @@ bool IntDivConstraint::propagate_bounds(Model& model) {
     // y が 0 を含まない前提（presolve で除去済み）
 
     // Forward: z の bounds を計算
-    // y が 0 を跨ぐ場合 ±1 が端点となり z の範囲が最大になる
+    // 正/負の divisor について、最小値・最大値の y 端点 + |y|=1 (最大の |z|) を考慮する
     auto z_lo = x_min;  // will be overwritten
     auto z_hi = x_max;
     bool first = true;
@@ -782,8 +783,10 @@ bool IntDivConstraint::propagate_bounds(Model& model) {
             z_hi = std::max({z_hi, a, b});
         }
     };
-    if (y_min < 0) update_z(y_min);
-    if (y_max > 0) update_z(y_max);
+    // y の両端点を考慮（y は presolve で 0 を含まない）。
+    // y が 0 を跨ぐ場合は ±1 が |z| 最大の端点になる。
+    if (y_min != 0) update_z(y_min);
+    if (y_max != 0) update_z(y_max);
     if (y_min <= -1 && y_max >= -1) update_z(-1);
     if (y_min <= 1 && y_max >= 1) update_z(1);
 
