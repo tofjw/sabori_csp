@@ -146,7 +146,8 @@ bool Solver::init_search(Model& model) {
     var_selector_.init_tracking(model);
     if (verbose_) {
         std::cerr << "% [verbose] search vars: decision=" << var_selector_.decision_var_end()
-                  << " defined=" << (var_selector_.var_order().size() - var_selector_.decision_var_end())
+                  << " defined=" << (var_selector_.defined_var_end() - var_selector_.decision_var_end())
+                  << " unconstrained=" << (var_selector_.var_order().size() - var_selector_.defined_var_end())
                   << "\n";
     }
     unassigned_trail_.clear();
@@ -938,6 +939,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         unassigned_trail_.push_back({current_decision_,
                                      var_selector_.decision_unassigned_end(),
                                      var_selector_.defined_unassigned_end(),
+                                     var_selector_.unconstrained_unassigned_end(),
                                      ng_usage_bloom_});
         ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
@@ -993,6 +995,7 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         unassigned_trail_.push_back({current_decision_,
                                      var_selector_.decision_unassigned_end(),
                                      var_selector_.defined_unassigned_end(),
+                                     var_selector_.unconstrained_unassigned_end(),
                                      ng_usage_bloom_});
         ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
@@ -1282,6 +1285,7 @@ void Solver::backtrack(Model& model, int save_point) {
         ng_usage_bloom_ = unassigned_trail_.back().ng_usage_bloom;
         var_selector_.restore_decision_end(unassigned_trail_.back().dec_end);
         var_selector_.restore_defined_end(unassigned_trail_.back().def_end);
+        var_selector_.restore_unconstrained_end(unassigned_trail_.back().unc_end);
         unassigned_trail_.pop_back();
     }
 }

@@ -87,36 +87,44 @@ public:
 
     size_t decision_unassigned_end() const { return decision_unassigned_end_; }
     size_t defined_unassigned_end() const { return defined_unassigned_end_; }
+    size_t unconstrained_unassigned_end() const { return unconstrained_unassigned_end_; }
 
     /**
      * @brief バックトラック時にパーティション境界を復元
      */
     void restore_decision_end(size_t new_end);
     void restore_defined_end(size_t new_end);
+    void restore_unconstrained_end(size_t new_end);
 
     /**
      * @brief 未割当変数があるかどうか（非破壊的）
      */
     bool all_assigned() const {
         return decision_unassigned_end_ == 0 &&
-               defined_unassigned_end_ <= decision_var_end_;
+               defined_unassigned_end_ <= decision_var_end_ &&
+               unconstrained_unassigned_end_ <= defined_var_end_;
     }
 
     size_t decision_var_end() const { return decision_var_end_; }
+    size_t defined_var_end() const { return defined_var_end_; }
     const std::vector<size_t>& var_order() const { return var_order_; }
 
     size_t community_first_var() const { return community_first_var_; }
     void set_community_first_var(size_t v) { community_first_var_ = v; }
 
 private:
-    // 変数スキャン順序（decision vars | defined vars）
+    // 変数スキャン順序（decision vars | defined vars | unconstrained vars）
+    // unconstrained vars はどの制約にも参照されない自由変数。探索に影響しないため
+    // 必ず最後に回す（FlatZinc の output_array で生成されるダミー変数等）。
     std::vector<size_t> var_order_;
     size_t decision_var_end_ = 0;
+    size_t defined_var_end_ = 0;             // = decision_var_end_ + #defined_vars
 
     // 未割当/割当済パーティション
     std::vector<size_t> var_position_;       // var_idx → var_order_ 内の位置
     size_t decision_unassigned_end_ = 0;     // [0, decision_unassigned_end_): 未割当 decision vars
     size_t defined_unassigned_end_ = 0;      // [decision_var_end_, defined_unassigned_end_): 未割当 defined vars
+    size_t unconstrained_unassigned_end_ = 0;// [defined_var_end_, unconstrained_unassigned_end_): 未割当 unconstrained vars
 
     // 線形スキャンによる変数選択
     size_t select_linear(const Model& model,

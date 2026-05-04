@@ -548,6 +548,7 @@ private:
         int level;
         size_t dec_end;
         size_t def_end;
+        size_t unc_end;
         Bloom512 ng_usage_bloom;
     };
     std::vector<UnassignedTrailEntry> unassigned_trail_;

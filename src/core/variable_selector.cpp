@@ -9,16 +9,50 @@
 
 namespace sabori_csp {
 
+namespace {
+
+size_t select_weighted_by_activity_softmax(const std::vector<size_t>& candidates,
+                                           const std::vector<double>& activity,
+                                           std::mt19937& rng) {
+    if (candidates.empty()) return SIZE_MAX;
+
+    double max_activity = activity[candidates.front()];
+    for (size_t v : candidates) {
+        if (activity[v] > max_activity) max_activity = activity[v];
+    }
+
+    double total_weight = 0.0;
+    for (size_t v : candidates) {
+        total_weight += std::exp(activity[v] - max_activity);
+    }
+    if (total_weight <= 0.0) return SIZE_MAX;
+
+    std::uniform_real_distribution<double> ud(0.0, total_weight);
+    double target = ud(rng);
+    for (size_t v : candidates) {
+        target -= std::exp(activity[v] - max_activity);
+        if (target <= 0.0) return v;
+    }
+    return candidates.back();
+}
+
+}  // namespace
+
 void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
     const auto& variables = model.variables();
 
     var_order_.clear();
     var_order_.reserve(variables.size());
     std::vector<size_t> defined_vars;
+    std::vector<size_t> unconstrained_vars;
 
     for (size_t i = 0; i < variables.size(); ++i) {
         if (model.is_eliminated(i)) continue;
-        if (model.is_defined_var(i) || model.is_instantiated(i)) {
+        // 制約に参照されない変数は探索に影響しない（FlatZinc の output 用ダミー
+        // bool 等）。決定/活性化ヒューリスティクスを希釈しないよう最後尾へ。
+        if (model.constraints_for_var(i).empty()) {
+            unconstrained_vars.push_back(i);
+        } else if (model.is_defined_var(i) || model.is_instantiated(i)) {
             defined_vars.push_back(i);
         } else {
             var_order_.push_back(i);
@@ -26,8 +60,11 @@ void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
     }
     decision_var_end_ = var_order_.size();
     var_order_.insert(var_order_.end(), defined_vars.begin(), defined_vars.end());
+    defined_var_end_ = var_order_.size();
+    var_order_.insert(var_order_.end(), unconstrained_vars.begin(), unconstrained_vars.end());
     std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng);
-    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.begin() + defined_var_end_, rng);
+    std::shuffle(var_order_.begin() + defined_var_end_, var_order_.end(), rng);
 }
 
 void VariableSelector::init_tracking(const Model& model) {
@@ -49,13 +86,25 @@ void VariableSelector::init_tracking(const Model& model) {
         }
     }
     // Defined vars: 同様
-    defined_unassigned_end_ = n;
+    defined_unassigned_end_ = defined_var_end_;
     for (size_t k = decision_var_end_; k < defined_unassigned_end_; ) {
         if (model.is_instantiated(var_order_[k])) {
             --defined_unassigned_end_;
             std::swap(var_order_[k], var_order_[defined_unassigned_end_]);
             var_position_[var_order_[k]] = k;
             var_position_[var_order_[defined_unassigned_end_]] = defined_unassigned_end_;
+        } else {
+            ++k;
+        }
+    }
+    // Unconstrained vars: 同様（最後尾ゾーン）
+    unconstrained_unassigned_end_ = n;
+    for (size_t k = defined_var_end_; k < unconstrained_unassigned_end_; ) {
+        if (model.is_instantiated(var_order_[k])) {
+            --unconstrained_unassigned_end_;
+            std::swap(var_order_[k], var_order_[unconstrained_unassigned_end_]);
+            var_position_[var_order_[k]] = k;
+            var_position_[var_order_[unconstrained_unassigned_end_]] = unconstrained_unassigned_end_;
         } else {
             ++k;
         }
@@ -73,12 +122,19 @@ void VariableSelector::mark_assigned(size_t var_idx) {
             var_position_[var_order_[pos]] = pos;
             var_position_[var_order_[decision_unassigned_end_]] = decision_unassigned_end_;
         }
-    } else {
+    } else if (pos < defined_var_end_) {
         if (pos < defined_unassigned_end_) {
             --defined_unassigned_end_;
             std::swap(var_order_[pos], var_order_[defined_unassigned_end_]);
             var_position_[var_order_[pos]] = pos;
             var_position_[var_order_[defined_unassigned_end_]] = defined_unassigned_end_;
+        }
+    } else {
+        if (pos < unconstrained_unassigned_end_) {
+            --unconstrained_unassigned_end_;
+            std::swap(var_order_[pos], var_order_[unconstrained_unassigned_end_]);
+            var_position_[var_order_[pos]] = pos;
+            var_position_[var_order_[unconstrained_unassigned_end_]] = unconstrained_unassigned_end_;
         }
     }
 }
@@ -89,6 +145,10 @@ void VariableSelector::restore_decision_end(size_t new_end) {
 
 void VariableSelector::restore_defined_end(size_t new_end) {
     defined_unassigned_end_ = new_end;
+}
+
+void VariableSelector::restore_unconstrained_end(size_t new_end) {
+    unconstrained_unassigned_end_ = new_end;
 }
 
 size_t VariableSelector::select(const Model& model,
@@ -106,12 +166,15 @@ size_t VariableSelector::select(const Model& model,
         }
     }
 
-    // 線形スキャン: decision vars → defined vars
+    // 線形スキャン: decision vars → defined vars → unconstrained vars
     size_t result = select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
                                   rng, 0, decision_unassigned_end_);
     if (result != SIZE_MAX) return result;
+    result = select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
+                           rng, decision_var_end_, defined_unassigned_end_);
+    if (result != SIZE_MAX) return result;
     return select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
-                         rng, decision_var_end_, defined_unassigned_end_);
+                         rng, defined_var_end_, unconstrained_unassigned_end_);
 }
 
 size_t VariableSelector::select_linear(const Model& model,
@@ -271,7 +334,8 @@ void VariableSelector::select_restart_pivot(const Model& model,
 
 void VariableSelector::shuffle(std::mt19937& rng) {
     std::shuffle(var_order_.begin(), var_order_.begin() + decision_var_end_, rng);
-    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.end(), rng);
+    std::shuffle(var_order_.begin() + decision_var_end_, var_order_.begin() + defined_var_end_, rng);
+    std::shuffle(var_order_.begin() + defined_var_end_, var_order_.end(), rng);
 }
 
 } // namespace sabori_csp
