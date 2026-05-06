@@ -516,7 +516,7 @@ private:
     // NoGood 管理
     NoGoodManager nogood_mgr_;
     Bloom512 ng_usage_bloom_;        // 現在の探索パス上の NG 利用状況（探索状態なので Solver 側で管理）
-    size_t nogood_inactive_restart_limit_ = 10;  // この回数リスタートしても非活性なNGを削除
+    size_t nogood_inactive_restart_limit_ = 50;  // この回数リスタートしても非活性なNGを削除
 
     // 部分解（最良の1つだけ保持）
     // INT64_MIN をセンチネル値として使用（値なし）
