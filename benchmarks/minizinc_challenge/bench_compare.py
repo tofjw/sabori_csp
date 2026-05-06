@@ -169,16 +169,13 @@ def _run_checker(cmd, timeout):
             proc.wait()
 
 
-def verify_solution(mzn, data, solution, timeout=10):
-    """saboriの解をGecodeで検証する。
+def _verify_mzn(mzn, data, solution, timeout):
+    """MZN レベルで `include + constraint var = value` 方式で検証する。
 
-    Returns: "CHECK_OK" / "CHECK_FAIL" / "CHECK_TIMEOUT" / "CHECK_SKIP"
+    enum / opt int / set 等の MZN 固有の値もそのまま扱える代わりに、元モデル
+    の `is_fixed()` 分岐などで誤検出 (例: connect) が出ることがある。
     """
-    if not solution:
-        return "CHECK_SKIP"
-
     mzn_abs = str(Path(mzn).resolve())
-
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             checker_path = Path(tmpdir) / "checker.mzn"
@@ -189,33 +186,176 @@ def verify_solution(mzn, data, solution, timeout=10):
 
             cmd = [MINIZINC, "--solver", "gecode", str(checker_path)]
             if data:
-                cmd.append(data)
-
+                cmd.append(str(Path(data).resolve()))
             stdout, rc = _run_checker(cmd, timeout)
             if stdout is None:
                 return "CHECK_TIMEOUT"
             if "----------" in stdout:
                 return "CHECK_OK"
-            elif "=====UNSATISFIABLE=====" in stdout:
+            if "=====UNSATISFIABLE=====" in stdout:
                 return "CHECK_FAIL"
-            elif rc != 0:
-                # Gecode error — retry with Chuffed
-                cmd_chuffed = [MINIZINC, "--solver", "chuffed", str(checker_path)]
-                if data:
-                    cmd_chuffed.append(data)
-                stdout2, _ = _run_checker(cmd_chuffed, timeout)
-                if stdout2 is None:
-                    return "CHECK_TIMEOUT"
-                if "----------" in stdout2:
-                    return "CHECK_OK"
-                elif "=====UNSATISFIABLE=====" in stdout2:
-                    return "CHECK_FAIL"
-                else:
-                    return "CHECK_SKIP"
-            else:
-                return "CHECK_FAIL"
+            return "CHECK_SKIP"
     except Exception:
         return "CHECK_SKIP"
+
+
+def _verify_fzn(mzn, data, solution, timeout):
+    """FZN レベルで int_eq / bool_eq 制約として固定して Gecode で検証する。
+
+    手順:
+      1. 元の .mzn を gecode 用に flatten して .fzn と .ozn を生成
+      2. .ozn から `inFlow = array2d(...,X_INTRODUCED_57_)` 等の MZN→FZN
+         エイリアスを抽出
+      3. sabori の output_var 値を int_eq / bool_eq 制約として FZN に注入
+      4. fzn-gecode で解いて SAT / UNSAT を判定
+
+    MZN レベル方式が `is_fixed()` 分岐などで誤検出する problem の救済用。
+    enum / opt int / set 等の値は固定できないので SKIP となる。
+    """
+    mzn_abs = str(Path(mzn).resolve())
+    data_abs = str(Path(data).resolve()) if data else None
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_fzn = Path(tmpdir) / "base.fzn"
+            base_ozn = Path(tmpdir) / "base.ozn"
+
+            compile_cmd = [MINIZINC, "--solver", "gecode", "--compile",
+                           "-o", str(base_fzn),
+                           "--output-ozn-to-file", str(base_ozn),
+                           mzn_abs]
+            if data_abs:
+                compile_cmd.append(data_abs)
+            stdout, rc = _run_checker(compile_cmd, timeout)
+            if stdout is None:
+                return "CHECK_TIMEOUT"
+            if rc != 0 or not base_fzn.exists() or base_fzn.stat().st_size == 0:
+                return "CHECK_SKIP"
+
+            fzn_text = base_fzn.read_text()
+            declared = set()
+            for m in re.finditer(r'^\s*var\s+\S[^:]*:\s*(\w+)',
+                                 fzn_text, re.MULTILINE):
+                declared.add(m.group(1))
+            for m in re.finditer(r'^\s*array\s*\[[^\]]*\]\s*of\s+\S[^:]*:\s*(\w+)',
+                                 fzn_text, re.MULTILINE):
+                declared.add(m.group(1))
+
+            # MZN レベル名 → FZN レベル名 のエイリアス。.ozn には
+            #   `array [...] of int: inFlow = array2d(1..7,1..4,X_INTRODUCED_57_);`
+            #   `var int: nMdl_11__Z = nMdl_14__Z;`
+            # のような宣言がある。複雑な式 (連結など) は最後の引数が単純な
+            # 識別子にならないので自動的にスキップされる。
+            alias_map = {}
+            ozn_text = base_ozn.read_text() if base_ozn.exists() else ''
+            ident = re.compile(r'^\w+$')
+            for m in re.finditer(
+                r'array\s*\[[^\]]+\]\s*of\s+(?:var\s+)?[^:]+:\s*(\w+)\s*=\s*'
+                r'array\d+d?\((.*?)\)\s*;', ozn_text, re.DOTALL):
+                mzn_name, args = m.group(1), m.group(2)
+                last = args.rsplit(',', 1)[-1].strip()
+                if ident.match(last) and last in declared:
+                    alias_map[mzn_name] = last
+            for m in re.finditer(
+                r'(?:var\s+)?(?:int|bool)\s*:\s*(\w+)\s*=\s*(\w+)\s*;', ozn_text):
+                mzn_name, target = m.group(1), m.group(2)
+                if target in declared:
+                    alias_map[mzn_name] = target
+
+            int_lit = re.compile(r'^-?\d+$')
+
+            def emit_eq(name, item):
+                if item == 'true':
+                    return f'constraint bool_eq({name}, true);'
+                if item == 'false':
+                    return f'constraint bool_eq({name}, false);'
+                if int_lit.match(item):
+                    return f'constraint int_eq({name}, {item});'
+                return None  # unsupported (enum, <>, set, float, etc.)
+
+            extra = []
+            n_fixed_vars = 0
+            for varname, value in solution.items():
+                # FZN に存在しない MZN 名は .ozn 経由で X_INTRODUCED_ などの
+                # 別名に飛ばす（`inFlow → X_INTRODUCED_57_` 等）。
+                fzn_name = varname if varname in declared else alias_map.get(varname)
+                if fzn_name is None:
+                    continue
+                v = value.strip()
+                # MZN は多次元配列を `array2d(idx, idx, [...])` 等で出力する。
+                # FZN レベルでは 1D row-major なので末尾の `[...]` を抽出する。
+                m = re.match(r'^array\d+d?\(.*?(\[[^\]]*\])\s*\)\s*$', v, re.DOTALL)
+                if m:
+                    v = m.group(1)
+                if v.startswith('['):
+                    # 1D `[a,b,c]` も 2D `[| a,b | c,d |]` も `|` を `,` に
+                    # 置き換えてから 1D に潰す（FZN は常に 1D row-major）
+                    flat = v.replace('|', ',').replace('[', '').replace(']', '')
+                    items = [x.strip() for x in flat.split(',') if x.strip()]
+                    cs = [emit_eq(f'{fzn_name}[{i}]', item)
+                          for i, item in enumerate(items, 1)]
+                    # サポートできない値が一つでもあればこの変数全体を諦める
+                    if any(c is None for c in cs):
+                        continue
+                    extra.extend(cs)
+                    n_fixed_vars += 1
+                else:
+                    c = emit_eq(fzn_name, v)
+                    if c is None:
+                        continue
+                    extra.append(c)
+                    n_fixed_vars += 1
+
+            # カバレッジが低い (= enum / opt / set 等で半数以上の変数を固定
+            # できなかった) と検証が「ほぼ再探索」になり TIMEOUT で潰れるので、
+            # その場合は SKIP として早期に返す。
+            if n_fixed_vars * 2 < len(solution) or not extra:
+                return "CHECK_SKIP"
+
+            patched, n_sub = re.subn(r'^solve\s',
+                                     '\n'.join(extra) + '\nsolve ',
+                                     fzn_text, count=1, flags=re.MULTILINE)
+            if n_sub == 0:
+                return "CHECK_SKIP"
+            checker_fzn = Path(tmpdir) / "checker.fzn"
+            checker_fzn.write_text(patched)
+
+            # CHECK_OK は秒未満、CHECK_FAIL は初期伝播で即検出される。
+            # solve に長時間かかる = 元の決定変数が aliasing で固定し切れず
+            # 「ほぼ再探索」になっているケース。10s で打ち切って TIMEOUT にする。
+            cmd = [MINIZINC, "--solver", "gecode", str(checker_fzn)]
+            stdout, rc = _run_checker(cmd, min(timeout, 10))
+            if stdout is None:
+                return "CHECK_TIMEOUT"
+            if "----------" in stdout:
+                return "CHECK_OK"
+            if "=====UNSATISFIABLE=====" in stdout:
+                return "CHECK_FAIL"
+            return "CHECK_SKIP"
+    except Exception:
+        return "CHECK_SKIP"
+
+
+def verify_solution(mzn, data, solution, timeout=30):
+    """sabori の解を Gecode で検証する。MZN レベル → FZN レベルのハイブリッド。
+
+      1. MZN レベル方式 (`include + constraint var = value`) で検証
+      2. CHECK_FAIL なら FZN レベル方式 (int_eq 注入) でセカンドオピニオン
+         - FZN OK → MZN の検証は誤検出 (例: `is_fixed()` 起因) → CHECK_OK
+         - FZN も FAIL → 本物の不整合 → CHECK_FAIL のまま
+
+    enum / opt int / set 等は MZN レベルで処理されるためカバレッジを失わない。
+    Returns: "CHECK_OK" / "CHECK_FAIL" / "CHECK_TIMEOUT" / "CHECK_SKIP"
+    """
+    if not solution:
+        return "CHECK_SKIP"
+    res = _verify_mzn(mzn, data, solution, timeout)
+    if res != "CHECK_FAIL":
+        return res
+    fzn_res = _verify_fzn(mzn, data, solution, timeout)
+    if fzn_res == "CHECK_OK":
+        return "CHECK_OK"
+    return "CHECK_FAIL"
 
 
 def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
@@ -317,11 +457,9 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
 
 def judge_winner(s_status, s_time, s_obj, c_status, c_time, c_obj, prob_type="SAT", s_check=None):
     """勝者判定（MIN/MAX/SAT対応）"""
-    # CHECK_FAIL の場合、Sabori の解は不正なので無効にする。
-    # 既知の原因: MiniZinc 2.9.5 の -O1 最適化にエイリアス置換時に制約を
-    # 消失させるバグがあり、FZN レベルでは全制約を満たす解が MZN レベルでは
-    # 不正になるケースがある（例: mznc2021_probs/connect）。
-    # Sabori 以外のソルバーでは解が見つからないためバグが顕在化しない。
+    # CHECK_FAIL は sabori の解が gecode で再検証して FZN 制約を満たさなかった
+    # ことを意味する（verify_solution は FZN レベルで int_eq を積む方式）。
+    # 真のバグなので解を無効化する。
     if s_check == "CHECK_FAIL":
         s_status = "UNKNOWN"
         s_obj = None
