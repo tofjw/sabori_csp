@@ -33,3 +33,14 @@ set_tests_properties(int_div_regressions PROPERTIES
     LABELS "fzn;constraint;int_div"
     TIMEOUT 60
 )
+
+# FlatZinc output format compliance (separator markers)
+add_test(
+    NAME fzn_output_format
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/fzn/output_format/test_output_format.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(fzn_output_format PROPERTIES
+    LABELS "fzn;output"
+    TIMEOUT 60
+)

@@ -278,8 +278,9 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
         auto sol = solver.solve(*model);
         print_stats(solver, model.get());
         if (sol) {
+            // SAT で -a なし: 1解見つけて終了したので探索完了は証明できていない。
+            // FlatZinc 仕様では `----------` (print_solution 内) のみで終わる。
             print_solution(*sol, fzn_model);
-            std::cout << "==========\n";
         } else if (solver.is_stopped()) {
             std::cout << "=====UNKNOWN=====\n";
         } else {
