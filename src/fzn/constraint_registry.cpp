@@ -324,7 +324,24 @@ static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, Fzn
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
     auto invf = resolve_vars(decl.args[1], ctx);
-    return std::make_shared<InverseConstraint>(std::move(f), std::move(invf), 1);
+    // FlatZinc 1-indexed convention: both arrays have values in [1, n].
+    return std::make_shared<InverseConstraint>(std::move(f), std::move(invf), 1, 1);
+}
+
+static std::optional<ConstraintPtr> make_inverse_offsets(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 4)
+        throw std::runtime_error("fzn_inverse_offsets requires 4 arguments (f, foff, invf, invfoff)");
+    if (!std::holds_alternative<Domain::value_type>(decl.args[1]))
+        throw std::runtime_error("fzn_inverse_offsets: second argument (foff) must be an integer");
+    if (!std::holds_alternative<Domain::value_type>(decl.args[3]))
+        throw std::runtime_error("fzn_inverse_offsets: fourth argument (invfoff) must be an integer");
+    auto f = resolve_vars(decl.args[0], ctx);
+    auto foff = std::get<Domain::value_type>(decl.args[1]);
+    auto invf = resolve_vars(decl.args[2], ctx);
+    auto invfoff = std::get<Domain::value_type>(decl.args[3]);
+    return std::make_shared<InverseConstraint>(
+        std::move(f), std::move(invf),
+        static_cast<int64_t>(foff), static_cast<int64_t>(invfoff));
 }
 
 static std::optional<ConstraintPtr> make_all_equal(const ConstraintDecl& decl, FznBuildContext& ctx) {
@@ -871,6 +888,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_disjunctive", make_disjunctive);
     registry.register_constraint("fzn_disjunctive_strict", make_disjunctive);
     registry.register_constraint("fzn_inverse", make_inverse);
+    registry.register_constraint("fzn_inverse_offsets", make_inverse_offsets);
     registry.register_constraint("fzn_all_equal_int", make_all_equal);
     registry.register_constraint("all_equal_int", make_all_equal);
 

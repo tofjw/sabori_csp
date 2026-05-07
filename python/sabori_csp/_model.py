@@ -516,7 +516,7 @@ class CpModel:
             f_raw = [v._var for v in ct.f]
             invf_raw = [v._var for v in ct.invf]
             self._add_constraint(
-                core.InverseConstraint(f_raw, invf_raw, ct.offset), _label
+                core.InverseConstraint(f_raw, invf_raw, ct.offset, ct.offset), _label
             )
         elif isinstance(ct, _Cumulative):
             starts = [v._var for v in ct.starts]

@@ -1985,8 +1985,19 @@ private:
  */
 class InverseConstraint : public Constraint {
 public:
+    /**
+     * @param f       配列 f
+     * @param invf    配列 invf
+     * @param f_offset    f の値域の最小値 = min(index_set(invf))。f[i] の値を invf の内部
+     *                    インデックスに変換するために使用 (j = v - f_offset)。
+     * @param invf_offset invf の値域の最小値 = min(index_set(f))。invf[i] の値を f の内部
+     *                    インデックスに変換するために使用。
+     *
+     * 通常の対称ケース (FlatZinc 1-indexed): f_offset = invf_offset = 1
+     * 0-indexed: f_offset = invf_offset = 0
+     */
     InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf,
-                      int64_t offset = 0);
+                      int64_t f_offset = 0, int64_t invf_offset = 0);
 
     std::string name() const override;
 
@@ -2012,8 +2023,9 @@ public:
     void rewind_to(int save_point) override;
 
 private:
-    size_t n_;           ///< 配列サイズ
-    int64_t offset_;     ///< FlatZinc 1-indexed → 0-indexed offset (通常 1)
+    size_t n_;             ///< 配列サイズ
+    int64_t f_offset_;     ///< f の値域の最小値 (= min(index_set(invf)))
+    int64_t invf_offset_;  ///< invf の値域の最小値 (= min(index_set(f)))
 };
 
 /**

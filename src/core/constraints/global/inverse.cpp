@@ -6,12 +6,24 @@ namespace sabori_csp {
 // ============================================================================
 // InverseConstraint implementation
 // ============================================================================
+//
+// 制約: f[i] = j ⟺ invf[j] = i (f, invf は元のインデックス空間で双射)
+//
+// 内部表現は両配列とも 0-indexed の [0, n-1]。値は元のインデックス空間に従う:
+//   f[internal_i] の値 v ∈ [f_offset_, f_offset_ + n - 1]
+//     → invf の内部インデックス j = v - f_offset_
+//     → invf[j] が取るべき値は (internal_i + invf_offset_)
+//   invf[internal_i] の値 v ∈ [invf_offset_, invf_offset_ + n - 1]
+//     → f の内部インデックス j = v - invf_offset_
+//     → f[j] が取るべき値は (internal_i + f_offset_)
+// ============================================================================
 
 InverseConstraint::InverseConstraint(std::vector<VariablePtr> f, std::vector<VariablePtr> invf,
-                                     int64_t offset)
+                                     int64_t f_offset, int64_t invf_offset)
     : Constraint()
     , n_(f.size())
-    , offset_(offset)
+    , f_offset_(f_offset)
+    , invf_offset_(invf_offset)
 {
     if (f.size() != invf.size()) {
         // 入力サイズ不一致は presolve()/prepare_propagation() で検出される
@@ -31,19 +43,33 @@ std::string InverseConstraint::name() const {
 
 PresolveResult InverseConstraint::presolve(Model& model) {
     bool changed = false;
-    auto val_min = static_cast<Domain::value_type>(offset_);
-    auto val_max = static_cast<Domain::value_type>(offset_ + static_cast<int64_t>(n_) - 1);
+    auto f_val_min = static_cast<Domain::value_type>(f_offset_);
+    auto f_val_max = static_cast<Domain::value_type>(f_offset_ + static_cast<int64_t>(n_) - 1);
+    auto invf_val_min = static_cast<Domain::value_type>(invf_offset_);
+    auto invf_val_max = static_cast<Domain::value_type>(invf_offset_ + static_cast<int64_t>(n_) - 1);
 
-    // 1. Restrict all domains to [offset_, offset_ + n_ - 1]
-    for (size_t k = 0; k < 2 * n_; ++k) {
-        auto var_id = var_ids_[k];
-        auto* var = model.variable(var_id);
-        if (var->min() < val_min) {
-            var->remove_below(val_min);
+    // 1. Restrict f to [f_offset, f_offset + n - 1]
+    for (size_t i = 0; i < n_; ++i) {
+        auto* var = model.variable(var_ids_[i]);
+        if (var->min() < f_val_min) {
+            var->remove_below(f_val_min);
             changed = true;
         }
-        if (var->max() > val_max) {
-            var->remove_above(val_max);
+        if (var->max() > f_val_max) {
+            var->remove_above(f_val_max);
+            changed = true;
+        }
+        if (var->domain().empty()) return PresolveResult::Contradiction;
+    }
+    // 1b. Restrict invf to [invf_offset, invf_offset + n - 1]
+    for (size_t i = 0; i < n_; ++i) {
+        auto* var = model.variable(var_ids_[n_ + i]);
+        if (var->min() < invf_val_min) {
+            var->remove_below(invf_val_min);
+            changed = true;
+        }
+        if (var->max() > invf_val_max) {
+            var->remove_above(invf_val_max);
             changed = true;
         }
         if (var->domain().empty()) return PresolveResult::Contradiction;
@@ -60,13 +86,13 @@ PresolveResult InverseConstraint::presolve(Model& model) {
             auto* f_var = model.variable(f_id);
             auto* invf_var = model.variable(invf_i_id);
 
-            // f[i] assigned to v → invf[v-offset] = i+offset
+            // f[i] assigned to v → invf[v - f_offset] = i + invf_offset
             if (f_var->is_assigned()) {
                 auto v = f_var->assigned_value().value();
-                size_t j = static_cast<size_t>(v - offset_);
+                size_t j = static_cast<size_t>(v - f_offset_);
                 if (j >= n_) return PresolveResult::Contradiction;
                 auto* target = model.variable(var_ids_[n_ + j]);
-                auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+                auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
                 if (!target->is_assigned()) {
                     target->assign(i_val);
                     if (target->domain().empty()) return PresolveResult::Contradiction;
@@ -77,13 +103,13 @@ PresolveResult InverseConstraint::presolve(Model& model) {
                 }
             }
 
-            // invf[i] assigned to v → f[v-offset] = i+offset
+            // invf[i] assigned to v → f[v - invf_offset] = i + f_offset
             if (invf_var->is_assigned()) {
                 auto v = invf_var->assigned_value().value();
-                size_t j = static_cast<size_t>(v - offset_);
+                size_t j = static_cast<size_t>(v - invf_offset_);
                 if (j >= n_) return PresolveResult::Contradiction;
                 auto* target = model.variable(var_ids_[j]);
-                auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+                auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
                 if (!target->is_assigned()) {
                     target->assign(i_val);
                     if (target->domain().empty()) return PresolveResult::Contradiction;
@@ -95,17 +121,17 @@ PresolveResult InverseConstraint::presolve(Model& model) {
             }
         }
 
-        // Domain support: if v not in dom(invf[v-offset]) for value in f[i], remove from f[i]
+        // Domain support: if v not in dom(invf[v - f_offset]) for value in f[i], remove from f[i]
         for (size_t i = 0; i < n_; ++i) {
             auto f_id = var_ids_[i];
             auto* f_var = model.variable(f_id);
             if (f_var->is_assigned()) continue;
 
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
             std::vector<Domain::value_type> to_remove;
             for (auto v = f_var->min(); v <= f_var->max(); ++v) {
                 if (!f_var->domain().contains(v)) continue;
-                size_t j = static_cast<size_t>(v - offset_);
+                size_t j = static_cast<size_t>(v - f_offset_);
                 if (j >= n_) {
                     to_remove.push_back(v);
                     continue;
@@ -129,11 +155,11 @@ PresolveResult InverseConstraint::presolve(Model& model) {
             auto* invf_var = model.variable(invf_id);
             if (invf_var->is_assigned()) continue;
 
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
             std::vector<Domain::value_type> to_remove;
             for (auto v = invf_var->min(); v <= invf_var->max(); ++v) {
                 if (!invf_var->domain().contains(v)) continue;
-                size_t j = static_cast<size_t>(v - offset_);
+                size_t j = static_cast<size_t>(v - invf_offset_);
                 if (j >= n_) {
                     to_remove.push_back(v);
                     continue;
@@ -166,13 +192,12 @@ bool InverseConstraint::on_instantiate(Model& model, int /*save_point*/,
                                         Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
-    size_t j = static_cast<size_t>(value - offset_);
-    if (j >= n_) return false;
-
     if (internal_var_idx < n_) {
-        // f[i] = value → invf[value-offset] = i+offset
+        // f[i] = value → invf[value - f_offset] = i + invf_offset
+        size_t j = static_cast<size_t>(value - f_offset_);
+        if (j >= n_) return false;
         size_t i = internal_var_idx;
-        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
 
         model.enqueue_instantiate(var_ids_[n_ + j], i_val);
 
@@ -192,9 +217,11 @@ bool InverseConstraint::on_instantiate(Model& model, int /*save_point*/,
             }
         }
     } else {
-        // invf[i] = value → f[value-offset] = i+offset
+        // invf[i] = value → f[value - invf_offset] = i + f_offset
+        size_t j = static_cast<size_t>(value - invf_offset_);
+        if (j >= n_) return false;
         size_t i = internal_var_idx - n_;
-        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
 
         model.enqueue_instantiate(var_ids_[j], i_val);
 
@@ -225,10 +252,10 @@ std::optional<bool> InverseConstraint::is_satisfied(const Model& model) const {
     }
     for (size_t i = 0; i < n_; ++i) {
         auto f_val = model.value(var_ids_[i]);
-        size_t j = static_cast<size_t>(f_val - offset_);
+        size_t j = static_cast<size_t>(f_val - f_offset_);
         if (j >= n_) return false;
         auto invf_val = model.value(var_ids_[n_ + j]);
-        auto expected = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto expected = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
         if (invf_val != expected) return false;
     }
     return true;
@@ -237,11 +264,11 @@ std::optional<bool> InverseConstraint::is_satisfied(const Model& model) const {
 bool InverseConstraint::on_final_instantiate(const Model& model) {
     for (size_t i = 0; i < n_; ++i) {
         auto f_val = model.value(var_ids_[i]);
-        size_t j = static_cast<size_t>(f_val - offset_);
+        size_t j = static_cast<size_t>(f_val - f_offset_);
         if (j >= n_) return false;
 
         auto invf_val = model.value(var_ids_[n_ + j]);
-        auto expected = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto expected = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
         if (invf_val != expected) return false;
     }
     return true;
@@ -250,18 +277,19 @@ bool InverseConstraint::on_final_instantiate(const Model& model) {
 bool InverseConstraint::on_remove_value(Model& model, int /*save_point*/,
                                          size_t /*var_idx*/, size_t internal_var_idx,
                                          Domain::value_type removed_value) {
-    size_t j = static_cast<size_t>(removed_value - offset_);
-    if (j >= n_) return true;  // out of range, already handled by domain restriction
-
     if (internal_var_idx < n_) {
-        // f[i] lost value v → invf[v-offset] loses i+offset
+        // f[i] lost value v → invf[v - f_offset] loses (i + invf_offset)
+        size_t j = static_cast<size_t>(removed_value - f_offset_);
+        if (j >= n_) return true;  // out of range, already handled by domain restriction
         size_t i = internal_var_idx;
-        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
         model.enqueue_remove_value(var_ids_[n_ + j], i_val);
     } else {
-        // invf[i] lost value v → f[v-offset] loses i+offset
+        // invf[i] lost value v → f[v - invf_offset] loses (i + f_offset)
+        size_t j = static_cast<size_t>(removed_value - invf_offset_);
+        if (j >= n_) return true;
         size_t i = internal_var_idx - n_;
-        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
         model.enqueue_remove_value(var_ids_[j], i_val);
     }
 
@@ -272,19 +300,26 @@ bool InverseConstraint::on_set_min(Model& model, int /*save_point*/,
                                     size_t /*var_idx*/, size_t internal_var_idx,
                                     Domain::value_type new_min, Domain::value_type old_min) {
     // Values old_min..new_min-1 have been removed; clamp to valid range
-    auto val_min = static_cast<Domain::value_type>(offset_);
-    auto val_max = static_cast<Domain::value_type>(offset_ + static_cast<int64_t>(n_) - 1);
-    auto lo = std::max(old_min, val_min);
-    auto hi = std::min(new_min - 1, val_max);
-    for (auto v = lo; v <= hi; ++v) {
-        size_t j = static_cast<size_t>(v - offset_);
-        if (internal_var_idx < n_) {
-            size_t i = internal_var_idx;
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+    if (internal_var_idx < n_) {
+        auto val_min = static_cast<Domain::value_type>(f_offset_);
+        auto val_max = static_cast<Domain::value_type>(f_offset_ + static_cast<int64_t>(n_) - 1);
+        auto lo = std::max(old_min, val_min);
+        auto hi = std::min(new_min - 1, val_max);
+        size_t i = internal_var_idx;
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
+        for (auto v = lo; v <= hi; ++v) {
+            size_t j = static_cast<size_t>(v - f_offset_);
             model.enqueue_remove_value(var_ids_[n_ + j], i_val);
-        } else {
-            size_t i = internal_var_idx - n_;
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        }
+    } else {
+        auto val_min = static_cast<Domain::value_type>(invf_offset_);
+        auto val_max = static_cast<Domain::value_type>(invf_offset_ + static_cast<int64_t>(n_) - 1);
+        auto lo = std::max(old_min, val_min);
+        auto hi = std::min(new_min - 1, val_max);
+        size_t i = internal_var_idx - n_;
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
+        for (auto v = lo; v <= hi; ++v) {
+            size_t j = static_cast<size_t>(v - invf_offset_);
             model.enqueue_remove_value(var_ids_[j], i_val);
         }
     }
@@ -295,19 +330,26 @@ bool InverseConstraint::on_set_max(Model& model, int /*save_point*/,
                                     size_t /*var_idx*/, size_t internal_var_idx,
                                     Domain::value_type new_max, Domain::value_type old_max) {
     // Values new_max+1..old_max have been removed; clamp to valid range
-    auto val_min = static_cast<Domain::value_type>(offset_);
-    auto val_max = static_cast<Domain::value_type>(offset_ + static_cast<int64_t>(n_) - 1);
-    auto lo = std::max(new_max + 1, val_min);
-    auto hi = std::min(old_max, val_max);
-    for (auto v = lo; v <= hi; ++v) {
-        size_t j = static_cast<size_t>(v - offset_);
-        if (internal_var_idx < n_) {
-            size_t i = internal_var_idx;
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+    if (internal_var_idx < n_) {
+        auto val_min = static_cast<Domain::value_type>(f_offset_);
+        auto val_max = static_cast<Domain::value_type>(f_offset_ + static_cast<int64_t>(n_) - 1);
+        auto lo = std::max(new_max + 1, val_min);
+        auto hi = std::min(old_max, val_max);
+        size_t i = internal_var_idx;
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(invf_offset_);
+        for (auto v = lo; v <= hi; ++v) {
+            size_t j = static_cast<size_t>(v - f_offset_);
             model.enqueue_remove_value(var_ids_[n_ + j], i_val);
-        } else {
-            size_t i = internal_var_idx - n_;
-            auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(offset_);
+        }
+    } else {
+        auto val_min = static_cast<Domain::value_type>(invf_offset_);
+        auto val_max = static_cast<Domain::value_type>(invf_offset_ + static_cast<int64_t>(n_) - 1);
+        auto lo = std::max(new_max + 1, val_min);
+        auto hi = std::min(old_max, val_max);
+        size_t i = internal_var_idx - n_;
+        auto i_val = static_cast<Domain::value_type>(i) + static_cast<Domain::value_type>(f_offset_);
+        for (auto v = lo; v <= hi; ++v) {
+            size_t j = static_cast<size_t>(v - invf_offset_);
             model.enqueue_remove_value(var_ids_[j], i_val);
         }
     }
