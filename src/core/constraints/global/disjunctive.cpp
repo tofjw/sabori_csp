@@ -684,6 +684,24 @@ PresolveResult DisjunctiveConstraint::presolve(Model& model) {
         cp_hi_[i] = pos + d;
     }
 
+    // Strict mode: verify fully-assigned d=0 tasks are not strictly inside any
+    // fully-assigned positive-duration task's interval (sj, sj+dj).
+    if (strict_) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (!task_fully_assigned(model, i)) continue;
+            if (task_dur(model, i) != 0) continue;
+            int s = task_start(model, i);
+            for (size_t j = 0; j < n_; ++j) {
+                if (j == i) continue;
+                if (!task_fully_assigned(model, j)) continue;
+                int dj = task_dur(model, j);
+                if (dj <= 0) continue;
+                int sj = task_start(model, j);
+                if (sj < s && s < sj + dj) return PresolveResult::Contradiction;
+            }
+        }
+    }
+
     // Set compulsory parts for unassigned tasks
     for (size_t i = 0; i < n_; ++i) {
         if (task_fully_assigned(model, i)) continue;
@@ -771,6 +789,24 @@ bool DisjunctiveConstraint::prepare_propagation(Model& model) {
         cp_hi_[i] = pos + d;
     }
 
+    // Strict mode: verify fully-assigned d=0 tasks are not strictly inside any
+    // fully-assigned positive-duration task's interval.
+    if (strict_) {
+        for (size_t i = 0; i < n_; ++i) {
+            if (!task_fully_assigned(model, i)) continue;
+            if (task_dur(model, i) != 0) continue;
+            int s = task_start(model, i);
+            for (size_t j = 0; j < n_; ++j) {
+                if (j == i) continue;
+                if (!task_fully_assigned(model, j)) continue;
+                int dj = task_dur(model, j);
+                if (dj <= 0) continue;
+                int sj = task_start(model, j);
+                if (sj < s && s < sj + dj) return false;
+            }
+        }
+    }
+
     // Set compulsory parts for unassigned tasks
     for (size_t i = 0; i < n_; ++i) {
         auto s_id = var_ids_[i];
@@ -845,7 +881,25 @@ bool DisjunctiveConstraint::on_instantiate(
         return propagate_bounds(model);
     }
 
-    if (d <= 0) {
+    // Strict mode: zero-duration task must not lie strictly inside another
+    // task's interval (sj, sj+dj). Boundary positions (s == sj or s == sj+dj)
+    // are allowed.
+    if (strict_ && d == 0) {
+        for (size_t j = 0; j < n_; ++j) {
+            if (j == task) continue;
+            if (!task_fully_assigned(model, j)) continue;
+            int dj = task_dur(model, j);
+            if (dj <= 0) continue;
+            int sj = task_start(model, j);
+            if (sj < s && s < sj + dj) return false;
+        }
+        if (!has_uninstantiated(model)) {
+            return on_final_instantiate(model);
+        }
+        return propagate_bounds(model);
+    }
+
+    if (d < 0) {
         if (!has_uninstantiated(model)) {
             return on_final_instantiate(model);
         }
@@ -867,6 +921,19 @@ bool DisjunctiveConstraint::on_instantiate(
         cp_hi_[task] = pos + d;
     }
 
+    // Strict mode: ensure no fully-assigned d=0 task lies strictly inside
+    // this newly placed interval (s, s+d).
+    if (strict_) {
+        for (size_t j = 0; j < n_; ++j) {
+            if (j == task) continue;
+            if (!task_fully_assigned(model, j)) continue;
+            int dj = task_dur(model, j);
+            if (dj != 0) continue;
+            int sj = task_start(model, j);
+            if (s < sj && sj < s + d) return false;
+        }
+    }
+
     if (!has_uninstantiated(model)) {
         return on_final_instantiate(model);
     }
@@ -882,9 +949,10 @@ bool DisjunctiveConstraint::on_final_instantiate(const Model& model) {
         for (size_t j = i + 1; j < n_; ++j) {
             auto sj = task_start(model, j);
             auto dj = task_dur(model, j);
-            // di=0 or dj=0 ならオーバーラップしない
-            if (di == 0 || dj == 0) continue;
+            // 非 strict は d=0 タスクが他と完全に重なって良い
+            if (!strict_ && (di == 0 || dj == 0)) continue;
             // si + di <= sj OR sj + dj <= si
+            // strict では d=0 の点が他タスクの (sj, sj+dj) 内にあってはならない
             if (!(si + di <= sj || sj + dj <= si)) {
                 return false;
             }

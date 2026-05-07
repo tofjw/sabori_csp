@@ -1,0 +1,30 @@
+% Regression: optimization test from test_disjunctive_strict.mzn
+% Tasks: s = [1, sB, sC, 5], d = [dA, 3, 2, 0]
+% Minimize max end time. Buggy solver returned 6 (placing task 4 strictly
+% inside task 3's interval). Correct optimal is 7 (matches Gecode/Chuffed).
+predicate fzn_disjunctive_strict(array [int] of var int: s, array [int] of var int: d);
+
+var 1..10: sB;
+var 1..10: sC;
+var 0..10: dA;
+var 1..11: endA :: is_defined_var;
+var 4..13: endB :: is_defined_var;
+var 3..12: endC :: is_defined_var;
+var 4..13: maxAB :: is_defined_var;
+var 4..13: maxABC :: is_defined_var;
+var 5..13: obj :: output_var :: is_defined_var;
+
+% endA = 1 + dA -> -endA + dA = -1
+constraint int_lin_eq([-1, 1], [endA, dA], -1) :: defines_var(endA);
+% endB = sB + 3
+constraint int_lin_eq([1, -1], [sB, endB], -3) :: defines_var(endB);
+% endC = sC + 2
+constraint int_lin_eq([1, -1], [sC, endC], -2) :: defines_var(endC);
+
+constraint int_max(endA, endB, maxAB) :: defines_var(maxAB);
+constraint int_max(maxAB, endC, maxABC) :: defines_var(maxABC);
+constraint int_max(maxABC, 5, obj) :: defines_var(obj);
+
+constraint fzn_disjunctive_strict([1, sB, sC, 5], [dA, 3, 2, 0]);
+
+solve :: int_search([sB, sC, dA], input_order, indomain_min, complete) minimize obj;

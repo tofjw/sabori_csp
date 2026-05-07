@@ -45,6 +45,17 @@ set_tests_properties(cumulative_ttef_regressions PROPERTIES
     TIMEOUT 60
 )
 
+# disjunctive_strict (zero-duration) regressions
+add_test(
+    NAME disjunctive_strict_regressions
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/fzn/constraints/disjunctive_strict/test_disjunctive_strict_regressions.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(disjunctive_strict_regressions PROPERTIES
+    LABELS "fzn;constraint;disjunctive"
+    TIMEOUT 60
+)
+
 # FlatZinc output format compliance (separator markers)
 add_test(
     NAME fzn_output_format

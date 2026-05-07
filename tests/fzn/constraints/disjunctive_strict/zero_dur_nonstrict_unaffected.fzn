@@ -1,0 +1,10 @@
+% Sanity check: non-strict disjunctive still permits a zero-duration task
+% strictly inside a positive-duration task's interval.
+% Same data as zero_dur_inside.fzn but with fzn_disjunctive (non-strict).
+% Expected: SAT
+var 5..5: s1 :: output_var;
+var 4..4: s2 :: output_var;
+var 0..0: d1;
+var 2..2: d2;
+constraint fzn_disjunctive([s1, s2], [d1, d2]);
+solve satisfy;
