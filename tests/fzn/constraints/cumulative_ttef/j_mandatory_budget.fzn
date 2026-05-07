@@ -1,0 +1,48 @@
+% TTEF j_mandatory budget regression test (2026-05-07)
+%
+% Bug: TTEFPropagator::forward_pass / backward_pass で j を新しい位置に動かす際の
+% エネルギー予算が誤っていた。tt_energy（プロファイル）には j 自身の mandatory 部分が
+% 含まれているのに、buggy 版では予算 = slack のみとしていた。正しい予算は
+% slack + j_mandatory_in_LR。
+%
+% 修正前: aircraft-disassembly で improvement probe 後に obj=3321250 を誤って
+% 「最適」と宣言（実際は obj=3297500 が達成可能）。
+%
+% この最小再現問題:
+%   Theta = {sB1..sB4}: dur=3, req=1, lct=10, mandatory なし
+%   j = T_a (sA): dur=10, req=1, est in [0,6], lct=16, mandatory [6,10)
+%   capacity = 2
+%   サイド制約: int_lin_le([1], [sA], 5)  (sA <= 5)
+%
+% TTEF 解析: Theta=4 T_b, R=10, L=0
+%   energy_theta = 12, theta_cp = 0, extra_theta = 12
+%   tt_energy in [0,10) = T_a mandatory ([6,10)) = 4
+%   free = 2*10 - 4 = 16
+%   for j=T_a: energy_j_in_LR = 10, j_mandatory_in_LR = 4, extra_j = 6
+%   extra_theta + extra_j = 18 > 16  ->  overload
+%   slack = 16 - 12 = 4
+%   buggy : new_est = R - slack/req           = 10 - 4 = 6  (=sA.lst なので適用)
+%   正しい: new_est = R - (slack + j_mand)/req = 10 - 8 = 2
+%
+% buggy だと sA >= 6 と sA <= 5 で矛盾し UNSAT になる。
+% 修正後は sA in [2,5] が許容され SAT。
+
+var 0..6: sA :: output_var;
+var 0..7: sB1 :: output_var;
+var 0..7: sB2 :: output_var;
+var 0..7: sB3 :: output_var;
+var 0..7: sB4 :: output_var;
+var 10..10: dA;
+var 3..3: dB1;
+var 3..3: dB2;
+var 3..3: dB3;
+var 3..3: dB4;
+var 1..1: rA;
+var 1..1: rB1;
+var 1..1: rB2;
+var 1..1: rB3;
+var 1..1: rB4;
+var 2..2: cap;
+constraint fzn_cumulative([sA, sB1, sB2, sB3, sB4], [dA, dB1, dB2, dB3, dB4], [rA, rB1, rB2, rB3, rB4], cap);
+constraint int_lin_le([1], [sA], 5);
+solve satisfy;
