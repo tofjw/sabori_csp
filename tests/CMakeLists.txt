@@ -34,6 +34,17 @@ set_tests_properties(int_div_regressions PROPERTIES
     TIMEOUT 60
 )
 
+# cumulative TTEF regressions
+add_test(
+    NAME cumulative_ttef_regressions
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/fzn/constraints/cumulative_ttef/test_ttef_regressions.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(cumulative_ttef_regressions PROPERTIES
+    LABELS "fzn;constraint;cumulative"
+    TIMEOUT 60
+)
+
 # FlatZinc output format compliance (separator markers)
 add_test(
     NAME fzn_output_format

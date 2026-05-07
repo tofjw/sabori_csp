@@ -404,7 +404,11 @@ bool TTEFPropagator::forward_pass(
                 int64_t slack = free_for_j - extra_theta;
                 if (slack < 0) return false;
 
-                int64_t new_est = R - slack / tj.req;
+                // j のエネルギー予算は slack + j_mandatory_in_LR。
+                // tt_energy（プロファイル）に j の mandatory 部分が含まれているため、
+                // j を新しい位置に動かす際にはこの部分を予算に戻す必要がある。
+                int64_t budget = slack + j_mandatory_in_LR;
+                int64_t new_est = R - budget / tj.req;
                 if (new_est > tj.est && new_est <= tj.lst) {
                     if (direct) {
                         if (!model.variable(s_id)->remove_below(
@@ -493,7 +497,10 @@ bool TTEFPropagator::backward_pass(
                 int64_t slack = free_for_j - extra_theta;
                 if (slack < 0) return false;
 
-                int64_t new_lct = L + slack / tj.req;
+                // forward_pass と同じく、j の mandatory 部分は tt_energy に含まれているため
+                // j を新しい位置へ動かす際にはこの分を予算に戻す。
+                int64_t budget = slack + j_mandatory_in_LR;
+                int64_t new_lct = L + budget / tj.req;
                 int64_t new_lst = new_lct - tj.dur;
                 if (new_lst < tj.lst && new_lst >= tj.est) {
                     if (direct) {
