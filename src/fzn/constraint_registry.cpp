@@ -856,6 +856,7 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_alldifferent_except_0", make_alldifferent_except_0);
     registry.register_constraint("circuit", make_circuit);
     registry.register_constraint("fzn_circuit", make_circuit);
+    registry.register_constraint("sabori_csp_circuit", make_circuit);
     registry.register_constraint("array_bool_and", make_array_bool_and);
     registry.register_constraint("array_bool_or", make_array_bool_or);
     registry.register_constraint("array_bool_xor", make_array_bool_xor);
