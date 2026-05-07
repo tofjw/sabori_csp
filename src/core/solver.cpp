@@ -442,38 +442,10 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         }
                     }
 
-                    // 疑似勾配の計算（移動平均で蓄積）
+                    // probe 中に勾配ヒントが消費されないよう、ここでは未設定にしておく
+                    // （勾配の計算と変数選択は probe 完了後に行う）
                     gradient_var_idx_ = SIZE_MAX;
                     gradient_direction_ = 0;
-                    if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
-                        if (gradient_.empty()) {
-                            gradient_.assign(variables.size(), 0.0);
-                        }
-                        for (size_t vi : gradient_eligible_vars_) {
-                            if (prev_improving_solution_[vi] != kNoValue &&
-                                current_best_assignment_[vi] != kNoValue) {
-                                double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
-                                if (delta < 0)
-                                    gradient_[vi] = -1.0;
-                                else if (delta > 0.0)
-                                    gradient_[vi] = 1.0;
-                                else
-                                    gradient_[vi] = 0.0;
-                            }
-                        }
-                        // 勾配対象変数から1つランダムに選択
-                        std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
-                        size_t vi = gradient_eligible_vars_[idist(rng_)];
-                        double g = gradient_[vi];
-                        if (g != 0.0
-                            && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
-                            && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
-                            gradient_var_idx_ = vi;
-                            gradient_direction_ = (g > 0.0) ? +1 : -1;
-                            gradient_ref_val_ = current_best_assignment_[vi];
-                        }
-                    }
-                    prev_improving_solution_ = current_best_assignment_;
                 }
 
                 // root へバックトラック
@@ -685,6 +657,38 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     }
                 }
                 // --- end improvement probe ---
+
+                // 疑似勾配の計算と変数選択（probe で消費されないよう probe 完了後に行う）
+                if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
+                    const auto& variables = model.variables();
+                    if (gradient_.empty()) {
+                        gradient_.assign(variables.size(), 0.0);
+                    }
+                    for (size_t vi : gradient_eligible_vars_) {
+                        if (prev_improving_solution_[vi] != kNoValue &&
+                            current_best_assignment_[vi] != kNoValue) {
+                            double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
+                            if (delta < 0)
+                                gradient_[vi] = -1.0;
+                            else if (delta > 0.0)
+                                gradient_[vi] = 1.0;
+                            else
+                                gradient_[vi] = 0.0;
+                        }
+                    }
+                    // 勾配対象変数から1つランダムに選択
+                    std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
+                    size_t vi = gradient_eligible_vars_[idist(rng_)];
+                    double g = gradient_[vi];
+                    if (g != 0.0
+                        && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                        && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
+                        gradient_var_idx_ = vi;
+                        gradient_direction_ = (g > 0.0) ? +1 : -1;
+                        gradient_ref_val_ = current_best_assignment_[vi];
+                    }
+                }
+                prev_improving_solution_ = current_best_assignment_;
 
                 var_selector_.init_tracking(model);
                 unassigned_trail_.clear();
