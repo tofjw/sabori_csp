@@ -7,6 +7,7 @@
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
 #include <set>
+#include <tuple>
 #include <algorithm>
 
 using namespace sabori_csp;
@@ -4079,6 +4080,100 @@ TEST_CASE("TableConstraint with Solver", "[constraint][table][solver]") {
         });
 
         REQUIRE(count == static_cast<size_t>(expected_count));
+    }
+
+    SECTION("sparse storage path: large num_tuples + wide-domain variable") {
+        // group.fzn 由来の構造を再現: arity=3, num_tuples が大きく
+        // 1列が広い domain を持ち、distinct 値数が大きいケース。
+        // この構成で prefer_sparse() が true を返し、sparse 経路が走る。
+        // 検証: sparse パスでも全解列挙が dense と一致する。
+        Model model;
+        auto x = model.create_variable("x", 1, 5);
+        auto y = model.create_variable("y", 1, 200);   // 広い domain
+        auto z = model.create_variable("z", -2, 2);
+
+        std::vector<Domain::value_type> tuples;
+        size_t expected = 0;
+        // (i, 4*i + 10*k + j, j-2) を 5 * 200 * 5 通り生成する代わりに、
+        // y を疎に振って distinct 値数 ≈ num_tuples を作る。
+        for (int i = 1; i <= 5; ++i) {
+            for (int t = 0; t < 200; ++t) {
+                int yv = (t * 7 + i * 13) % 200 + 1;
+                int zv = ((i + t) % 5) - 2;
+                tuples.push_back(i);
+                tuples.push_back(yv);
+                tuples.push_back(zv);
+                ++expected;
+            }
+        }
+        REQUIRE(expected == 1000);
+
+        model.add_constraint(std::make_unique<TableConstraint>(
+            std::vector<Variable*>{x, y, z}, tuples));
+
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) {
+            return true;
+        });
+
+        REQUIRE(count == expected);
+    }
+
+    SECTION("sparse storage path: backtracking consistency") {
+        // sparse パスで backtracking 後の current_table_ 復元と
+        // residual の挙動が壊れていないかを確認する。
+        // 制約を 2 個重ねて search 中に backtracking を強制する。
+        Model model;
+        auto x = model.create_variable("x", 1, 4);
+        auto y = model.create_variable("y", 1, 200);
+        auto z = model.create_variable("z", 1, 4);
+
+        std::vector<Domain::value_type> tuples_xy;
+        // (x, y) で大量の distinct y 値
+        for (int i = 1; i <= 4; ++i) {
+            for (int yv = 1; yv <= 200; ++yv) {
+                if ((yv * i) % 7 != 0) {
+                    tuples_xy.push_back(i);
+                    tuples_xy.push_back(yv);
+                }
+            }
+        }
+        std::vector<Domain::value_type> tuples_yz;
+        for (int yv = 1; yv <= 200; ++yv) {
+            for (int j = 1; j <= 4; ++j) {
+                if ((yv + j) % 3 == 0) {
+                    tuples_yz.push_back(yv);
+                    tuples_yz.push_back(j);
+                }
+            }
+        }
+        model.add_constraint(std::make_unique<TableConstraint>(
+            std::vector<Variable*>{x, y}, tuples_xy));
+        model.add_constraint(std::make_unique<TableConstraint>(
+            std::vector<Variable*>{y, z}, tuples_yz));
+
+        // ナイーブ参照解
+        std::set<std::tuple<int,int,int>> ref;
+        for (int i = 1; i <= 4; ++i) {
+            for (int yv = 1; yv <= 200; ++yv) {
+                if ((yv * i) % 7 == 0) continue;
+                for (int j = 1; j <= 4; ++j) {
+                    if ((yv + j) % 3 != 0) continue;
+                    ref.emplace(i, yv, j);
+                }
+            }
+        }
+
+        Solver solver;
+        std::set<std::tuple<int,int,int>> got;
+        solver.solve_all(model, [&](const Solution& sol) {
+            got.emplace(static_cast<int>(sol.at("x")),
+                        static_cast<int>(sol.at("y")),
+                        static_cast<int>(sol.at("z")));
+            return true;
+        });
+
+        REQUIRE(got == ref);
     }
 }
 

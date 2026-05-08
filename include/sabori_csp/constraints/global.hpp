@@ -1398,8 +1398,14 @@ private:
 
     std::vector<Domain::value_type> flat_tuples_;  ///< is_satisfied 用コピー
 
-    /// フラットビットセット: supports_data_[get_support_offset(var, val) + w]
-    std::vector<uint64_t> supports_data_;
+    /// supports ストレージモード: false=dense bitset, true=sorted tuple-index list
+    bool use_sparse_ = false;
+    /// dense モード: フラットビットセット supports_data_[get_support_offset(var, val) + w]
+    /// sparse モード: 全 (var,val) のタプル index を flat に並べたもの
+    ///                各 (var,val) のリストは [start, start+length) のスライス
+    std::vector<uint64_t> supports_data_;     ///< dense モード時のみ使用
+    std::vector<uint32_t> sparse_supports_;   ///< sparse モード時のみ使用 (sorted tuple indices)
+    std::vector<uint32_t> sparse_lengths_;    ///< sparse モード時の各 (var,val) のリスト長
     /// 各変数の値→supports_data_内オフセット（フラット配列）
     struct VarSupportInfo {
         Domain::value_type min_val;
@@ -1413,8 +1419,12 @@ private:
     std::vector<uint64_t> current_table_;
     /// current_table_ の最後の非ゼロ word インデックス (テーブルが空なら 0)
     size_t last_nz_word_;
-    /// Residual support: 各 (var, value) ペアの前回サポート word index
+    /// Residual support (dense): 各 (var, value) ペアの前回サポート word index
     mutable std::vector<size_t> residual_words_;
+    /// Residual support (sparse): 各 (var, value) ペアの前回サポート tuple index (リスト内位置)
+    mutable std::vector<uint32_t> sparse_residual_idx_;
+    /// sparse モード時の on_instantiate / prepare_propagation 用 scratch (num_words_ サイズ)
+    std::vector<uint64_t> scratch_mask_;
 
     struct TrailEntry {
         std::vector<std::pair<size_t, uint64_t>> word_diffs;  ///< (word_idx, old_value)
@@ -1445,6 +1455,15 @@ private:
             trail_.back().second.word_diffs.push_back({w, current_table_[w]});
         }
     }
+
+    /**
+     * @brief 指定 (var,val) のサポートを current_table_ から取り除く
+     *        (current_table_ &= ~supports[var,val])
+     * @param internal_idx 変数インデックス
+     * @param val 取り除く値
+     * @return 1個でも word が変わったら true
+     */
+    bool clear_supports_for(size_t internal_idx, Domain::value_type val);
 
     /**
      * @brief 各変数のドメインからサポートのない値を除去
