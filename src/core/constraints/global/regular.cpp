@@ -1,6 +1,7 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
+#include <cstring>
 
 namespace sabori_csp {
 
@@ -50,9 +51,18 @@ RegularConstraint::RegularConstraint(std::vector<VariablePtr> vars,
         return;
     }
 
-    // Initialize reachable arrays
-    reachable_from_.assign(n_ + 1, std::vector<bool>(Q_ + 1, false));
-    reachable_to_.assign(n_ + 1, std::vector<bool>(Q_ + 1, false));
+    // Initialize reachable arrays (flat layout: i * stride + q)
+    reach_stride_ = static_cast<size_t>(Q_ + 1);
+    reachable_from_.assign((n_ + 1) * reach_stride_, 0);
+    reachable_to_.assign((n_ + 1) * reach_stride_, 0);
+
+    // Pre-size dom value buffer offset table (vals_buf_ grows on demand)
+    vals_offset_.assign(n_ + 1, 0);
+
+    // Pre-size no-op cache
+    prev_min_.assign(n_, 0);
+    prev_max_.assign(n_, 0);
+    prev_size_.assign(n_, 0);
 }
 
 std::string RegularConstraint::name() const {
@@ -76,58 +86,60 @@ PresolveResult RegularConstraint::presolve(Model& model) {
         if (var->domain().empty()) return PresolveResult::Contradiction;
     }
 
-    // Forward pass
-    for (auto& v : reachable_from_) std::fill(v.begin(), v.end(), false);
-    reachable_from_[0][q0_] = true;
+    const size_t stride = reach_stride_;
+
+    // Forward pass (フラット配列、std::memset でクリア)
+    std::memset(reachable_from_.data(), 0, reachable_from_.size());
+    reachable_from_[0 * stride + q0_] = 1;
 
     for (size_t i = 0; i < n_; ++i) {
         auto* var = model.variable(var_ids_[i]);
+        const uint8_t* rf_in  = &reachable_from_[i * stride];
+        uint8_t*       rf_out = &reachable_from_[(i + 1) * stride];
         for (auto s = var->min(); s <= var->max(); ++s) {
             if (!var->domain().contains(s)) continue;
             if (s < 1 || s > S_) continue;
             for (int q = 1; q <= Q_; ++q) {
-                if (!reachable_from_[i][q]) continue;
+                if (!rf_in[q]) continue;
                 int next = transition(q, (int)s);
-                if (next != 0) {
-                    reachable_from_[i + 1][next] = true;
-                }
+                if (next != 0) rf_out[next] = 1;
             }
         }
-        // Check if any state reachable at i+1
         bool any = false;
         for (int q = 1; q <= Q_; ++q) {
-            if (reachable_from_[i + 1][q]) { any = true; break; }
+            if (rf_out[q]) { any = true; break; }
         }
         if (!any) return PresolveResult::Contradiction;
     }
 
     // Backward pass
-    for (auto& v : reachable_to_) std::fill(v.begin(), v.end(), false);
-    for (int q = 1; q <= Q_; ++q) {
-        if (accepting_[q] && reachable_from_[n_][q]) {
-            reachable_to_[n_][q] = true;
-        }
-    }
-
-    // Check if any accepting state is reachable
+    std::memset(reachable_to_.data(), 0, reachable_to_.size());
     {
+        uint8_t* rt_n = &reachable_to_[n_ * stride];
+        const uint8_t* rf_n = &reachable_from_[n_ * stride];
         bool any = false;
         for (int q = 1; q <= Q_; ++q) {
-            if (reachable_to_[n_][q]) { any = true; break; }
+            if (accepting_[q] && rf_n[q]) {
+                rt_n[q] = 1;
+                any = true;
+            }
         }
         if (!any) return PresolveResult::Contradiction;
     }
 
     for (size_t i = n_; i > 0; --i) {
         auto* var = model.variable(var_ids_[i - 1]);
+        const uint8_t* rf_prev = &reachable_from_[(i - 1) * stride];
+        const uint8_t* rt_in   = &reachable_to_[i * stride];
+        uint8_t*       rt_out  = &reachable_to_[(i - 1) * stride];
         for (int q = 1; q <= Q_; ++q) {
-            if (!reachable_from_[i - 1][q]) continue;
+            if (!rf_prev[q]) continue;
             for (auto s = var->min(); s <= var->max(); ++s) {
                 if (!var->domain().contains(s)) continue;
                 if (s < 1 || s > S_) continue;
                 int next = transition(q, (int)s);
-                if (next != 0 && reachable_to_[i][next]) {
-                    reachable_to_[i - 1][q] = true;
+                if (next != 0 && rt_in[next]) {
+                    rt_out[q] = 1;
                 }
             }
         }
@@ -136,15 +148,17 @@ PresolveResult RegularConstraint::presolve(Model& model) {
     // Filter domains
     for (size_t i = 0; i < n_; ++i) {
         auto* var = model.variable(var_ids_[i]);
+        const uint8_t* rf_i  = &reachable_from_[i * stride];
+        const uint8_t* rt_ip = &reachable_to_[(i + 1) * stride];
         std::vector<Domain::value_type> to_remove;
         for (auto s = var->min(); s <= var->max(); ++s) {
             if (!var->domain().contains(s)) continue;
             bool valid = false;
             if (s >= 1 && s <= S_) {
                 for (int q = 1; q <= Q_; ++q) {
-                    if (!reachable_from_[i][q]) continue;
+                    if (!rf_i[q]) continue;
                     int next = transition(q, (int)s);
-                    if (next != 0 && reachable_to_[i + 1][next]) {
+                    if (next != 0 && rt_ip[next]) {
                         valid = true;
                         break;
                     }
@@ -234,6 +248,8 @@ void RegularConstraint::rewind_to(int save_point) {
         trail_save_points_.pop_back();
     }
     // reachable sets will be recomputed on next compute_and_filter call
+    // バックトラックで変数状態が巻き戻るため、no-op キャッシュも無効化
+    prev_valid_ = false;
 }
 
 void RegularConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
@@ -266,158 +282,146 @@ void RegularConstraint::bump_activity(const Model& model, size_t trigger_var_idx
 bool RegularConstraint::compute_and_filter(Model& model) {
     const int S = S_;
     const int Q = Q_;
+    const size_t stride = reach_stride_;
 
-    // Forward pass
-    for (auto& v : reachable_from_) std::fill(v.begin(), v.end(), false);
-    reachable_from_[0][q0_] = true;
+    // ----- B) no-op early-out: 前回完了時の (min, max, size) と一致なら結果も同じ
+    if (prev_valid_) {
+        bool same = true;
+        for (size_t i = 0; i < n_; ++i) {
+            auto v_id = var_ids_[i];
+            if (model.var_min(v_id) != prev_min_[i] ||
+                model.var_max(v_id) != prev_max_[i] ||
+                model.var_size(v_id) != prev_size_[i]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
 
+    // ----- D) 各位置の有効シンボルを 1 度だけ展開（3 パスで再利用）
+    vals_buf_.clear();
+    vals_offset_[0] = 0;
     for (size_t i = 0; i < n_; ++i) {
         auto v_id = var_ids_[i];
         if (model.is_instantiated(v_id)) {
             auto s = model.value(v_id);
-            if (s >= 1 && s <= S) {
-                for (int q = 1; q <= Q; ++q) {
-                    if (!reachable_from_[i][q]) continue;
-                    int next = transition(q, (int)s);
-                    if (next != 0) reachable_from_[i + 1][next] = true;
-                }
-            }
+            if (s >= 1 && s <= S) vals_buf_.push_back(static_cast<int>(s));
         } else {
             auto& dom = model.variable(v_id)->domain();
             if (dom.is_bounds_only()) {
                 auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
                 auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
                 for (auto s = lo; s <= hi; ++s) {
-                    if (!dom.contains(s)) continue;
-                    for (int q = 1; q <= Q; ++q) {
-                        if (!reachable_from_[i][q]) continue;
-                        int next = transition(q, (int)s);
-                        if (next != 0) reachable_from_[i + 1][next] = true;
-                    }
+                    if (dom.contains(s)) vals_buf_.push_back(static_cast<int>(s));
                 }
             } else {
                 const auto& vals = dom.values_ref();
                 size_t dom_n = dom.size();
                 for (size_t vi = 0; vi < dom_n; ++vi) {
                     auto s = vals[vi];
-                    if (s < 1 || s > S) continue;
-                    for (int q = 1; q <= Q; ++q) {
-                        if (!reachable_from_[i][q]) continue;
-                        int next = transition(q, (int)s);
-                        if (next != 0) reachable_from_[i + 1][next] = true;
-                    }
+                    if (s >= 1 && s <= S) vals_buf_.push_back(static_cast<int>(s));
                 }
+            }
+        }
+        vals_offset_[i + 1] = vals_buf_.size();
+    }
+
+    // ----- C) Forward pass (フラット配列、std::memset で一括クリア)
+    std::memset(reachable_from_.data(), 0, reachable_from_.size());
+    reachable_from_[0 * stride + q0_] = 1;
+
+    for (size_t i = 0; i < n_; ++i) {
+        const uint8_t* rf_in  = &reachable_from_[i * stride];
+        uint8_t*       rf_out = &reachable_from_[(i + 1) * stride];
+        size_t vbeg = vals_offset_[i];
+        size_t vend = vals_offset_[i + 1];
+        for (size_t vi = vbeg; vi < vend; ++vi) {
+            int s = vals_buf_[vi];
+            const int* trans_row_base = transition_.data();
+            for (int q = 1; q <= Q; ++q) {
+                if (!rf_in[q]) continue;
+                int next = trans_row_base[q * (S + 1) + s];
+                if (next != 0) rf_out[next] = 1;
             }
         }
         bool any = false;
         for (int q = 1; q <= Q; ++q) {
-            if (reachable_from_[i + 1][q]) { any = true; break; }
+            if (rf_out[q]) { any = true; break; }
         }
-        if (!any) return false;
+        if (!any) {
+            prev_valid_ = false;
+            return false;
+        }
     }
 
-    // Backward pass
-    for (auto& v : reachable_to_) std::fill(v.begin(), v.end(), false);
-    for (int q = 1; q <= Q; ++q) {
-        if (accepting_[q] && reachable_from_[n_][q]) {
-            reachable_to_[n_][q] = true;
-        }
-    }
+    // ----- C) Backward pass
+    std::memset(reachable_to_.data(), 0, reachable_to_.size());
     {
+        uint8_t* rt_n = &reachable_to_[n_ * stride];
+        const uint8_t* rf_n = &reachable_from_[n_ * stride];
         bool any = false;
         for (int q = 1; q <= Q; ++q) {
-            if (reachable_to_[n_][q]) { any = true; break; }
+            if (accepting_[q] && rf_n[q]) {
+                rt_n[q] = 1;
+                any = true;
+            }
         }
-        if (!any) return false;
+        if (!any) {
+            prev_valid_ = false;
+            return false;
+        }
     }
 
     for (size_t i = n_; i > 0; --i) {
-        auto v_id = var_ids_[i - 1];
-        if (model.is_instantiated(v_id)) {
-            auto s = model.value(v_id);
-            if (s >= 1 && s <= S) {
-                for (int q = 1; q <= Q; ++q) {
-                    if (!reachable_from_[i - 1][q]) continue;
-                    int next = transition(q, (int)s);
-                    if (next != 0 && reachable_to_[i][next]) {
-                        reachable_to_[i - 1][q] = true;
-                    }
-                }
-            }
-        } else {
-            auto& dom = model.variable(v_id)->domain();
-            if (dom.is_bounds_only()) {
-                auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
-                auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
-                for (auto s = lo; s <= hi; ++s) {
-                    if (!dom.contains(s)) continue;
-                    for (int q = 1; q <= Q; ++q) {
-                        if (!reachable_from_[i - 1][q]) continue;
-                        int next = transition(q, (int)s);
-                        if (next != 0 && reachable_to_[i][next]) {
-                            reachable_to_[i - 1][q] = true;
-                        }
-                    }
-                }
-            } else {
-                const auto& vals = dom.values_ref();
-                size_t dom_n = dom.size();
-                for (size_t vi = 0; vi < dom_n; ++vi) {
-                    auto s = vals[vi];
-                    if (s < 1 || s > S) continue;
-                    for (int q = 1; q <= Q; ++q) {
-                        if (!reachable_from_[i - 1][q]) continue;
-                        int next = transition(q, (int)s);
-                        if (next != 0 && reachable_to_[i][next]) {
-                            reachable_to_[i - 1][q] = true;
-                        }
-                    }
+        const uint8_t* rf_prev = &reachable_from_[(i - 1) * stride];
+        const uint8_t* rt_in   = &reachable_to_[i * stride];
+        uint8_t*       rt_out  = &reachable_to_[(i - 1) * stride];
+        size_t vbeg = vals_offset_[i - 1];
+        size_t vend = vals_offset_[i];
+        const int* trans_row_base = transition_.data();
+        for (size_t vi = vbeg; vi < vend; ++vi) {
+            int s = vals_buf_[vi];
+            for (int q = 1; q <= Q; ++q) {
+                if (!rf_prev[q]) continue;
+                int next = trans_row_base[q * (S + 1) + s];
+                if (next != 0 && rt_in[next]) {
+                    rt_out[q] = 1;
                 }
             }
         }
     }
 
-    // Filter domains
+    // ----- C) Filter pass
     for (size_t i = 0; i < n_; ++i) {
         auto v_id = var_ids_[i];
         if (model.is_instantiated(v_id)) continue;
 
-        auto& dom = model.variable(v_id)->domain();
-        if (dom.is_bounds_only()) {
-            auto lo = std::max(model.var_min(v_id), (Domain::value_type)1);
-            auto hi = std::min(model.var_max(v_id), (Domain::value_type)S);
-            for (auto s = lo; s <= hi; ++s) {
-                if (!dom.contains(s)) continue;
-                bool valid = false;
-                for (int q = 1; q <= Q; ++q) {
-                    if (!reachable_from_[i][q]) continue;
-                    int next = transition(q, (int)s);
-                    if (next != 0 && reachable_to_[i + 1][next]) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if (!valid) model.enqueue_remove_value(v_id, s);
+        const uint8_t* rf_i  = &reachable_from_[i * stride];
+        const uint8_t* rt_ip = &reachable_to_[(i + 1) * stride];
+        size_t vbeg = vals_offset_[i];
+        size_t vend = vals_offset_[i + 1];
+        const int* trans_row_base = transition_.data();
+        for (size_t vi = vbeg; vi < vend; ++vi) {
+            int s = vals_buf_[vi];
+            bool valid = false;
+            for (int q = 1; q <= Q; ++q) {
+                if (!rf_i[q]) continue;
+                int next = trans_row_base[q * (S + 1) + s];
+                if (next != 0 && rt_ip[next]) { valid = true; break; }
             }
-        } else {
-            const auto& vals = dom.values_ref();
-            size_t dom_n = dom.size();
-            for (size_t vi = 0; vi < dom_n; ++vi) {
-                auto s = vals[vi];
-                if (s < 1 || s > S) continue;
-                bool valid = false;
-                for (int q = 1; q <= Q; ++q) {
-                    if (!reachable_from_[i][q]) continue;
-                    int next = transition(q, (int)s);
-                    if (next != 0 && reachable_to_[i + 1][next]) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if (!valid) model.enqueue_remove_value(v_id, s);
-            }
+            if (!valid) model.enqueue_remove_value(v_id, s);
         }
     }
+
+    // ----- B) キャッシュ更新（成功完了時のみ）
+    for (size_t i = 0; i < n_; ++i) {
+        auto v_id = var_ids_[i];
+        prev_min_[i]  = model.var_min(v_id);
+        prev_max_[i]  = model.var_max(v_id);
+        prev_size_[i] = model.var_size(v_id);
+    }
+    prev_valid_ = true;
 
     return true;
 }

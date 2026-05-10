@@ -2109,11 +2109,23 @@ private:
 
     size_t n_;  ///< 変数の数
 
-    /// 各位置で到達可能な状態集合（ビットベクタ）
-    /// reachable_from_[i] は位置 i に入る時点で到達可能な状態
-    /// reachable_to_[i] は位置 i から受理状態まで逆到達可能な状態
-    std::vector<std::vector<bool>> reachable_from_;
-    std::vector<std::vector<bool>> reachable_to_;
+    /// 各位置で到達可能な状態集合（フラット uint8 配列、キャッシュ局所性のため）
+    /// reachable_from_[i*reach_stride_ + q] は位置 i に入る時点で q が到達可能か
+    /// reachable_to_[i*reach_stride_ + q] は位置 i から q 経由で受理状態まで逆到達可能か
+    size_t reach_stride_ = 0;          ///< = Q_ + 1
+    std::vector<uint8_t> reachable_from_;
+    std::vector<uint8_t> reachable_to_;
+
+    /// 1 回の compute_and_filter 内で 3 パス共通の dom 値展開バッファ
+    /// vals_buf_[vals_offset_[i] .. vals_offset_[i+1]) に位置 i の有効シンボルを格納
+    std::vector<int> vals_buf_;
+    std::vector<size_t> vals_offset_;
+
+    /// no-op early-out 用キャッシュ: 前回 compute_and_filter 完了時の (min, max, size)
+    std::vector<Domain::value_type> prev_min_;
+    std::vector<Domain::value_type> prev_max_;
+    std::vector<size_t>             prev_size_;
+    bool                            prev_valid_ = false;
 
     /// Trail: save points where mark_constraint_dirty was called
     /// reachable sets are always recomputed from model state, no need to save them
