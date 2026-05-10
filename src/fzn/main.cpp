@@ -43,7 +43,8 @@ bool g_print_stats = false;
 bool g_verbose = false;
 bool g_no_nogood = false;
 bool g_no_elimination = false;
-bool g_community_analysis = false;
+// bool g_community_analysis = false;
+bool g_community_analysis = true;
 bool g_use_gac = false;
 
 void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* model = nullptr) {

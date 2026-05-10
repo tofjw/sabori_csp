@@ -107,6 +107,10 @@ public:
     bool is_enabled() const { return enabled_; }
     void set_enabled(bool e) { enabled_ = e; }
 
+    /// 統計収集の有効/無効。on_decision の last_decision_var_ 更新（タイブレーク用）には影響しない
+    bool is_collecting_stats() const { return collect_stats_; }
+    void set_collect_stats(bool e) { collect_stats_ = e; }
+
     const CommunityStructure& structure() const { return structure_; }
 
     /// サイズ上位 N コミュニティの ID リストを返す
@@ -115,8 +119,17 @@ public:
     /// 指定コミュニティの変数 ID リストを返す
     const std::vector<size_t>& community_vars(size_t community_id) const;
 
+    /// 直近で判定された変数のコミュニティ ID。判定がまだ無い場合は SIZE_MAX
+    size_t last_decision_community() const {
+        if (last_decision_var_ == SIZE_MAX || last_decision_var_ >= structure_.community.size()) {
+            return SIZE_MAX;
+        }
+        return structure_.community[last_decision_var_];
+    }
+
 private:
     bool enabled_ = false;
+    bool collect_stats_ = false;
     VIG vig_;
     CommunityStructure structure_;
     LocalityStats stats_;

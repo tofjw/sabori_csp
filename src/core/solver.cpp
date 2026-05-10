@@ -140,8 +140,8 @@ bool Solver::init_search(Model& model) {
     if (community_analysis_.is_enabled()) {
         community_analysis_.build_vig(model);
         community_analysis_.detect_communities(rng_);
-        community_analysis_.print_static_report(std::cerr);
-        update_bump_activity_flag();
+        if (verbose_) community_analysis_.print_static_report(std::cerr);
+        update_community_rotation_flag();
     }
     var_selector_.init_tracking(model);
     if (verbose_) {
@@ -314,14 +314,14 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
             stats_.restart_count++;
             if (community_analysis_.is_enabled()) {
-                community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
+                if (verbose_) community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
                 community_analysis_.reset_stats();
             }
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_);
+            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_, community_rotation_enabled_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
@@ -372,7 +372,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         }
     }
 
-    if (community_analysis_.is_enabled()) {
+    if (community_analysis_.is_enabled() && verbose_) {
         community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
     }
     if (verbose_) {
@@ -726,14 +726,14 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             stats_.restart_count++;
             if (community_analysis_.is_enabled()) {
-                community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
+                if (verbose_) community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
                 community_analysis_.reset_stats();
             }
             current_best_assignment_ = select_best_assignment();
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_);
+            var_selector_.select_restart_pivot(model, activity_, community_analysis_, stats_.restart_count, rng_, community_rotation_enabled_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
@@ -803,7 +803,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
         }
     }
 
-    if (community_analysis_.is_enabled()) {
+    if (community_analysis_.is_enabled() && verbose_) {
         community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
     }
     if (verbose_) {
@@ -837,7 +837,8 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             }
 
             size_t var_idx = var_selector_.select(model, activity_, temporal_activity_,
-                                                  ng_usage_bloom_, activity_first_, rng_);
+                                                  ng_usage_bloom_, activity_first_, rng_,
+                                                  &community_analysis_);
 
             if (var_idx == SIZE_MAX) {
                 handle_solution(model, callback, find_all, result, ascending);
@@ -1351,34 +1352,66 @@ void Solver::rescale_activities() {
     activity_inc_ = 1.0;
 }
 
-void Solver::update_bump_activity_flag() {
+void Solver::update_community_rotation_flag() {
     const auto& s = community_analysis_.structure();
     // modularity が小さい → クラスタ構造が弱い
-    if (s.modularity < 0.3) {
-        bump_activity_enabled_ = false;
+    const double min_modularity = 0.3;
+    if (s.modularity < min_modularity) {
+        community_rotation_enabled_ = false;
         if (verbose_) {
-            std::cerr << "% [verbose] bump_activity disabled (modularity="
-                      << s.modularity << " < 0.3)\n";
+            std::cerr << "% [verbose] community rotation disabled (modularity="
+                      << s.modularity << " < " << min_modularity << ")\n";
         }
         return;
     }
-    // 最大クラスタが2番目の5倍を超える → 実質1クラスタ
-    const auto& tops = community_analysis_.top_communities(2);
-    if (tops.size() >= 2) {
+
+    const auto& tops = community_analysis_.top_communities(3);
+
+    // コミュニティ数が不十分
+    if (tops.size() < 3) {
+        community_rotation_enabled_ = false;
+        if (verbose_) {
+            std::cerr << "% [verbose] community rotation disabled (tops.size="
+                      << tops.size() << " < 3)\n";
+        }
+        return;
+    }
+    
+    // 最大クラスタが2,3番目の合計を超える → 実質1クラスタ
+     if (tops.size() >= 3) {
         size_t largest = community_analysis_.community_vars(tops[0]).size();
         size_t second = community_analysis_.community_vars(tops[1]).size();
-        if (second > 0 && largest > second * 5) {
-            bump_activity_enabled_ = false;
+        size_t third = community_analysis_.community_vars(tops[2]).size();
+        if (largest > second + third) {
+            community_rotation_enabled_ = false;
             if (verbose_) {
-                std::cerr << "% [verbose] bump_activity disabled (largest_cluster="
-                          << largest << " > 5 * second=" << second << ")\n";
+                std::cerr << "% [verbose] community rotation disabled (cluster size="
+                          << largest << ", " << second << ", " << third << ")\n";
             }
             return;
         }
     }
-    bump_activity_enabled_ = true;
+
+#if 0
+    // 4) VIG が極端に疎 (yumi: 0.12 edges/var, pentominoes: 0.15) →
+    //    変数間の相互作用が薄く、コミュニティ分解の精度が低い。
+    //    bnn-planner (0.22 edges/var) は構造的にも均等な大コミュニティが
+    //    並ぶ意味のある分解なので、閾値は 0.20 未満に絞る。
+    size_t total_edges = community_analysis_.structure_.intra_edges + structure_.inter_edges;
+    if (vig_.num_vars > 1000 && total_edges > 0) {
+        const double min_edge_density = 0.20;
+        double edge_density = static_cast<double>(total_edges) / vig_.num_vars;
+        if (edge_density < min_edge_density) {
+            std::cerr << "% [verbose] community rotation disabled (edge density ="
+                      << edge_density << " < " << min_edge_density << ")\n";
+            return;
+        }
+    }
+#endif
+    
+    community_rotation_enabled_ = true;
     if (verbose_) {
-        std::cerr << "% [verbose] bump_activity enabled (modularity="
+        std::cerr << "% [verbose] community rotation enabled (modularity="
                   << s.modularity << ")\n";
     }
 }
@@ -1512,7 +1545,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
             }
-            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+            if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             if (!propagate_instantiate(model, var_idx, prev_min, prev_max)) {
@@ -1525,7 +1558,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.set_min(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
             }
-            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+            if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_min
@@ -1574,7 +1607,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.set_max(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
             }
-            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+            if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             // 確定した場合は on_instantiate、そうでなければ on_set_max
@@ -1624,7 +1657,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return PropagationResult::Conflict;
             }
-            if (community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
+            if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
             if (!was_instantiated && model.is_instantiated(var_idx)) {

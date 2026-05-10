@@ -156,7 +156,8 @@ size_t VariableSelector::select(const Model& model,
                                  const std::vector<int>& temporal_activity,
                                  const Bloom512& ng_usage_bloom,
                                  bool activity_first,
-                                 std::mt19937& rng) {
+                                 std::mt19937& rng,
+                                 const CommunityAnalysis* community_analysis) {
     // コミュニティローテーション: リスタート後の最初の1回だけ優先変数を使用
     if (community_first_var_ != SIZE_MAX) {
         size_t var = community_first_var_;
@@ -166,15 +167,21 @@ size_t VariableSelector::select(const Model& model,
         }
     }
 
+    // タイブレークで使う「直近判定変数のコミュニティ」を 1 度だけ算出
+    size_t target_community = SIZE_MAX;
+    if (community_analysis != nullptr && community_analysis->is_enabled()) {
+        target_community = community_analysis->last_decision_community();
+    }
+
     // 線形スキャン: decision vars → defined vars → unconstrained vars
     size_t result = select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
-                                  rng, 0, decision_unassigned_end_);
+                                  rng, 0, decision_unassigned_end_, community_analysis, target_community);
     if (result != SIZE_MAX) return result;
     result = select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
-                           rng, decision_var_end_, defined_unassigned_end_);
+                           rng, decision_var_end_, defined_unassigned_end_, community_analysis, target_community);
     if (result != SIZE_MAX) return result;
     return select_linear(model, activity, temporal_activity, ng_usage_bloom, activity_first,
-                         rng, defined_var_end_, unconstrained_unassigned_end_);
+                         rng, defined_var_end_, unconstrained_unassigned_end_, community_analysis, target_community);
 }
 
 size_t VariableSelector::select_linear(const Model& model,
@@ -183,7 +190,9 @@ size_t VariableSelector::select_linear(const Model& model,
                                         const Bloom512& ng_usage_bloom,
                                         bool activity_first,
                                         std::mt19937& rng,
-                                        size_t begin, size_t end) {
+                                        size_t begin, size_t end,
+                                        const CommunityAnalysis* community_analysis,
+                                        size_t target_community) {
     size_t n = end - begin;
     if (n == 0) return SIZE_MAX;
 
@@ -193,6 +202,12 @@ size_t VariableSelector::select_linear(const Model& model,
     int best_temporal = -1;
     int best_ng_overlap = -1;
     bool use_bloom = !ng_usage_bloom.empty();
+    // 同一コミュニティ優先タイブレーク: ターゲットがある時のみ有効
+    const std::vector<size_t>* var_community = nullptr;
+    if (community_analysis != nullptr && community_analysis->is_enabled()
+        && target_community != SIZE_MAX) {
+        var_community = &community_analysis->structure().community;
+    }
 
     size_t start = rng() % n;
     size_t tie_count = 0;
@@ -239,6 +254,20 @@ size_t VariableSelector::select_linear(const Model& model,
             }
         }
 
+        // 同一コミュニティ優先タイブレーク: ng_overlap でも決着しなかった場合
+        if (tied && var_community != nullptr && best_idx != SIZE_MAX
+            && i < var_community->size() && best_idx < var_community->size()
+            && rng() % 2 == 0) {
+            bool i_match = (*var_community)[i] == target_community;
+            bool best_match = (*var_community)[best_idx] == target_community;
+            if (i_match && !best_match) {
+                better = true;
+                tied = false;
+            } else if (!i_match && best_match) {
+                tied = false;
+            }
+        }
+
         if (better) {
             best_idx = i;
             min_domain_size = domain_size;
@@ -268,12 +297,38 @@ size_t pick_pivot(const std::vector<size_t>& candidates,
 
     // 未使用 (activity==0) の変数があればそれらを優先
     std::vector<size_t> untouched;
+    double min_activity = 0.0;
     for (size_t v : candidates) {
-        if (activity[v] == 0.0) untouched.push_back(v);
+        if (activity[v] == 0.0)
+            continue;
+
+        if (min_activity == 0.0) {
+            min_activity = activity[v];
+        }
+        else if (activity[v] < min_activity) {
+            min_activity = activity[v];
+        }
     }
-    const std::vector<size_t>& pool = untouched.empty() ? candidates : untouched;
-    std::uniform_int_distribution<size_t> ud(0, pool.size() - 1);
-    return pool[ud(rng)];
+    if (min_activity == 0.0) {
+        std::uniform_int_distribution<size_t> iud(0, candidates.size() - 1);
+        return candidates[iud(rng)];
+    }
+
+    double total = 0.0;
+    for (size_t v : candidates) {
+        total += (activity[v] == 0.0 ? min_activity : activity[v]);
+    }
+
+    std::uniform_real_distribution<double> ud(0.0, total);
+    double r = ud(rng);
+
+    double cur = 0.0;
+    for (size_t v : candidates) {
+        cur += (activity[v] == 0.0 ? min_activity : activity[v]);
+        if (cur > r)
+            return v;
+    }
+    return candidates[candidates.size() - 1];
 }
 }  // namespace
 
@@ -281,7 +336,8 @@ void VariableSelector::select_restart_pivot(const Model& model,
                                              const std::vector<double>& activity,
                                              const CommunityAnalysis& community_analysis,
                                              size_t restart_count,
-                                             std::mt19937& rng) {
+                                             std::mt19937& rng,
+                                             bool use_community_rotation) {
     community_first_var_ = SIZE_MAX;
 
     // ターゲット変数集合（コミュニティ or グループ）を集める
@@ -291,8 +347,9 @@ void VariableSelector::select_restart_pivot(const Model& model,
         ? static_cast<size_t>(std::log(static_cast<double>(decision_var_end_)))
         : 1;
     if (num_groups < 1) num_groups = 1;
+    if (num_groups < 5 && decision_var_end_ >= 5) num_groups = 5;
 
-    if (community_analysis.is_enabled()) {
+    if (use_community_rotation && community_analysis.is_enabled()) {
         const auto& tops = community_analysis.top_communities(num_groups);
         if (!tops.empty()) {
             size_t target_comm = tops[restart_count % tops.size()];

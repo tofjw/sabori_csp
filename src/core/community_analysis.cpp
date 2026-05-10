@@ -208,25 +208,30 @@ void CommunityAnalysis::detect_communities(std::mt19937& rng, size_t max_iterati
 void CommunityAnalysis::on_decision(size_t var_idx) {
     if (var_idx >= structure_.community.size()) return;
 
-    stats_.total_decisions++;
-    size_t comm = structure_.community[var_idx];
+    if (collect_stats_) {
+        stats_.total_decisions++;
+        size_t comm = structure_.community[var_idx];
 
-    if (comm < stats_.community_decision_count.size()) {
-        stats_.community_decision_count[comm]++;
-    }
+        if (comm < stats_.community_decision_count.size()) {
+            stats_.community_decision_count[comm]++;
+        }
 
-    if (last_decision_var_ != SIZE_MAX && last_decision_var_ < structure_.community.size()) {
-        if (structure_.community[last_decision_var_] == comm) {
-            stats_.same_community_decisions++;
-        } else {
-            stats_.cross_community_decisions++;
+        if (last_decision_var_ != SIZE_MAX && last_decision_var_ < structure_.community.size()) {
+            if (structure_.community[last_decision_var_] == comm) {
+                stats_.same_community_decisions++;
+            } else {
+                stats_.cross_community_decisions++;
+            }
         }
     }
 
+    // last_decision_var_ はタイブレーク（同一コミュニティ優先）で参照されるため
+    // 統計収集が無効でも常に更新する
     last_decision_var_ = var_idx;
 }
 
 void CommunityAnalysis::on_propagation(size_t changed_var, size_t source_var) {
+    if (!collect_stats_) return;
     if (changed_var >= structure_.community.size() ||
         source_var >= structure_.community.size()) return;
 

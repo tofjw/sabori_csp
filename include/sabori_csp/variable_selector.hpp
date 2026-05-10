@@ -57,19 +57,21 @@ public:
                   const std::vector<int>& temporal_activity,
                   const Bloom512& ng_usage_bloom,
                   bool activity_first,
-                  std::mt19937& rng);
+                  std::mt19937& rng,
+                  const CommunityAnalysis* community_analysis = nullptr);
 
     /**
      * @brief リスタート後に起点変数を選択（探索多様化）
      *
-     * コミュニティ分析が有効ならコミュニティベースのローテーション、
+     * コミュニティ分析が有効かつ use_community_rotation が true ならコミュニティベースのローテーション、
      * そうでなければ var_order_ を均等グループに分割してローテーション。
      */
     void select_restart_pivot(const Model& model,
                                const std::vector<double>& activity,
                                const CommunityAnalysis& community_analysis,
                                size_t restart_count,
-                               std::mt19937& rng);
+                               std::mt19937& rng,
+                               bool use_community_rotation = true);
 
     // ===== パーティション管理 =====
 
@@ -133,7 +135,9 @@ private:
                          const Bloom512& ng_usage_bloom,
                          bool activity_first,
                          std::mt19937& rng,
-                         size_t begin, size_t end);
+                         size_t begin, size_t end,
+                         const CommunityAnalysis* community_analysis,
+                         size_t target_community);
 
     // コミュニティローテーション
     size_t community_first_var_ = SIZE_MAX;
