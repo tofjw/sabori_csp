@@ -238,9 +238,6 @@ size_t VariableSelector::select_linear(const Model& model,
                 } else if (domain_size == min_domain_size && activity[i] == best_activity) {
                     tied = true;
                 }
-                else if (domain_size == min_domain_size) {
-                    tied = true;
-                }
             }
         }
 
