@@ -333,13 +333,42 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Temporal activity リセット
             std::fill(temporal_activity_.begin(), temporal_activity_.end(), 0);
 
-            // 直近改善を多く生んだモードを優先的に再試行（重み付きサンプリング + 指数減衰）
-            for (double& r : mode_reward_) {
-                r = std::max(r * kModeRewardDecay, kModeRewardFloor);
+            // restart 前: 報酬更新と p 抽選
+            //   signal = 改善あり ? 2.0 : 1/(1+restart_max_depth_)
+            //   r ← α*r + (1-α)*bucket_signal  (α = kModeRewardDecay)
+            //   bucket_signal: active = signal, 隣接 = 0.1*signal, それ以外 = 0
+            {
+                double signal = improvement_in_restart_
+                    ? 2.0
+                    : 1.0 / static_cast<double>(1 + restart_max_depth_);
+                improvement_in_restart_ = false;
+                restart_max_depth_ = 0;
+                double total = 0.0;
+                for (size_t i = 0; i < kModeGridSize; ++i) {
+                    double bucket_signal = 0.0;
+                    if (i == current_p_idx_) {
+                        bucket_signal = signal;
+                    } else if (i + 1 == current_p_idx_ || i == current_p_idx_ + 1) {
+                        bucket_signal = 0.1 * signal;
+                    }
+                    mode_reward_[i] = kModeRewardDecay * mode_reward_[i]
+                                    + (1.0 - kModeRewardDecay) * bucket_signal;
+                    mode_reward_[i] = std::max(mode_reward_[i], kModeRewardFloor);
+                    total += mode_reward_[i];
+                }
+                std::uniform_real_distribution<double> mode_dist(0.0, total);
+                double pick = mode_dist(rng_);
+                double acc = 0.0;
+                current_p_idx_ = kModeGridSize - 1;
+                for (size_t i = 0; i < kModeGridSize; ++i) {
+                    acc += mode_reward_[i];
+                    if (pick < acc) {
+                        current_p_idx_ = i;
+                        break;
+                    }
+                }
+                mix_p_ = static_cast<double>(current_p_idx_) / static_cast<double>(kModeGridSize - 1);
             }
-            std::uniform_real_distribution<double> mode_dist(
-                0.0, mode_reward_[0] + mode_reward_[1]);
-            activity_first_ = (mode_dist(rng_) >= mode_reward_[0]);
 
             // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
             var_selector_.shuffle(rng_);
@@ -420,7 +449,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     (!minimize_ && obj_val > *best_objective_);
 
                 if (improved) {
-                    mode_reward_[activity_first_ ? 1 : 0] += 1.0;
+                    improvement_in_restart_ = true;
                     best_objective_ = obj_val;
                     best_solution_ = found_solution;
 
@@ -555,7 +584,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 (!minimize_ && probe_obj > *best_objective_);
 
                             if (probe_improved) {
-                                mode_reward_[activity_first_ ? 1 : 0] += 1.0;
+                                improvement_in_restart_ = true;
                                 best_objective_ = probe_obj;
                                 best_solution_ = probe_solution;
 
@@ -742,13 +771,42 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // Activity 減衰
             decay_activities();
 
-            // 直近改善を多く生んだモードを優先的に再試行（重み付きサンプリング + 指数減衰）
-            for (double& r : mode_reward_) {
-                r = std::max(r * kModeRewardDecay, kModeRewardFloor);
+            // restart 前: 報酬更新と p 抽選
+            //   signal = 改善あり ? 2.0 : 1/(1+restart_max_depth_)
+            //   r ← α*r + (1-α)*bucket_signal  (α = kModeRewardDecay)
+            //   bucket_signal: active = signal, 隣接 = 0.1*signal, それ以外 = 0
+            {
+                double signal = improvement_in_restart_
+                    ? 2.0
+                    : 1.0 / static_cast<double>(1 + restart_max_depth_);
+                improvement_in_restart_ = false;
+                restart_max_depth_ = 0;
+                double total = 0.0;
+                for (size_t i = 0; i < kModeGridSize; ++i) {
+                    double bucket_signal = 0.0;
+                    if (i == current_p_idx_) {
+                        bucket_signal = signal;
+                    } else if (i + 1 == current_p_idx_ || i == current_p_idx_ + 1) {
+                        bucket_signal = 0.1 * signal;
+                    }
+                    mode_reward_[i] = kModeRewardDecay * mode_reward_[i]
+                                    + (1.0 - kModeRewardDecay) * bucket_signal;
+                    mode_reward_[i] = std::max(mode_reward_[i], kModeRewardFloor);
+                    total += mode_reward_[i];
+                }
+                std::uniform_real_distribution<double> mode_dist(0.0, total);
+                double pick = mode_dist(rng_);
+                double acc = 0.0;
+                current_p_idx_ = kModeGridSize - 1;
+                for (size_t i = 0; i < kModeGridSize; ++i) {
+                    acc += mode_reward_[i];
+                    if (pick < acc) {
+                        current_p_idx_ = i;
+                        break;
+                    }
+                }
+                mix_p_ = static_cast<double>(current_p_idx_) / static_cast<double>(kModeGridSize - 1);
             }
-            std::uniform_real_distribution<double> mode_dist(
-                0.0, mode_reward_[0] + mode_reward_[1]);
-            activity_first_ = (mode_dist(rng_) >= mode_reward_[0]);
 
             // スキャン順シャッフル
             var_selector_.shuffle(rng_);
@@ -835,9 +893,15 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             if (current_depth > stats_.max_depth) {
                 stats_.max_depth = current_depth;
             }
+            if (current_depth > restart_max_depth_) {
+                restart_max_depth_ = current_depth;
+            }
 
+            // 決定ごとに mix_p_ で activity_first を抽選
+            // 1024 段階で離散化（rng() コスト最小、グリッド解像度より細かい）
+            bool activity_first = (static_cast<double>(rng_() & 1023) < mix_p_ * 1024.0);
             size_t var_idx = var_selector_.select(model, activity_, temporal_activity_,
-                                                  ng_usage_bloom_, activity_first_, rng_,
+                                                  ng_usage_bloom_, activity_first, rng_,
                                                   &community_analysis_);
 
             if (var_idx == SIZE_MAX) {
@@ -1498,7 +1562,6 @@ void Solver::save_partial_assignment(const Model& model) {
     }
 
     // 前回より多い → 置き換え（未 instantiate の変数は前回の値を引き継ぐ）
-    mode_reward_[activity_first_ ? 1 : 0] += 1.0;
     best_num_instantiated_ = num_instantiated;
     size_t n_vars = model.variables().size();
     for (size_t i = 0; i < n_vars; ++i) {

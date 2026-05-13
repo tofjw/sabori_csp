@@ -207,11 +207,15 @@ public:
     void set_activity_selection(bool enabled) { activity_selection_ = enabled; }
 
     /**
-     * @brief Activity 優先の変数選択を有効/無効にする
-     * true: Activity → ドメインサイズ
-     * false: ドメインサイズ → Activity（デフォルト）
+     * @brief Activity 優先と MRV 優先の混合比を固定する
+     * enabled = true は mix_p_ = 1.0 (常に Activity 優先)
+     * enabled = false は mix_p_ = 0.0 (常に MRV 優先)
+     * 注意: リスタートごとの適応サンプリングが効くため、初期値としてのみ機能する
      */
-    void set_activity_first(bool enabled) { activity_first_ = enabled; }
+    void set_activity_first(bool enabled) {
+        current_p_idx_ = enabled ? (kModeGridSize - 1) : 0;
+        mix_p_ = enabled ? 1.0 : 0.0;
+    }
 
     /**
      * @brief Activity スコアを取得（最適化の引き継ぎ用）
@@ -490,17 +494,23 @@ private:
      */
     void sync_nogood_stats();
 
+
     // ===== メンバ変数 =====
 
     // 設定
     bool nogood_learning_ = true;
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
-    bool activity_first_ = false;  // false: MRV優先, true: Activity優先
-    // モード別の直近改善報酬 (index: activity_first ? 1 : 0)
-    double mode_reward_[2] = {1.0, 1.0};
+    // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理
+    // decision ごとに rng で activity_first を抽選し、reward は restart で抽選した bucket + 隣接に加算
+    static constexpr size_t kModeGridSize = 5;
     static constexpr double kModeRewardDecay = 0.5;
     static constexpr double kModeRewardFloor = 0.1;
+    double mix_p_ = 0.5;             // 現在の混合比（restart で再サンプル）
+    size_t current_p_idx_ = 2;       // mode_reward_ のどのバケットを使っているか
+    double mode_reward_[kModeGridSize] = {1.0, 1.0, 1.0, 1.0, 1.0};
+    size_t restart_max_depth_ = 0;   // 直近 restart 内で到達した最大探索深さ
+    bool improvement_in_restart_ = false;  // この restart 内で SAT/probe による改善が起きたか
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 
