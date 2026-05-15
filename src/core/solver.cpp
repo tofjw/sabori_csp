@@ -84,10 +84,49 @@ bool Solver::init_search(Model& model) {
             if (model.is_instantiated(vi))
                 continue;
 
-            if (!model.is_no_bisect(vi))
+            // ある程度範囲が広いものに限る
+            if (model.presolve_max(vi) - model.presolve_min(vi) < 50)
                 continue;
 
-            if (model.presolve_max(vi) - model.presolve_min(vi) <= 3)
+            // 勾配が役立ちそうな制約の選択
+            bool has_lin = false;
+            for (const auto& w : model.constraints_for_var(vi)) {
+                const auto& cname = all_constraints[w.constraint_idx]->name();
+                if (cname.compare(0, 8, "int_lin_") == 0
+                    || cname.compare(0, 7, "int_min") == 0
+                    || cname.compare(0, 7, "int_max") == 0
+                    || cname.compare(0, 9, "int_times") == 0
+                    || cname.compare(0, 9, "int_div") == 0
+                    || cname.compare(0, 14, "fzn_cumulative") == 0
+                    || cname.compare(0, 9, "fzn_diffn") == 0
+                    || cname.compare(0, 19, "fzn_diffn_nonstrict") == 0
+                    || cname.compare(0, 21, "int_element_monotonic") == 0)
+                    {
+                        // forbidden
+                        static std::string eq_reif = "_eq_reif";
+                        if (cname.size() > eq_reif.size()
+                            && cname.compare(cname.size() - eq_reif.size(), eq_reif.size(), eq_reif) == 0)
+                            break;
+
+                        if (cname.compare(0, 21, "fzn_all_different_int") == 0)
+                            break;
+
+                        // ignore
+                        static std::string reif = "_reif";
+                        if (cname.size() > reif.size()
+                            && cname.compare(cname.size() - reif.size(), reif.size(), reif) == 0)
+                            continue;
+
+                        static std::string imp = "_imp";
+                        if (cname.size() > imp.size()
+                            && cname.compare(cname.size() - imp.size(), imp.size(), imp) == 0)
+                            continue;
+
+                        has_lin = true;
+                        break;
+                    }
+            }
+            if (!has_lin)
                 continue;
 
             gradient_eligible_vars_.push_back(vi);
@@ -471,10 +510,50 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         }
                     }
 
-                    // probe 中に勾配ヒントが消費されないよう、ここでは未設定にしておく
-                    // （勾配の計算と変数選択は probe 完了後に行う）
+                    // 疑似勾配の計算と変数選択（probe にもヒントを与える）
+                    // 改善差分から方向を更新し、対象変数をランダムに1つ選ぶ。
+                    // 古い値が残らないよう、再選択できなかった場合は未設定状態にする。
                     gradient_var_idx_ = SIZE_MAX;
                     gradient_direction_ = 0;
+                    double min_activity = -1.0;
+                    size_t max_var_size = 0;
+                    if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
+                        const auto& variables = model.variables();
+                        if (gradient_.empty()) {
+                            gradient_.assign(variables.size(), 0.0);
+                        }
+                        for (size_t vi : gradient_eligible_vars_) {
+                            if (prev_improving_solution_[vi] != kNoValue &&
+                                current_best_assignment_[vi] != kNoValue) {
+                                double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
+                                if (delta < 0)
+                                    gradient_[vi] = -1.0;
+                                else if (delta > 0.0)
+                                    gradient_[vi] = 1.0;
+                                else
+                                    gradient_[vi] = 0.0;
+                            }
+                        }
+                        std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
+                        size_t start_idx = idist(rng_);
+                        for (size_t i = 0; i < gradient_eligible_vars_.size(); i++) {
+                            auto idx = (start_idx + i) % gradient_eligible_vars_.size();
+                            size_t vi = gradient_eligible_vars_[idx];
+                            double g = gradient_[vi];
+                            if (g != 0.0
+                                && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                                && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
+                                if ((min_activity < 0 || activity_[vi] < min_activity)
+                                    || (activity_[vi] == min_activity && max_var_size < model.var_size(vi))) {
+                                    gradient_var_idx_ = vi;
+                                    gradient_direction_ = (g > 0.0) ? +1 : -1;
+                                    gradient_ref_val_ = current_best_assignment_[vi];
+                                    min_activity = activity_[vi];
+                                    max_var_size = model.var_size(vi);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // root へバックトラック
@@ -687,7 +766,11 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 }
                 // --- end improvement probe ---
 
-                // 疑似勾配の計算と変数選択（probe で消費されないよう probe 完了後に行う）
+                // 疑似勾配の計算と変数選択
+                gradient_var_idx_ = SIZE_MAX;
+                gradient_direction_ = 0;
+                double min_activity = -1.0;
+                size_t max_var_size = 0;
                 if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
                     const auto& variables = model.variables();
                     if (gradient_.empty()) {
@@ -705,18 +788,27 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                                 gradient_[vi] = 0.0;
                         }
                     }
-                    // 勾配対象変数から1つランダムに選択
                     std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
-                    size_t vi = gradient_eligible_vars_[idist(rng_)];
-                    double g = gradient_[vi];
-                    if (g != 0.0
-                        && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
-                        && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
-                        gradient_var_idx_ = vi;
-                        gradient_direction_ = (g > 0.0) ? +1 : -1;
-                        gradient_ref_val_ = current_best_assignment_[vi];
+                    size_t start_idx = idist(rng_);
+                    for (size_t i = 0; i < gradient_eligible_vars_.size(); i++) {
+                        auto idx = (start_idx + i) % gradient_eligible_vars_.size();
+                        size_t vi = gradient_eligible_vars_[idx];
+                        double g = gradient_[vi];
+                        if (g != 0.0
+                            && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                            && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
+                            if ((min_activity < 0 || activity_[vi] < min_activity)
+                                || (activity_[vi] == min_activity && max_var_size < model.var_size(vi))) {
+                                gradient_var_idx_ = vi;
+                                gradient_direction_ = (g > 0.0) ? +1 : -1;
+                                gradient_ref_val_ = current_best_assignment_[vi];
+                                min_activity = activity_[vi];
+                                max_var_size = model.var_size(vi);
+                            }
+                        }
                     }
                 }
+
                 prev_improving_solution_ = current_best_assignment_;
 
                 var_selector_.init_tracking(model);
@@ -813,23 +905,9 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             var_selector_.init_tracking(model);
             unassigned_trail_.clear();
 
-            // 解が見つからなかった場合: 勾配有意な変数からランダムに選んで適用
-            if (!gradient_eligible_vars_.empty() && !gradient_.empty()) {
-                gradient_var_idx_ = SIZE_MAX;
-                gradient_direction_ = 0;
-
-                std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
-                size_t vi = gradient_eligible_vars_[idist(rng_)];
-                double g = gradient_[vi];
-                if (g != 0.0
-                    && current_best_assignment_[vi] != kNoValue
-                    && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
-                    && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
-                    gradient_var_idx_ = vi;
-                    gradient_direction_ = (g > 0.0) ? +1 : -1;
-                    gradient_ref_val_ = current_best_assignment_[vi];
-                }
-            }
+            // 解が見つからなかった場合: 探索を多様化するため勾配を使わない
+            gradient_var_idx_ = SIZE_MAX;
+            gradient_direction_ = 0;
 
             if (verbose_) {
                 std::cerr << "% [verbose] restart #" << stats_.restart_count
@@ -1134,9 +1212,19 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
         stats_.bisect_count++;
         auto mid = prev_min + (prev_max - prev_min) / 2;
 
-        // ヒント解がある場合はそちら側を優先、なければランダム
+        // 勾配ヒント > ベスト解 > ランダム の優先順位で分岐方向を決定
         bool right_first;
-        if (current_best_assignment_[var_idx] != kNoValue) {
+        if (var_idx == gradient_var_idx_ && gradient_direction_ != 0) {
+            // gradient_direction_ は gradient_ref_val_ を基準とした方向。
+            // 右半分 [mid+1, prev_max] / 左半分 [prev_min, mid] のうち、
+            // ref_val を超える/下回る値を含む側を先に試す。
+            if (gradient_direction_ > 0) {
+                right_first = (gradient_ref_val_ < prev_max);
+            } else {
+                right_first = (gradient_ref_val_ <= prev_min);
+            }
+            gradient_var_idx_ = SIZE_MAX;  // 消費（enumerate 経路と揃える）
+        } else if (current_best_assignment_[var_idx] != kNoValue) {
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {
