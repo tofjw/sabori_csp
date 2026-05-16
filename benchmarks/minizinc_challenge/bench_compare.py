@@ -391,6 +391,7 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
     start = time.monotonic()
     proc = None
     try:
+        obj = None
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, start_new_session=True, cwd=cwd)
         try:
@@ -402,7 +403,6 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
             kill_process_tree(proc)
             stdout, _ = proc.communicate()
 
-            obj = None
             if stdout:
                 for line in reversed(stdout.split('\n')):
                     m = re.search(r'_objective\s*=\s*(-?\d+)', line)
@@ -430,7 +430,10 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
         elif elapsed >= TIMEOUT * 0.9:
             # minizinc 自身の -t で時間切れになり、何も解を出さずに終了した
             # ケース（UNKNOWN マーカーすら出さないこともある）は TIMEOUT 扱い。
-            status = "TIMEOUT"
+            if obj is not None:
+                status = "SOL"
+            else:
+                status = "TIMEOUT"
         else:
             status = "UNKNOWN"
 
