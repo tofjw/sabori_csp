@@ -251,20 +251,6 @@ size_t VariableSelector::select_linear(const Model& model,
             }
         }
 
-        // 同一コミュニティ優先タイブレーク: ng_overlap でも決着しなかった場合
-        if (tied && var_community != nullptr && best_idx != SIZE_MAX
-            && i < var_community->size() && best_idx < var_community->size()
-            && rng() % 2 == 0) {
-            bool i_match = (*var_community)[i] == target_community;
-            bool best_match = (*var_community)[best_idx] == target_community;
-            if (i_match && !best_match) {
-                better = true;
-                tied = false;
-            } else if (!i_match && best_match) {
-                tied = false;
-            }
-        }
-
         if (better) {
             best_idx = i;
             min_domain_size = domain_size;
