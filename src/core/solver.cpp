@@ -318,7 +318,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, stats_.restart_count, rng_);
+            var_selector_.select_restart_pivot(model, activity_, rng_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
@@ -775,7 +775,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             ng_usage_bloom_ = Bloom512{};
 
             // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, stats_.restart_count, rng_);
+            var_selector_.select_restart_pivot(model, activity_, rng_);
 
             // NoGood GC + ブルームフィルタ再構築
             nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);

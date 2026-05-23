@@ -317,7 +317,6 @@ size_t pick_pivot(const std::vector<size_t>& candidates,
 
 void VariableSelector::select_restart_pivot(const Model& model,
                                              const std::vector<double>& activity,
-                                             size_t /*restart_count*/,
                                              std::mt19937& rng) {
     // 未割当の決定変数のうち最小ドメインサイズ (MRV) のものを集めて
     // activity 重み付きランダムに 1 つ選ぶ。

@@ -68,7 +68,6 @@ public:
      */
     void select_restart_pivot(const Model& model,
                                const std::vector<double>& activity,
-                               size_t restart_count,
                                std::mt19937& rng);
 
     // ===== パーティション管理 =====
