@@ -1,10 +1,15 @@
 /**
  * @file community_analysis.hpp
- * @brief コミュニティ構造・探索局所性の分析機能
+ * @brief コミュニティ構造・探索局所性の分析機能（診断専用）
  *
  * Variable Interaction Graph (VIG) を構築し、Label Propagation で
  * コミュニティを検出。探索中の判定・伝播の局所性メトリクスを収集する。
- * CLI フラグ `-c` で有効化。
+ * CLI フラグ `-c` で有効化（デフォルト off）。
+ *
+ * @note **診断専用機能**。複数のベンチマークで探索性能の改善は確認できなかった
+ *       （VSIDS/activity が同等の情報を暗黙的に学習するため）。問題構造の
+ *       観察や張り付き状態の診断ツールとしてのみ利用すること。
+ *       探索ロジックでデフォルト有効化しないこと。
  */
 #ifndef SABORI_CSP_COMMUNITY_ANALYSIS_HPP
 #define SABORI_CSP_COMMUNITY_ANALYSIS_HPP
@@ -59,7 +64,11 @@ struct LocalityStats {
 };
 
 /**
- * @brief コミュニティ構造・探索局所性の分析
+ * @brief コミュニティ構造・探索局所性の分析（診断専用）
+ *
+ * @warning 探索性能の改善目的では使用しないこと。ベンチマーク上、
+ *          VSIDS/activity 主導の判定に対して有意な高速化は得られていない。
+ *          問題構造の観察用ツールとしてのみ利用する。
  */
 class CommunityAnalysis {
 public:

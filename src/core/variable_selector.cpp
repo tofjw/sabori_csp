@@ -317,58 +317,25 @@ size_t pick_pivot(const std::vector<size_t>& candidates,
 
 void VariableSelector::select_restart_pivot(const Model& model,
                                              const std::vector<double>& activity,
-                                             const CommunityAnalysis& community_analysis,
-                                             size_t restart_count,
-                                             std::mt19937& rng,
-                                             bool use_community_rotation) {
-    community_first_var_ = SIZE_MAX;
-
-    // ターゲット変数集合（コミュニティ or グループ）を集める
-    std::vector<size_t> pool;
-    // 分割数 = log(決定変数の数)（最低 1）
-    size_t num_groups = decision_var_end_ > 1
-        ? static_cast<size_t>(std::log(static_cast<double>(decision_var_end_)))
-        : 1;
-    if (num_groups < 1) num_groups = 1;
-    if (num_groups < 5 && decision_var_end_ >= 5) num_groups = 5;
-
-    if (use_community_rotation && community_analysis.is_enabled()) {
-        const auto& tops = community_analysis.top_communities(num_groups);
-        if (!tops.empty()) {
-            size_t target_comm = tops[restart_count % tops.size()];
-            const auto& vars = community_analysis.community_vars(target_comm);
-            pool.assign(vars.begin(), vars.end());
-        }
-    } else if (decision_var_end_ > 0) {
-        size_t group_size = (decision_var_end_ + num_groups - 1) / num_groups;
-        size_t group_idx = restart_count % num_groups;
-        size_t begin = group_idx * group_size;
-        size_t end = std::min(begin + group_size, decision_var_end_);
-        if (begin < end) {
-            pool.reserve(end - begin);
-            for (size_t k = begin; k < end; ++k) pool.push_back(var_order_[k]);
-        }
-    }
-
-    // MRV で最小ドメインサイズを特定し、そのサイズを持つ未割当変数だけを候補にする
+                                             size_t /*restart_count*/,
+                                             std::mt19937& rng) {
+    // 未割当の決定変数のうち最小ドメインサイズ (MRV) のものを集めて
+    // activity 重み付きランダムに 1 つ選ぶ。
     size_t best_size = SIZE_MAX;
-    for (size_t v : pool) {
-        if (!model.is_instantiated(v)) {
-            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-            if (ds < best_size) best_size = ds;
-        }
-    }
-    if (best_size == SIZE_MAX) return;
-
     std::vector<size_t> candidates;
-    candidates.reserve(pool.size());
-    for (size_t v : pool) {
-        if (!model.is_instantiated(v)) {
-            size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
-            if (ds == best_size) candidates.push_back(v);
+    for (size_t k = 0; k < decision_var_end_; ++k) {
+        size_t v = var_order_[k];
+        if (model.is_instantiated(v)) continue;
+        // size_t ds = static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1);
+        size_t ds = static_cast<size_t>(model.var_size(v));
+        if (ds < best_size) {
+            best_size = ds;
+            candidates.clear();
+            candidates.push_back(v);
+        } else if (ds == best_size) {
+            candidates.push_back(v);
         }
     }
-
     community_first_var_ = pick_pivot(candidates, activity, rng);
 }
 

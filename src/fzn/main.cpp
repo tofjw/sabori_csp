@@ -30,7 +30,7 @@ void print_usage(const char* program) {
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
-    std::cerr << "  -c      Community analysis (print VIG/community/locality stats)\n";
+    std::cerr << "  -c      Community analysis [diagnostic only — does not speed up search]\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -p N    Probe fail limit for improvement probe (default: 10, 0=disable)\n";
@@ -43,8 +43,10 @@ bool g_print_stats = false;
 bool g_verbose = false;
 bool g_no_nogood = false;
 bool g_no_elimination = false;
-// bool g_community_analysis = false;
-bool g_community_analysis = true;
+// 診断専用フラグ。ベンチマーク結果上、探索性能は改善しないため
+// デフォルト off。`-c` で明示的に有効化したときだけ VIG/コミュニティ/
+// 局所性統計を出力する。
+bool g_community_analysis = false;
 bool g_use_gac = false;
 
 void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* model = nullptr) {

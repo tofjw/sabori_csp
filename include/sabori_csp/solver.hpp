@@ -458,14 +458,6 @@ private:
     void rescale_activities();
 
     /**
-     * @brief コミュニティ構造に基づいてリスタート時のコミュニティ単位ローテーションの有効/無効を判定
-     *
-     * 構造が弱い (modularity < 0.3) または実質1クラスタ (largest > 5 * second) の場合は無効化し、
-     * コミュニティ無効時と同じグループローテーションへフォールバックする。
-     */
-    void update_community_rotation_flag();
-
-    /**
      * @brief Unit nogood をドメインに適用し、process_queue を実行
      */
     PropagationResult apply_unit_nogoods(Model& model);
@@ -574,10 +566,9 @@ private:
     // 乱数
     std::mt19937 rng_;
 
-    // コミュニティ分析
+    // コミュニティ分析（診断専用）
     CommunityAnalysis community_analysis_;
     size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
-    bool community_rotation_enabled_ = true;  ///< 構造が弱い場合は無効化しグループローテーションへフォールバック
 };
 
 } // namespace sabori_csp

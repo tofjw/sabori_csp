@@ -63,15 +63,13 @@ public:
     /**
      * @brief リスタート後に起点変数を選択（探索多様化）
      *
-     * コミュニティ分析が有効かつ use_community_rotation が true ならコミュニティベースのローテーション、
-     * そうでなければ var_order_ を均等グループに分割してローテーション。
+     * 未割当の決定変数のうち、ドメインサイズが最小 (MRV) なものから
+     * activity 重み付きでランダムに 1 つ選び `community_first_var_` に格納する。
      */
     void select_restart_pivot(const Model& model,
                                const std::vector<double>& activity,
-                               const CommunityAnalysis& community_analysis,
                                size_t restart_count,
-                               std::mt19937& rng,
-                               bool use_community_rotation = true);
+                               std::mt19937& rng);
 
     // ===== パーティション管理 =====
 
