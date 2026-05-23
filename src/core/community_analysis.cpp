@@ -1,3 +1,8 @@
+// 診断専用モジュール。
+// `-c` で明示的に有効化したときのみ動作し、デフォルトでは何もしない。
+// 探索性能の改善は確認されていない（VSIDS/activity が同等情報を学習するため）。
+// 用途は問題構造の観察・張り付き診断に限定する。
+
 #include "sabori_csp/community_analysis.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
@@ -88,6 +93,9 @@ void CommunityAnalysis::detect_communities(std::mt19937& rng, size_t max_iterati
     std::vector<size_t> order(n);
     std::iota(order.begin(), order.end(), 0);
 
+    // タイブレーク用の候補バッファ（ループ外で確保して再利用）
+    std::vector<size_t> best_candidates;
+
     for (size_t iter = 0; iter < max_iterations; ++iter) {
         bool changed = false;
         std::shuffle(order.begin(), order.end(), rng);
@@ -103,13 +111,39 @@ void CommunityAnalysis::detect_communities(std::mt19937& rng, size_t max_iterati
                 community_weights[structure_.community[neighbor]] += w;
             }
 
-            // 最頻コミュニティを選択
-            size_t best_community = structure_.community[v];
+            // 最頻コミュニティを選択（タイはランダムに破る）
+            // Label Propagation (Raghavan et al. 2007) のオリジナル定式どおり、
+            // ID 昇順での決定論的タイブレークは低 ID コミュニティへの偏り
+            // (rich-get-richer) を生むため避ける。
             size_t best_weight = 0;
+            best_candidates.clear();
             for (const auto& [comm, w] : community_weights) {
-                if (w > best_weight || (w == best_weight && comm < best_community)) {
+                if (w > best_weight) {
                     best_weight = w;
-                    best_community = comm;
+                    best_candidates.clear();
+                    best_candidates.push_back(comm);
+                } else if (w == best_weight) {
+                    best_candidates.push_back(comm);
+                }
+            }
+
+            size_t best_community;
+            if (best_candidates.empty()) {
+                best_community = structure_.community[v];
+            } else if (best_candidates.size() == 1) {
+                best_community = best_candidates[0];
+            } else {
+                // 自コミュニティが候補内にあれば優先 (不要な振動を抑制)
+                size_t self = structure_.community[v];
+                bool self_in_tie = false;
+                for (size_t c : best_candidates) {
+                    if (c == self) { self_in_tie = true; break; }
+                }
+                if (self_in_tie) {
+                    best_community = self;
+                } else {
+                    std::uniform_int_distribution<size_t> dist(0, best_candidates.size() - 1);
+                    best_community = best_candidates[dist(rng)];
                 }
             }
 
