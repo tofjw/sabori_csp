@@ -4445,3 +4445,125 @@ TEST_CASE("InverseConstraint solver integration", "[constraint][inverse]") {
         REQUIRE(count == 1);
     }
 }
+
+// ============================================================================
+// IncreasingConstraint tests
+// ============================================================================
+
+TEST_CASE("IncreasingConstraint name", "[constraint][increasing]") {
+    Model model;
+    auto* x = model.create_variable("x", Domain(1, 3));
+    auto* y = model.create_variable("y", Domain(1, 3));
+    IncreasingConstraint inc({x, y}, /*strict=*/false);
+    IncreasingConstraint sinc({x, y}, /*strict=*/true);
+    REQUIRE(inc.name() == "increasing");
+    REQUIRE(sinc.name() == "strictly_increasing");
+}
+
+TEST_CASE("IncreasingConstraint non-strict presolve", "[constraint][increasing]") {
+    Model model;
+    auto* x = model.create_variable("x", Domain(2, 5));
+    auto* y = model.create_variable("y", Domain(1, 4));
+    auto* z = model.create_variable("z", Domain(0, 6));
+    IncreasingConstraint c({x, y, z}, /*strict=*/false);
+    auto r = c.presolve(model);
+    REQUIRE(r != PresolveResult::Contradiction);
+    // y.min >= x.min = 2; z.min >= y.min = 2
+    REQUIRE(y->min() >= 2);
+    REQUIRE(z->min() >= 2);
+    // x.max <= y.max <= z.max = 6 → also bounded by y.max <= z.max
+    REQUIRE(x->max() <= y->max());
+    REQUIRE(y->max() <= z->max());
+}
+
+TEST_CASE("IncreasingConstraint strict presolve", "[constraint][increasing]") {
+    Model model;
+    auto* x = model.create_variable("x", Domain(1, 5));
+    auto* y = model.create_variable("y", Domain(1, 5));
+    auto* z = model.create_variable("z", Domain(1, 5));
+    IncreasingConstraint c({x, y, z}, /*strict=*/true);
+    REQUIRE(c.presolve(model) != PresolveResult::Contradiction);
+    REQUIRE(x->max() <= 3);  // x < y < z, z <= 5 → x <= 3
+    REQUIRE(z->min() >= 3);  // x >= 1, y > x, z > y → z >= 3
+}
+
+TEST_CASE("IncreasingConstraint detects infeasibility", "[constraint][increasing]") {
+    SECTION("non-strict over too narrow domain") {
+        Model model;
+        auto* x = model.create_variable("x", Domain(3, 5));
+        auto* y = model.create_variable("y", Domain(1, 2));  // y < x always
+        IncreasingConstraint c({x, y}, /*strict=*/false);
+        REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
+    }
+    SECTION("strict over equal singletons") {
+        Model model;
+        auto* x = model.create_variable("x", 2, 2);
+        auto* y = model.create_variable("y", 2, 2);
+        IncreasingConstraint c({x, y}, /*strict=*/true);
+        REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
+    }
+}
+
+TEST_CASE("IncreasingConstraint solve_all enumerates correct count", "[constraint][increasing]") {
+    SECTION("strictly_increasing: C(5,3) = 10 monotonic chains") {
+        Model model;
+        auto* x = model.create_variable("x", Domain(1, 5));
+        auto* y = model.create_variable("y", Domain(1, 5));
+        auto* z = model.create_variable("z", Domain(1, 5));
+        model.add_constraint(std::make_unique<IncreasingConstraint>(
+            std::vector<Variable*>{x, y, z}, /*strict=*/true));
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 10);
+    }
+    SECTION("increasing (non-strict): C(5+3-1, 3) = 35 weak chains") {
+        Model model;
+        auto* x = model.create_variable("x", Domain(1, 5));
+        auto* y = model.create_variable("y", Domain(1, 5));
+        auto* z = model.create_variable("z", Domain(1, 5));
+        model.add_constraint(std::make_unique<IncreasingConstraint>(
+            std::vector<Variable*>{x, y, z}, /*strict=*/false));
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 35);
+    }
+}
+
+TEST_CASE("IncreasingConstraint init_activity has V-shape (ends > center)",
+          "[constraint][increasing][activity]") {
+    SECTION("even length: symmetric, descending toward center") {
+        Model model;
+        auto* a = model.create_variable("a", Domain(0, 10));
+        auto* b = model.create_variable("b", Domain(0, 10));
+        auto* c = model.create_variable("c", Domain(0, 10));
+        auto* d = model.create_variable("d", Domain(0, 10));
+        IncreasingConstraint inc({a, b, c, d}, /*strict=*/false);
+
+        std::vector<double> activity(model.variables().size(), 0.0);
+        inc.init_activity(model, activity.data());
+
+        REQUIRE(activity[a->id()] > activity[b->id()]);
+        REQUIRE(activity[d->id()] > activity[c->id()]);
+        REQUIRE(activity[a->id()] == activity[d->id()]);   // 対称
+        REQUIRE(activity[b->id()] == activity[c->id()]);
+        REQUIRE(activity[c->id()] > 0.0);                  // 中央でも >0
+    }
+    SECTION("odd length: center has the lowest bias") {
+        Model model;
+        auto* v0 = model.create_variable("v0", Domain(0, 10));
+        auto* v1 = model.create_variable("v1", Domain(0, 10));
+        auto* v2 = model.create_variable("v2", Domain(0, 10));
+        auto* v3 = model.create_variable("v3", Domain(0, 10));
+        auto* v4 = model.create_variable("v4", Domain(0, 10));
+        IncreasingConstraint inc({v0, v1, v2, v3, v4}, /*strict=*/false);
+
+        std::vector<double> activity(model.variables().size(), 0.0);
+        inc.init_activity(model, activity.data());
+
+        REQUIRE(activity[v0->id()] == activity[v4->id()]);  // 両端最大
+        REQUIRE(activity[v1->id()] == activity[v3->id()]);
+        REQUIRE(activity[v0->id()] > activity[v1->id()]);
+        REQUIRE(activity[v1->id()] > activity[v2->id()]);   // 中央最小
+        REQUIRE(activity[v2->id()] > 0.0);
+    }
+}

@@ -2305,6 +2305,53 @@ private:
     std::vector<std::pair<int, size_t>> trail_;
 };
 
+/**
+ * @brief increasing / strictly_increasing 制約
+ *
+ * `strict=false`: x[0] <= x[1] <= ... <= x[n-1]
+ * `strict=true` : x[0] <  x[1] <  ... <  x[n-1]
+ *
+ * 状態を持たない bounds propagator。プレソルブとイベントハンドラで
+ * 隣接する2変数間の制約のみを伝播し、`process_queue` 経由で連鎖伝播させる。
+ *
+ * init_activity で初期 activity を与え、緩やかにガイドする
+ * （dynamic activity を上書きしないごく小さな数）。
+ */
+class IncreasingConstraint : public Constraint {
+public:
+    IncreasingConstraint(std::vector<VariablePtr> vars, bool strict);
+
+    std::string name() const override;
+
+    bool prepare_propagation(Model& model) override;
+    PresolveResult presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t var_idx, size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_min,
+                    Domain::value_type old_min) override;
+
+    bool on_set_max(Model& model, int save_point,
+                    size_t var_idx, size_t internal_var_idx,
+                    Domain::value_type new_max,
+                    Domain::value_type old_max) override;
+
+    void init_activity(const Model& model, double* activity) const override;
+
+private:
+    /// 全変数 bounds の前方/後方スイープ。prepare_propagation で1回呼ぶ。
+    bool sweep(Model& model);
+
+    size_t n_;
+    bool strict_;
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_HPP

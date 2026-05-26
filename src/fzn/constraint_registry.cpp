@@ -378,6 +378,14 @@ static std::optional<ConstraintPtr> make_disjunctive(const ConstraintDecl& decl,
         std::move(starts), std::move(durations), strict);
 }
 
+static std::optional<ConstraintPtr> make_increasing(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 1) throw std::runtime_error(decl.name + " requires 1 argument (array)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    if (vars.size() <= 1) return std::nullopt;
+    const bool strict = (decl.name.find("strictly") != std::string::npos);
+    return std::make_shared<IncreasingConstraint>(std::move(vars), strict);
+}
+
 // ============================================================
 // Pattern C: Linear + substitution constraints
 // ============================================================
@@ -887,6 +895,12 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("fzn_cumulative", make_cumulative);
     registry.register_constraint("fzn_disjunctive", make_disjunctive);
     registry.register_constraint("fzn_disjunctive_strict", make_disjunctive);
+    registry.register_constraint("increasing", make_increasing);
+    registry.register_constraint("strictly_increasing", make_increasing);
+    registry.register_constraint("fzn_increasing_int", make_increasing);
+    registry.register_constraint("fzn_increasing_bool", make_increasing);
+    registry.register_constraint("fzn_strictly_increasing_int", make_increasing);
+    registry.register_constraint("fzn_strictly_increasing_bool", make_increasing);
     registry.register_constraint("fzn_inverse", make_inverse);
     registry.register_constraint("fzn_inverse_offsets", make_inverse_offsets);
     registry.register_constraint("fzn_all_equal_int", make_all_equal);

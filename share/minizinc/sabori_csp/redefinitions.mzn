@@ -18,6 +18,9 @@ include "fzn_diffn_nonstrict.mzn";
 include "fzn_inverse.mzn";
 include "fzn_regular.mzn";
 include "fzn_nvalue.mzn";
+include "fzn_increasing_int.mzn";
+include "fzn_strictly_increasing_int.mzn";
+include "fzn_increasing_bool.mzn";
 
 predicate int_lin_le_imp(array[int] of int: as, array[int] of var int: bs,
                          int: c, var bool: r);
