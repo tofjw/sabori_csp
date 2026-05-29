@@ -1140,11 +1140,36 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
             // 右半分 [mid+1, prev_max] / 左半分 [prev_min, mid] のうち、
             // ref_val を超える/下回る値を含む側を先に試す。
             if (gradient_direction_ > 0) {
-                right_first = (gradient_ref_val_ < prev_max);
+                if (prev_min < gradient_ref_val_ && gradient_ref_val_ <= prev_max) {
+                    mid = gradient_ref_val_ - 1;
+                    right_first = true;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
+                else if (prev_min <= gradient_ref_val_ && prev_min < prev_max) {
+                    mid = gradient_ref_val_;
+                    right_first = false;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
+                else {
+                    right_first = (rng_() & 1) != 0;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
             } else {
-                right_first = (gradient_ref_val_ <= prev_min);
+                if (prev_min <= gradient_ref_val_ && gradient_ref_val_ < prev_max) {
+                    mid = gradient_ref_val_;
+                    right_first = false;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
+                else if (prev_min < prev_max && gradient_ref_val_ <= prev_max) {
+                    mid = gradient_ref_val_ - 1;
+                    right_first = true;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
+                else {
+                    right_first = (rng_() & 1) != 0;
+                    gradient_var_idx_ = SIZE_MAX;
+                }
             }
-            gradient_var_idx_ = SIZE_MAX;  // 消費（enumerate 経路と揃える）
         } else if (current_best_assignment_[var_idx] != kNoValue) {
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
