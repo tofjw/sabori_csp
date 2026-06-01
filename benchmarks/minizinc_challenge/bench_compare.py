@@ -389,6 +389,7 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
         cmd.append(data_arg)
 
     start = time.monotonic()
+    is_to = False
     proc = None
     try:
         obj = None
@@ -402,21 +403,7 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
         except subprocess.TimeoutExpired:
             kill_process_tree(proc)
             stdout, _ = proc.communicate()
-
-            if stdout:
-                for line in reversed(stdout.split('\n')):
-                    m = re.search(r'_objective\s*=\s*(-?\d+)', line)
-                    if m:
-                        obj = int(m.group(1))
-                        break
-
-            check = None
-            if solver_name == "Sabori" and stdout:
-                sol = parse_last_solution(stdout)
-                if sol:
-                    check = verify_solution(mzn, data, sol)
-
-            return (problem, solver_name, "TIMEOUT", TIMEOUT, obj, None, data_label, check)
+            is_to = True
 
         elapsed = time.monotonic() - start
         output = stdout
@@ -427,13 +414,10 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
             status = "SOL"
         elif "=====UNSATISFIABLE=====" in output:
             status = "UNSAT"
-        elif elapsed >= TIMEOUT * 0.9:
+        elif is_to or elapsed >= TIMEOUT * 0.9:
             # minizinc 自身の -t で時間切れになり、何も解を出さずに終了した
             # ケース（UNKNOWN マーカーすら出さないこともある）は TIMEOUT 扱い。
-            if obj is not None:
-                status = "SOL"
-            else:
-                status = "TIMEOUT"
+            status = "TIMEOUT"
         else:
             status = "UNKNOWN"
 
