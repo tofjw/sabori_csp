@@ -5,38 +5,8 @@
 #include "sabori_csp/variable_selector.hpp"
 
 #include <algorithm>
-#include <cmath>
 
 namespace sabori_csp {
-
-namespace {
-
-size_t select_weighted_by_activity_softmax(const std::vector<size_t>& candidates,
-                                           const std::vector<double>& activity,
-                                           std::mt19937& rng) {
-    if (candidates.empty()) return SIZE_MAX;
-
-    double max_activity = activity[candidates.front()];
-    for (size_t v : candidates) {
-        if (activity[v] > max_activity) max_activity = activity[v];
-    }
-
-    double total_weight = 0.0;
-    for (size_t v : candidates) {
-        total_weight += std::exp(activity[v] - max_activity);
-    }
-    if (total_weight <= 0.0) return SIZE_MAX;
-
-    std::uniform_real_distribution<double> ud(0.0, total_weight);
-    double target = ud(rng);
-    for (size_t v : candidates) {
-        target -= std::exp(activity[v] - max_activity);
-        if (target <= 0.0) return v;
-    }
-    return candidates.back();
-}
-
-}  // namespace
 
 void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
     const auto& variables = model.variables();
