@@ -168,22 +168,6 @@ private:
     SolveDecl solve_decl_;
 };
 
-/**
- * @brief FlatZincファイルをパース
- * @param filename ファイル名
- * @return パースされたモデル
- * @throws std::runtime_error パースエラー時
- */
-std::unique_ptr<Model> parse_file(const std::string& filename);
-
-/**
- * @brief FlatZinc文字列をパース
- * @param input 入力文字列
- * @return パースされたモデル
- * @throws std::runtime_error パースエラー時
- */
-std::unique_ptr<Model> parse_string(const std::string& input);
-
 } // namespace fzn
 } // namespace sabori_csp
 
