@@ -30,6 +30,7 @@ struct FznBuildContext {
     const std::map<std::string, std::string>& alias_map;
     bool verbose;
     bool use_gac = false;  ///< all_different に GAC (Régin) を使用
+    size_t diffn_decl_count = 0;  ///< モデル内の fzn_diffn* 宣言数（冗長 cumulative のゲートに使用）
 
     /**
      * @brief 引数から変数を取得（変数名 or 定数リテラル）

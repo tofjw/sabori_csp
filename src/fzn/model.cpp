@@ -162,6 +162,11 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
     // ビルドコンテキスト構築
     FznBuildContext ctx{model.get(), var_map, var_decls_, array_decls_,
                         constant_arrays, alias_map, verbose, use_gac};
+    for (const auto& d : constraint_decls_) {
+        if (d.name.rfind("fzn_diffn", 0) == 0) {
+            ++ctx.diffn_decl_count;
+        }
+    }
 
     // FlatZinc アノテーション由来の is_defined_var 集合を記録
     // （ヒューリスティックで追加したものと区別するため）

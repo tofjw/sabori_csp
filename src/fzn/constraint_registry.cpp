@@ -5,6 +5,7 @@
 #include "sabori_csp/constraints/all_different_gac.hpp"
 #include "sabori_csp/constraints/logical.hpp"
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace sabori_csp {
@@ -314,6 +315,42 @@ static std::optional<ConstraintPtr> make_diffn(const ConstraintDecl& decl, FznBu
     auto dx_vars = resolve_vars(decl.args[2], ctx);
     auto dy_vars = resolve_vars(decl.args[3], ctx);
     bool strict = (decl.name == "fzn_diffn");
+
+    // 冗長 cumulative: 各軸への射影は diffn の必要条件（緩和）。
+    // x軸: タスク(start=x, dur=dx, height=dy), capacity = y のバウンディング幅。
+    // ペアワイズ伝播では得られない多矩形の timetable/エネルギー推論を
+    // 既存の cumulative エンジンで補う。
+    // diffn がモデルの中核 (1〜2個の packing 問題) のときのみ投稿する。
+    // diffn が多数ある問題 (例: unison の基本ブロックごとの配置) では
+    // 冗長制約のオーバーヘッドが枝刈りの利益を上回る。
+    const size_t n_rects = x_vars.size();
+    if (n_rects >= 3 && ctx.diffn_decl_count <= 2) {
+        auto bounding_width = [](const std::vector<VariablePtr>& pos,
+                                 const std::vector<VariablePtr>& size) -> Domain::value_type {
+            Domain::value_type lo = std::numeric_limits<Domain::value_type>::max();
+            Domain::value_type hi = std::numeric_limits<Domain::value_type>::lowest();
+            for (size_t i = 0; i < pos.size(); ++i) {
+                lo = std::min(lo, pos[i]->min());
+                hi = std::max(hi, pos[i]->max() + size[i]->max());
+            }
+            return hi - lo;
+        };
+        const Domain::value_type cap_y = bounding_width(y_vars, dy_vars);
+        const Domain::value_type cap_x = bounding_width(x_vars, dx_vars);
+        // 極端に広い配置領域では枝刈りが効かずオーバーヘッドのみになるため抑制
+        constexpr Domain::value_type kMaxCap = 1000000;
+        if (cap_x > 0 && cap_y > 0 && cap_x <= kMaxCap && cap_y <= kMaxCap) {
+            auto cum_x = std::make_shared<CumulativeConstraint>(
+                x_vars, dx_vars, dy_vars, ctx.get_var(ConstraintArg(cap_y)));
+            cum_x->set_label(decl.name + "_cumx:L" + std::to_string(decl.line));
+            ctx.model->add_constraint(std::move(cum_x));
+            auto cum_y = std::make_shared<CumulativeConstraint>(
+                y_vars, dy_vars, dx_vars, ctx.get_var(ConstraintArg(cap_x)));
+            cum_y->set_label(decl.name + "_cumy:L" + std::to_string(decl.line));
+            ctx.model->add_constraint(std::move(cum_y));
+        }
+    }
+
     return std::make_shared<DiffnConstraint>(
         std::move(x_vars), std::move(y_vars),
         std::move(dx_vars), std::move(dy_vars), strict);
