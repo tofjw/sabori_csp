@@ -240,7 +240,17 @@ static std::optional<ConstraintPtr> make_alldifferent_except_0(const ConstraintD
 
 static std::optional<ConstraintPtr> make_circuit(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("circuit requires 1 argument (array)");
-    return std::make_shared<CircuitConstraint>(resolve_vars(decl.args[0], ctx));
+    auto vars = resolve_vars(decl.args[0], ctx);
+    // circuit は alldifferent を含意する。Hall ペア / GAC の値伝播を効かせるため
+    // 明示的に併設する（CircuitConstraint 自体はパス構造の伝播に専念）
+    if (vars.size() >= 2) {
+        if (ctx.use_gac) {
+            ctx.model->add_constraint(std::make_shared<AllDifferentGACConstraint>(vars));
+        } else {
+            ctx.model->add_constraint(std::make_shared<AllDifferentConstraint>(vars));
+        }
+    }
+    return std::make_shared<CircuitConstraint>(std::move(vars));
 }
 
 static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& decl, FznBuildContext& ctx) {

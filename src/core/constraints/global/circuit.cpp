@@ -1,7 +1,6 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
-#include <set>
 #include <limits>
 
 namespace sabori_csp {
@@ -14,10 +13,9 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
     , n_(var_ids_.size())
     , base_offset_(0)
-    , head_(n_)
-    , tail_(n_)
+    , partner_(n_)
     , size_(n_, 1)
-    , in_degree_(n_, 0)
+    , occupier_(n_, SIZE_MAX)
     , unfixed_count_(0)
     , pool_n_(n_) {
     // ベースオフセットを検出（全変数の値域のグローバル最小値から）
@@ -34,17 +32,17 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
         }
     }
 
-    // 初期状態: 各ノードは長さ1のパス（自分自身が root）
+    // 初期状態: 各ノードは長さ1のパス（端点は自分自身）
     for (size_t i = 0; i < n_; ++i) {
-        head_[i] = i;
-        tail_[i] = i;
+        partner_[i] = i;
     }
 
     // プール初期化（0 から n-1 の内部インデックス）
     pool_.resize(n_);
+    pool_idx_.resize(n_);
     for (size_t i = 0; i < n_; ++i) {
         pool_[i] = static_cast<Domain::value_type>(i);
-        pool_idx_[static_cast<Domain::value_type>(i)] = i;
+        pool_idx_[i] = i;
     }
 
     // 既に確定している変数のパス結合と入次数を設定 + 未確定カウント
@@ -57,12 +55,13 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
             // 範囲チェック / 入次数チェック / サブサーキット検出は
             // prepare_propagation() でも同等のチェックを行うためここでは早期 return のみ
             if (j >= n_) return;
-            if (in_degree_[j] > 0) return;
+            if (occupier_[j] != SIZE_MAX) return;
 
-            size_t h1 = find(i);
-            size_t h2 = find(j);
+            // i は自パスの tail、j は自パスの head
+            size_t h1 = partner_[i];
+            size_t t2 = partner_[j];
 
-            if (h1 == h2) {
+            if (h1 == j) {
                 // 閉路形成
                 if (size_[h1] < n_) {
                     // サブサーキット
@@ -70,15 +69,13 @@ CircuitConstraint::CircuitConstraint(std::vector<VariablePtr> vars)
                 }
             } else {
                 // パス結合: h1 → ... → i → j → ... → t2
-                size_t t2 = tail_[h2];
-                tail_[h1] = t2;
-                head_[h2] = h1;
-                size_[h1] += size_[h2];
+                partner_[h1] = t2;
+                partner_[t2] = h1;
+                size_[h1] += size_[j];
             }
 
-            in_degree_[j] = 1;
-            // 内部インデックスをプールから削除
-            remove_from_pool(static_cast<Domain::value_type>(j));
+            occupier_[j] = i;
+            remove_from_pool(j);
         } else {
             ++unfixed_count_;
         }
@@ -93,16 +90,15 @@ std::string CircuitConstraint::name() const {
 bool CircuitConstraint::prepare_propagation(Model& model) {
     // presolve 後の変数状態に基づいて内部状態を完全に再構築
     for (size_t i = 0; i < n_; ++i) {
-        head_[i] = i;
-        tail_[i] = i;
+        partner_[i] = i;
         size_[i] = 1;
-        in_degree_[i] = 0;
+        occupier_[i] = SIZE_MAX;
     }
     unfixed_count_ = 0;
     pool_n_ = n_;
     for (size_t i = 0; i < n_; ++i) {
         pool_[i] = static_cast<Domain::value_type>(i);
-        pool_idx_[static_cast<Domain::value_type>(i)] = i;
+        pool_idx_[i] = i;
     }
     trail_.clear();
 
@@ -111,20 +107,19 @@ bool CircuitConstraint::prepare_propagation(Model& model) {
             auto val = model.value(var_ids_[i]);
             size_t j = static_cast<size_t>(val - base_offset_);
             if (j >= n_) return false;
-            if (in_degree_[j] > 0) return false;
+            if (occupier_[j] != SIZE_MAX) return false;
 
-            size_t h1 = find(i);
-            size_t h2 = find(j);
-            if (h1 == h2) {
+            size_t h1 = partner_[i];
+            size_t t2 = partner_[j];
+            if (h1 == j) {
                 if (size_[h1] < n_) return false;
             } else {
-                size_t t2 = tail_[h2];
-                tail_[h1] = t2;
-                head_[h2] = h1;
-                size_[h1] += size_[h2];
+                partner_[h1] = t2;
+                partner_[t2] = h1;
+                size_[h1] += size_[j];
             }
-            in_degree_[j] = 1;
-            remove_from_pool(static_cast<Domain::value_type>(j));
+            occupier_[j] = i;
+            remove_from_pool(j);
         } else {
             ++unfixed_count_;
         }
@@ -136,31 +131,63 @@ bool CircuitConstraint::prepare_propagation(Model& model) {
 }
 
 PresolveResult CircuitConstraint::presolve(Model& model) {
-    // 初期伝播: 特に何もしない（on_instantiate で処理）
-    return PresolveResult::Unchanged;
-}
+    // 確定済みエッジが作る各パス h → ... → t (size < n) について、
+    // tail t が head h へ戻るとサブサーキットになるため値 h を除去する。
+    // 長さ1のパス（未確定ノード）では自己ループ除去 x[i] != i になる。
+    // 構築後に他制約の presolve でパスが伸びていても、t → h は
+    // サブサーキットか入次数2のどちらかで必ず矛盾なので除去は健全。
+    if (n_ <= 1) return PresolveResult::Unchanged;
 
-size_t CircuitConstraint::find(size_t i) const {
-    // Follow parent pointers to root (no path compression to keep rewind simple)
-    while (head_[i] != i) {
-        i = head_[i];
+    bool changed = false;
+    for (size_t h = 0; h < n_; ++h) {
+        if (occupier_[h] != SIZE_MAX) continue;  // head でないノード
+        if (size_[h] >= n_) continue;            // 全ノードを含むパスは閉じる必要がある
+        size_t t = partner_[h];
+        Variable* v = model.variable(var_ids_[t]);
+        if (v->is_assigned()) continue;
+        auto forbidden = static_cast<Domain::value_type>(h) + base_offset_;
+        if (v->domain().contains(forbidden)) {
+            if (!v->remove(forbidden)) return PresolveResult::Contradiction;
+            changed = true;
+        }
     }
-    return i;
+
+    // AllDifferent の forward checking: 確定済みの値を未確定変数のドメインから除去
+    std::vector<Domain::value_type> used_values;
+    for (size_t k = 0; k < n_; ++k) {
+        Variable* v = model.variable(var_ids_[k]);
+        if (v->is_assigned()) {
+            used_values.push_back(v->min());
+        }
+    }
+    if (!used_values.empty()) {
+        for (size_t k = 0; k < n_; ++k) {
+            Variable* v = model.variable(var_ids_[k]);
+            if (v->is_assigned()) continue;
+            for (auto val : used_values) {
+                if (v->domain().contains(val)) {
+                    if (!v->remove(val)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
-void CircuitConstraint::remove_from_pool(Domain::value_type value) {
-    auto it = pool_idx_.find(value);
-    if (it == pool_idx_.end() || it->second >= pool_n_) {
+void CircuitConstraint::remove_from_pool(size_t value) {
+    size_t idx = pool_idx_[value];
+    if (idx >= pool_n_) {
         return;  // 既にプールにない
     }
 
     // Sparse Set から削除（スワップ）
-    size_t idx = it->second;
     size_t last_idx = pool_n_ - 1;
-    Domain::value_type last_value = pool_[last_idx];
+    size_t last_value = static_cast<size_t>(pool_[last_idx]);
 
-    pool_[idx] = last_value;
-    pool_[last_idx] = value;
+    pool_[idx] = static_cast<Domain::value_type>(last_value);
+    pool_[last_idx] = static_cast<Domain::value_type>(value);
     pool_idx_[last_value] = idx;
     pool_idx_[value] = last_idx;
     --pool_n_;
@@ -171,6 +198,7 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
                                         Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
+    (void)var_idx;
     size_t i = internal_var_idx;
     // 値を内部インデックス（0-based）に変換
     size_t j = static_cast<size_t>(value - base_offset_);
@@ -180,34 +208,32 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
-    // AllDifferent チェック: ノード j の入次数が既に 1 なら重複
-    if (in_degree_[j] > 0) {
+    // AllDifferent チェック: ノード j に既に確定済みエッジがあれば重複
+    if (occupier_[j] != SIZE_MAX) {
         return false;
     }
 
-    // i と j を含むパスの root を見つける
-    size_t h1 = find(i);
-    size_t h2 = find(j);
+    // i は自パスの tail（未確定だったので出エッジなし）、
+    // j は自パスの head（入次数 0）
+    size_t h1 = partner_[i];
+    size_t t2 = partner_[j];
 
     // サブサーキット検出: 同じパス内なら閉路形成
-    if (h1 == h2) {
+    if (h1 == j) {
         // 閉路が形成される
         if (size_[h1] < n_) {
             // サブサーキット（全ノードを含まない閉路）
             return false;
         }
         // size == n なら正当な完全閉路
-        // 入次数とプールを更新して trail に記録
-        size_t old_pool_n = pool_n_;
-        size_t old_unfixed_count = unfixed_count_;
-        in_degree_[j] = 1;
-        remove_from_pool(static_cast<Domain::value_type>(j));
-        --unfixed_count_;
-
-        // TrailEntryのjは内部インデックスを保存
-        TrailEntry entry{0, 0, 0, 0, static_cast<Domain::value_type>(j), old_pool_n, old_unfixed_count, false};
+        // occupier とプールを更新して trail に記録
+        TrailEntry entry{i, j, 0, 0, 0, pool_n_, unfixed_count_, false};
         trail_.push_back({save_point, entry});
         model.mark_constraint_dirty(model_index(), save_point);
+
+        occupier_[j] = i;
+        remove_from_pool(j);
+        --unfixed_count_;
 
         // 残り1変数チェック（O(1)）
         if (unfixed_count_ == 1) {
@@ -225,30 +251,38 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // パス結合: h1 → ... → i → j → ... → t2
-    size_t t2 = tail_[h2];  // h2 の root のパスの末尾
-
-    // trail に記録 (h2 の親を h1 に変更する前の状態)
-    size_t old_tail_h1 = tail_[h1];
-    size_t old_size_h1 = size_[h1];
-    size_t old_pool_n = pool_n_;
-    size_t old_unfixed_count = unfixed_count_;
-
-    // TrailEntryのjは内部インデックスを保存
-    TrailEntry entry{h1, old_tail_h1, h2, old_size_h1, static_cast<Domain::value_type>(j), old_pool_n, old_unfixed_count, true};
+    TrailEntry entry{i, j, h1, t2, size_[h1], pool_n_, unfixed_count_, true};
     trail_.push_back({save_point, entry});
     model.mark_constraint_dirty(model_index(), save_point);
 
-    // 更新: h2 のパスを h1 のパスに統合
-    tail_[h1] = t2;
-    head_[h2] = h1;  // h2 の親を h1 に (Union-Find の union)
-    size_[h1] += size_[h2];
-    in_degree_[j] = 1;  // ノード j の入次数をインクリメント
-    remove_from_pool(static_cast<Domain::value_type>(j));  // 内部インデックス j をプールから削除
+    // 更新: 新しいパスの端点は h1 と t2
+    partner_[h1] = t2;
+    partner_[t2] = h1;
+    size_[h1] += size_[j];
+    occupier_[j] = i;
+    remove_from_pool(j);  // 内部インデックス j をプールから削除
     --unfixed_count_;
 
     // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
     if (unfixed_count_ > pool_n_) {
         return false;
+    }
+
+    // サブサーキット枝刈り: パスが全ノードを含まないなら
+    // tail t2 が head h1 へ戻る値を除去
+    if (size_[h1] < n_) {
+        model.enqueue_remove_value(var_ids_[t2],
+                                   static_cast<Domain::value_type>(h1) + base_offset_);
+    }
+
+    // AllDifferent の forward checking: 確定値 value を他の未確定変数から除去
+    for (size_t k = 0; k < n_; ++k) {
+        if (k == i) continue;
+        size_t vid = var_ids_[k];
+        if (model.is_instantiated(vid)) continue;
+        if (model.contains(vid, value)) {
+            model.enqueue_remove_value(vid, value);
+        }
     }
 
     // 残り1変数チェック（O(1)）
@@ -279,9 +313,7 @@ bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
             return false;
         }
         // その値がプールに残っているか（他の変数と重複していないか）
-        // プールには内部インデックスが格納されている
-        auto it = pool_idx_.find(static_cast<Domain::value_type>(j));
-        return (it != pool_idx_.end() && it->second < pool_n_) && in_degree_[j] == 0;
+        return pool_idx_[j] < pool_n_ && occupier_[j] == SIZE_MAX;
     }
 
     // 利用可能な値が1つだけなら自動決定
@@ -299,20 +331,28 @@ bool CircuitConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 }
 
 bool CircuitConstraint::on_final_instantiate(const Model& model) {
-    (void)model;
     // 全ての変数が確定したときの最終確認: 単一のハミルトン閉路を形成しているか
-    // ノード 0 を含むパスの root を取得し、そのサイズが n であれば OK
-    size_t h0 = find(0);
-    return size_[h0] == n_;
+    // 内部状態に依存せず、モデルの値から閉路を直接たどって検証する
+    if (n_ == 0) return true;
+    std::vector<bool> visited(n_, false);
+    size_t cur = 0;
+    for (size_t steps = 0; steps < n_; ++steps) {
+        if (visited[cur]) return false;
+        visited[cur] = true;
+        if (!model.is_instantiated(var_ids_[cur])) return false;
+        size_t next = static_cast<size_t>(model.value(var_ids_[cur]) - base_offset_);
+        if (next >= n_) return false;
+        cur = next;
+    }
+    return cur == 0;
 }
 
 void CircuitConstraint::rewind_to(int save_point) {
     while (!trail_.empty() && trail_.back().first > save_point) {
         const auto& entry = trail_.back().second;
 
-        // 入次数を戻す
-        size_t j = static_cast<size_t>(entry.j);
-        in_degree_[j] = 0;
+        // occupier を戻す
+        occupier_[entry.j] = SIZE_MAX;
 
         // プールを戻す
         pool_n_ = entry.old_pool_n;
@@ -320,10 +360,10 @@ void CircuitConstraint::rewind_to(int save_point) {
         // 未確定カウントを戻す
         unfixed_count_ = entry.old_unfixed_count;
 
-        // パス結合の場合のみ head/tail/size を戻す
+        // パス結合の場合のみ端点とサイズを戻す
         if (entry.is_merge) {
-            tail_[entry.h1] = entry.old_tail_h1;
-            head_[entry.h2] = entry.h2;  // h2 を root に戻す
+            partner_[entry.h1] = entry.i;  // h1 のパスは h1 → ... → i に戻る
+            partner_[entry.t2] = entry.j;  // t2 のパスは j → ... → t2 に戻る
             size_[entry.h1] = entry.old_size_h1;
         }
 
@@ -341,10 +381,18 @@ void CircuitConstraint::bump_activity(const Model& model, size_t trigger_var_idx
     // 原因となる変数と衝突している変数の 2つがあるはず
     const double inc = 0.5 * activity_inc;
 
-    for (size_t vid : var_ids_) {
-        if (!model.is_instantiated(vid)) continue;
-        if (model.value(vid) == trigger_val) {
-            bump_variable_activity(activity, vid, inc, need_rescale, rng);
+    bump_variable_activity(activity, trigger_var_idx, inc, need_rescale, rng);
+
+    // trigger と同じ値に確定済みの変数は occupier で O(1) 特定できる
+    size_t j = static_cast<size_t>(trigger_val - base_offset_);
+    if (j < n_) {
+        size_t occ = occupier_[j];
+        if (occ != SIZE_MAX) {
+            size_t vid = var_ids_[occ];
+            if (vid != trigger_var_idx && model.is_instantiated(vid) &&
+                model.value(vid) == trigger_val) {
+                bump_variable_activity(activity, vid, inc, need_rescale, rng);
+            }
         }
     }
 }
@@ -352,4 +400,3 @@ void CircuitConstraint::bump_activity(const Model& model, size_t trigger_var_idx
 // ============================================================================
 
 }  // namespace sabori_csp
-

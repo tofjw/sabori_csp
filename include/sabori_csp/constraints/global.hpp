@@ -399,17 +399,19 @@ private:
  * 変数 x[0], x[1], ..., x[n-1] がハミルトン閉路を形成する。
  * x[i] = j は「ノード i の次はノード j」を意味する。
  *
- * Union-Find スタイルでパスを管理:
- * - head[i]: ノード i の親ポインタ (root なら自分自身)
- * - tail[h]: h が root のパスの末尾ノード
- * - size[h]: h が root のパスのサイズ
+ * 確定済みエッジが作るパスを端点リンク方式で管理:
+ * - partner_[端点]: 反対側の端点（端点でのみ有効）
+ * - size_[h]: head h のパスのノード数
+ * - 未確定変数は必ずパスの tail、入次数 0 のノードは必ずパスの head
+ *   なので、全操作が O(1)
  *
  * AllDifferent の性質も内包:
  * - 各ノードの入次数は最大1（同じ値は2回使えない）
  *
- * サブサーキット検出:
- * - x[i] = j のとき、find(i) == find(j) なら同じパス内で閉路形成
- * - そのとき size < n ならサブサーキットで false
+ * サブサーキット検出と枝刈り:
+ * - x[i] = j のとき、partner_[i] == j なら同じパス内で閉路形成。
+ *   size < n ならサブサーキットで false
+ * - パス結合後 size < n なら tail から head へ戻る値を除去（事前枝刈り）
  */
 class CircuitConstraint : public Constraint {
 public:
@@ -466,29 +468,32 @@ private:
     size_t n_;  // ノード数
     Domain::value_type base_offset_;  // 1-based インデックスのオフセット（通常は1）
 
-    // Union-Find スタイルのパス管理
-    std::vector<size_t> head_;  // head[i] = parent of i (root if self)
-    std::vector<size_t> tail_;  // tail[h] = tail of path with root h
-    std::vector<size_t> size_;  // size[h] = size of path with root h
+    // パス管理（端点リンク方式）
+    // partner_[x] はパスの端点 x でのみ有効で、反対側の端点を指す。
+    // 未確定変数 i は必ずパスの tail、入次数 0 のノード j は必ずパスの head
+    // なので、結合・閉路判定は O(1) で行える。
+    std::vector<size_t> partner_;  // partner_[端点] = 反対側の端点
+    std::vector<size_t> size_;     // size_[h] = head h のパスのノード数（head でのみ有効）
 
-    // 入次数（AllDifferent 用）
-    std::vector<int> in_degree_;
+    // occupier_[j] = ノード j へ確定済みエッジを張っている変数の内部インデックス
+    //（なければ SIZE_MAX。AllDifferent チェックと activity bump に使用）
+    std::vector<size_t> occupier_;
 
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
-    // 値プール（Sparse Set）
+    // 値プール（Sparse Set、内部インデックス 0..n-1 を格納）
     std::vector<Domain::value_type> pool_;
-    std::unordered_map<Domain::value_type, size_t> pool_idx_;
+    std::vector<size_t> pool_idx_;  // pool_idx_[内部インデックス] = pool_ 内の位置
     size_t pool_n_;
 
     // Trail
     struct TrailEntry {
-        size_t h1;
-        size_t old_tail_h1;
-        size_t h2;
+        size_t i;             // 確定した変数（結合前のパスの tail）
+        size_t j;             // 確定値の内部インデックス（結合前のパスの head）
+        size_t h1;            // 結合後パスの head
+        size_t t2;            // 結合後パスの tail
         size_t old_size_h1;
-        Domain::value_type j;
         size_t old_pool_n;
         size_t old_unfixed_count;
         bool is_merge;  // パス結合かどうか（false なら閉路形成）
@@ -496,14 +501,9 @@ private:
     std::vector<std::pair<int, TrailEntry>> trail_;
 
     /**
-     * @brief ノード i を含むパスの root を探す
+     * @brief プールから内部インデックスを削除（Sparse Set でO(1)）
      */
-    size_t find(size_t i) const;
-
-    /**
-     * @brief プールから値を削除（Sparse Set でO(1)）
-     */
-    void remove_from_pool(Domain::value_type value);
+    void remove_from_pool(size_t value);
 };
 
 /**
