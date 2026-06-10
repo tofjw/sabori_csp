@@ -264,10 +264,13 @@ static std::optional<ConstraintPtr> make_alldifferent_except_0(const ConstraintD
 static std::optional<ConstraintPtr> make_circuit(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("circuit requires 1 argument (array)");
     auto vars = resolve_vars(decl.args[0], ctx);
-    // circuit は alldifferent を含意する。Hall ペア / GAC の値伝播を効かせるため
-    // 明示的に併設する（CircuitConstraint 自体はパス構造の伝播に専念）
+    // circuit は alldifferent を含意する。Hall ペア / bounds(Z) の値伝播を
+    // 効かせるため明示的に併設する（CircuitConstraint 自体はパス構造の伝播に専念）。
+    // 注意: 併設 alldifferent には gac_favorable による自動 GAC を適用しない。
+    // circuit 側の SCC フィルタが同じグラフ構造の推論を既に行っており、
+    // GAC は二重コストになる（p1f-pjs で 2.2 倍の速度低下を実測, 2026-06-11）
     if (vars.size() >= 2) {
-        if (ctx.use_gac || gac_favorable(vars)) {
+        if (ctx.use_gac) {
             ctx.model->add_constraint(std::make_shared<AllDifferentGACConstraint>(vars));
         } else {
             ctx.model->add_constraint(std::make_shared<AllDifferentConstraint>(vars));
