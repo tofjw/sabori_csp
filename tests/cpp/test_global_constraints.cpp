@@ -1902,6 +1902,102 @@ TEST_CASE("CircuitConstraint subcircuit detection", "[constraint][circuit]") {
     }
 }
 
+TEST_CASE("CircuitConstraint SCC disconnected graph presolve", "[constraint][circuit][scc]") {
+    // 2つの三角形に分断されたグラフ: 各ノードの出入次数は2あるが強連結でない。
+    // サブサーキット規則やペアワイズでは検出できず、SCC 分析でのみ presolve 矛盾になる。
+    Model model;
+    std::vector<Variable*> vars;
+    vars.push_back(model.create_variable("x0", Domain(std::vector<int64_t>{1, 2})));
+    vars.push_back(model.create_variable("x1", Domain(std::vector<int64_t>{0, 2})));
+    vars.push_back(model.create_variable("x2", Domain(std::vector<int64_t>{0, 1})));
+    vars.push_back(model.create_variable("x3", Domain(std::vector<int64_t>{4, 5})));
+    vars.push_back(model.create_variable("x4", Domain(std::vector<int64_t>{3, 5})));
+    vars.push_back(model.create_variable("x5", Domain(std::vector<int64_t>{3, 4})));
+    CircuitConstraint c(vars);
+
+    REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
+}
+
+TEST_CASE("CircuitConstraint SCC in-degree forcing", "[constraint][circuit][scc]") {
+    // ノード 0 への入エッジ候補は x3 のみ → presolve で x3 = 0 が確定する
+    Model model;
+    std::vector<Variable*> vars;
+    vars.push_back(model.create_variable("x0", Domain(std::vector<int64_t>{1, 2, 3})));
+    vars.push_back(model.create_variable("x1", Domain(std::vector<int64_t>{2, 3})));
+    vars.push_back(model.create_variable("x2", Domain(std::vector<int64_t>{1, 3})));
+    vars.push_back(model.create_variable("x3", Domain(std::vector<int64_t>{0, 1, 2})));
+    CircuitConstraint c(vars);
+
+    REQUIRE(c.presolve(model) != PresolveResult::Contradiction);
+    REQUIRE(vars[3]->is_assigned());
+    REQUIRE(vars[3]->assigned_value().value() == 0);
+}
+
+TEST_CASE("CircuitConstraint SCC randomized solution count", "[constraint][circuit][scc]") {
+    // ランダムな部分ドメインで全解数をブルートフォースと比較（false UNSAT 検出）
+    std::mt19937 rng(424242);
+    constexpr size_t kN = 6;
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    for (int trial = 0; trial < 30; ++trial) {
+        std::array<std::vector<int64_t>, kN> doms;
+        for (size_t i = 0; i < kN; ++i) {
+            for (int64_t v = 0; v < static_cast<int64_t>(kN); ++v) {
+                if (static_cast<size_t>(v) == i) continue;  // 自己ループ除外
+                if (coin(rng) < 60) doms[i].push_back(v);
+            }
+            if (doms[i].empty()) doms[i].push_back(static_cast<int64_t>((i + 1) % kN));
+        }
+        // base_offset 検出を 0 に固定するため、値 0 を必ずどこかに含める
+        if (std::find(doms[kN - 1].begin(), doms[kN - 1].end(), 0) == doms[kN - 1].end()) {
+            doms[kN - 1].insert(doms[kN - 1].begin(), 0);
+        }
+
+        // ブルートフォースで単一ハミルトン閉路の数を数える
+        size_t expected = 0;
+        std::array<int64_t, kN> assign{};
+        std::array<bool, kN> used{};
+        std::function<void(size_t)> rec = [&](size_t depth) {
+            if (depth == kN) {
+                std::array<bool, kN> vis{};
+                size_t cur = 0;
+                for (size_t s = 0; s < kN; ++s) {
+                    if (vis[cur]) return;
+                    vis[cur] = true;
+                    cur = static_cast<size_t>(assign[cur]);
+                }
+                if (cur == 0) ++expected;
+                return;
+            }
+            for (auto v : doms[depth]) {
+                if (used[static_cast<size_t>(v)]) continue;
+                used[static_cast<size_t>(v)] = true;
+                assign[depth] = v;
+                rec(depth + 1);
+                used[static_cast<size_t>(v)] = false;
+            }
+        };
+        rec(0);
+
+        Model model;
+        std::vector<Variable*> vars;
+        for (size_t i = 0; i < kN; ++i) {
+            vars.push_back(model.create_variable("x" + std::to_string(i), Domain(doms[i])));
+        }
+        model.add_constraint(std::make_unique<CircuitConstraint>(vars));
+
+        Solver solver;
+        size_t actual = 0;
+        solver.solve_all(model, [&](const Solution&) {
+            ++actual;
+            return true;
+        });
+
+        INFO("trial " << trial);
+        REQUIRE(actual == expected);
+    }
+}
+
 TEST_CASE("CircuitConstraint solver integration", "[solver][circuit]") {
     SECTION("n=3 find one solution") {
         Model model;

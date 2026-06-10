@@ -2,8 +2,12 @@
  * @file all_different_gac.hpp
  * @brief all_different GAC 制約 (Régin's algorithm: 二部マッチング + SCC フィルタリング)
  *
- * 現在未使用。将来の性能改善のために保存。
  * AllDifferentConstraint を継承し、GAC (Generalized Arc Consistency) を追加。
+ *
+ * 使用条件 (constraint_registry の gac_favorable):
+ *   小規模 (変数数 4..24) かつ値域が密 (span <= 24) な alldifferent のみ。
+ *   sudoku 等で「全面有効化では overhead 負け、適応的有効化なら大幅改善」を
+ *   2026-06-10 に確認。-G フラグで全 alldifferent に強制可能。
  *
  * アルゴリズム:
  *   1. Hopcroft-Karp 最大二部マッチング
@@ -13,7 +17,6 @@
  *
  * 既知の制限:
  *   - コールバック内で消費済み値（instantiated var が使用中）のスキップが必要
- *   - ベンチマークでは改善が見られなかったため無効化中
  */
 #ifndef SABORI_CSP_CONSTRAINTS_ALL_DIFFERENT_GAC_HPP
 #define SABORI_CSP_CONSTRAINTS_ALL_DIFFERENT_GAC_HPP

@@ -435,6 +435,7 @@ bool AllDifferentConstraint::run_bounds_filter(size_t n, bool& changed) {
 }
 
 bool AllDifferentConstraint::propagate_bounds_z(Model& model, int save_point) {
+    if (!bounds_z_enabled_) return true;
     const size_t n = var_ids_.size();
     if (n < 2 || unfixed_count_ < 2) return true;
 

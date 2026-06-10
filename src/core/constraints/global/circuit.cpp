@@ -173,7 +173,149 @@ PresolveResult CircuitConstraint::presolve(Model& model) {
         }
     }
 
+    // SCC フィルタリング: ドメイングラフが強連結でなければハミルトン閉路は不可能。
+    // 入次数 0 のノードは矛盾、入次数 1 のノードは唯一の前任エッジを確定させる。
+    if (n_ >= 3) {
+        if (!build_scc_graph(model, /*use_path_state=*/false)) {
+            return PresolveResult::Contradiction;
+        }
+        if (!scc_single_component()) {
+            return PresolveResult::Contradiction;
+        }
+        for (size_t j = 0; j < n_; ++j) {
+            if (scc_indeg_[j] == 0) return PresolveResult::Contradiction;
+            if (scc_indeg_[j] == 1) {
+                size_t u = static_cast<size_t>(scc_pred_[j]);
+                Variable* uv = model.variable(var_ids_[u]);
+                if (!uv->is_assigned()) {
+                    auto val = static_cast<Domain::value_type>(j) + base_offset_;
+                    if (!uv->assign(val)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+        }
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
+}
+
+bool CircuitConstraint::build_scc_graph(Model& model, bool use_path_state) {
+    if (scc_adj_head_.size() != n_ + 1) {
+        scc_adj_head_.resize(n_ + 1);
+        scc_index_.resize(n_);
+        scc_low_.resize(n_);
+        scc_edge_pos_.resize(n_);
+        scc_onstack_.resize(n_);
+        scc_indeg_.resize(n_);
+        scc_pred_.resize(n_);
+        scc_occupied_.resize(n_);
+        scc_stack_.reserve(n_);
+        scc_dfs_stack_.reserve(n_);
+    }
+    scc_adj_.clear();
+    std::fill(scc_indeg_.begin(), scc_indeg_.end(), 0);
+
+    // presolve では occupier_ が古い可能性があるため model から再計算する
+    if (!use_path_state) {
+        std::fill(scc_occupied_.begin(), scc_occupied_.end(), 0);
+        for (size_t i = 0; i < n_; ++i) {
+            if (model.is_instantiated(var_ids_[i])) {
+                size_t j = static_cast<size_t>(model.value(var_ids_[i]) - base_offset_);
+                if (j >= n_) return false;
+                scc_occupied_[j] = 1;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < n_; ++i) {
+        scc_adj_head_[i] = static_cast<int>(scc_adj_.size());
+        size_t vid = var_ids_[i];
+
+        if (model.is_instantiated(vid)) {
+            size_t j = static_cast<size_t>(model.value(vid) - base_offset_);
+            if (j >= n_) return false;
+            scc_adj_.push_back(static_cast<int>(j));
+            ++scc_indeg_[j];
+            scc_pred_[j] = static_cast<int>(i);
+            continue;
+        }
+
+        // サブサーキットを閉じるエッジ（tail → 自パスの head）は使用不能。
+        // 探索中は partner_/size_ が trail で最新に保たれている。
+        size_t block = SIZE_MAX;
+        if (use_path_state) {
+            size_t h = partner_[i];
+            if (size_[h] < n_) block = h;
+        }
+
+        auto lo = std::max(model.var_min(vid), base_offset_);
+        auto hi = std::min(model.var_max(vid),
+                           base_offset_ + static_cast<Domain::value_type>(n_) - 1);
+        size_t out_degree = 0;
+        for (auto val = lo; val <= hi; ++val) {
+            if (!model.contains(vid, val)) continue;
+            size_t j = static_cast<size_t>(val - base_offset_);
+            if (j == i) continue;  // 自己ループは閉路に使えない (n>=2)
+            if (use_path_state ? (occupier_[j] != SIZE_MAX) : (scc_occupied_[j] != 0)) {
+                continue;  // j の前任は確定済み
+            }
+            if (j == block) continue;
+            scc_adj_.push_back(static_cast<int>(j));
+            ++scc_indeg_[j];
+            scc_pred_[j] = static_cast<int>(i);
+            ++out_degree;
+        }
+        if (out_degree == 0) return false;
+    }
+    scc_adj_head_[n_] = static_cast<int>(scc_adj_.size());
+    return true;
+}
+
+bool CircuitConstraint::scc_single_component() {
+    std::fill(scc_index_.begin(), scc_index_.end(), -1);
+    scc_stack_.clear();
+    scc_dfs_stack_.clear();
+    std::fill(scc_onstack_.begin(), scc_onstack_.end(), 0);
+
+    int counter = 0;
+    int scc_count = 0;
+
+    scc_dfs_stack_.push_back(0);
+    while (!scc_dfs_stack_.empty()) {
+        int v = scc_dfs_stack_.back();
+        if (scc_index_[v] < 0) {
+            scc_index_[v] = scc_low_[v] = counter++;
+            scc_stack_.push_back(v);
+            scc_onstack_[v] = 1;
+            scc_edge_pos_[v] = scc_adj_head_[v];
+        }
+        if (scc_edge_pos_[v] < scc_adj_head_[v + 1]) {
+            int w = scc_adj_[scc_edge_pos_[v]++];
+            if (scc_index_[w] < 0) {
+                scc_dfs_stack_.push_back(w);
+            } else if (scc_onstack_[w]) {
+                scc_low_[v] = std::min(scc_low_[v], scc_index_[w]);
+            }
+        } else {
+            scc_dfs_stack_.pop_back();
+            if (!scc_dfs_stack_.empty()) {
+                int parent = scc_dfs_stack_.back();
+                scc_low_[parent] = std::min(scc_low_[parent], scc_low_[v]);
+            }
+            if (scc_low_[v] == scc_index_[v]) {
+                if (++scc_count > 1) return false;  // 2つ目の SCC = 強連結でない
+                int w;
+                do {
+                    w = scc_stack_.back();
+                    scc_stack_.pop_back();
+                    scc_onstack_[w] = 0;
+                } while (w != v);
+            }
+        }
+    }
+
+    // ノード 0 から到達できないノードがある場合も閉路は不可能
+    return static_cast<size_t>(counter) == n_;
 }
 
 void CircuitConstraint::remove_from_pool(size_t value) {
@@ -282,6 +424,24 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         if (model.is_instantiated(vid)) continue;
         if (model.contains(vid, value)) {
             model.enqueue_remove_value(vid, value);
+        }
+    }
+
+    // SCC フィルタリング: 強連結でなければ矛盾、
+    // 入次数 0 は矛盾、入次数 1 は唯一の前任エッジを確定
+    if (unfixed_count_ >= 2 && n_ >= 3) {
+        if (!build_scc_graph(model, /*use_path_state=*/true)) return false;
+        if (!scc_single_component()) return false;
+        for (size_t k = 0; k < n_; ++k) {
+            if (scc_indeg_[k] == 0) return false;
+            if (scc_indeg_[k] == 1) {
+                size_t u = static_cast<size_t>(scc_pred_[k]);
+                size_t uvid = var_ids_[u];
+                if (!model.is_instantiated(uvid)) {
+                    model.enqueue_instantiate(
+                        uvid, static_cast<Domain::value_type>(k) + base_offset_);
+                }
+            }
         }
     }
 

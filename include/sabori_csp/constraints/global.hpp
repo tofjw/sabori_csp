@@ -95,6 +95,10 @@ protected:
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
+    // bounds(Z) フィルタの有効フラグ。GAC サブクラスが GAC 有効時に false にする
+    // （domain consistency は bounds consistency を包含するため二重実行を回避）
+    bool bounds_z_enabled_ = true;
+
 private:
     /**
      * @brief サイズ2のドメインペアによる Hall set 検出
@@ -538,6 +542,35 @@ private:
      * @brief プールから内部インデックスを削除（Sparse Set でO(1)）
      */
     void remove_from_pool(size_t value);
+
+    /**
+     * @brief ドメインが張る有向グラフを CSR 形式で構築
+     *
+     * 使用不能なエッジ（自己ループ、入次数確定済みノードへのエッジ、
+     * サブサーキットを閉じるエッジ）は除外する。
+     * 同時に入次数 (scc_indeg_) と唯一の前任候補 (scc_pred_) を数える。
+     *
+     * @param use_path_state true なら探索中（occupier_/partner_ が最新）、
+     *                       false なら presolve（model から occupied を再計算）
+     * @return 出次数 0 のノードを検出したら false
+     */
+    bool build_scc_graph(Model& model, bool use_path_state);
+
+    /**
+     * @brief 構築済みグラフが単一の強連結成分か判定（Tarjan, 反復実装）
+     *
+     * ハミルトン閉路が存在するにはドメイングラフが強連結である必要がある。
+     */
+    bool scc_single_component();
+
+    // ===== SCC スクラッチ（毎回再構築、trail 不要）=====
+    std::vector<int> scc_adj_head_;   // CSR: ノードごとの開始位置 (n+1)
+    std::vector<int> scc_adj_;        // CSR: エッジ先ノード
+    std::vector<int> scc_index_, scc_low_;       // Tarjan
+    std::vector<int> scc_stack_, scc_dfs_stack_, scc_edge_pos_;
+    std::vector<char> scc_onstack_;
+    std::vector<int> scc_indeg_, scc_pred_;      // 入次数と唯一の前任候補
+    std::vector<char> scc_occupied_;             // presolve 用: 前任確定済みノード
 };
 
 /**

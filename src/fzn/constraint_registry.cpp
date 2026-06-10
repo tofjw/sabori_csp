@@ -225,10 +225,32 @@ static std::optional<ConstraintPtr> make_int_abs(const ConstraintDecl& decl, Fzn
 // ============================================================
 // Pattern B: Array constraints
 // ============================================================
+/**
+ * @brief 小規模で値域が密な alldifferent には Régin GAC が割に合うか判定
+ *
+ * sudoku のような「変数数・値域がともに小さい」alldifferent では
+ * マッチング + SCC の GAC フィルタリングのコストが小さく、枝刈りの利益が
+ * 大きく上回る。大きい/値域が疎な alldifferent では overhead が利益を
+ * 上回るため(過去のベンチで実証)、基本版にフォールバックする。
+ */
+static bool gac_favorable(const std::vector<VariablePtr>& vars) {
+    constexpr size_t kMaxVars = 32;
+    constexpr Domain::value_type kMaxSpan = 32;
+    if (vars.size() < 4 || vars.size() > kMaxVars) return false;
+    Domain::value_type lo = std::numeric_limits<Domain::value_type>::max();
+    Domain::value_type hi = std::numeric_limits<Domain::value_type>::lowest();
+    for (const auto& v : vars) {
+        if (v->domain().empty()) return false;
+        lo = std::min(lo, v->min());
+        hi = std::max(hi, v->max());
+    }
+    return hi - lo + 1 <= kMaxSpan;
+}
+
 static std::optional<ConstraintPtr> make_all_different(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 1) throw std::runtime_error("all_different_int requires 1 argument (array)");
     auto vars = resolve_vars(decl.args[0], ctx);
-    if (ctx.use_gac) {
+    if (ctx.use_gac || gac_favorable(vars)) {
         return std::make_shared<AllDifferentGACConstraint>(std::move(vars));
     }
     return std::make_shared<AllDifferentConstraint>(std::move(vars));
@@ -245,7 +267,7 @@ static std::optional<ConstraintPtr> make_circuit(const ConstraintDecl& decl, Fzn
     // circuit は alldifferent を含意する。Hall ペア / GAC の値伝播を効かせるため
     // 明示的に併設する（CircuitConstraint 自体はパス構造の伝播に専念）
     if (vars.size() >= 2) {
-        if (ctx.use_gac) {
+        if (ctx.use_gac || gac_favorable(vars)) {
             ctx.model->add_constraint(std::make_shared<AllDifferentGACConstraint>(vars));
         } else {
             ctx.model->add_constraint(std::make_shared<AllDifferentConstraint>(vars));
