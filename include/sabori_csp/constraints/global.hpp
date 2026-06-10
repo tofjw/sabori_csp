@@ -1391,6 +1391,11 @@ private:
     bool propagate_via_queue(Model& model);
     bool filter_index_against_result(Model& model);
     void recompute_bounds_support(Model& model);
+
+    /**
+     * @brief support 状態を trail に保存（save_point ごとに1回だけ）
+     */
+    void save_support_trail(Model& model, int save_point);
 };
 
 /**

@@ -175,6 +175,15 @@ bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     return true;
 }
 
+// support 状態の trail 保存（save_point ごとに1回だけ）
+void ArrayVarIntElementConstraint::save_support_trail(Model& model, int save_point) {
+    if (trail_.empty() || trail_.back().first != save_point) {
+        trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
+                                        min_support_arr_idx_, max_support_arr_idx_}});
+        model.mark_constraint_dirty(model_index(), save_point);
+    }
+}
+
 PresolveResult ArrayVarIntElementConstraint::presolve(Model& model) {
     size_t total_size_before = 0;
     for (size_t vid : var_ids_) {
@@ -228,8 +237,13 @@ bool ArrayVarIntElementConstraint::propagate_via_queue(Model& model) {
     min_support_arr_idx_ = new_min_idx;
     max_support_arr_idx_ = new_max_idx;
 
-    model.enqueue_set_min(result_id_, new_result_min);
-    model.enqueue_set_max(result_id_, new_result_max);
+    // 実際に締まる場合のみ enqueue（無条件投入はキュー流量を浪費する）
+    if (new_result_min > model.var_min(result_id_)) {
+        model.enqueue_set_min(result_id_, new_result_min);
+    }
+    if (new_result_max < model.var_max(result_id_)) {
+        model.enqueue_set_max(result_id_, new_result_max);
+    }
 
     if (model.is_instantiated(index_id_)) {
         auto idx = model.value(index_id_);
@@ -239,13 +253,17 @@ bool ArrayVarIntElementConstraint::propagate_via_queue(Model& model) {
             auto common_min = std::max(model.var_min(arr_id), model.var_min(result_id_));
             auto common_max = std::min(model.var_max(arr_id), model.var_max(result_id_));
             if (common_min > common_max) return false;
-            model.enqueue_set_min(result_id_, common_min);
-            model.enqueue_set_max(result_id_, common_max);
-            model.enqueue_set_min(arr_id, common_min);
-            model.enqueue_set_max(arr_id, common_max);
-            if (model.is_instantiated(arr_id))
+            if (common_min > model.var_min(result_id_))
+                model.enqueue_set_min(result_id_, common_min);
+            if (common_max < model.var_max(result_id_))
+                model.enqueue_set_max(result_id_, common_max);
+            if (common_min > model.var_min(arr_id))
+                model.enqueue_set_min(arr_id, common_min);
+            if (common_max < model.var_max(arr_id))
+                model.enqueue_set_max(arr_id, common_max);
+            if (model.is_instantiated(arr_id) && !model.is_instantiated(result_id_))
                 model.enqueue_instantiate(result_id_, model.value(arr_id));
-            if (model.is_instantiated(result_id_))
+            if (model.is_instantiated(result_id_) && !model.is_instantiated(arr_id))
                 model.enqueue_instantiate(arr_id, model.value(result_id_));
         }
     }
@@ -279,9 +297,7 @@ bool ArrayVarIntElementConstraint::on_instantiate(
     size_t /*var_idx*/, size_t /*internal_var_idx*/, Domain::value_type /*value*/,
     Domain::value_type /*prev_min*/, Domain::value_type /*prev_max*/) {
 
-    trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                    min_support_arr_idx_, max_support_arr_idx_}});
-    model.mark_constraint_dirty(model_index(), save_point);
+    save_support_trail(model, save_point);
     return propagate_via_queue(model);
 }
 
@@ -292,9 +308,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
 
     if (!use_support_tracking_) {
         // デフォルトモード: 無条件全スキャン
-        trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                        min_support_arr_idx_, max_support_arr_idx_}});
-        model.mark_constraint_dirty(model_index(), save_point);
+        save_support_trail(model, save_point);
         return propagate_via_queue(model);
     }
 
@@ -319,9 +333,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
     }
 
     // index bounds 変更 or support invalidation → 全スキャン
-    trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                    min_support_arr_idx_, max_support_arr_idx_}});
-    model.mark_constraint_dirty(model_index(), save_point);
+    save_support_trail(model, save_point);
     return propagate_via_queue(model);
 }
 
@@ -331,9 +343,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
     Domain::value_type /*old_max*/) {
 
     if (!use_support_tracking_) {
-        trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                        min_support_arr_idx_, max_support_arr_idx_}});
-        model.mark_constraint_dirty(model_index(), save_point);
+        save_support_trail(model, save_point);
         return propagate_via_queue(model);
     }
 
@@ -356,9 +366,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
         // max support が invalidate → 全スキャン
     }
 
-    trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                    min_support_arr_idx_, max_support_arr_idx_}});
-    model.mark_constraint_dirty(model_index(), save_point);
+    save_support_trail(model, save_point);
     return propagate_via_queue(model);
 }
 
@@ -375,11 +383,7 @@ bool ArrayVarIntElementConstraint::on_remove_value(
         if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
             size_t ai = static_cast<size_t>(idx_0based);
             if (ai == min_support_arr_idx_ || ai == max_support_arr_idx_) {
-                if (trail_.empty() || trail_.back().first != save_point) {
-                    trail_.push_back({save_point, {current_result_min_support_, current_result_max_support_,
-                                                    min_support_arr_idx_, max_support_arr_idx_}});
-                    model.mark_constraint_dirty(model_index(), save_point);
-                }
+                save_support_trail(model, save_point);
                 return propagate_via_queue(model);
             }
         }
