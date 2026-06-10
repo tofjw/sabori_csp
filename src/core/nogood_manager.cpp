@@ -229,7 +229,7 @@ void NoGoodManager::learn_from_conflict(const std::vector<Literal>& decision_tra
 
 // ===== Solution NoGood =====
 
-void NoGoodManager::add_solution_nogood(const Model& model, size_t restart_count) {
+std::vector<Literal> NoGoodManager::collect_solution_literals(const Model& model) const {
     std::vector<Literal> lits;
     const auto& variables = model.variables();
     for (size_t i = 0; i < variables.size(); ++i) {
@@ -239,8 +239,23 @@ void NoGoodManager::add_solution_nogood(const Model& model, size_t restart_count
             lits.push_back({i, model.value(i)});
         }
     }
-    if (!lits.empty()) {
-        add_nogood(lits, restart_count);
+    return lits;
+}
+
+void NoGoodManager::add_solution_nogood(const Model& model, const std::vector<Literal>& lits,
+                                        size_t restart_count) {
+    // root バックトラック後も確定したままの変数（presolve や root 伝播で固定）は
+    // 以後再代入されないため除外する。含めたまま watched literal がそこに
+    // 張られると NoGood が発火せず、同じ解を再発見し続ける。
+    std::vector<Literal> filtered;
+    filtered.reserve(lits.size());
+    for (const auto& lit : lits) {
+        if (!model.is_instantiated(lit.var_idx)) {
+            filtered.push_back(lit);
+        }
+    }
+    if (!filtered.empty()) {
+        add_nogood(filtered, restart_count);
         nogoods_.back()->permanent = true;
     }
 }

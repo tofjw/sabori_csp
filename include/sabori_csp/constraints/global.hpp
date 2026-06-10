@@ -101,6 +101,40 @@ private:
      */
     bool check_hall_pair(Model& model, size_t trigger_var_idx);
 
+    /**
+     * @brief bounds(Z) consistency フィルタの本体 (López-Ortiz et al., IJCAI 2003)
+     *
+     * bz_min_/bz_max_ に格納された区間 [min_i, max_i] に対して
+     * Hall interval を検出し、bz_newmin_/bz_newmax_ に絞り込み後の bounds を書き込む。
+     * 計算量 O(n log n)。
+     *
+     * @param n 区間数（= 変数数）
+     * @param changed bounds が絞り込まれたら true
+     * @return 矛盾（Hall interval の容量超過）を検出したら false
+     */
+    bool run_bounds_filter(size_t n, bool& changed);
+
+    /**
+     * @brief 探索中の bounds(Z) 伝播
+     *
+     * Model から現在の bounds を読み、フィルタ結果を enqueue_set_min/max で反映する。
+     */
+    bool propagate_bounds_z(Model& model, int save_point);
+
+    // ===== bounds(Z) スクラッチ（毎回現在の bounds から再構築、trail 不要）=====
+    std::vector<size_t> bz_minsorted_, bz_maxsorted_;   // min/max 昇順の変数 index
+    std::vector<int> bz_minrank_, bz_maxrank_;          // bounds 配列内のランク
+    std::vector<Domain::value_type> bz_min_, bz_max_;   // 入力区間
+    std::vector<Domain::value_type> bz_newmin_, bz_newmax_;  // フィルタ結果
+    std::vector<Domain::value_type> bz_bounds_, bz_d_;  // 臨界容量
+    std::vector<int> bz_t_, bz_h_;                      // tree / hall interval リンク
+
+    // 自分が enqueue した bounds 更新のエコーを検出して再実行を抑制する。
+    // epoch は rewind_to() でインクリメントされ、バックトラック前のエントリを無効化する。
+    uint64_t bz_epoch_ = 1;
+    std::vector<Domain::value_type> bz_expected_min_, bz_expected_max_;
+    std::vector<uint64_t> bz_expected_min_epoch_, bz_expected_max_epoch_;
+
     // Trail: (save_point, (old_pool_n, old_unfixed_count))
     struct TrailEntry {
         size_t old_pool_n;

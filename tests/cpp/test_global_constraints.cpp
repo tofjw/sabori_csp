@@ -9,6 +9,7 @@
 #include <set>
 #include <tuple>
 #include <algorithm>
+#include <iostream>
 
 using namespace sabori_csp;
 
@@ -169,6 +170,128 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
     // Rewind to level 0
     c.rewind_to(0);
     REQUIRE(c.pool_size() == 3);
+}
+
+// ============================================================================
+// AllDifferentConstraint bounds(Z) (López-Ortiz et al.) tests
+// ============================================================================
+
+TEST_CASE("AllDifferentConstraint bounds(Z) Hall interval presolve", "[constraint][all_different][bounds_z]") {
+    // x1,x2 ∈ [1,2] が Hall interval → x3.min は 3 に、さらに x4.min は 4 に
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(1, 2));
+    auto* x2 = model.create_variable("x2", Domain(1, 2));
+    auto* x3 = model.create_variable("x3", Domain(1, 3));
+    auto* x4 = model.create_variable("x4", Domain(1, 4));
+    AllDifferentConstraint c({x1, x2, x3, x4});
+
+    REQUIRE(c.presolve(model) == PresolveResult::Changed);
+    REQUIRE(x3->min() == 3);
+    REQUIRE(x4->min() == 4);
+}
+
+TEST_CASE("AllDifferentConstraint bounds(Z) upper bound pruning", "[constraint][all_different][bounds_z]") {
+    // x1,x2 ∈ [3,4] が Hall interval → x3.max は 2 に
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(3, 4));
+    auto* x2 = model.create_variable("x2", Domain(3, 4));
+    auto* x3 = model.create_variable("x3", Domain(2, 4));
+    AllDifferentConstraint c({x1, x2, x3});
+
+    REQUIRE(c.presolve(model) == PresolveResult::Changed);
+    REQUIRE(x3->max() == 2);
+}
+
+TEST_CASE("AllDifferentConstraint bounds(Z) pigeonhole infeasibility", "[constraint][all_different][bounds_z]") {
+    // 3変数が [1,2] → 鳩の巣で矛盾
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(1, 2));
+    auto* x2 = model.create_variable("x2", Domain(1, 2));
+    auto* x3 = model.create_variable("x3", Domain(1, 2));
+    AllDifferentConstraint c({x1, x2, x3});
+
+    REQUIRE(c.presolve(model) == PresolveResult::Contradiction);
+}
+
+TEST_CASE("AllDifferentConstraint bounds(Z) solve_all correctness", "[constraint][all_different][bounds_z]") {
+    // Hall interval 越しの全解列挙が正しい解数を返すこと
+    Model model;
+    auto* x1 = model.create_variable("x1", Domain(1, 2));
+    auto* x2 = model.create_variable("x2", Domain(1, 2));
+    auto* x3 = model.create_variable("x3", Domain(1, 3));
+    auto* x4 = model.create_variable("x4", Domain(1, 4));
+
+    model.add_constraint(std::make_unique<AllDifferentConstraint>(
+        std::vector<Variable*>{x1, x2, x3, x4}));
+
+    Solver solver;
+    auto solutions = std::vector<Solution>();
+    solver.solve_all(model, [&](const Solution& sol) {
+        solutions.push_back(sol);
+        return true;
+    });
+
+    // x1,x2 は {1,2} の順列、x3=3, x4=4 の 2 解のみ
+    REQUIRE(solutions.size() == 2);
+    for (const auto& sol : solutions) {
+        REQUIRE(sol.at("x3") == 3);
+        REQUIRE(sol.at("x4") == 4);
+    }
+}
+
+TEST_CASE("AllDifferentConstraint bounds(Z) randomized solution count", "[constraint][all_different][bounds_z]") {
+    // ランダムな区間ドメインで全解数をブルートフォースと比較
+    std::mt19937 rng(12345);
+    std::uniform_int_distribution<int64_t> lo_dist(1, 4);
+    std::uniform_int_distribution<int64_t> len_dist(0, 3);
+
+    for (int trial = 0; trial < 30; ++trial) {
+        constexpr size_t kN = 5;
+        int64_t lo[kN], hi[kN];
+        for (size_t i = 0; i < kN; ++i) {
+            lo[i] = lo_dist(rng);
+            hi[i] = lo[i] + len_dist(rng);
+        }
+
+        // ブルートフォースで解数を数える
+        size_t expected = 0;
+        std::array<int64_t, kN> assign{};
+        std::function<void(size_t)> enumerate = [&](size_t depth) {
+            if (depth == kN) {
+                ++expected;
+                return;
+            }
+            for (int64_t v = lo[depth]; v <= hi[depth]; ++v) {
+                bool dup = false;
+                for (size_t k = 0; k < depth; ++k) {
+                    if (assign[k] == v) { dup = true; break; }
+                }
+                if (!dup) {
+                    assign[depth] = v;
+                    enumerate(depth + 1);
+                }
+            }
+        };
+        enumerate(0);
+
+        Model model;
+        std::vector<Variable*> vars;
+        for (size_t i = 0; i < kN; ++i) {
+            vars.push_back(model.create_variable("x" + std::to_string(i),
+                                                 Domain(lo[i], hi[i])));
+        }
+        model.add_constraint(std::make_unique<AllDifferentConstraint>(vars));
+
+        Solver solver;
+        size_t actual = 0;
+        solver.solve_all(model, [&](const Solution&) {
+            ++actual;
+            return true;
+        });
+
+        INFO("trial " << trial);
+        REQUIRE(actual == expected);
+    }
 }
 
 // ============================================================================

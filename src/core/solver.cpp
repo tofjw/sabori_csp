@@ -243,8 +243,11 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                         return std::nullopt;  // コールバックが停止を要求
                     }
                     model.clear_pending_updates();
-                    nogood_mgr_.add_solution_nogood(model, stats_.restart_count);
+                    // リテラル収集はバックトラック前、NoGood 登録は root 確定変数を
+                    // 除外するためバックトラック後に行う
+                    auto sol_lits = nogood_mgr_.collect_solution_literals(model);
                     backtrack(model, root_point);
+                    nogood_mgr_.add_solution_nogood(model, sol_lits, stats_.restart_count);
 
                     // If still all assigned after backtrack, no decisions were undone
                     // (presolve fully solved the problem) — no more solutions exist.
@@ -271,8 +274,9 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                                 return std::nullopt;
                             }
                             model.clear_pending_updates();
-                            nogood_mgr_.add_solution_nogood(model, stats_.restart_count);
+                            auto inner_lits = nogood_mgr_.collect_solution_literals(model);
                             backtrack(model, root_point);
+                            nogood_mgr_.add_solution_nogood(model, inner_lits, stats_.restart_count);
                             // If still all assigned after backtrack, no decisions to undo
                             if (var_selector_.all_assigned()) {
                                 sync_nogood_stats();

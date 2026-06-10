@@ -114,9 +114,22 @@ public:
     // ===== Solution NoGood =====
 
     /**
-     * @brief 現在の完全割当を永続 NoGood として追加（全解探索用）
+     * @brief 現在の完全割当から解 NoGood 用のリテラルを収集（全解探索用）
+     *
+     * root へバックトラックする前に呼び出し、結果を add_solution_nogood() に渡す。
      */
-    void add_solution_nogood(const Model& model, size_t restart_count);
+    std::vector<Literal> collect_solution_literals(const Model& model) const;
+
+    /**
+     * @brief 解を永続 NoGood として追加（全解探索用）
+     *
+     * root へのバックトラック後に呼び出すこと。root レベルで確定したままの
+     * 変数（presolve や root 伝播で固定された変数）のリテラルは除外する。
+     * それらは以後再代入されないため、watched literal に選ばれると NoGood が
+     * 発火せず、同じ解を再発見し続ける原因になる。
+     */
+    void add_solution_nogood(const Model& model, const std::vector<Literal>& lits,
+                             size_t restart_count);
 
     // ===== Maintenance (GC) =====
 

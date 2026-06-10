@@ -6,6 +6,30 @@
 
 namespace sabori_csp {
 
+namespace {
+
+// López-Ortiz bounds(Z) フィルタ用の経路操作（union-find 風のリンク配列）
+inline int bz_pathmax(const std::vector<int>& a, int x) {
+    while (a[x] > x) x = a[x];
+    return x;
+}
+
+inline int bz_pathmin(const std::vector<int>& a, int x) {
+    while (a[x] < x) x = a[x];
+    return x;
+}
+
+inline void bz_pathset(std::vector<int>& a, int start, int end, int to) {
+    int next = start;
+    while (next != end) {
+        int prev = next;
+        next = a[prev];
+        a[prev] = to;
+    }
+}
+
+}  // namespace
+
 // ============================================================================
 // AllDifferentConstraint implementation
 // ============================================================================
@@ -63,6 +87,7 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
     }
     unfixed_count_ = 0;
     pool_trail_.clear();
+    ++bz_epoch_;  // 前回探索のエコー検出エントリを無効化
 
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         auto vid = var_ids_[i];
@@ -117,6 +142,39 @@ PresolveResult AllDifferentConstraint::presolve(Model& model) {
             }
         }
     }
+
+    // bounds(Z) フィルタ: Hall interval による bounds の絞り込み
+    const size_t n = var_ids_.size();
+    if (n >= 2) {
+        bz_min_.resize(n);
+        bz_max_.resize(n);
+        bz_newmin_.resize(n);
+        bz_newmax_.resize(n);
+        for (size_t i = 0; i < n; ++i) {
+            auto* var = model.variable(var_ids_[i]);
+            bz_min_[i] = var->min();
+            bz_max_[i] = var->max();
+            bz_newmin_[i] = bz_min_[i];
+            bz_newmax_[i] = bz_max_[i];
+        }
+        bool bz_changed = false;
+        if (!run_bounds_filter(n, bz_changed)) {
+            return PresolveResult::Contradiction;
+        }
+        if (bz_changed) {
+            for (size_t i = 0; i < n; ++i) {
+                auto* var = model.variable(var_ids_[i]);
+                if (bz_newmin_[i] > bz_min_[i] && !var->remove_below(bz_newmin_[i])) {
+                    return PresolveResult::Contradiction;
+                }
+                if (bz_newmax_[i] < bz_max_[i] && !var->remove_above(bz_newmax_[i])) {
+                    return PresolveResult::Contradiction;
+                }
+            }
+            changed = true;
+        }
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
@@ -193,6 +251,11 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
+    // 確定で区間 [value, value] が固定されたので bounds(Z) フィルタを実行
+    if (!propagate_bounds_z(model, save_point)) {
+        return false;
+    }
+
     if (unfixed_count_ <= 1) {
       size_t last_idx = SIZE_MAX;
       if (!model.is_instantiated(var_ids_[watch1()])) {
@@ -254,6 +317,169 @@ bool AllDifferentConstraint::on_final_instantiate(const Model& model) {
     return true;
 }
 
+bool AllDifferentConstraint::run_bounds_filter(size_t n, bool& changed) {
+    changed = false;
+    if (n < 2) return true;
+
+    if (bz_minsorted_.size() != n) {
+        bz_minsorted_.resize(n);
+        bz_maxsorted_.resize(n);
+        for (size_t i = 0; i < n; ++i) {
+            bz_minsorted_[i] = i;
+            bz_maxsorted_[i] = i;
+        }
+        bz_minrank_.resize(n);
+        bz_maxrank_.resize(n);
+        bz_bounds_.resize(2 * n + 2);
+        bz_t_.resize(2 * n + 2);
+        bz_h_.resize(2 * n + 2);
+        bz_d_.resize(2 * n + 2);
+    }
+
+    // ソート順は呼び出し間でほぼ保存されるので、前回の順列を初期値に使う
+    std::sort(bz_minsorted_.begin(), bz_minsorted_.end(),
+              [this](size_t a, size_t b) { return bz_min_[a] < bz_min_[b]; });
+    std::sort(bz_maxsorted_.begin(), bz_maxsorted_.end(),
+              [this](size_t a, size_t b) { return bz_max_[a] < bz_max_[b]; });
+
+    // 全区間の端点 {min_i, max_i+1} をマージして臨界値列 bounds[1..nb] を構築
+    Domain::value_type minv = bz_min_[bz_minsorted_[0]];
+    Domain::value_type maxv = bz_max_[bz_maxsorted_[0]] + 1;
+    Domain::value_type last = minv - 2;
+    bz_bounds_[0] = last;
+    int nb = 0;
+    {
+        size_t i = 0, j = 0;
+        for (;;) {
+            if (i < n && minv <= maxv) {
+                if (minv != last) bz_bounds_[++nb] = last = minv;
+                bz_minrank_[bz_minsorted_[i]] = nb;
+                if (++i < n) minv = bz_min_[bz_minsorted_[i]];
+            } else {
+                if (maxv != last) bz_bounds_[++nb] = last = maxv;
+                bz_maxrank_[bz_maxsorted_[j]] = nb;
+                if (++j == n) break;
+                maxv = bz_max_[bz_maxsorted_[j]] + 1;
+            }
+        }
+    }
+    bz_bounds_[nb + 1] = bz_bounds_[nb] + 2;
+
+    // ---- 下限フィルタ: max 昇順に区間を挿入し、Hall interval で min を押し上げる ----
+    for (int k = 1; k <= nb + 1; ++k) {
+        bz_t_[k] = k - 1;
+        bz_h_[k] = k - 1;
+        bz_d_[k] = bz_bounds_[k] - bz_bounds_[k - 1];
+    }
+    for (size_t idx = 0; idx < n; ++idx) {
+        size_t vi = bz_maxsorted_[idx];
+        int x = bz_minrank_[vi];
+        int y = bz_maxrank_[vi];
+        int z = bz_pathmax(bz_t_, x + 1);
+        int j = bz_t_[z];
+        if (--bz_d_[z] == 0) {
+            bz_t_[z] = z + 1;
+            z = bz_pathmax(bz_t_, z + 1);
+            bz_t_[z] = j;
+        }
+        bz_pathset(bz_t_, x + 1, z, z);
+        if (bz_d_[z] < bz_bounds_[z] - bz_bounds_[y]) {
+            return false;  // Hall interval の容量超過 = 矛盾
+        }
+        if (bz_h_[x] > x) {
+            int w = bz_pathmax(bz_h_, bz_h_[x]);
+            bz_newmin_[vi] = bz_bounds_[w];
+            bz_pathset(bz_h_, x, w, w);
+            changed = true;
+        }
+        if (bz_d_[z] == bz_bounds_[z] - bz_bounds_[y]) {
+            bz_pathset(bz_h_, bz_h_[y], j - 1, y);
+            bz_h_[y] = j - 1;
+        }
+    }
+
+    // ---- 上限フィルタ: min 降順に区間を挿入し、Hall interval で max を押し下げる ----
+    for (int k = 0; k <= nb; ++k) {
+        bz_t_[k] = k + 1;
+        bz_h_[k] = k + 1;
+        bz_d_[k] = bz_bounds_[k + 1] - bz_bounds_[k];
+    }
+    for (size_t idx = n; idx-- > 0;) {
+        size_t vi = bz_minsorted_[idx];
+        int x = bz_maxrank_[vi];
+        int y = bz_minrank_[vi];
+        int z = bz_pathmin(bz_t_, x - 1);
+        int j = bz_t_[z];
+        if (--bz_d_[z] == 0) {
+            bz_t_[z] = z - 1;
+            z = bz_pathmin(bz_t_, z - 1);
+            bz_t_[z] = j;
+        }
+        bz_pathset(bz_t_, x - 1, z, z);
+        if (bz_d_[z] < bz_bounds_[y] - bz_bounds_[z]) {
+            return false;
+        }
+        if (bz_h_[x] < x) {
+            int w = bz_pathmin(bz_h_, bz_h_[x]);
+            bz_newmax_[vi] = bz_bounds_[w] - 1;
+            bz_pathset(bz_h_, x, w, w);
+            changed = true;
+        }
+        if (bz_d_[z] == bz_bounds_[y] - bz_bounds_[z]) {
+            bz_pathset(bz_h_, bz_h_[y], j + 1, y);
+            bz_h_[y] = j + 1;
+        }
+    }
+
+    return true;
+}
+
+bool AllDifferentConstraint::propagate_bounds_z(Model& model, int save_point) {
+    const size_t n = var_ids_.size();
+    if (n < 2 || unfixed_count_ < 2) return true;
+
+    bz_min_.resize(n);
+    bz_max_.resize(n);
+    bz_newmin_.resize(n);
+    bz_newmax_.resize(n);
+    for (size_t i = 0; i < n; ++i) {
+        bz_min_[i] = model.var_min(var_ids_[i]);
+        bz_max_[i] = model.var_max(var_ids_[i]);
+        bz_newmin_[i] = bz_min_[i];
+        bz_newmax_[i] = bz_max_[i];
+    }
+
+    bool changed = false;
+    if (!run_bounds_filter(n, changed)) return false;
+    if (!changed) return true;
+
+    if (bz_expected_min_.size() != n) {
+        bz_expected_min_.assign(n, 0);
+        bz_expected_max_.assign(n, 0);
+        bz_expected_min_epoch_.assign(n, 0);
+        bz_expected_max_epoch_.assign(n, 0);
+    }
+
+    // rewind_to() で epoch を無効化できるよう dirty マークしておく
+    model.mark_constraint_dirty(model_index(), save_point);
+
+    for (size_t i = 0; i < n; ++i) {
+        auto vid = var_ids_[i];
+        if (bz_newmin_[i] > bz_newmax_[i]) return false;
+        if (bz_newmin_[i] > bz_min_[i]) {
+            bz_expected_min_[i] = bz_newmin_[i];
+            bz_expected_min_epoch_[i] = bz_epoch_;
+            model.enqueue_set_min(vid, bz_newmin_[i]);
+        }
+        if (bz_newmax_[i] < bz_max_[i]) {
+            bz_expected_max_[i] = bz_newmax_[i];
+            bz_expected_max_epoch_[i] = bz_epoch_;
+            model.enqueue_set_max(vid, bz_newmax_[i]);
+        }
+    }
+    return true;
+}
+
 bool AllDifferentConstraint::check_hall_pair(Model& model, size_t trigger_var_idx) {
     auto& vd = model.var_data(trigger_var_idx);
     if (vd.size != 2) return true;
@@ -305,14 +531,29 @@ bool AllDifferentConstraint::on_set_min(Model& model, int save_point,
                                          size_t var_idx, size_t internal_var_idx,
                                          Domain::value_type new_min,
                                          Domain::value_type old_min) {
-    return check_hall_pair(model, var_idx);
+    if (!check_hall_pair(model, var_idx)) return false;
+    // 自分が enqueue した set_min のエコーならフィルタ済みなのでスキップ
+    if (internal_var_idx < bz_expected_min_epoch_.size() &&
+        bz_expected_min_epoch_[internal_var_idx] == bz_epoch_ &&
+        bz_expected_min_[internal_var_idx] == new_min) {
+        bz_expected_min_epoch_[internal_var_idx] = 0;
+        return true;
+    }
+    return propagate_bounds_z(model, save_point);
 }
 
 bool AllDifferentConstraint::on_set_max(Model& model, int save_point,
                                          size_t var_idx, size_t internal_var_idx,
                                          Domain::value_type new_max,
                                          Domain::value_type old_max) {
-    return check_hall_pair(model, var_idx);
+    if (!check_hall_pair(model, var_idx)) return false;
+    if (internal_var_idx < bz_expected_max_epoch_.size() &&
+        bz_expected_max_epoch_[internal_var_idx] == bz_epoch_ &&
+        bz_expected_max_[internal_var_idx] == new_max) {
+        bz_expected_max_epoch_[internal_var_idx] = 0;
+        return true;
+    }
+    return propagate_bounds_z(model, save_point);
 }
 
 void AllDifferentConstraint::rewind_to(int save_point) {
@@ -322,6 +563,8 @@ void AllDifferentConstraint::rewind_to(int save_point) {
         unfixed_count_ = entry.old_unfixed_count;
         pool_trail_.pop_back();
     }
+    // バックトラック後はエコー検出用の expected エントリを一括無効化
+    ++bz_epoch_;
 }
 
 void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
