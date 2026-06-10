@@ -73,6 +73,23 @@ private:
     std::vector<int> match_val_;
     bool matching_valid_ = false;
 
+    // ===== エコー集約 =====
+    // 自分(または親の forward-checking)が enqueue した値除去のエコーを検出し、
+    // 1除去ごとの GAC フル実行を「バッチ末尾で1回」に集約する。
+    // GAC フィルタは1パスで fixpoint に達するため、自己除去のエコーでは再実行不要。
+    struct PendingEcho {
+        size_t var_id;
+        Domain::value_type value;
+        bool run_after;  // バッチ末尾: このエコー消費後に GAC を1回実行
+    };
+    std::vector<PendingEcho> pending_echoes_;
+    size_t pending_echo_head_ = 0;
+
+    void clear_pending_echoes() {
+        pending_echoes_.clear();
+        pending_echo_head_ = 0;
+    }
+
     // 作業配列（再利用）
     std::vector<int> hk_dist_;
     std::vector<int> hk_iter_;
@@ -84,6 +101,7 @@ private:
     std::vector<int> scc_num_;
     std::vector<bool> on_stack_;
     std::vector<Domain::value_type> domain_buf_;
+    std::vector<std::vector<Domain::value_type>> hk_buf_pool_;  // hk_dfs 深さ別バッファ
     std::vector<std::vector<int>> val_to_vars_;
     std::vector<std::vector<int>> adj_;
     int tarjan_counter_ = 0;
@@ -93,7 +111,7 @@ private:
     bool run_gac_filtering(Model& model);
     bool find_maximum_matching(Model& model);
     bool hk_bfs(Model& model);
-    bool hk_dfs(Model& model, int u);
+    bool hk_dfs(Model& model, int u, size_t depth);
     void compute_sccs_and_filter(Model& model);
     void tarjan_dfs(int u, const std::vector<std::vector<int>>& adj);
 

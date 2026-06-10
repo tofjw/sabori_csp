@@ -46,6 +46,10 @@ bool AllDifferentGACConstraint::prepare_propagation(Model& model) {
         gac_enabled_ = all_sparse;
     }
 
+    // ハイブリッド方式: bounds イベントは親の bounds(Z) で処理するため有効のまま。
+    // フル GAC は instantiate / remove_value イベントでのみ実行する
+    clear_pending_echoes();
+
     if (gac_enabled_) {
         size_t n = var_ids_.size();
         size_t m = total_values_;
@@ -55,6 +59,7 @@ bool AllDifferentGACConstraint::prepare_propagation(Model& model) {
 
         hk_dist_.resize(n);
         hk_iter_.resize(n);
+        hk_buf_pool_.resize(n);
         bfs_queue_.resize(n);
         size_t total_nodes = n + m;
         reachable_.resize(total_nodes);
@@ -78,6 +83,24 @@ bool AllDifferentGACConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
     matching_valid_ = false;
+
+    // 親の forward checking が enqueue した値除去をエコーとして登録し、
+    // バッチ末尾の除去を処理した後に GAC を1回だけ実行する
+    // （登録しないと除去1件ごとに on_remove_value で GAC がフル実行される）
+    if (gac_enabled_ && unfixed_count_ >= 2) {
+        size_t first = pending_echoes_.size();
+        for (size_t k = 0; k < var_ids_.size(); ++k) {
+            if (k == internal_var_idx) continue;
+            size_t vid = var_ids_[k];
+            if (model.is_instantiated(vid)) continue;
+            if (model.contains(vid, value)) {
+                pending_echoes_.push_back({vid, value, false});
+            }
+        }
+        if (pending_echoes_.size() > first) {
+            pending_echoes_.back().run_after = true;
+        }
+    }
     return true;
 }
 
@@ -89,6 +112,20 @@ bool AllDifferentGACConstraint::on_remove_value(Model& model, int save_point,
                                                        internal_var_idx, removed_value);
     }
     matching_valid_ = false;
+
+    // 自分(または親)が enqueue した除去のエコーなら GAC 再実行をスキップ。
+    // バッチ末尾のエコー消費時のみ1回実行して fixpoint を回復する
+    if (pending_echo_head_ < pending_echoes_.size()) {
+        const auto& e = pending_echoes_[pending_echo_head_];
+        if (e.var_id == var_idx && e.value == removed_value) {
+            bool run_after = e.run_after;
+            ++pending_echo_head_;
+            if (pending_echo_head_ == pending_echoes_.size()) {
+                clear_pending_echoes();
+            }
+            return run_after ? run_gac_filtering(model) : true;
+        }
+    }
     return run_gac_filtering(model);
 }
 
@@ -100,8 +137,12 @@ bool AllDifferentGACConstraint::on_set_min(Model& model, int save_point,
         return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
                                                    internal_var_idx, new_min, old_min);
     }
+    // bounds イベントは高頻度（他制約の bounds 伝播で毎ノード大量に発生）なので
+    // フル GAC は走らせず、軽量な親処理（Hall ペア + bounds(Z)）に委譲する。
+    // フル GAC は instantiate / remove_value イベントでのみ実行
     matching_valid_ = false;
-    return run_gac_filtering(model);
+    return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
+                                               internal_var_idx, new_min, old_min);
 }
 
 bool AllDifferentGACConstraint::on_set_max(Model& model, int save_point,
@@ -113,12 +154,15 @@ bool AllDifferentGACConstraint::on_set_max(Model& model, int save_point,
                                                    internal_var_idx, new_max, old_max);
     }
     matching_valid_ = false;
-    return run_gac_filtering(model);
+    return AllDifferentConstraint::on_set_max(model, save_point, var_idx,
+                                               internal_var_idx, new_max, old_max);
 }
 
 void AllDifferentGACConstraint::rewind_to(int save_point) {
     AllDifferentConstraint::rewind_to(save_point);
     matching_valid_ = false;
+    // バックトラックで破棄された enqueue のエコーは届かないため無効化
+    clear_pending_echoes();
 }
 
 // ============================================================================
@@ -128,6 +172,10 @@ void AllDifferentGACConstraint::rewind_to(int save_point) {
 bool AllDifferentGACConstraint::run_gac_filtering(Model& model) {
     if (unfixed_count_ <= 1) return true;
     if (unfixed_count_ > pool_n_) return false;
+
+    // fixpoint を再計算するので、未消費の古いエコーは破棄して
+    // ここで enqueue する除去のエコーを登録し直す
+    clear_pending_echoes();
 
     if (!find_maximum_matching(model)) return false;
     matching_valid_ = true;
@@ -162,7 +210,7 @@ bool AllDifferentGACConstraint::find_maximum_matching(Model& model) {
         for (size_t i = 0; i < n; ++i) {
             if (!model.is_instantiated(var_ids_[i]) && match_var_[i] == -1) {
                 std::fill(hk_iter_.begin(), hk_iter_.end(), 0);
-                hk_dfs(model, static_cast<int>(i));
+                hk_dfs(model, static_cast<int>(i), 0);
             }
         }
     }
@@ -212,10 +260,13 @@ bool AllDifferentGACConstraint::hk_bfs(Model& model) {
     return found;
 }
 
-bool AllDifferentGACConstraint::hk_dfs(Model& model, int u) {
+bool AllDifferentGACConstraint::hk_dfs(Model& model, int u, size_t depth) {
     auto vid = var_ids_[u];
 
-    std::vector<Domain::value_type> local_buf;
+    // 深さ別の再利用バッファ（毎回のヒープ確保を回避）
+    if (depth >= hk_buf_pool_.size()) hk_buf_pool_.resize(depth + 1);
+    auto& local_buf = hk_buf_pool_[depth];
+    local_buf.clear();
     model.variable(vid)->domain().copy_values_to(local_buf);
 
     for (size_t idx = hk_iter_[u]; idx < local_buf.size(); ++idx) {
@@ -227,7 +278,7 @@ bool AllDifferentGACConstraint::hk_dfs(Model& model, int u) {
         if (!is_val_in_pool(j)) continue;
         int v = match_val_[j];
 
-        if (v == -1 || (hk_dist_[v] == hk_dist_[u] + 1 && hk_dfs(model, v))) {
+        if (v == -1 || (hk_dist_[v] == hk_dist_[u] + 1 && hk_dfs(model, v, depth + 1))) {
             match_var_[u] = j;
             match_val_[j] = u;
             return true;
@@ -347,6 +398,8 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
             if (reachable_[n + j]) continue;
             if (scc_id_[i] != -1 && scc_id_[i] == scc_id_[n + j]) continue;
 
+            // 自己除去: エコーが届いても再実行不要（GAC は1パスで fixpoint）
+            pending_echoes_.push_back({var_ids_[i], val, false});
             model.enqueue_remove_value(var_ids_[i], val);
         }
     }
