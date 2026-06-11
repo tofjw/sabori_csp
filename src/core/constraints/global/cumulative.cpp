@@ -743,6 +743,13 @@ bool CumulativeConstraint::on_instantiate(
         return on_final_instantiate(model);
     }
 
+    // エンジン実行（timetable O(n^2) + TTEF O(n^3)）はイベント毎ではなく
+    // バッチ毎の1回に集約する
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool CumulativeConstraint::propagate_batch(Model& model, int /*save_point*/) {
     return run_all_engines(model);
 }
 
@@ -799,7 +806,8 @@ bool CumulativeConstraint::on_set_min(
     size_t /*var_idx*/, size_t /*internal_var_idx*/,
     Domain::value_type /*new_min*/, Domain::value_type /*old_min*/)
 {
-    return run_all_engines(model);
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 bool CumulativeConstraint::on_set_max(
@@ -807,7 +815,8 @@ bool CumulativeConstraint::on_set_max(
     size_t /*var_idx*/, size_t /*internal_var_idx*/,
     Domain::value_type /*new_max*/, Domain::value_type /*old_max*/)
 {
-    return run_all_engines(model);
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 void CumulativeConstraint::rewind_to(int /*save_point*/) {
