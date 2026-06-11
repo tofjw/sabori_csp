@@ -449,4 +449,154 @@ void IntOneHotChannelConstraint::rewind_to(int save_point) {
     }
 }
 
+bool IntOneHotChannelConstraint::explain(const Model& model, const ExplainContext& ctx,
+                                         size_t var_idx, Domain::value_type value,
+                                         uint8_t lit_type, uint32_t /*aux*/,
+                                         std::vector<Literal>& out) const {
+    // 意味: b_i ⇔ (x == values_[i])。推論時点 T の bounds から検証付きで説明する。
+    // どの伝播規則による推論かは aux に記録していないため、T 時点の状態で
+    // 成立している規則を探す (verify-or-fallback)。
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+    const auto ty = static_cast<Literal::Type>(lit_type);
+    auto fixed_at = [&](size_t vid, Domain::value_type v) {
+        auto b = ctx.bounds_at(vid);
+        return b.first == v && b.second == v;
+    };
+
+    if (var_idx == x_id_) {
+        if (ty != Literal::Type::Eq) return false;  // x への bounds 推論は記録されない
+        // [x = v] ← b_i = 1 (values_[i] == v)
+        int idx = find_value_index(value);
+        if (idx >= 0 && fixed_at(b_ids_[idx], 1)) {
+            out.push_back({b_ids_[idx], 1, Literal::Type::Eq});
+            return true;
+        }
+        // x がバイナリの場合: 値 1-v の除去 (b_{1-v} = 0 由来) が Eq として記録される
+        if (model.presolve_min(x_id_) == 0 && model.presolve_max(x_id_) == 1 &&
+            (value == 0 || value == 1)) {
+            int ridx = find_value_index(1 - value);
+            if (ridx >= 0 && fixed_at(b_ids_[ridx], 0)) {
+                out.push_back({b_ids_[ridx], 0, Literal::Type::Eq});
+                return true;
+            }
+        }
+        return rollback();
+    }
+
+    int bi = find_b_index(var_idx);
+    if (bi < 0) return false;
+    if (ty != Literal::Type::Eq) return false;  // b はバイナリ、Eq のみ
+    const auto v = values_[bi];
+    const auto xb = ctx.bounds_at(x_id_);
+
+    if (value == 1) {
+        // [b_i = 1] ← x = values_[i]
+        if (xb.first == v && xb.second == v) {
+            out.push_back({x_id_, v, Literal::Type::Eq});
+            return true;
+        }
+        // exhaustive: 他の b_j がすべて 0 → 残り 1 個が 1
+        if (holes_ == 0) {
+            for (size_t j = 0; j < b_ids_.size(); ++j) {
+                if (j == static_cast<size_t>(bi)) continue;
+                if (!fixed_at(b_ids_[j], 0)) return rollback();
+                out.push_back({b_ids_[j], 0, Literal::Type::Eq});
+            }
+            return true;
+        }
+        return rollback();
+    }
+
+    // [b_i = 0] ← x が values_[i] を取れない理由のうち T 時点で検証できるもの
+    if (xb.first == xb.second && xb.first != v) {
+        out.push_back({x_id_, xb.first, Literal::Type::Eq});
+        return true;
+    }
+    if (xb.first > v) {
+        out.push_back({x_id_, v + 1, Literal::Type::Geq});
+        return true;
+    }
+    if (xb.second < v) {
+        out.push_back({x_id_, v - 1, Literal::Type::Leq});
+        return true;
+    }
+    // at-most-one: 他の b_j = 1
+    for (size_t j = 0; j < b_ids_.size(); ++j) {
+        if (j == static_cast<size_t>(bi)) continue;
+        if (fixed_at(b_ids_[j], 1)) {
+            out.push_back({b_ids_[j], 1, Literal::Type::Eq});
+            return true;
+        }
+    }
+    // x の内部値除去由来 (literal 語彙で表現不能) → フォールバック
+    return rollback();
+}
+
+bool IntOneHotChannelConstraint::explain_failure(const Model& model,
+                                                 std::vector<Literal>& out) const {
+    // 矛盾の種: 現在の状態で成立している違反パターンを返す (seed は現 bounds で有効)
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+    const auto xmin = model.var_min(x_id_);
+    const auto xmax = model.var_max(x_id_);
+
+    // 1) b_i = b_j = 1 (i≠j)
+    int first_true = -1;
+    for (size_t i = 0; i < b_ids_.size(); ++i) {
+        if (model.is_instantiated(b_ids_[i]) && model.value(b_ids_[i]) == 1) {
+            if (first_true >= 0) {
+                out.push_back({b_ids_[first_true], 1, Literal::Type::Eq});
+                out.push_back({b_ids_[i], 1, Literal::Type::Eq});
+                return true;
+            }
+            first_true = static_cast<int>(i);
+        }
+    }
+
+    // 2) b_i = 1 だが x が values_[i] を取れない (bounds で表現できる場合)
+    if (first_true >= 0) {
+        const auto v = values_[first_true];
+        if (xmin == xmax && xmin != v) {
+            out.push_back({b_ids_[first_true], 1, Literal::Type::Eq});
+            out.push_back({x_id_, xmin, Literal::Type::Eq});
+            return true;
+        }
+        if (xmin > v) {
+            out.push_back({b_ids_[first_true], 1, Literal::Type::Eq});
+            out.push_back({x_id_, v + 1, Literal::Type::Geq});
+            return true;
+        }
+        if (xmax < v) {
+            out.push_back({b_ids_[first_true], 1, Literal::Type::Eq});
+            out.push_back({x_id_, v - 1, Literal::Type::Leq});
+            return true;
+        }
+    }
+
+    // 3) x = v 固定なのに b_{idx(v)} = 0
+    if (xmin == xmax) {
+        int matched = find_value_index(xmin);
+        if (matched >= 0 && model.is_instantiated(b_ids_[matched]) &&
+            model.value(b_ids_[matched]) == 0) {
+            out.push_back({x_id_, xmin, Literal::Type::Eq});
+            out.push_back({b_ids_[matched], 0, Literal::Type::Eq});
+            return true;
+        }
+    }
+
+    // 4) exhaustive: 全 b が 0
+    if (holes_ == 0) {
+        for (size_t i = 0; i < b_ids_.size(); ++i) {
+            if (!model.is_instantiated(b_ids_[i]) || model.value(b_ids_[i]) != 0) {
+                return rollback();
+            }
+            out.push_back({b_ids_[i], 0, Literal::Type::Eq});
+        }
+        return true;
+    }
+
+    return rollback();
+}
+
 } // namespace sabori_csp

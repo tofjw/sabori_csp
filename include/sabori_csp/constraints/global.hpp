@@ -2376,6 +2376,12 @@ public:
 
     void rewind_to(int save_point) override;
 
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux,
+                 std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
     // テスト・診断用アクセサ
     size_t x_id() const { return x_id_; }
     const std::vector<Domain::value_type>& values() const { return values_; }

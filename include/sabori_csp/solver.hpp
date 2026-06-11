@@ -632,6 +632,33 @@ public:
     uint32_t mark_epoch_ = 0;
     size_t learn_explained_count_ = 0;   ///< 説明ベースで学習できた衝突数
     size_t learn_fallback_count_ = 0;    ///< フォールバックした衝突数
+    std::map<std::string, size_t> learn_fb_reasons_;  ///< フォールバック原因別の回数（診断用）
+    bool learn_diag_ = false;  ///< learn_fb_reasons_ を収集するか（-s 時のみ。文字列構築を避ける）
+    void set_learn_diagnostics(bool enabled) { learn_diag_ = enabled; }
+
+    /// 更新適用時の wipeout（伝播由来の更新が現ドメインと矛盾）。
+    /// 失敗したリテラルは未適用なのでトレイルに無く、analyze_conflict が
+    /// この記録から種を組み立てる。
+    static constexpr uint32_t kSourceApplyFail = 0xFFFFFCu;
+    struct ApplyFail {
+        uint32_t var_idx = 0;
+        int64_t value = 0;
+        uint8_t lit_type = 0;
+        uint32_t source_cid = 0;
+        uint32_t aux = 0;
+        bool valid = false;
+    } apply_fail_;
+
+    /// 適用失敗を記録（learning off なら従来どおり種なしフォールバック扱い）
+    void note_apply_fail(const PendingUpdate& u, Literal::Type ty, int64_t value) {
+        if (__builtin_expect(learning_enabled_, 0)) {
+            apply_fail_ = {u.var_idx, value, static_cast<uint8_t>(ty),
+                           u.source_cid, u.aux, true};
+            last_conflict_source_ = kSourceApplyFail;
+        } else {
+            last_conflict_source_ = Model::kSourceDecision;
+        }
+    }
 };
 
 } // namespace sabori_csp

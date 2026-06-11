@@ -66,6 +66,13 @@ void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* mode
               << " bisect=" << s.bisect_count
               << " enumerate=" << s.enumerate_count
               << "\n";
+    if (g_learning) {
+        std::cerr << "% Learning: explained=" << solver.learn_explained_count_
+                  << " fallback=" << solver.learn_fallback_count_ << "\n";
+        for (const auto& [why, cnt] : solver.learn_fb_reasons_) {
+            std::cerr << "%   fb " << why << ": " << cnt << "\n";
+        }
+    }
     auto dist = solver.nogood_length_distribution();
     if (!dist.empty()) {
         std::cerr << "% NG length distribution:";
@@ -258,7 +265,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
-    if (g_learning) solver.set_learning(true);
+    if (g_learning) { solver.set_learning(true); solver.set_learn_diagnostics(g_print_stats); }
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -307,7 +314,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
-    if (g_learning) solver.set_learning(true);
+    if (g_learning) { solver.set_learning(true); solver.set_learn_diagnostics(g_print_stats); }
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);

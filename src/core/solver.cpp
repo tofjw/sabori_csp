@@ -964,26 +964,111 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
     const size_t trail_end = inference_trail_.size();
     const auto& constraints = model.constraints();
 
-    auto fallback = [&]() {
+    auto fallback = [&](const std::string& why) {
         out.assign(decision_trail_.begin(), decision_trail_.end());
         if (trial) out.push_back(*trial);  // 現試行の決定リテラル
         ++learn_fallback_count_;
+        if (learn_diag_) ++learn_fb_reasons_[why];
     };
 
-    if (decision_trail_.empty() || trail_end == 0) { fallback(); return; }
+    if (decision_trail_.empty() || trail_end == 0) { fallback("empty-trail"); return; }
+
+    // 深い探索では説明分析のコスト (locate/bounds_at の O(trail) スキャン
+    // × 数百リテラル) が割に合わないためスキップし、従来の decision-trail
+    // nogood に切り替える。既定 64 は cg2023/cargo2018/marte/solbat での
+    // 実測に基づく (SABORI_LEARN_DEPTH_CAP で上書き可、0 = 無制限)
+    static const size_t depth_cap = []{
+        const char* e = std::getenv("SABORI_LEARN_DEPTH_CAP");
+        return e ? static_cast<size_t>(std::atoi(e)) : size_t{64};
+    }();
+    if (depth_cap && decision_trail_.size() > depth_cap) { fallback("depth-cap"); return; }
 
     // ---- 衝突の種 ----
     reason_buf_.clear();
     bool seeded = false;
+    std::string seed_fail_detail;
     if (last_conflict_source_ == Model::kSourceNoGood) {
         if (NoGood* ng = nogood_mgr_.last_conflict_nogood()) {
             reason_buf_ = ng->literals;  // 全リテラル成立 = 矛盾
             seeded = true;
         }
+    } else if (last_conflict_source_ == kSourceApplyFail && apply_fail_.valid) {
+        // 伝播由来の更新が適用時に現ドメインと矛盾 (wipeout)。
+        // 失敗リテラルはトレイルに無いので、ここで
+        // 「矛盾相手の bound 事実」+「推論そのものの説明」に展開して種にする。
+        const auto af = apply_fail_;
+        apply_fail_.valid = false;
+        const auto cur_min = model.var_min(af.var_idx);
+        const auto cur_max = model.var_max(af.var_idx);
+        bool dom_ok = true;
+        switch (static_cast<Literal::Type>(af.lit_type)) {
+        case Literal::Type::Eq:
+            if (cur_min > af.value) {
+                reason_buf_.push_back({af.var_idx, cur_min, Literal::Type::Geq});
+            } else if (cur_max < af.value) {
+                reason_buf_.push_back({af.var_idx, cur_max, Literal::Type::Leq});
+            } else {
+                dom_ok = false;  // 内部 hole: bounds 語彙で表現できない
+            }
+            break;
+        case Literal::Type::Geq:
+            if (cur_max < af.value) {
+                reason_buf_.push_back({af.var_idx, cur_max, Literal::Type::Leq});
+            } else {
+                dom_ok = false;
+            }
+            break;
+        default:  // Leq
+            if (cur_min > af.value) {
+                reason_buf_.push_back({af.var_idx, cur_min, Literal::Type::Geq});
+            } else {
+                dom_ok = false;
+            }
+            break;
+        }
+        if (dom_ok) {
+            const uint32_t src = af.source_cid & 0xFFFFFFu;
+            if (src == (Model::kSourceNoGood & 0xFFFFFFu)) {
+                if (NoGood* ng = nogood_mgr_.find_by_id(af.aux)) {
+                    size_t sat = 0;
+                    for (const auto& lit : ng->literals) {
+                        if (lit.is_satisfied(model)) { reason_buf_.push_back(lit); ++sat; }
+                    }
+                    seeded = (sat + 1 == ng->literals.size());
+                    if (!seeded) seed_fail_detail = "applyfail:nogood";
+                }
+            } else if (src < constraints.size()) {
+                struct SeedCtx : ExplainContext {
+                    const Solver* s; const Model* m; size_t pos;
+                    size_t trail_pos() const override { return pos; }
+                    std::pair<Domain::value_type, Domain::value_type>
+                    bounds_at(size_t var_idx) const override {
+                        return s->bounds_at(*m, static_cast<uint32_t>(var_idx), pos);
+                    }
+                } ctx;
+                ctx.s = this; ctx.m = &model; ctx.pos = trail_end;
+                seeded = constraints[src]->explain(model, ctx, af.var_idx, af.value,
+                                                   af.lit_type, af.aux, reason_buf_);
+                if (!seeded) seed_fail_detail = "applyfail:" + constraints[src]->name();
+            } else {
+                seed_fail_detail = "applyfail:src-" + std::to_string(src);
+            }
+        } else {
+            seed_fail_detail = "applyfail:dom";
+        }
     } else if (last_conflict_source_ < constraints.size()) {
         seeded = constraints[last_conflict_source_]->explain_failure(model, reason_buf_);
     }
-    if (!seeded) { fallback(); return; }
+    if (!seeded) {
+        std::string why = "seed:";
+        if (!seed_fail_detail.empty()) why += seed_fail_detail;
+        else if (last_conflict_source_ == Model::kSourceNoGood) why += "nogood-lost";
+        else if (last_conflict_source_ < constraints.size())
+            why += constraints[last_conflict_source_]->name();
+        else why += "src-" + std::to_string(last_conflict_source_);
+        fallback(why);
+        return;
+    }
 
     // ---- 準備 ----
     if (mark_stamp_.size() < trail_end) mark_stamp_.resize(trail_end, 0);
@@ -999,7 +1084,24 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
     };
 
     // 事実 l を分類して登録する。false = 続行不能(全面フォールバック)
+    std::string addfact_why;
+    std::vector<size_t> step_marked;  // 解決1ステップ内で新規マークした位置（巻き戻し用）
     std::function<bool(const Literal&)> add_fact = [&](const Literal& l) -> bool {
+        // presolve (root) で既に真なら学習節に不要 (locate より先に判定する:
+        // 自明に真なリテラルが後段の無関係なエントリにマッチして
+        // acyclicity 誤判定になるのを防ぐ)
+        switch (l.type) {
+        case Literal::Type::Eq:
+            if (model.presolve_min(l.var_idx) == l.value &&
+                model.presolve_max(l.var_idx) == l.value) return true;
+            break;
+        case Literal::Type::Geq:
+            if (model.presolve_min(l.var_idx) >= l.value) return true;
+            break;
+        default:
+            if (model.presolve_max(l.var_idx) <= l.value) return true;
+            break;
+        }
         // 成立時点のトレイルエントリ(最古の満たすエントリ)を探す
         ptrdiff_t found = -1;
         for (size_t i = trail_end; i-- > 0;) {
@@ -1030,30 +1132,34 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
         }
 
         if (found < 0) {
-            // presolve (root) で既に真なら学習節に不要
-            bool root_true = false;
-            switch (l.type) {
-            case Literal::Type::Eq:
-                root_true = (model.presolve_min(l.var_idx) == l.value &&
-                             model.presolve_max(l.var_idx) == l.value);
-                break;
-            case Literal::Type::Geq:
-                root_true = (model.presolve_min(l.var_idx) >= l.value);
-                break;
-            default:
-                root_true = (model.presolve_max(l.var_idx) <= l.value);
-                break;
-            }
-            if (root_true) return true;
             if (l.type == Literal::Type::Eq) {
                 // SetMin/SetMax の合成で成立した Eq → bounds に分解して再試行
                 return add_fact({l.var_idx, l.value, Literal::Type::Geq}) &&
                        add_fact({l.var_idx, l.value, Literal::Type::Leq});
             }
+            addfact_why = "locate";
             return false;  // 成立点不明 → 健全側に倒してフォールバック
         }
 
         if (static_cast<size_t>(found) >= resolution_limit) {
+            addfact_why = "acyclic";
+            static int trace_left = []{ const char* e = std::getenv("SABORI_LEARN_TRACE");
+                                        return e ? std::atoi(e) : 0; }();
+            if (trace_left > 0) {
+                --trace_left;
+                std::cerr << "% [trace] acyclic: lit(var=" << l.var_idx
+                          << (l.type == Literal::Type::Eq ? " ==" :
+                              l.type == Literal::Type::Geq ? " >=" : " <=")
+                          << l.value << ") found=" << found
+                          << " limit=" << resolution_limit
+                          << " trail_end=" << trail_end
+                          << " found_src=";
+                const auto& fe = inference_trail_[static_cast<size_t>(found)];
+                if ((fe.reason_cid) < constraints.size())
+                    std::cerr << constraints[fe.reason_cid]->name();
+                else std::cerr << "0x" << std::hex << fe.reason_cid << std::dec;
+                std::cerr << "\n";
+            }
             return false;  // acyclicity 違反 (説明が未来を参照) → フォールバック
         }
         const int lv = level_of(static_cast<size_t>(found));
@@ -1062,28 +1168,30 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
             if (mark_stamp_[static_cast<size_t>(found)] != mark_epoch_) {
                 mark_stamp_[static_cast<size_t>(found)] = mark_epoch_;
                 ++current_count;
+                step_marked.push_back(static_cast<size_t>(found));
             }
         } else {
             constexpr size_t kMaxBelow = 256;
             for (const auto& bl : below_buf_) {
                 if (bl.first == l) return true;  // 重複排除
             }
-            if (below_buf_.size() >= kMaxBelow) return false;  // 爆発防御
+            if (below_buf_.size() >= kMaxBelow) { addfact_why = "below-overflow"; return false; }  // 爆発防御
             below_buf_.push_back({l, lv});
         }
         return true;
     };
 
     for (const auto& l : reason_buf_) {
-        if (!add_fact(l)) { fallback(); return; }
+        if (!add_fact(l)) { fallback("seed-fact:" + addfact_why); return; }
     }
-    if (current_count == 0) { fallback(); return; }
+    if (current_count == 0) { fallback("no-current-level"); return; }
 
     // ---- 1UIP 解決ループ (トレイルを逆走) ----
     size_t pos = trail_end;
     std::vector<Literal> local_reason;
+    std::vector<Literal> kept_buf;  // 解決不能で節に残す現レベルのリテラル
     while (current_count > 1) {
-        if (pos == 0) { fallback(); return; }  // 防御 (起こらないはず)
+        if (pos == 0) { fallback("pos0"); return; }  // 防御 (起こらないはず)
         --pos;
         if (mark_stamp_[pos] != mark_epoch_) continue;
         mark_stamp_[pos] = 0;
@@ -1116,10 +1224,41 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
                                            static_cast<uint8_t>(e.lit_type),
                                            e.aux, local_reason);
         }
-        // 決定リテラル(kSourceDecision)や未対応制約は ok=false のまま
-        if (!ok) { fallback(); return; }
-        for (const auto& l : local_reason) {
-            if (!add_fact(l)) { fallback(); return; }
+        // 説明できないエントリ（決定・未対応制約・verify 失敗）や、理由の
+        // 登録に失敗したエントリは「解決せずリテラルとして学習節に残す」
+        // （decision 扱いへの降格）。全面フォールバックより小さく強い節になる。
+        bool resolved = false;
+        if (ok) {
+            step_marked.clear();
+            const size_t below_before = below_buf_.size();
+            resolved = true;
+            for (const auto& l : local_reason) {
+                if (!add_fact(l)) {
+                    // この理由集合を破棄して降格（部分登録を巻き戻す）
+                    for (size_t mp : step_marked) {
+                        if (mark_stamp_[mp] == mark_epoch_) {
+                            mark_stamp_[mp] = 0;
+                            --current_count;
+                        }
+                    }
+                    below_buf_.resize(below_before);
+                    if (learn_diag_) ++learn_fb_reasons_["demote-fact:" + addfact_why];
+                    resolved = false;
+                    break;
+                }
+            }
+        } else if (learn_diag_) {
+            std::string why = "demote:";
+            if (src == (Model::kSourceNoGood & 0xFFFFFFu)) why += "nogood";
+            else if (src == (Model::kSourceDecision & 0xFFFFFFu)) why += "DECISION";
+            else if (src == (Model::kSourcePresolve & 0xFFFFFFu)) why += "PRESOLVE";
+            else if (src < constraints.size()) why += constraints[src]->name();
+            else why += "src-" + std::to_string(src);
+            ++learn_fb_reasons_[why];
+        }
+        if (!resolved) {
+            kept_buf.push_back({e.var_idx, e.value,
+                                static_cast<Literal::Type>(e.lit_type)});
         }
     }
 
@@ -1131,10 +1270,11 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
     if (uip < 0 && pos < trail_end && mark_stamp_[pos] == mark_epoch_) {
         uip = static_cast<ptrdiff_t>(pos);
     }
-    if (uip < 0) { fallback(); return; }
+    if (uip < 0) { fallback("no-uip"); return; }
 
-    // ---- nogood 組み立て: below + UIP ----
+    // ---- nogood 組み立て: below + kept + UIP ----
     for (const auto& bl : below_buf_) out.push_back(bl.first);
+    for (const auto& kl : kept_buf) out.push_back(kl);
     const auto& ue = inference_trail_[static_cast<size_t>(uip)];
     out.push_back({ue.var_idx, ue.value, static_cast<Literal::Type>(ue.lit_type)});
     ++learn_explained_count_;
@@ -1279,9 +1419,9 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         PropagationResult queue_res = PropagationResult::Conflict;
         if (propagate_ok) {
             queue_res = process_queue(model);
-        } else {
-            last_conflict_source_ = Model::kSourceDecision;
         }
+        // propagate_ok == false のときの last_conflict_source_ は
+        // bump_activity（ハンドラ失敗）/ nogood 伝播が設定済み（上書きしない）
         if (learning_enabled_ && queue_res == PropagationResult::Conflict) {
             learn_at_conflict(model, {frame.var_idx, val, Literal::Type::Eq});
         }
@@ -1664,6 +1804,18 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 void Solver::backtrack(Model& model, int save_point) {
     model.rewind_to(save_point);
     model.rewind_dirty_constraints(save_point);
+    // 推論トレイルの eager 切り詰め。record_inference の lazy 切り詰めは
+    // 「より深いレベル」しか落とさないため、同一レベルでの再試行
+    // (enumerate の次値・bisect の反対側) で死んだ兄弟試行のエントリが残り、
+    // bounds 単調性の前提を壊して analyze_conflict が死んだ枝の事実を
+    // 参照してしまう (不健全な学習節の元)。ここで確実に落とす。
+    if (__builtin_expect(learning_enabled_, 0)) {
+        const size_t lv = static_cast<size_t>(save_point + 1);
+        if (level_start_.size() > lv) {
+            inference_trail_.resize(level_start_[lv]);
+            level_start_.resize(lv);
+        }
+    }
     // パーティション境界とブルームフィルタを復元
     while (!unassigned_trail_.empty() && unassigned_trail_.back().level > save_point) {
         ng_usage_bloom_ = unassigned_trail_.back().ng_usage_bloom;
@@ -1851,7 +2003,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (was_instantiated) {
                 // 既に確定済みで異なる値が要求されている場合は矛盾
                 if (model.value(var_idx) != update.value) {
-                    last_conflict_source_ = Model::kSourceDecision;  // wipeout: 種なし→フォールバック
+                    note_apply_fail(update, Literal::Type::Eq, update.value);
                     return PropagationResult::Conflict;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
@@ -1859,7 +2011,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 continue;
             }
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
-                last_conflict_source_ = Model::kSourceDecision;
+                note_apply_fail(update, Literal::Type::Eq, update.value);
                 return PropagationResult::Conflict;
             }
             if (__builtin_expect(learning_enabled_, 0)) {
@@ -1877,7 +2029,7 @@ PropagationResult Solver::process_queue(Model& model) {
         case PendingUpdate::Type::SetMin: {
             if (update.value <= prev_min) continue;  // 変化なし
             if (!model.set_min(current_decision_, var_idx, update.value)) {
-                last_conflict_source_ = Model::kSourceDecision;
+                note_apply_fail(update, Literal::Type::Geq, update.value);
                 return PropagationResult::Conflict;
             }
             if (__builtin_expect(learning_enabled_, 0)) {
@@ -1938,7 +2090,7 @@ PropagationResult Solver::process_queue(Model& model) {
         case PendingUpdate::Type::SetMax: {
             if (update.value >= prev_max) continue;  // 変化なし
             if (!model.set_max(current_decision_, var_idx, update.value)) {
-                last_conflict_source_ = Model::kSourceDecision;
+                note_apply_fail(update, Literal::Type::Leq, update.value);
                 return PropagationResult::Conflict;
             }
             if (__builtin_expect(learning_enabled_, 0)) {
@@ -2000,14 +2152,40 @@ PropagationResult Solver::process_queue(Model& model) {
             auto removed_value = update.value;
             if (!model.contains(var_idx, removed_value)) continue;  // 既に存在しない
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
-                last_conflict_source_ = Model::kSourceDecision;
+                // バイナリなら Eq [var = 1-v] として説明可能。
+                // 非バイナリでも、削除失敗 = 変数がシングルトン {v} なので
+                // 発生源制約は現ドメインで失敗状態 → explain_failure を種にできる
+                if (prev_min == 0 && prev_max == 1 &&
+                    (removed_value == 0 || removed_value == 1)) {
+                    note_apply_fail(update, Literal::Type::Eq, 1 - removed_value);
+                } else if ((update.source_cid & 0xFFFFFFu) < model.constraints().size()) {
+                    last_conflict_source_ = update.source_cid & 0xFFFFFFu;
+                } else {
+                    last_conflict_source_ = Model::kSourceDecision;
+                }
                 return PropagationResult::Conflict;
             }
             // バイナリドメインからの除去は Eq [x = 1-v] として記録（≠ リテラルは v1 対象外）
-            if (__builtin_expect(learning_enabled_, 0) && prev_min == 0 && prev_max == 1 &&
-                (removed_value == 0 || removed_value == 1)) {
-                record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
-                                 Literal::Type::Eq, update.source_cid);
+            if (__builtin_expect(learning_enabled_, 0)) {
+                if (prev_min == 0 && prev_max == 1 &&
+                    (removed_value == 0 || removed_value == 1)) {
+                    record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
+                                     Literal::Type::Eq, update.source_cid);
+                } else {
+                    // 境界値の除去で bounds が動いた場合は Geq/Leq として記録する。
+                    // 記録しないと bounds_at の再構成・add_fact の locate が
+                    // この変化を見られず、説明可能な衝突までフォールバックする
+                    const auto nmin = model.var_min(var_idx);
+                    const auto nmax = model.var_max(var_idx);
+                    if (nmin > prev_min) {
+                        record_inference(static_cast<uint32_t>(var_idx), nmin,
+                                         Literal::Type::Geq, update.source_cid);
+                    }
+                    if (nmax < prev_max) {
+                        record_inference(static_cast<uint32_t>(var_idx), nmax,
+                                         Literal::Type::Leq, update.source_cid);
+                    }
+                }
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
