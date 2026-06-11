@@ -427,22 +427,9 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    // SCC フィルタリング: 強連結でなければ矛盾、
-    // 入次数 0 は矛盾、入次数 1 は唯一の前任エッジを確定
+    // SCC フィルタリングはバッチ登録（イベントキューが空になった時点で1回実行）
     if (unfixed_count_ >= 2 && n_ >= 3) {
-        if (!build_scc_graph(model, /*use_path_state=*/true)) return false;
-        if (!scc_single_component()) return false;
-        for (size_t k = 0; k < n_; ++k) {
-            if (scc_indeg_[k] == 0) return false;
-            if (scc_indeg_[k] == 1) {
-                size_t u = static_cast<size_t>(scc_pred_[k]);
-                size_t uvid = var_ids_[u];
-                if (!model.is_instantiated(uvid)) {
-                    model.enqueue_instantiate(
-                        uvid, static_cast<Domain::value_type>(k) + base_offset_);
-                }
-            }
-        }
+        model.schedule_constraint_batch(model_index());
     }
 
     // 残り1変数チェック（O(1)）
@@ -457,6 +444,27 @@ bool CircuitConstraint::on_instantiate(Model& model, int save_point,
         return on_final_instantiate(model);
     }
 
+    return true;
+}
+
+bool CircuitConstraint::propagate_batch(Model& model, int /*save_point*/) {
+    // SCC フィルタリング: 強連結でなければ矛盾、
+    // 入次数 0 は矛盾、入次数 1 は唯一の前任エッジを確定。
+    // occupier_/partner_/size_ は trail で常に最新なのでバッチ時点の状態で正しい
+    if (unfixed_count_ < 2 || n_ < 3) return true;
+    if (!build_scc_graph(model, /*use_path_state=*/true)) return false;
+    if (!scc_single_component()) return false;
+    for (size_t k = 0; k < n_; ++k) {
+        if (scc_indeg_[k] == 0) return false;
+        if (scc_indeg_[k] == 1) {
+            size_t u = static_cast<size_t>(scc_pred_[k]);
+            size_t uvid = var_ids_[u];
+            if (!model.is_instantiated(uvid)) {
+                model.enqueue_instantiate(
+                    uvid, static_cast<Domain::value_type>(k) + base_offset_);
+            }
+        }
+    }
     return true;
 }
 

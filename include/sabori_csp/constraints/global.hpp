@@ -485,6 +485,11 @@ public:
                                  size_t last_var_internal_idx) override;
 
     /**
+     * @brief バッチ伝播: SCC フィルタリング（強連結性 + 入次数ルール）を1回実行
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
+    /**
      * @brief 指定セーブポイントまで状態を巻き戻す
      */
     void rewind_to(int save_point);
@@ -2168,6 +2173,11 @@ public:
     bool on_set_max(Model& model, int save_point,
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max, Domain::value_type old_max) override;
+
+    /**
+     * @brief バッチ伝播: DFA フルパス（compute_and_filter）を1回実行
+     */
+    bool propagate_batch(Model& model, int save_point) override;
 
     void rewind_to(int save_point) override;
 
