@@ -1785,6 +1785,11 @@ public:
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max, Domain::value_type old_max) override;
 
+    /**
+     * @brief バッチ伝播: 全タスクスキャン + edge-finding を1回実行
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
     void rewind_to(int save_point) override;
 
     void bump_activity(const Model& model, size_t trigger_var_idx,

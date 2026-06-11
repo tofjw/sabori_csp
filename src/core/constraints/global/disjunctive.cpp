@@ -643,6 +643,12 @@ bool DisjunctiveConstraint::propagate_bounds(Model& model) {
     return true;
 }
 
+bool DisjunctiveConstraint::propagate_batch(Model& model, int /*save_point*/) {
+    // 全タスクスキャン + edge-finding (O(n^2 x horizon)) をイベント毎ではなく
+    // バッチ毎の1回に集約する。compulsory part はイベント側で trail 維持済み
+    return propagate_bounds(model);
+}
+
 // ---------- Trail ----------
 
 void DisjunctiveConstraint::rewind_to(int save_point) {
@@ -867,7 +873,8 @@ bool DisjunctiveConstraint::on_instantiate(
         if (!has_uninstantiated(model)) {
             return on_final_instantiate(model);
         }
-        return propagate_bounds(model);
+        model.schedule_constraint_batch(model_index());
+        return true;
     }
 
     int s = static_cast<int>(model.value(var_ids_[task]));
@@ -878,7 +885,8 @@ bool DisjunctiveConstraint::on_instantiate(
         if (!has_uninstantiated(model)) {
             return on_final_instantiate(model);
         }
-        return propagate_bounds(model);
+        model.schedule_constraint_batch(model_index());
+        return true;
     }
 
     // Strict mode: zero-duration task must not lie strictly inside another
@@ -896,14 +904,16 @@ bool DisjunctiveConstraint::on_instantiate(
         if (!has_uninstantiated(model)) {
             return on_final_instantiate(model);
         }
-        return propagate_bounds(model);
+        model.schedule_constraint_batch(model_index());
+        return true;
     }
 
     if (d < 0) {
         if (!has_uninstantiated(model)) {
             return on_final_instantiate(model);
         }
-        return propagate_bounds(model);
+        model.schedule_constraint_batch(model_index());
+        return true;
     }
 
     int pos = s - offset_;
@@ -938,7 +948,8 @@ bool DisjunctiveConstraint::on_instantiate(
         return on_final_instantiate(model);
     }
 
-    return propagate_bounds(model);
+    model.schedule_constraint_batch(model_index());
+        return true;
 }
 
 bool DisjunctiveConstraint::on_final_instantiate(const Model& model) {
@@ -969,7 +980,8 @@ bool DisjunctiveConstraint::on_set_min(
 {
     size_t task = (internal_var_idx < n_) ? internal_var_idx : internal_var_idx - n_;
     if (!update_compulsory_part(model, save_point, task)) return false;
-    return propagate_bounds(model);
+    model.schedule_constraint_batch(model_index());
+        return true;
 }
 
 bool DisjunctiveConstraint::on_set_max(
@@ -980,7 +992,8 @@ bool DisjunctiveConstraint::on_set_max(
 {
     size_t task = (internal_var_idx < n_) ? internal_var_idx : internal_var_idx - n_;
     if (!update_compulsory_part(model, save_point, task)) return false;
-    return propagate_bounds(model);
+    model.schedule_constraint_batch(model_index());
+        return true;
 }
 
 void DisjunctiveConstraint::bump_activity(const Model& model, size_t trigger_var_idx,
