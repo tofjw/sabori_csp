@@ -111,6 +111,28 @@ public:
                              std::vector<double>& activity, double activity_inc,
                              size_t restart_count);
 
+    // ===== Conflict learning 連携 =====
+
+    /**
+     * @brief 直近に矛盾を検出した nogood（衝突節の種）。なければ nullptr
+     */
+    NoGood* last_conflict_nogood() const { return last_conflict_nogood_; }
+    void reset_last_conflict() { last_conflict_nogood_ = nullptr; }
+
+    /**
+     * @brief id から nogood を検索（推論トレイルの aux からの説明用）
+     */
+    NoGood* find_by_id(uint32_t id) const {
+        auto it = id_map_.find(id);
+        return it == id_map_.end() ? nullptr : it->second;
+    }
+
+    /**
+     * @brief conflict learning モード（id_map_ 維持の要否）。
+     * off のときは id 検索が不要なので add/remove のハッシュ操作を省く
+     */
+    void set_learning_mode(bool enabled) { learning_mode_ = enabled; }
+
     // ===== Solution NoGood =====
 
     /**
@@ -208,6 +230,10 @@ private:
     std::vector<std::unique_ptr<NoGood>> nogoods_;
 
     // Watch 構造（外側は変数インデックスでインデキシング）
+    bool learning_mode_ = false;                        ///< 学習時のみ id_map_ を維持
+    std::unordered_map<uint32_t, NoGood*> id_map_;     ///< id → nogood（説明用）
+    NoGood* last_conflict_nogood_ = nullptr;            ///< 直近の矛盾 nogood
+
     std::vector<std::unordered_map<Domain::value_type, std::vector<NoGood*>>> ng_eq_watches_;
     std::vector<std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
     std::vector<std::vector<std::pair<Domain::value_type, NoGood*>>> ng_geq_watches_;

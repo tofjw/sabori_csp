@@ -1,4 +1,5 @@
 #include "sabori_csp/constraints/global.hpp"
+#include "lin_term_order.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <cmath>
@@ -20,24 +21,27 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     , min_rem_potential_(0)
     , max_rem_potential_(0) {
     // 同一変数の係数を集約
+    // 同一変数の係数を集約（初出順を保持）。
+    // 注意: unordered_map のイテレーション順はポインタ値（ヒープアドレス）依存で
+    // 非決定的なため、変数順として使ってはならない（ビルド毎に探索が変わるバグの元）
     std::unordered_map<Variable*, int64_t> aggregated;
+    std::vector<Variable*> first_seen;
     for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
+        auto [it, inserted] = aggregated.try_emplace(vars[i], coeffs[i]);
+        if (inserted) first_seen.push_back(vars[i]);
+        else it->second += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    // 一意な変数リストと係数リストを初出順で再構築（係数が0の変数は除外）
     std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
-        if (coeff == 0) continue;  // 係数が0の変数は除外
-        // shared_ptr を探す
-        for (const auto& var : vars) {
-            if (var == var_ptr) {
-                unique_vars.push_back(var);
-                coeffs_.push_back(coeff);
-                break;
-            }
-        }
+    for (auto* var_ptr : first_seen) {
+        const int64_t coeff = aggregated[var_ptr];
+        if (coeff == 0) continue;
+        unique_vars.push_back(var_ptr);
+        coeffs_.push_back(coeff);
     }
+    detail::apply_lin_term_order(unique_vars, coeffs_);
+
 
     // 全ての係数が0になった場合: 0 == target_sum
     // target_sum_ != 0 の矛盾は presolve() (total_min/max=0) で検出される
@@ -703,5 +707,94 @@ void IntLinEqConstraint::bump_activity(const Model& model, size_t trigger_var_id
 
     return;
 }
-}  // namespace sabori_csp
 
+// ============================================================================
+// Conflict learning: 説明生成（検証付き。int_lin_eq_reif と同方式）
+// ============================================================================
+
+namespace {
+inline int64_t le_floor_div(int64_t a, int64_t b) {
+    int64_t q = a / b, r = a % b;
+    return (r != 0 && ((r < 0) != (b < 0))) ? q - 1 : q;
+}
+inline int64_t le_ceil_div(int64_t a, int64_t b) {
+    int64_t q = a / b, r = a % b;
+    return (r != 0 && ((r < 0) == (b < 0))) ? q + 1 : q;
+}
+}  // namespace
+
+bool IntLinEqConstraint::explain(const Model& /*model*/, const ExplainContext& ctx,
+                                  size_t var_idx, Domain::value_type value,
+                                  uint8_t lit_type, uint32_t /*aux*/,
+                                  std::vector<Literal>& out) const {
+    const size_t n = coeffs_.size();
+    if (n == 0) return false;
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+
+    size_t k = SIZE_MAX;
+    for (size_t j = 0; j < n; ++j) {
+        if (var_ids_[j] == var_idx) { k = j; break; }
+    }
+    if (k == SIZE_MAX) return false;
+    const int64_t a = coeffs_[k];
+    if (a == 0) return false;
+
+    // 推論時点 T の他項の合計範囲（理由 bounds を積みながら）
+    int64_t smin = 0, smax = 0;
+    for (size_t j = 0; j < n; ++j) {
+        const size_t vj = var_ids_[j];
+        if (vj == var_idx) continue;
+        auto [lo, hi] = ctx.bounds_at(vj);
+        if (coeffs_[j] > 0) { smin += coeffs_[j] * lo; smax += coeffs_[j] * hi; }
+        else               { smin += coeffs_[j] * hi; smax += coeffs_[j] * lo; }
+        out.push_back({vj, lo, Literal::Type::Geq});
+        out.push_back({vj, hi, Literal::Type::Leq});
+    }
+
+    // a*x ∈ [target - smax, target - smin]
+    int64_t implied_lo, implied_hi;
+    if (a > 0) {
+        implied_lo = le_ceil_div(target_sum_ - smax, a);
+        implied_hi = le_floor_div(target_sum_ - smin, a);
+    } else {
+        implied_lo = le_ceil_div(target_sum_ - smin, a);
+        implied_hi = le_floor_div(target_sum_ - smax, a);
+    }
+
+    switch (static_cast<Literal::Type>(lit_type)) {
+    case Literal::Type::Geq:
+        if (implied_lo >= value) return true;
+        break;
+    case Literal::Type::Leq:
+        if (implied_hi <= value) return true;
+        break;
+    case Literal::Type::Eq:
+        if (implied_lo == value && implied_hi == value) return true;
+        break;
+    }
+    return rollback();
+}
+
+bool IntLinEqConstraint::explain_failure(const Model& model,
+                                          std::vector<Literal>& out) const {
+    const size_t n = coeffs_.size();
+    if (n == 0) return false;
+    const size_t base = out.size();
+
+    int64_t smin = 0, smax = 0;
+    for (size_t j = 0; j < n; ++j) {
+        const size_t vj = var_ids_[j];
+        const auto lo = model.var_min(vj);
+        const auto hi = model.var_max(vj);
+        if (coeffs_[j] > 0) { smin += coeffs_[j] * lo; smax += coeffs_[j] * hi; }
+        else               { smin += coeffs_[j] * hi; smax += coeffs_[j] * lo; }
+        out.push_back({vj, lo, Literal::Type::Geq});
+        out.push_back({vj, hi, Literal::Type::Leq});
+    }
+    if (smin > target_sum_ || smax < target_sum_) return true;
+    out.resize(base);
+    return false;
+}
+
+}  // namespace sabori_csp

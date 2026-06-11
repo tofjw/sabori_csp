@@ -3,6 +3,7 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <iomanip>
@@ -408,6 +409,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
     }
     if (verbose_) {
         std::cerr << "% [verbose] search stopped (timeout)\n";
+        if (learning_enabled_) {
+            std::cerr << "% [verbose] learning: explained=" << learn_explained_count_
+                      << " fallback=" << learn_fallback_count_ << "\n";
+        }
     }
     sync_nogood_stats();
     return std::nullopt;
@@ -533,8 +538,10 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                 // 目的変数のドメインを縮小（永続的に root_point レベルで保存）
                 if (minimize_) {
+                    model.current_propagator_ = Model::kSourceDecision;
                     model.enqueue_set_max(obj_var_idx_, obj_val - 1);
                 } else {
+                    model.current_propagator_ = Model::kSourceDecision;
                     model.enqueue_set_min(obj_var_idx_, obj_val + 1);
                 }
 
@@ -582,10 +589,12 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         current_decision_++;
                         if (minimize_) {
                             decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Leq});
-                            model.enqueue_set_max(obj_var_idx_, target);
+                            model.current_propagator_ = Model::kSourceDecision;
+                    model.enqueue_set_max(obj_var_idx_, target);
                         } else {
                             decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Geq});
-                            model.enqueue_set_min(obj_var_idx_, target);
+                            model.current_propagator_ = Model::kSourceDecision;
+                    model.enqueue_set_min(obj_var_idx_, target);
                         }
 
                         Domain::value_type probe_obj = 0;
@@ -929,19 +938,212 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 }
 
-void Solver::analyze_conflict(const Model& model, std::vector<Literal>& out) {
-    (void)model;
-    out.clear();
-    // L0: explain を実装した制約がまだ無い → 衝突の種も全リテラルも
-    // decision-approx に吸収される。シンボリック表現では
-    // approx_level = current_decision_ の一行で表され、解決ループは空。
-    // 実体化（decision_trail_[0..approx_level) の追加）のみを行う。
-    // → 結果は構成上 decision_trail_ と一致する（C2 の退化性）。
-    const int approx_level = current_decision_;
-    const int lim = std::min<int>(approx_level, static_cast<int>(decision_trail_.size()));
-    for (int i = 0; i < lim; ++i) {
-        out.push_back(decision_trail_[static_cast<size_t>(i)]);
+void Solver::record_inference(uint32_t var_idx, int64_t value,
+                              Literal::Type type, uint32_t source_cid,
+                              uint32_t aux) {
+    const size_t cd = static_cast<size_t>(current_decision_);
+    if (level_start_.size() > cd + 1) {
+        inference_trail_.resize(level_start_[cd + 1]);
+        level_start_.resize(cd + 1);
     }
+    while (level_start_.size() <= cd) {
+        level_start_.push_back(static_cast<uint32_t>(inference_trail_.size()));
+    }
+    inference_trail_.push_back({value, var_idx,
+                                source_cid & 0xFFFFFFu,
+                                static_cast<uint32_t>(type), aux});
+}
+
+void Solver::analyze_conflict(const Model& model, const Literal* trial,
+                              std::vector<Literal>& out) {
+    // 1UIP 衝突分析 (docs-dev/conflict-learning-design.md §4)。
+    // 説明できない局面では decision-trail nogood に全面フォールバックする
+    // (= 従来挙動。C2 の退化性)。
+    out.clear();
+    const int L = current_decision_;
+    const size_t trail_end = inference_trail_.size();
+    const auto& constraints = model.constraints();
+
+    auto fallback = [&]() {
+        out.assign(decision_trail_.begin(), decision_trail_.end());
+        if (trial) out.push_back(*trial);  // 現試行の決定リテラル
+        ++learn_fallback_count_;
+    };
+
+    if (decision_trail_.empty() || trail_end == 0) { fallback(); return; }
+
+    // ---- 衝突の種 ----
+    reason_buf_.clear();
+    bool seeded = false;
+    if (last_conflict_source_ == Model::kSourceNoGood) {
+        if (NoGood* ng = nogood_mgr_.last_conflict_nogood()) {
+            reason_buf_ = ng->literals;  // 全リテラル成立 = 矛盾
+            seeded = true;
+        }
+    } else if (last_conflict_source_ < constraints.size()) {
+        seeded = constraints[last_conflict_source_]->explain_failure(model, reason_buf_);
+    }
+    if (!seeded) { fallback(); return; }
+
+    // ---- 準備 ----
+    if (mark_stamp_.size() < trail_end) mark_stamp_.resize(trail_end, 0);
+    ++mark_epoch_;
+    below_buf_.clear();
+    size_t current_count = 0;
+    size_t resolution_limit = trail_end;  // 理由はこの位置より前で成立していること
+
+    auto level_of = [&](size_t idx) -> int {
+        auto it = std::upper_bound(level_start_.begin(), level_start_.end(),
+                                   static_cast<uint32_t>(idx));
+        return static_cast<int>(it - level_start_.begin()) - 1;
+    };
+
+    // 事実 l を分類して登録する。false = 続行不能(全面フォールバック)
+    std::function<bool(const Literal&)> add_fact = [&](const Literal& l) -> bool {
+        // 成立時点のトレイルエントリ(最古の満たすエントリ)を探す
+        ptrdiff_t found = -1;
+        for (size_t i = trail_end; i-- > 0;) {
+            const auto& e = inference_trail_[i];
+            if (e.var_idx != static_cast<uint32_t>(l.var_idx)) continue;
+            const auto ty = static_cast<Literal::Type>(e.lit_type);
+            bool relevant, sat;
+            switch (l.type) {
+            case Literal::Type::Eq:
+                relevant = (ty == Literal::Type::Eq);
+                sat = relevant && (e.value == l.value);
+                break;
+            case Literal::Type::Geq:
+                relevant = (ty == Literal::Type::Geq || ty == Literal::Type::Eq);
+                sat = relevant && (e.value >= l.value);
+                break;
+            default:  // Leq
+                relevant = (ty == Literal::Type::Leq || ty == Literal::Type::Eq);
+                sat = relevant && (e.value <= l.value);
+                break;
+            }
+            if (!relevant) continue;
+            if (sat) {
+                found = static_cast<ptrdiff_t>(i);  // より古い成立点を探し続ける
+            } else if (found >= 0) {
+                break;  // bounds の単調性: これより古い関連エントリは満たさない
+            }
+        }
+
+        if (found < 0) {
+            // presolve (root) で既に真なら学習節に不要
+            bool root_true = false;
+            switch (l.type) {
+            case Literal::Type::Eq:
+                root_true = (model.presolve_min(l.var_idx) == l.value &&
+                             model.presolve_max(l.var_idx) == l.value);
+                break;
+            case Literal::Type::Geq:
+                root_true = (model.presolve_min(l.var_idx) >= l.value);
+                break;
+            default:
+                root_true = (model.presolve_max(l.var_idx) <= l.value);
+                break;
+            }
+            if (root_true) return true;
+            if (l.type == Literal::Type::Eq) {
+                // SetMin/SetMax の合成で成立した Eq → bounds に分解して再試行
+                return add_fact({l.var_idx, l.value, Literal::Type::Geq}) &&
+                       add_fact({l.var_idx, l.value, Literal::Type::Leq});
+            }
+            return false;  // 成立点不明 → 健全側に倒してフォールバック
+        }
+
+        if (static_cast<size_t>(found) >= resolution_limit) {
+            return false;  // acyclicity 違反 (説明が未来を参照) → フォールバック
+        }
+        const int lv = level_of(static_cast<size_t>(found));
+        if (lv <= 0) return true;  // レベル0の事実は常に真 → 不要
+        if (lv >= L) {
+            if (mark_stamp_[static_cast<size_t>(found)] != mark_epoch_) {
+                mark_stamp_[static_cast<size_t>(found)] = mark_epoch_;
+                ++current_count;
+            }
+        } else {
+            constexpr size_t kMaxBelow = 256;
+            for (const auto& bl : below_buf_) {
+                if (bl.first == l) return true;  // 重複排除
+            }
+            if (below_buf_.size() >= kMaxBelow) return false;  // 爆発防御
+            below_buf_.push_back({l, lv});
+        }
+        return true;
+    };
+
+    for (const auto& l : reason_buf_) {
+        if (!add_fact(l)) { fallback(); return; }
+    }
+    if (current_count == 0) { fallback(); return; }
+
+    // ---- 1UIP 解決ループ (トレイルを逆走) ----
+    size_t pos = trail_end;
+    std::vector<Literal> local_reason;
+    while (current_count > 1) {
+        if (pos == 0) { fallback(); return; }  // 防御 (起こらないはず)
+        --pos;
+        if (mark_stamp_[pos] != mark_epoch_) continue;
+        mark_stamp_[pos] = 0;
+        --current_count;
+        resolution_limit = pos;
+
+        const auto& e = inference_trail_[pos];
+        const uint32_t src = e.reason_cid;
+        local_reason.clear();
+        bool ok = false;
+        if (src == (Model::kSourceNoGood & 0xFFFFFFu)) {
+            if (NoGood* ng = nogood_mgr_.find_by_id(e.aux)) {
+                for (const auto& lit : ng->literals) {
+                    if (lit.is_satisfied(model)) local_reason.push_back(lit);
+                }
+                ok = (local_reason.size() + 1 == ng->literals.size());
+            }
+        } else if (src < constraints.size()) {
+            // 説明コンテキスト: 被説明推論の位置と、その時点の bounds 再構成
+            struct Ctx : ExplainContext {
+                const Solver* s; const Model* m; size_t pos;
+                size_t trail_pos() const override { return pos; }
+                std::pair<Domain::value_type, Domain::value_type>
+                bounds_at(size_t var_idx) const override {
+                    return s->bounds_at(*m, static_cast<uint32_t>(var_idx), pos);
+                }
+            } ctx;
+            ctx.s = this; ctx.m = &model; ctx.pos = pos;
+            ok = constraints[src]->explain(model, ctx, e.var_idx, e.value,
+                                           static_cast<uint8_t>(e.lit_type),
+                                           e.aux, local_reason);
+        }
+        // 決定リテラル(kSourceDecision)や未対応制約は ok=false のまま
+        if (!ok) { fallback(); return; }
+        for (const auto& l : local_reason) {
+            if (!add_fact(l)) { fallback(); return; }
+        }
+    }
+
+    // ---- 残った1つ = UIP ----
+    ptrdiff_t uip = -1;
+    for (size_t j = pos; j-- > 0;) {
+        if (mark_stamp_[j] == mark_epoch_) { uip = static_cast<ptrdiff_t>(j); break; }
+    }
+    if (uip < 0 && pos < trail_end && mark_stamp_[pos] == mark_epoch_) {
+        uip = static_cast<ptrdiff_t>(pos);
+    }
+    if (uip < 0) { fallback(); return; }
+
+    // ---- nogood 組み立て: below + UIP ----
+    for (const auto& bl : below_buf_) out.push_back(bl.first);
+    const auto& ue = inference_trail_[static_cast<size_t>(uip)];
+    out.push_back({ue.var_idx, ue.value, static_cast<Literal::Type>(ue.lit_type)});
+    ++learn_explained_count_;
+
+#ifndef NDEBUG
+    for (const auto& l : out) {
+        assert(l.is_satisfied(model) && "学習 nogood に偽のリテラル (説明バグ)");
+    }
+#endif
 }
 
 std::pair<Domain::value_type, Domain::value_type> Solver::bounds_at(
@@ -970,6 +1172,14 @@ std::pair<Domain::value_type, Domain::value_type> Solver::bounds_at(
     return {lo, hi};
 }
 
+void Solver::learn_at_conflict(const Model& model, const Literal& trial) {
+    // 衝突検出の瞬間（モデルが衝突状態のまま、推論トレイルが有効なうち）に
+    // 1UIP 分析して学習する。フォールバックは decision_trail_ + trial
+    analyze_conflict(model, &trial, analysis_buf_);
+    nogood_mgr_.learn_from_conflict(analysis_buf_, activity_, activity_inc_,
+                                    stats_.restart_count);
+}
+
 void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
@@ -982,13 +1192,8 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
     nogood_mgr_.truncate_nogoods(frame.nogoods_before);
 
     if (nogood_learning_) {
-        if (learning_enabled_) {
-            // L0: 1UIP 分析を実行し、退化性（== decision nogood）を検証した上で
-            // 既存の学習経路をそのまま使う（挙動はビット同等）
-            analyze_conflict(model, analysis_buf_);
-            assert(analysis_buf_.size() == decision_trail_.size() &&
-                   "L0 退化性違反: 分析結果が decision nogood と一致しない");
-        }
+        // 全値枯渇によるプレフィクス nogood（従来挙動）。
+        // 1UIP 学習は衝突検出点（try_* 内の learn_at_conflict）で別途行う
         nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_,
                                         stats_.restart_count);
     }
@@ -1064,11 +1269,23 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
                                      ng_usage_bloom_});
         ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
+        if (learning_enabled_) {
+            // 決定自体を推論トレイルに記録（process_queue を通らないため明示）
+            record_inference(static_cast<uint32_t>(frame.var_idx), val,
+                             Literal::Type::Eq, Model::kSourceDecision);
+        }
         bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                    frame.prev_min, frame.prev_max);
         PropagationResult queue_res = PropagationResult::Conflict;
         if (propagate_ok) {
             queue_res = process_queue(model);
+        } else {
+            last_conflict_source_ = Model::kSourceDecision;
+        }
+        if (learning_enabled_ && queue_res == PropagationResult::Conflict) {
+            learn_at_conflict(model, {frame.var_idx, val, Literal::Type::Eq});
+        }
+        if (propagate_ok) {
             if (queue_res == PropagationResult::Ok) {
                 decision_trail_.push_back({frame.var_idx, val, Literal::Type::Eq});
                 if (community_analysis_.is_enabled()) {
@@ -1124,6 +1341,7 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
 
         Literal decision_lit;
+        model.current_propagator_ = Model::kSourceDecision;  // 決定の発生源を明示
         if (try_left) {
             // 左: x <= mid
             model.enqueue_set_max(frame.var_idx, frame.split_point);
@@ -1135,6 +1353,9 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         }
 
         PropagationResult queue_res = process_queue(model);
+        if (learning_enabled_ && queue_res == PropagationResult::Conflict) {
+            learn_at_conflict(model, decision_lit);
+        }
         if (queue_res == PropagationResult::Ok) {
             decision_trail_.push_back(decision_lit);
             if (community_analysis_.is_enabled()) {
@@ -1388,7 +1609,9 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
         if (verbose_) {
             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
             auto& is = instance_stats_[w.constraint_idx];
@@ -1419,15 +1642,18 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
         ScopedPropagator sp_guard(model, Model::kSourceNoGood);
         if (!nogood_mgr_.propagate_eq_watches(model, var_idx, val,
                                                stats_.restart_count, activity_, activity_inc_)) {
+            last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
         // instantiate は Leq/Geq 両方を充足しうる
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true,
                                                   stats_.restart_count, activity_, activity_inc_)) {
+            last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false,
                                                   stats_.restart_count, activity_, activity_inc_)) {
+            last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
     }
@@ -1625,6 +1851,7 @@ PropagationResult Solver::process_queue(Model& model) {
             if (was_instantiated) {
                 // 既に確定済みで異なる値が要求されている場合は矛盾
                 if (model.value(var_idx) != update.value) {
+                    last_conflict_source_ = Model::kSourceDecision;  // wipeout: 種なし→フォールバック
                     return PropagationResult::Conflict;
                 }
                 // 同じ値で既に確定済み: ドメイン削減で確定した
@@ -1632,9 +1859,10 @@ PropagationResult Solver::process_queue(Model& model) {
                 continue;
             }
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
+                last_conflict_source_ = Model::kSourceDecision;
                 return PropagationResult::Conflict;
             }
-            if (learning_enabled_) {
+            if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), update.value,
                                  Literal::Type::Eq, update.source_cid);
             }
@@ -1649,9 +1877,10 @@ PropagationResult Solver::process_queue(Model& model) {
         case PendingUpdate::Type::SetMin: {
             if (update.value <= prev_min) continue;  // 変化なし
             if (!model.set_min(current_decision_, var_idx, update.value)) {
+                last_conflict_source_ = Model::kSourceDecision;
                 return PropagationResult::Conflict;
             }
-            if (learning_enabled_) {
+            if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), model.var_min(var_idx),
                                  Literal::Type::Geq, update.source_cid);
             }
@@ -1668,7 +1897,9 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_min = model.var_min(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                         auto& is = instance_stats_[w.constraint_idx];
@@ -1697,6 +1928,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
                     if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
+                        last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
                 }
@@ -1706,9 +1938,10 @@ PropagationResult Solver::process_queue(Model& model) {
         case PendingUpdate::Type::SetMax: {
             if (update.value >= prev_max) continue;  // 変化なし
             if (!model.set_max(current_decision_, var_idx, update.value)) {
+                last_conflict_source_ = Model::kSourceDecision;
                 return PropagationResult::Conflict;
             }
-            if (learning_enabled_) {
+            if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), model.var_max(var_idx),
                                  Literal::Type::Leq, update.source_cid);
             }
@@ -1725,7 +1958,9 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                         auto& is = instance_stats_[w.constraint_idx];
@@ -1754,6 +1989,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
                     if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
+                        last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
                 }
@@ -1764,10 +2000,11 @@ PropagationResult Solver::process_queue(Model& model) {
             auto removed_value = update.value;
             if (!model.contains(var_idx, removed_value)) continue;  // 既に存在しない
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
+                last_conflict_source_ = Model::kSourceDecision;
                 return PropagationResult::Conflict;
             }
             // バイナリドメインからの除去は Eq [x = 1-v] として記録（≠ リテラルは v1 対象外）
-            if (learning_enabled_ && prev_min == 0 && prev_max == 1 &&
+            if (__builtin_expect(learning_enabled_, 0) && prev_min == 0 && prev_max == 1 &&
                 (removed_value == 0 || removed_value == 1)) {
                 record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
                                  Literal::Type::Eq, update.source_cid);
@@ -1787,7 +2024,9 @@ PropagationResult Solver::process_queue(Model& model) {
                 // 下限が変化した場合 → on_set_min
                 if (new_min > prev_min) {
                     for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];
@@ -1816,6 +2055,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
                     if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
+                        last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
                 }
@@ -1823,7 +2063,9 @@ PropagationResult Solver::process_queue(Model& model) {
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
                     for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];
@@ -1852,6 +2094,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
                     if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
+                        last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
                 }
@@ -1859,7 +2102,9 @@ PropagationResult Solver::process_queue(Model& model) {
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
                 if (removed_value > new_min && removed_value < new_max) {
                     for (const auto& w : constraint_indices) {
-                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
+                    // 発生源の設定: ホットループのため RAII でなく直接代入
+                    // (決定 enqueue の前には明示的に kSourceDecision へ戻す)
+                    model.current_propagator_ = static_cast<uint32_t>(w.constraint_idx);
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];

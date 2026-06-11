@@ -13,6 +13,8 @@ NoGoodManager::NoGoodManager() = default;
 
 void NoGoodManager::clear() {
     nogoods_.clear();
+    id_map_.clear();
+    last_conflict_nogood_ = nullptr;
     ng_eq_watches_.clear();
     ng_leq_watches_.clear();
     ng_geq_watches_.clear();
@@ -42,11 +44,18 @@ void NoGoodManager::add_nogood(const std::vector<Literal>& literals, size_t rest
     if (ng_ptr->w1 != ng_ptr->w2) {
         register_watch(ng_ptr->literals[ng_ptr->w2], ng_ptr);
     }
+    if (learning_mode_) {
+        id_map_[static_cast<uint32_t>(ng_ptr->id)] = ng_ptr;
+    }
 
     nogoods_.push_back(std::move(ng));
 }
 
 void NoGoodManager::remove_nogood(NoGood* ng) {
+    if (learning_mode_) {
+        id_map_.erase(static_cast<uint32_t>(ng->id));
+    }
+    if (last_conflict_nogood_ == ng) last_conflict_nogood_ = nullptr;
     unregister_watch(ng->literals[ng->w1], ng);
     if (ng->w1 != ng->w2) {
         unregister_watch(ng->literals[ng->w2], ng);
@@ -166,10 +175,17 @@ bool NoGoodManager::propagate_nogood(Model& model, NoGood* ng, const Literal& tr
 
     if (other_lit.is_satisfied(model)) {
         // 全リテラル成立 → 矛盾
+        last_conflict_nogood_ = ng;
         return false;
     }
 
     // Unit propagation: other_lit の否定を強制
+    // (発生源 = この nogood。conflict learning の説明用に id をタグ付け。
+    //  ホットパスのため RAII でなく直接代入 — enqueue 直後に元へ戻す)
+    const uint32_t prev_src = model.current_propagator_;
+    const uint32_t prev_aux = model.current_aux_;
+    model.current_propagator_ = Model::kSourceNoGood;
+    model.current_aux_ = static_cast<uint32_t>(ng->id);
     ng->last_active = restart_count;
     domain_count_++;
     switch (other_lit.type) {
@@ -185,6 +201,8 @@ bool NoGoodManager::propagate_nogood(Model& model, NoGood* ng, const Literal& tr
         model.enqueue_set_max(other_lit.var_idx, other_lit.value - 1);
         break;
     }
+    model.current_propagator_ = prev_src;
+    model.current_aux_ = prev_aux;
 
     return true;
 }

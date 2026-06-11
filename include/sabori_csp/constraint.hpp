@@ -6,6 +6,7 @@
 #define SABORI_CSP_CONSTRAINT_HPP
 
 #include "sabori_csp/variable.hpp"
+#include "sabori_csp/literal.hpp"
 #include <vector>
 #include <memory>
 #include <string>
@@ -16,6 +17,20 @@ namespace sabori_csp {
 
 // Forward declaration
 class Model;
+
+/**
+ * @brief 説明生成のコンテキスト（Solver が衝突分析時に提供）
+ *
+ * trail_pos = 被説明推論のトレイル位置。bounds_at(var, trail_pos) で
+ * 「推論時点の bounds」を取得できる（現在の bounds の使用は acyclicity 違反）。
+ */
+class ExplainContext {
+public:
+    virtual ~ExplainContext() = default;
+    virtual size_t trail_pos() const = 0;
+    virtual std::pair<Domain::value_type, Domain::value_type>
+        bounds_at(size_t var_idx) const = 0;
+};
 
 /**
  * @brief presolve() の戻り値
@@ -265,6 +280,36 @@ public:
      * @param save_point 復元先のセーブポイント
      */
     virtual void rewind_to(int /*save_point*/) {}
+
+    /**
+     * @brief 推論の説明（conflict learning 用、衝突時にのみ呼ばれる）
+     *
+     * この制約が過去に行った推論 [var (type) value] の理由を out に積む。
+     * 規約 (docs-dev/conflict-learning-design.md §3.3):
+     *  (a) 各理由リテラルは現在 true
+     *  (b) 被説明リテラルより先にトレイル上で成立している (acyclicity)
+     *  (c) 被説明リテラル自身を含まない
+     * 守れない場合は false（decision-approx にフォールバック、健全）。
+     * デフォルト = 説明不可。
+     *
+     * @param aux 推論記録時の補助情報（制約が enqueue 時に current_aux_ 経由で設定したもの）
+     */
+    virtual bool explain(const Model& /*model*/, const class ExplainContext& /*ctx*/,
+                         size_t /*var_idx*/, Domain::value_type /*value*/,
+                         uint8_t /*lit_type*/, uint32_t /*aux*/,
+                         std::vector<Literal>& /*out*/) const {
+        return false;
+    }
+
+    /**
+     * @brief 矛盾の説明（衝突節の種）
+     *
+     * この制約が直前に検出した矛盾の理由（現在 true なリテラル集合）を out に積む。
+     * デフォルト = 説明不可（decision-approx にフォールバック）。
+     */
+    virtual bool explain_failure(const Model& /*model*/, std::vector<Literal>& /*out*/) const {
+        return false;
+    }
 
     /**
      * @brief バッチ伝播（propagator queue）

@@ -1,4 +1,5 @@
 #include "sabori_csp/constraints/global.hpp"
+#include "lin_term_order.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <set>
@@ -23,18 +24,27 @@ IntLinEqReifConstraint::IntLinEqReifConstraint(std::vector<int64_t> coeffs,
     b_id_ = b->id();
 
     // 同一変数の係数を集約
+    // 同一変数の係数を集約（初出順を保持）。
+    // 注意: unordered_map のイテレーション順はポインタ値（ヒープアドレス）依存で
+    // 非決定的なため、変数順として使ってはならない（ビルド毎に探索が変わるバグの元）
     std::unordered_map<Variable*, int64_t> aggregated;
+    std::vector<Variable*> first_seen;
     for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
+        auto [it, inserted] = aggregated.try_emplace(vars[i], coeffs[i]);
+        if (inserted) first_seen.push_back(vars[i]);
+        else it->second += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    // 一意な変数リストと係数リストを初出順で再構築（係数が0の変数は除外）
     std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
-        if (coeff == 0) continue;  // 係数が0の変数は除外
+    for (auto* var_ptr : first_seen) {
+        const int64_t coeff = aggregated[var_ptr];
+        if (coeff == 0) continue;
         unique_vars.push_back(var_ptr);
         coeffs_.push_back(coeff);
     }
+    detail::apply_lin_term_order(unique_vars, coeffs_);
+
 
     // 全ての係数が0になった場合: b ↔ (0 == target)
     // この場合は presolve で b を確定させる
@@ -404,4 +414,142 @@ void IntLinEqReifConstraint::init_activity(const Model& model, double* activity)
     }
 }
 
+// ============================================================================
+// Conflict learning: 説明生成 (docs-dev/conflict-learning-design.md §6.1/§6.2)
+//
+// 方式: 理由リテラル(推論時点 T の bounds)から含意される bound を
+// 厳密整数演算で再計算し、被説明リテラル以上の強さが出ることを検証する。
+// 検証に失敗したら false (decision-approx フォールバック、健全)。
+// これにより propagate 側の実装詳細に依存せず、説明のズレは
+// 「弱い節」ではなく「フォールバック」として現れる。
+// ============================================================================
+
+namespace {
+inline int64_t floor_div(int64_t a, int64_t b) {
+    int64_t q = a / b, r = a % b;
+    return (r != 0 && ((r < 0) != (b < 0))) ? q - 1 : q;
+}
+inline int64_t ceil_div(int64_t a, int64_t b) {
+    int64_t q = a / b, r = a % b;
+    return (r != 0 && ((r < 0) == (b < 0))) ? q + 1 : q;
+}
+}  // namespace
+
+bool IntLinEqReifConstraint::explain(const Model& model, const ExplainContext& ctx,
+                                      size_t var_idx, Domain::value_type value,
+                                      uint8_t lit_type, uint32_t /*aux*/,
+                                      std::vector<Literal>& out) const {
+    const size_t n = coeffs_.size();
+    if (n == 0) return false;
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+
+    auto b_bounds = ctx.bounds_at(b_id_);
+
+    // 推論時点 T の他項の合計範囲を計算しつつ、理由 bounds を積む
+    auto sum_others = [&](size_t skip, int64_t& smin, int64_t& smax) {
+        smin = 0; smax = 0;
+        for (size_t j = 0; j < n; ++j) {
+            const size_t vj = var_ids_[j];
+            if (vj == skip) continue;
+            auto [lo, hi] = ctx.bounds_at(vj);
+            if (coeffs_[j] > 0) { smin += coeffs_[j] * lo; smax += coeffs_[j] * hi; }
+            else               { smin += coeffs_[j] * hi; smax += coeffs_[j] * lo; }
+            // 理由: 両側 bounds (root で真なら分析側で自動的に落ちる)
+            out.push_back({vj, lo, Literal::Type::Geq});
+            out.push_back({vj, hi, Literal::Type::Leq});
+        }
+    };
+
+    if (var_idx == b_id_) {
+        int64_t smin, smax;
+        sum_others(/*skip=*/SIZE_MAX, smin, smax);
+        if (value == 0) {
+            // [b=0] ← target が到達不能
+            if (smin > target_ || smax < target_) return true;
+            return rollback();
+        }
+        // [b=1] ← 合計が target に固定
+        if (smin == smax && smin == target_) return true;
+        return rollback();
+    }
+
+    // x_k への推論。係数とインデックスを特定
+    size_t k = SIZE_MAX;
+    for (size_t j = 0; j < n; ++j) {
+        if (var_ids_[j] == var_idx) { k = j; break; }
+    }
+    if (k == SIZE_MAX) return false;
+    const int64_t a = coeffs_[k];
+    if (a == 0) return false;
+
+    // b=1 由来の bounds/Eq 推論のみ説明する (b=0 由来の ≠ 伝播は対象外)
+    if (!(b_bounds.first == 1 && b_bounds.second == 1)) return rollback();
+    out.push_back({b_id_, 1, Literal::Type::Eq});
+
+    int64_t smin, smax;
+    sum_others(var_idx, smin, smax);
+    // a*x ∈ [target - smax, target - smin]
+    int64_t implied_lo, implied_hi;
+    if (a > 0) {
+        implied_lo = ceil_div(target_ - smax, a);
+        implied_hi = floor_div(target_ - smin, a);
+    } else {
+        implied_lo = ceil_div(target_ - smin, a);
+        implied_hi = floor_div(target_ - smax, a);
+    }
+
+    switch (static_cast<Literal::Type>(lit_type)) {
+    case Literal::Type::Geq:
+        if (implied_lo >= value) return true;
+        break;
+    case Literal::Type::Leq:
+        if (implied_hi <= value) return true;
+        break;
+    case Literal::Type::Eq:
+        if (implied_lo == value && implied_hi == value) return true;
+        break;
+    }
+    return rollback();
+}
+
+bool IntLinEqReifConstraint::explain_failure(const Model& model,
+                                              std::vector<Literal>& out) const {
+    const size_t n = coeffs_.size();
+    if (n == 0) return false;
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+
+    if (!model.is_instantiated(b_id_)) return false;
+    const auto bval = model.value(b_id_);
+
+    // 現在の bounds で合計範囲を計算 (failure の種は現在事実でよい)
+    int64_t smin = 0, smax = 0;
+    for (size_t j = 0; j < n; ++j) {
+        const size_t vj = var_ids_[j];
+        const auto lo = model.var_min(vj);
+        const auto hi = model.var_max(vj);
+        if (coeffs_[j] > 0) { smin += coeffs_[j] * lo; smax += coeffs_[j] * hi; }
+        else               { smin += coeffs_[j] * hi; smax += coeffs_[j] * lo; }
+        out.push_back({vj, lo, Literal::Type::Geq});
+        out.push_back({vj, hi, Literal::Type::Leq});
+    }
+
+    if (bval == 1) {
+        // b=1 なのに target に到達不能
+        if (smin > target_ || smax < target_) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            return true;
+        }
+        return rollback();
+    }
+    // b=0 なのに合計が target に固定
+    if (smin == smax && smin == target_) {
+        out.push_back({b_id_, 0, Literal::Type::Eq});
+        return true;
+    }
+    return rollback();
+}
+
 }  // namespace sabori_csp
+

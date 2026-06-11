@@ -87,14 +87,16 @@ struct ConstraintTrailEntry {
  * @brief 保留中のドメイン更新操作
  */
 struct PendingUpdate {
-    enum class Type { Instantiate, SetMin, SetMax, RemoveValue };
-    Type type;
-    size_t var_idx;
+    enum class Type : uint8_t { Instantiate, SetMin, SetMax, RemoveValue };
+    Type type;            // 1B (+3B pad)
+    uint32_t var_idx;     // 変数 (4B で十分)
     Domain::value_type value;
     // 発生源 (enqueue 時点の Model::current_propagator_ をスナップショット)。
     // conflict learning の理由追跡に使用。処理時点からの推測は禁止
     uint32_t source_cid;
-};
+    // 発生源の補助情報 (nogood 伝播なら nogood id)。enqueue 時点の current_aux_
+    uint32_t aux;
+};  // 計 24B (pre-learning と同サイズ)
 
 /**
  * @brief CSPモデル
@@ -473,7 +475,7 @@ public:
      * @brief 変数の確定をキューに追加（制約から呼び出される）
      */
     void enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-        pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value, current_propagator_});
+        pending_updates_.push_back({PendingUpdate::Type::Instantiate, static_cast<uint32_t>(var_idx), value, current_propagator_, current_aux_});
     }
 
     /**
@@ -481,7 +483,7 @@ public:
      */
     void enqueue_set_min(size_t var_idx, Domain::value_type new_min) {
         if (new_min > var_data_[var_idx].min) {
-            pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min, current_propagator_});
+            pending_updates_.push_back({PendingUpdate::Type::SetMin, static_cast<uint32_t>(var_idx), new_min, current_propagator_, current_aux_});
         }
     }
 
@@ -490,7 +492,7 @@ public:
      */
     void enqueue_set_max(size_t var_idx, Domain::value_type new_max) {
         if (new_max < var_data_[var_idx].max) {
-            pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max, current_propagator_});
+            pending_updates_.push_back({PendingUpdate::Type::SetMax, static_cast<uint32_t>(var_idx), new_max, current_propagator_, current_aux_});
         }
     }
 
@@ -498,7 +500,7 @@ public:
      * @brief 値除去をキューに追加
      */
     void enqueue_remove_value(size_t var_idx, Domain::value_type value) {
-        pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value, current_propagator_});
+        pending_updates_.push_back({PendingUpdate::Type::RemoveValue, static_cast<uint32_t>(var_idx), value, current_propagator_, current_aux_});
     }
 
     /**
@@ -529,6 +531,7 @@ public:
     static constexpr uint32_t kSourcePresolve = 0xFFFFFDu;
 
     uint32_t current_propagator_ = kSourceDecision;
+    uint32_t current_aux_ = 0;  ///< 発生源の補助情報 (nogood id 等)
 
     // ===== バッチ propagator スケジューリング =====
     // イベントごとの即時フル伝播の代わりに、制約を「スケジュール」しておき
@@ -666,11 +669,16 @@ void Model::save_constraint_state(int save_point, size_t constraint_idx, StateT 
 struct ScopedPropagator {
     Model& m;
     uint32_t prev;
-    ScopedPropagator(Model& model, uint32_t cid)
-        : m(model), prev(model.current_propagator_) {
+    uint32_t prev_aux;
+    ScopedPropagator(Model& model, uint32_t cid, uint32_t aux = 0)
+        : m(model), prev(model.current_propagator_), prev_aux(model.current_aux_) {
         m.current_propagator_ = cid;
+        m.current_aux_ = aux;
     }
-    ~ScopedPropagator() { m.current_propagator_ = prev; }
+    ~ScopedPropagator() {
+        m.current_propagator_ = prev;
+        m.current_aux_ = prev_aux;
+    }
     ScopedPropagator(const ScopedPropagator&) = delete;
     ScopedPropagator& operator=(const ScopedPropagator&) = delete;
 };

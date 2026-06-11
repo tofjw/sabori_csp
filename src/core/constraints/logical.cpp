@@ -299,6 +299,82 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
     return true;
 }
 
+bool ArrayBoolAndConstraint::explain(const Model& model, const ExplainContext& /*ctx*/,
+                                      size_t var_idx, Domain::value_type value,
+                                      uint8_t /*lit_type*/, uint32_t /*aux*/,
+                                      std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    auto is_fixed = [&](size_t vid, Domain::value_type v) {
+        return model.is_instantiated(vid) && model.value(vid) == v;
+    };
+
+    if (var_idx == r_id_) {
+        if (value == 0) {
+            // [r=0] の理由: as_i = 0 が1つあれば十分
+            for (size_t i = 0; i < n_; ++i) {
+                if (is_fixed(var_ids_[i], 0)) {
+                    out.push_back({var_ids_[i], 0, Literal::Type::Eq});
+                    return true;
+                }
+            }
+            return false;
+        }
+        // [r=1] の理由: 全 as_i = 1
+        for (size_t i = 0; i < n_; ++i) {
+            if (!is_fixed(var_ids_[i], 1)) { out.resize(base); return false; }
+            out.push_back({var_ids_[i], 1, Literal::Type::Eq});
+        }
+        return true;
+    }
+
+    // as 変数への推論
+    if (value == 1) {
+        // [as_i=1] の理由: r=1
+        if (!is_fixed(r_id_, 1)) return false;
+        out.push_back({r_id_, 1, Literal::Type::Eq});
+        return true;
+    }
+    // [as_i=0] の理由: r=0 かつ 他の全 as_j=1
+    if (!is_fixed(r_id_, 0)) return false;
+    out.push_back({r_id_, 0, Literal::Type::Eq});
+    for (size_t j = 0; j < n_; ++j) {
+        size_t vj = var_ids_[j];
+        if (vj == var_idx) continue;
+        if (!is_fixed(vj, 1)) { out.resize(base); return false; }
+        out.push_back({vj, 1, Literal::Type::Eq});
+    }
+    return true;
+}
+
+bool ArrayBoolAndConstraint::explain_failure(const Model& model,
+                                              std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    auto is_fixed = [&](size_t vid, Domain::value_type v) {
+        return model.is_instantiated(vid) && model.value(vid) == v;
+    };
+    if (is_fixed(r_id_, 1)) {
+        // r=1 なのに as_i=0 が存在
+        for (size_t i = 0; i < n_; ++i) {
+            if (is_fixed(var_ids_[i], 0)) {
+                out.push_back({r_id_, 1, Literal::Type::Eq});
+                out.push_back({var_ids_[i], 0, Literal::Type::Eq});
+                return true;
+            }
+        }
+    }
+    if (is_fixed(r_id_, 0)) {
+        // r=0 なのに 全 as_i=1
+        out.push_back({r_id_, 0, Literal::Type::Eq});
+        for (size_t i = 0; i < n_; ++i) {
+            if (!is_fixed(var_ids_[i], 1)) { out.resize(base); return false; }
+            out.push_back({var_ids_[i], 1, Literal::Type::Eq});
+        }
+        return true;
+    }
+    out.resize(base);
+    return false;
+}
+
 bool ArrayBoolAndConstraint::on_final_instantiate(const Model& model) {
     bool and_result = true;
     for (size_t i = 0; i < n_; ++i) {
@@ -887,6 +963,53 @@ bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
         return on_last_uninstantiated(model, save_point, last_idx);
     }
 
+    return true;
+}
+
+bool BoolClauseConstraint::explain(const Model& model, const ExplainContext& /*ctx*/,
+                                    size_t var_idx,
+                                    Domain::value_type value, uint8_t /*lit_type*/,
+                                    uint32_t /*aux*/,
+                                    std::vector<Literal>& out) const {
+    if (is_tautology_) return false;
+    // unit 伝播 [var = value] の理由 = 「他の全リテラルの否定（falsification）」。
+    // 節は静的なので payload 不要。bool 変数は一度しか割り当てられないため、
+    // 衝突時点でも理由リテラルは true のまま (acyclicity も自動的に満たす)
+    auto it = var_id_to_lit_idx_.find(var_idx);
+    if (it == var_id_to_lit_idx_.end()) return false;
+    size_t my_idx = it->second;
+    // 伝播の整合: value はこのリテラルの充足方向であるはず
+    if (satisfying_value(my_idx) != value) return false;
+
+    size_t base = out.size();
+    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
+        if (i == my_idx) continue;
+        size_t vid = get_var_id(i);
+        // falsification: pos リテラルなら [v=0]、neg なら [v=1]
+        Domain::value_type fval = 1 - satisfying_value(i);
+        if (!model.is_instantiated(vid) || model.value(vid) != fval) {
+            out.resize(base);  // 理由が現在 true でない → 説明不可
+            return false;
+        }
+        out.push_back({vid, fval, Literal::Type::Eq});
+    }
+    return true;
+}
+
+bool BoolClauseConstraint::explain_failure(const Model& model,
+                                            std::vector<Literal>& out) const {
+    if (is_tautology_) return false;
+    // 矛盾 = 全リテラルが falsify された
+    size_t base = out.size();
+    for (size_t i = 0; i < n_pos_ + n_neg_; ++i) {
+        size_t vid = get_var_id(i);
+        Domain::value_type fval = 1 - satisfying_value(i);
+        if (!model.is_instantiated(vid) || model.value(vid) != fval) {
+            out.resize(base);
+            return false;
+        }
+        out.push_back({vid, fval, Literal::Type::Eq});
+    }
     return true;
 }
 

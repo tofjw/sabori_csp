@@ -140,11 +140,11 @@ TEST_CASE("Learning L0: bounds_at reconstructs bounds at inference time", "[lear
     Solver solver;
     // 推論トレイルを手で構築: T0: x>=3, T1: x<=8, T2: x>=5
     solver.inference_trail_.push_back({3, static_cast<uint32_t>(x->id()), 0, 
-                                       static_cast<uint32_t>(Literal::Type::Geq)});
+                                       static_cast<uint32_t>(Literal::Type::Geq), 0});
     solver.inference_trail_.push_back({8, static_cast<uint32_t>(x->id()), 0,
-                                       static_cast<uint32_t>(Literal::Type::Leq)});
+                                       static_cast<uint32_t>(Literal::Type::Leq), 0});
     solver.inference_trail_.push_back({5, static_cast<uint32_t>(x->id()), 0,
-                                       static_cast<uint32_t>(Literal::Type::Geq)});
+                                       static_cast<uint32_t>(Literal::Type::Geq), 0});
 
     // T=0 時点 (エントリ適用前): presolve bounds
     auto b0 = solver.bounds_at(model, static_cast<uint32_t>(x->id()), 0);

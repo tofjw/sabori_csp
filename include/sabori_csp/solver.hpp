@@ -6,6 +6,7 @@
 #define SABORI_CSP_SOLVER_HPP
 
 #include "sabori_csp/model.hpp"
+#include "sabori_csp/literal.hpp"
 #include "sabori_csp/nogood_manager.hpp"
 #include "sabori_csp/variable_selector.hpp"
 #include "sabori_csp/restart_controller.hpp"
@@ -46,31 +47,6 @@ enum class PropagationResult {
     Ok,        // 伝播成功（矛盾なし）
     Conflict,  // 伝播で矛盾検出
     Stopped    // タイムアウト等で中断（矛盾ではない）
-};
-
-/**
- * @brief リテラル（変数IDと値のペア + 型）
- */
-struct Literal {
-    enum class Type : uint8_t {
-        Eq,   // var == value
-        Leq,  // var <= value
-        Geq   // var >= value
-    };
-
-    size_t var_idx;
-    Domain::value_type value;
-    Type type = Type::Eq;
-
-    bool operator==(const Literal& other) const {
-        return var_idx == other.var_idx && value == other.value && type == other.type;
-    }
-
-    /// このリテラルが現在のモデル状態で成立しているか
-    bool is_satisfied(const Model& model) const;
-
-    /// このリテラルの否定を返す (Eq→Eq, Leq↔Geq+1)
-    Literal negate() const;
 };
 
 /**
@@ -195,7 +171,10 @@ public:
      * L0 段階: 推論トレイル記録 + 全フォールバック分析（decision nogood と等価）。
      * off 時は探索がビット同等であることが保証される。
      */
-    void set_learning(bool enabled) { learning_enabled_ = enabled; }
+    void set_learning(bool enabled) {
+        learning_enabled_ = enabled;
+        nogood_mgr_.set_learning_mode(enabled);
+    }
 
     /**
      * @brief NoGood の長さ分布を取得（デバッグ用）
@@ -509,6 +488,7 @@ public:
         uint32_t var_idx;          ///< 変数
         uint32_t reason_cid : 24;  ///< 発生源 (制約 model_idx / Model::kSource*)
         uint32_t lit_type   : 8;   ///< Literal::Type
+        uint32_t aux;              ///< 発生源の補助情報 (nogood id 等)
     };
 
     /**
@@ -518,20 +498,15 @@ public:
      * 縮んでいれば境界でトレイルを切り詰め、伸びていれば境界を追加。
      * これによりバックトラック/決定の全箇所を計装せずに済む。
      */
-    inline void record_inference(uint32_t var_idx, int64_t value,
-                                 Literal::Type type, uint32_t source_cid) {
-        const size_t cd = static_cast<size_t>(current_decision_);
-        if (level_start_.size() > cd + 1) {
-            inference_trail_.resize(level_start_[cd + 1]);
-            level_start_.resize(cd + 1);
-        }
-        while (level_start_.size() <= cd) {
-            level_start_.push_back(static_cast<uint32_t>(inference_trail_.size()));
-        }
-        inference_trail_.push_back({value, var_idx,
-                                    source_cid & 0xFFFFFFu,
-                                    static_cast<uint32_t>(type)});
-    }
+    /**
+     * @brief 推論を記録（learning on 時のみ呼ばれる。ホットパス肥大を避けるため非インライン）
+     *
+     * level_start_ は current_decision_ に遅延自己同期する。
+     */
+    __attribute__((noinline))
+    void record_inference(uint32_t var_idx, int64_t value,
+                          Literal::Type type, uint32_t source_cid,
+                          uint32_t aux = 0);
 
     /**
      * @brief 1UIP 衝突分析（L0: 説明する制約ゼロ → 全フォールバック）
@@ -539,7 +514,13 @@ public:
      * decision-approx はシンボリック（approx_level 整数のみ）。
      * L0 では結果が decision_trail_ と一致することが保証される（退化性）。
      */
-    void analyze_conflict(const Model& model, std::vector<Literal>& out);
+    void analyze_conflict(const Model& model, const Literal* trial,
+                          std::vector<Literal>& out);
+
+    /**
+     * @brief 衝突検出点での学習（モデルが衝突状態のまま呼ぶこと）
+     */
+    void learn_at_conflict(const Model& model, const Literal& trial);
 
     /**
      * @brief 推論時点 T の bounds を再構成（L2 の int_lin 説明用ユーティリティ）
@@ -552,13 +533,8 @@ public:
 
 
     // ===== メンバ変数 =====
-
-    // Conflict learning 状態
-    bool learning_enabled_ = false;
-    std::vector<InferenceEntry> inference_trail_;
-    std::vector<uint32_t> level_start_;          ///< level → トレイル開始位置
-    uint32_t last_conflict_source_ = 0xFFFFFFu;  ///< 衝突を検出した制約
-    std::vector<Literal> analysis_buf_;          ///< 分析バッファ（再利用）
+    // (conflict learning 状態はクラス末尾に配置 — 既存ホットメンバのオフgoing
+    //  オフセットを変えないため)
 
 private:
 
@@ -642,6 +618,20 @@ private:
     // コミュニティ分析（診断専用）
     CommunityAnalysis community_analysis_;
     size_t propagation_source_ = SIZE_MAX;  ///< 伝播の起点変数（判定時にセット）
+
+public:
+    // ===== Conflict learning 状態（末尾配置: 既存メンバのレイアウト維持）=====
+    bool learning_enabled_ = false;
+    std::vector<InferenceEntry> inference_trail_;
+    std::vector<uint32_t> level_start_;          ///< level → トレイル開始位置
+    uint32_t last_conflict_source_ = 0xFFFFFFu;  ///< 衝突を検出した制約
+    std::vector<Literal> analysis_buf_;          ///< 分析バッファ（再利用）
+    std::vector<Literal> reason_buf_;            ///< 説明バッファ（再利用）
+    std::vector<std::pair<Literal,int>> below_buf_;  ///< 下位レベルリテラル + level
+    std::vector<uint32_t> mark_stamp_;           ///< トレイル位置のマーク（エポック方式）
+    uint32_t mark_epoch_ = 0;
+    size_t learn_explained_count_ = 0;   ///< 説明ベースで学習できた衝突数
+    size_t learn_fallback_count_ = 0;    ///< フォールバックした衝突数
 };
 
 } // namespace sabori_csp

@@ -45,6 +45,11 @@ public:
                        double* activity, double activity_inc,
                        bool& need_rescale, std::mt19937& rng) const override;
 
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
 protected:
 
 
@@ -179,6 +184,11 @@ private:
     /**
      * @brief リテラルが節を充足できるか（Model参照版）
      */
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
     bool can_satisfy(const Model& model, size_t lit_idx) const;
 
     /**

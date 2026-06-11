@@ -429,6 +429,124 @@ bool IntEqReifConstraint::on_remove_value(Model& model, int /*save_point*/,
     return true;
 }
 
+bool IntEqReifConstraint::explain(const Model& /*model*/, const ExplainContext& ctx,
+                                   size_t var_idx, Domain::value_type value,
+                                   uint8_t lit_type, uint32_t /*aux*/,
+                                   std::vector<Literal>& out) const {
+    // 意味: b=1 ⇔ x == y。推論時点 T の bounds から検証付きで説明する
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+    auto xb = ctx.bounds_at(x_id_);
+    auto yb = ctx.bounds_at(y_id_);
+    auto bb = ctx.bounds_at(b_id_);
+    auto fixed = [](std::pair<Domain::value_type, Domain::value_type> p) {
+        return p.first == p.second;
+    };
+
+    if (var_idx == b_id_) {
+        if (value == 1) {
+            // [b=1] ← x, y が同値に固定
+            if (fixed(xb) && fixed(yb) && xb.first == yb.first) {
+                out.push_back({x_id_, xb.first, Literal::Type::Eq});
+                out.push_back({y_id_, yb.first, Literal::Type::Eq});
+                return true;
+            }
+            return rollback();
+        }
+        // [b=0] ← bounds が交差しない
+        if (xb.first > yb.second) {
+            out.push_back({x_id_, xb.first, Literal::Type::Geq});
+            out.push_back({y_id_, yb.second, Literal::Type::Leq});
+            return true;
+        }
+        if (yb.first > xb.second) {
+            out.push_back({y_id_, yb.first, Literal::Type::Geq});
+            out.push_back({x_id_, xb.second, Literal::Type::Leq});
+            return true;
+        }
+        return rollback();
+    }
+
+    if (var_idx != x_id_ && var_idx != y_id_) return false;
+    const size_t other = (var_idx == x_id_) ? y_id_ : x_id_;
+    const auto ob = (var_idx == x_id_) ? yb : xb;
+
+    if (bb.first == 1 && bb.second == 1) {
+        // b=1 → x と y は等しい: bounds の伝播
+        out.push_back({b_id_, 1, Literal::Type::Eq});
+        const auto ty = static_cast<Literal::Type>(lit_type);
+        switch (ty) {
+        case Literal::Type::Geq:
+            if (ob.first >= value) {
+                out.push_back({other, value, Literal::Type::Geq});
+                return true;
+            }
+            break;
+        case Literal::Type::Leq:
+            if (ob.second <= value) {
+                out.push_back({other, value, Literal::Type::Leq});
+                return true;
+            }
+            break;
+        case Literal::Type::Eq:
+            if (fixed(ob) && ob.first == value) {
+                out.push_back({other, value, Literal::Type::Eq});
+                return true;
+            }
+            break;
+        }
+        return rollback();
+    }
+    if (bb.first == 0 && bb.second == 0) {
+        // b=0 → x ≠ y: バイナリドメインでの [var = 1-v] 推論 (Eq 記録) のみ対応
+        if (static_cast<Literal::Type>(lit_type) == Literal::Type::Eq &&
+            fixed(ob) && ob.first == 1 - value &&
+            (value == 0 || value == 1)) {
+            out.push_back({b_id_, 0, Literal::Type::Eq});
+            out.push_back({other, ob.first, Literal::Type::Eq});
+            return true;
+        }
+        return rollback();
+    }
+    return rollback();
+}
+
+bool IntEqReifConstraint::explain_failure(const Model& model,
+                                           std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    if (!model.is_instantiated(b_id_)) return false;
+    const auto bv = model.value(b_id_);
+    const auto xmin = model.var_min(x_id_), xmax = model.var_max(x_id_);
+    const auto ymin = model.var_min(y_id_), ymax = model.var_max(y_id_);
+
+    if (bv == 1) {
+        // b=1 なのに bounds が交差しない
+        if (xmin > ymax) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            out.push_back({x_id_, xmin, Literal::Type::Geq});
+            out.push_back({y_id_, ymax, Literal::Type::Leq});
+            return true;
+        }
+        if (ymin > xmax) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            out.push_back({y_id_, ymin, Literal::Type::Geq});
+            out.push_back({x_id_, xmax, Literal::Type::Leq});
+            return true;
+        }
+        out.resize(base);
+        return false;
+    }
+    // b=0 なのに x == y に固定
+    if (xmin == xmax && ymin == ymax && xmin == ymin) {
+        out.push_back({b_id_, 0, Literal::Type::Eq});
+        out.push_back({x_id_, xmin, Literal::Type::Eq});
+        out.push_back({y_id_, ymin, Literal::Type::Eq});
+        return true;
+    }
+    out.resize(base);
+    return false;
+}
+
 bool IntEqReifConstraint::on_final_instantiate(const Model& model) {
     bool eq = (model.value(x_id_) == model.value(y_id_));
     return eq == (model.value(b_id_) == 1);
@@ -913,6 +1031,123 @@ bool IntNeReifConstraint::on_instantiate(Model& model, int save_point,
     }
 
     return true;
+}
+
+bool IntNeReifConstraint::explain(const Model& /*model*/, const ExplainContext& ctx,
+                                   size_t var_idx, Domain::value_type value,
+                                   uint8_t lit_type, uint32_t /*aux*/,
+                                   std::vector<Literal>& out) const {
+    // 意味: b=1 ⇔ x != y (int_eq_reif の鏡像)
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+    auto xb = ctx.bounds_at(x_id_);
+    auto yb = ctx.bounds_at(y_id_);
+    auto bb = ctx.bounds_at(b_id_);
+    auto fixed = [](std::pair<Domain::value_type, Domain::value_type> p) {
+        return p.first == p.second;
+    };
+
+    if (var_idx == b_id_) {
+        if (value == 1) {
+            // [b=1] ← bounds が交差しない (x != y が確定)
+            if (xb.first > yb.second) {
+                out.push_back({x_id_, xb.first, Literal::Type::Geq});
+                out.push_back({y_id_, yb.second, Literal::Type::Leq});
+                return true;
+            }
+            if (yb.first > xb.second) {
+                out.push_back({y_id_, yb.first, Literal::Type::Geq});
+                out.push_back({x_id_, xb.second, Literal::Type::Leq});
+                return true;
+            }
+            return rollback();
+        }
+        // [b=0] ← x, y が同値に固定
+        if (fixed(xb) && fixed(yb) && xb.first == yb.first) {
+            out.push_back({x_id_, xb.first, Literal::Type::Eq});
+            out.push_back({y_id_, yb.first, Literal::Type::Eq});
+            return true;
+        }
+        return rollback();
+    }
+
+    if (var_idx != x_id_ && var_idx != y_id_) return false;
+    const size_t other = (var_idx == x_id_) ? y_id_ : x_id_;
+    const auto ob = (var_idx == x_id_) ? yb : xb;
+
+    if (bb.first == 0 && bb.second == 0) {
+        // b=0 → x == y: bounds / Eq の伝播
+        out.push_back({b_id_, 0, Literal::Type::Eq});
+        switch (static_cast<Literal::Type>(lit_type)) {
+        case Literal::Type::Geq:
+            if (ob.first >= value) {
+                out.push_back({other, value, Literal::Type::Geq});
+                return true;
+            }
+            break;
+        case Literal::Type::Leq:
+            if (ob.second <= value) {
+                out.push_back({other, value, Literal::Type::Leq});
+                return true;
+            }
+            break;
+        case Literal::Type::Eq:
+            if (fixed(ob) && ob.first == value) {
+                out.push_back({other, value, Literal::Type::Eq});
+                return true;
+            }
+            break;
+        }
+        return rollback();
+    }
+    if (bb.first == 1 && bb.second == 1) {
+        // b=1 → x != y: バイナリドメインでの [var = 1-v] 推論のみ対応
+        if (static_cast<Literal::Type>(lit_type) == Literal::Type::Eq &&
+            fixed(ob) && ob.first == 1 - value &&
+            (value == 0 || value == 1)) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            out.push_back({other, ob.first, Literal::Type::Eq});
+            return true;
+        }
+        return rollback();
+    }
+    return rollback();
+}
+
+bool IntNeReifConstraint::explain_failure(const Model& model,
+                                           std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    if (!model.is_instantiated(b_id_)) return false;
+    const auto bv = model.value(b_id_);
+    const auto xmin = model.var_min(x_id_), xmax = model.var_max(x_id_);
+    const auto ymin = model.var_min(y_id_), ymax = model.var_max(y_id_);
+
+    if (bv == 1) {
+        // b=1 なのに x == y に固定
+        if (xmin == xmax && ymin == ymax && xmin == ymin) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            out.push_back({x_id_, xmin, Literal::Type::Eq});
+            out.push_back({y_id_, ymin, Literal::Type::Eq});
+            return true;
+        }
+        out.resize(base);
+        return false;
+    }
+    // b=0 なのに bounds が交差しない
+    if (xmin > ymax) {
+        out.push_back({b_id_, 0, Literal::Type::Eq});
+        out.push_back({x_id_, xmin, Literal::Type::Geq});
+        out.push_back({y_id_, ymax, Literal::Type::Leq});
+        return true;
+    }
+    if (ymin > xmax) {
+        out.push_back({b_id_, 0, Literal::Type::Eq});
+        out.push_back({y_id_, ymin, Literal::Type::Geq});
+        out.push_back({x_id_, xmax, Literal::Type::Leq});
+        return true;
+    }
+    out.resize(base);
+    return false;
 }
 
 bool IntNeReifConstraint::on_final_instantiate(const Model& model) {

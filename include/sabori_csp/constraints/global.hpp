@@ -294,6 +294,11 @@ public:
      */
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
 
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
     void init_activity(const Model& model, double* activity) const override;
 
 #if 1
@@ -938,6 +943,11 @@ public:
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
     int64_t target() const { return target_; }
     size_t b_id() const { return b_id_; }
+
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
 
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;

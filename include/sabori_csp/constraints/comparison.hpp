@@ -76,6 +76,11 @@ public:
     size_t y_id() const { return y_id_; }
     size_t b_id() const { return b_id_; }
 
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
 private:
     bool find_new_support(const Model& model);
 
@@ -164,6 +169,12 @@ public:
                          size_t var_idx, size_t internal_var_idx,
                          Domain::value_type removed_value) override;
     bool on_final_instantiate(const Model& model) override;
+
+
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux, std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
 
 private:
     size_t x_id_, y_id_, b_id_;

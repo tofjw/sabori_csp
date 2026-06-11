@@ -1,4 +1,5 @@
 #include "sabori_csp/constraints/global.hpp"
+#include "lin_term_order.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <set>
@@ -21,18 +22,27 @@ IntLinLeImpConstraint::IntLinLeImpConstraint(std::vector<int64_t> coeffs,
     b_id_ = b->id();
 
     // 同一変数の係数を集約
+    // 同一変数の係数を集約（初出順を保持）。
+    // 注意: unordered_map のイテレーション順はポインタ値（ヒープアドレス）依存で
+    // 非決定的なため、変数順として使ってはならない（ビルド毎に探索が変わるバグの元）
     std::unordered_map<Variable*, int64_t> aggregated;
+    std::vector<Variable*> first_seen;
     for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
+        auto [it, inserted] = aggregated.try_emplace(vars[i], coeffs[i]);
+        if (inserted) first_seen.push_back(vars[i]);
+        else it->second += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
+    // 一意な変数リストと係数リストを初出順で再構築（係数が0の変数は除外）
     std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
-        if (coeff == 0) continue;  // 係数が0の変数は除外
+    for (auto* var_ptr : first_seen) {
+        const int64_t coeff = aggregated[var_ptr];
+        if (coeff == 0) continue;
         unique_vars.push_back(var_ptr);
         coeffs_.push_back(coeff);
     }
+    detail::apply_lin_term_order(unique_vars, coeffs_);
+
 
     // 全ての係数が0になった場合: presolve で処理
     if (coeffs_.empty()) {

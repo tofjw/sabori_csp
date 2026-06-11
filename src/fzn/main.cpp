@@ -326,6 +326,12 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     auto result = solver.solve_optimize(*model, obj_var_idx, minimize,
         [&](const sabori_csp::Solution& sol) {
             found_any = true;
+            if (g_print_stats) {
+                auto it = sol.find(objective_var_name);
+                if (it != sol.end()) {
+                    std::cerr << "% obj = " << it->second << "\n";
+                }
+            }
             if (find_all) {
                 print_solution(sol, fzn_model);
             } else {
