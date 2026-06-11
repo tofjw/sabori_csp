@@ -5,6 +5,9 @@
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include <array>
+#include <functional>
+#include <random>
 
 using namespace sabori_csp;
 
@@ -123,4 +126,82 @@ TEST_CASE("Bound nogood via RemoveValue: optimization with IntNe + bisect", "[no
     auto val_off = run_test(false);
     REQUIRE(val_on == val_off);
     REQUIRE(val_on == 3);
+}
+
+// ============================================================================
+// Conflict learning L0 (docs-dev/conflict-learning-design.md)
+// ============================================================================
+
+TEST_CASE("Learning L0: bounds_at reconstructs bounds at inference time", "[learning]") {
+    Model model;
+    auto* x = model.create_variable("x", 0, 10);
+    model.snapshot_presolve_bounds();
+
+    Solver solver;
+    // 推論トレイルを手で構築: T0: x>=3, T1: x<=8, T2: x>=5
+    solver.inference_trail_.push_back({3, static_cast<uint32_t>(x->id()), 0, 
+                                       static_cast<uint32_t>(Literal::Type::Geq)});
+    solver.inference_trail_.push_back({8, static_cast<uint32_t>(x->id()), 0,
+                                       static_cast<uint32_t>(Literal::Type::Leq)});
+    solver.inference_trail_.push_back({5, static_cast<uint32_t>(x->id()), 0,
+                                       static_cast<uint32_t>(Literal::Type::Geq)});
+
+    // T=0 時点 (エントリ適用前): presolve bounds
+    auto b0 = solver.bounds_at(model, static_cast<uint32_t>(x->id()), 0);
+    REQUIRE(b0.first == 0);
+    REQUIRE(b0.second == 10);
+    // T=1: x>=3 のみ適用済み
+    auto b1 = solver.bounds_at(model, static_cast<uint32_t>(x->id()), 1);
+    REQUIRE(b1.first == 3);
+    REQUIRE(b1.second == 10);
+    // T=2: x>=3, x<=8
+    auto b2 = solver.bounds_at(model, static_cast<uint32_t>(x->id()), 2);
+    REQUIRE(b2.first == 3);
+    REQUIRE(b2.second == 8);
+    // T=3 (全適用後): x>=5, x<=8
+    auto b3 = solver.bounds_at(model, static_cast<uint32_t>(x->id()), 3);
+    REQUIRE(b3.first == 5);
+    REQUIRE(b3.second == 8);
+}
+
+TEST_CASE("Learning L0: solution count identical with learning on", "[learning]") {
+    // ランダム区間 alldifferent で learning on の全解数がブルートフォースと一致
+    // (L0 では off とビット同等のはずだが、false UNSAT ガードとして独立に検証)
+    std::mt19937 rng(777);
+    std::uniform_int_distribution<int64_t> lo_dist(1, 4);
+    std::uniform_int_distribution<int64_t> len_dist(0, 3);
+
+    for (int trial = 0; trial < 15; ++trial) {
+        constexpr size_t kN = 5;
+        int64_t lo[kN], hi[kN];
+        for (size_t i = 0; i < kN; ++i) {
+            lo[i] = lo_dist(rng);
+            hi[i] = lo[i] + len_dist(rng);
+        }
+        size_t expected = 0;
+        std::array<int64_t, kN> assign{};
+        std::function<void(size_t)> rec = [&](size_t depth) {
+            if (depth == kN) { ++expected; return; }
+            for (int64_t v = lo[depth]; v <= hi[depth]; ++v) {
+                bool dup = false;
+                for (size_t k = 0; k < depth; ++k) if (assign[k] == v) { dup = true; break; }
+                if (!dup) { assign[depth] = v; rec(depth + 1); }
+            }
+        };
+        rec(0);
+
+        Model model;
+        std::vector<Variable*> vars;
+        for (size_t i = 0; i < kN; ++i) {
+            vars.push_back(model.create_variable("x" + std::to_string(i), Domain(lo[i], hi[i])));
+        }
+        model.add_constraint(std::make_unique<AllDifferentConstraint>(vars));
+
+        Solver solver;
+        solver.set_learning(true);
+        size_t actual = 0;
+        solver.solve_all(model, [&](const Solution&) { ++actual; return true; });
+        INFO("trial " << trial);
+        REQUIRE(actual == expected);
+    }
 }

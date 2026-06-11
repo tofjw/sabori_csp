@@ -190,6 +190,14 @@ public:
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
 
     /**
+     * @brief conflict learning (LCG) を有効/無効にする
+     *
+     * L0 段階: 推論トレイル記録 + 全フォールバック分析（decision nogood と等価）。
+     * off 時は探索がビット同等であることが保証される。
+     */
+    void set_learning(bool enabled) { learning_enabled_ = enabled; }
+
+    /**
      * @brief NoGood の長さ分布を取得（デバッグ用）
      */
     std::map<size_t, size_t> nogood_length_distribution() const {
@@ -439,6 +447,7 @@ private:
      * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
      */
     inline void bump_activity(const Model& model, size_t constraint_idx, size_t trigger_var_idx) {
+        last_conflict_source_ = static_cast<uint32_t>(constraint_idx);  // 衝突源の捕捉 (learning 用)
         const auto& constraint = model.constraints()[constraint_idx];
         bool need_rescale = false;
         constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
@@ -486,8 +495,72 @@ private:
      */
     void sync_nogood_stats();
 
+    // ===== Conflict learning (L0 基盤) =====
+    // 設計: docs-dev/conflict-learning-design.md
+    // 注意: ユニットテスト（退化性・bounds_at）から検証するため一時的に public。
+    // L2 で安定後にアクセス制御を見直す
+public:
+
+    /**
+     * @brief 推論トレイルのエントリ（16B, POD）
+     */
+    struct InferenceEntry {
+        int64_t value;             ///< リテラルの値
+        uint32_t var_idx;          ///< 変数
+        uint32_t reason_cid : 24;  ///< 発生源 (制約 model_idx / Model::kSource*)
+        uint32_t lit_type   : 8;   ///< Literal::Type
+    };
+
+    /**
+     * @brief 推論を記録（learning on 時のみ呼ぶ）
+     *
+     * level_start_ は current_decision_ に遅延同期する:
+     * 縮んでいれば境界でトレイルを切り詰め、伸びていれば境界を追加。
+     * これによりバックトラック/決定の全箇所を計装せずに済む。
+     */
+    inline void record_inference(uint32_t var_idx, int64_t value,
+                                 Literal::Type type, uint32_t source_cid) {
+        const size_t cd = static_cast<size_t>(current_decision_);
+        if (level_start_.size() > cd + 1) {
+            inference_trail_.resize(level_start_[cd + 1]);
+            level_start_.resize(cd + 1);
+        }
+        while (level_start_.size() <= cd) {
+            level_start_.push_back(static_cast<uint32_t>(inference_trail_.size()));
+        }
+        inference_trail_.push_back({value, var_idx,
+                                    source_cid & 0xFFFFFFu,
+                                    static_cast<uint32_t>(type)});
+    }
+
+    /**
+     * @brief 1UIP 衝突分析（L0: 説明する制約ゼロ → 全フォールバック）
+     *
+     * decision-approx はシンボリック（approx_level 整数のみ）。
+     * L0 では結果が decision_trail_ と一致することが保証される（退化性）。
+     */
+    void analyze_conflict(const Model& model, std::vector<Literal>& out);
+
+    /**
+     * @brief 推論時点 T の bounds を再構成（L2 の int_lin 説明用ユーティリティ）
+     *
+     * inference_trail_ を末尾から T まで逆走し、var の T 時点の min/max を返す。
+     * L0 ではマイクロベンチ・ユニットテスト対象。
+     */
+    std::pair<Domain::value_type, Domain::value_type> bounds_at(
+        const Model& model, uint32_t var_idx, size_t t) const;
+
 
     // ===== メンバ変数 =====
+
+    // Conflict learning 状態
+    bool learning_enabled_ = false;
+    std::vector<InferenceEntry> inference_trail_;
+    std::vector<uint32_t> level_start_;          ///< level → トレイル開始位置
+    uint32_t last_conflict_source_ = 0xFFFFFFu;  ///< 衝突を検出した制約
+    std::vector<Literal> analysis_buf_;          ///< 分析バッファ（再利用）
+
+private:
 
     // 設定
     bool nogood_learning_ = true;

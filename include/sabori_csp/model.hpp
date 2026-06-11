@@ -91,6 +91,9 @@ struct PendingUpdate {
     Type type;
     size_t var_idx;
     Domain::value_type value;
+    // 発生源 (enqueue 時点の Model::current_propagator_ をスナップショット)。
+    // conflict learning の理由追跡に使用。処理時点からの推測は禁止
+    uint32_t source_cid;
 };
 
 /**
@@ -470,7 +473,7 @@ public:
      * @brief 変数の確定をキューに追加（制約から呼び出される）
      */
     void enqueue_instantiate(size_t var_idx, Domain::value_type value) {
-        pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value});
+        pending_updates_.push_back({PendingUpdate::Type::Instantiate, var_idx, value, current_propagator_});
     }
 
     /**
@@ -478,7 +481,7 @@ public:
      */
     void enqueue_set_min(size_t var_idx, Domain::value_type new_min) {
         if (new_min > var_data_[var_idx].min) {
-            pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min});
+            pending_updates_.push_back({PendingUpdate::Type::SetMin, var_idx, new_min, current_propagator_});
         }
     }
 
@@ -487,7 +490,7 @@ public:
      */
     void enqueue_set_max(size_t var_idx, Domain::value_type new_max) {
         if (new_max < var_data_[var_idx].max) {
-            pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max});
+            pending_updates_.push_back({PendingUpdate::Type::SetMax, var_idx, new_max, current_propagator_});
         }
     }
 
@@ -495,7 +498,7 @@ public:
      * @brief 値除去をキューに追加
      */
     void enqueue_remove_value(size_t var_idx, Domain::value_type value) {
-        pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
+        pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value, current_propagator_});
     }
 
     /**
@@ -517,6 +520,15 @@ public:
      * @brief 保留中の更新操作をクリア
      */
     void clear_pending_updates();
+
+    // ===== 発生源追跡 (conflict learning 用) =====
+    // enqueue_* は現在の伝播主体 (current_propagator_) を PendingUpdate に焼き込む。
+    // 設定は ScopedPropagator (RAII) 経由のみとし、ネスト・例外でも正しく復元する
+    static constexpr uint32_t kSourceDecision = 0xFFFFFFu;
+    static constexpr uint32_t kSourceNoGood   = 0xFFFFFEu;
+    static constexpr uint32_t kSourcePresolve = 0xFFFFFDu;
+
+    uint32_t current_propagator_ = kSourceDecision;
 
     // ===== バッチ propagator スケジューリング =====
     // イベントごとの即時フル伝播の代わりに、制約を「スケジュール」しておき
@@ -643,6 +655,25 @@ void Model::save_constraint_state(int save_point, size_t constraint_idx, StateT 
     entry.state = state;
     constraint_trail_.push_back({save_point, entry});
 }
+
+/**
+ * @brief 伝播主体の RAII ガード
+ *
+ * コールバック/バッチ/nogood 伝播の呼び出し1回を囲い、
+ * その間に enqueue された更新の発生源を一意に確定させる。
+ * ネスト・例外・早期 return でも前の値を確実に復元する。
+ */
+struct ScopedPropagator {
+    Model& m;
+    uint32_t prev;
+    ScopedPropagator(Model& model, uint32_t cid)
+        : m(model), prev(model.current_propagator_) {
+        m.current_propagator_ = cid;
+    }
+    ~ScopedPropagator() { m.current_propagator_ = prev; }
+    ScopedPropagator(const ScopedPropagator&) = delete;
+    ScopedPropagator& operator=(const ScopedPropagator&) = delete;
+};
 
 } // namespace sabori_csp
 

@@ -1,4 +1,5 @@
 #include "sabori_csp/solver.hpp"
+#include <cassert>
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
@@ -928,6 +929,47 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
     }
 }
 
+void Solver::analyze_conflict(const Model& model, std::vector<Literal>& out) {
+    (void)model;
+    out.clear();
+    // L0: explain を実装した制約がまだ無い → 衝突の種も全リテラルも
+    // decision-approx に吸収される。シンボリック表現では
+    // approx_level = current_decision_ の一行で表され、解決ループは空。
+    // 実体化（decision_trail_[0..approx_level) の追加）のみを行う。
+    // → 結果は構成上 decision_trail_ と一致する（C2 の退化性）。
+    const int approx_level = current_decision_;
+    const int lim = std::min<int>(approx_level, static_cast<int>(decision_trail_.size()));
+    for (int i = 0; i < lim; ++i) {
+        out.push_back(decision_trail_[static_cast<size_t>(i)]);
+    }
+}
+
+std::pair<Domain::value_type, Domain::value_type> Solver::bounds_at(
+    const Model& model, uint32_t var_idx, size_t t) const {
+    // 推論時点 T の bounds 再構成。
+    // 探索中の bounds はトレイル上で単調（min は増加のみ・max は減少のみ、
+    // バックトラック時はトレイルごと切り詰め）なので、
+    // 「T より前の最後の Geq/Leq/Eq エントリの値」がそのまま T 時点の bound になる。
+    Domain::value_type lo = model.presolve_min(var_idx);
+    Domain::value_type hi = model.presolve_max(var_idx);
+    bool lo_found = false, hi_found = false;
+    for (size_t i = std::min(t, inference_trail_.size()); i-- > 0; ) {
+        const auto& e = inference_trail_[i];
+        if (e.var_idx != var_idx) continue;
+        const auto ty = static_cast<Literal::Type>(e.lit_type);
+        if (!lo_found && (ty == Literal::Type::Geq || ty == Literal::Type::Eq)) {
+            lo = e.value;
+            lo_found = true;
+        }
+        if (!hi_found && (ty == Literal::Type::Leq || ty == Literal::Type::Eq)) {
+            hi = e.value;
+            hi_found = true;
+        }
+        if (lo_found && hi_found) break;
+    }
+    return {lo, hi};
+}
+
 void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
@@ -940,6 +982,13 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
     nogood_mgr_.truncate_nogoods(frame.nogoods_before);
 
     if (nogood_learning_) {
+        if (learning_enabled_) {
+            // L0: 1UIP 分析を実行し、退化性（== decision nogood）を検証した上で
+            // 既存の学習経路をそのまま使う（挙動はビット同等）
+            analyze_conflict(model, analysis_buf_);
+            assert(analysis_buf_.size() == decision_trail_.size() &&
+                   "L0 退化性違反: 分析結果が decision nogood と一致しない");
+        }
         nogood_mgr_.learn_from_conflict(decision_trail_, activity_, activity_inc_,
                                         stats_.restart_count);
     }
@@ -1339,6 +1388,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
         if (verbose_) {
             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
             auto& is = instance_stats_[w.constraint_idx];
@@ -1366,6 +1416,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     // NoGood チェック
     if (nogood_learning_) {
+        ScopedPropagator sp_guard(model, Model::kSourceNoGood);
         if (!nogood_mgr_.propagate_eq_watches(model, var_idx, val,
                                                stats_.restart_count, activity_, activity_inc_)) {
             return false;
@@ -1583,6 +1634,10 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.instantiate(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
             }
+            if (learning_enabled_) {
+                record_inference(static_cast<uint32_t>(var_idx), update.value,
+                                 Literal::Type::Eq, update.source_cid);
+            }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
             }
@@ -1595,6 +1650,10 @@ PropagationResult Solver::process_queue(Model& model) {
             if (update.value <= prev_min) continue;  // 変化なし
             if (!model.set_min(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
+            }
+            if (learning_enabled_) {
+                record_inference(static_cast<uint32_t>(var_idx), model.var_min(var_idx),
+                                 Literal::Type::Geq, update.source_cid);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -1609,6 +1668,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_min = model.var_min(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                         auto& is = instance_stats_[w.constraint_idx];
@@ -1634,8 +1694,11 @@ PropagationResult Solver::process_queue(Model& model) {
                     }
                 }
                 // Bound NoGood 伝播
-                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
-                    return PropagationResult::Conflict;
+                if (nogood_learning_) {
+                    ScopedPropagator sp_ng(model, Model::kSourceNoGood);
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
+                        return PropagationResult::Conflict;
+                    }
                 }
             }
             break;
@@ -1644,6 +1707,10 @@ PropagationResult Solver::process_queue(Model& model) {
             if (update.value >= prev_max) continue;  // 変化なし
             if (!model.set_max(current_decision_, var_idx, update.value)) {
                 return PropagationResult::Conflict;
+            }
+            if (learning_enabled_) {
+                record_inference(static_cast<uint32_t>(var_idx), model.var_max(var_idx),
+                                 Literal::Type::Leq, update.source_cid);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -1658,6 +1725,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
                     if (verbose_) {
                         auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                         auto& is = instance_stats_[w.constraint_idx];
@@ -1683,8 +1751,11 @@ PropagationResult Solver::process_queue(Model& model) {
                     }
                 }
                 // Bound NoGood 伝播
-                if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
-                    return PropagationResult::Conflict;
+                if (nogood_learning_) {
+                    ScopedPropagator sp_ng(model, Model::kSourceNoGood);
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
+                        return PropagationResult::Conflict;
+                    }
                 }
             }
             break;
@@ -1694,6 +1765,12 @@ PropagationResult Solver::process_queue(Model& model) {
             if (!model.contains(var_idx, removed_value)) continue;  // 既に存在しない
             if (!model.remove_value(current_decision_, var_idx, removed_value)) {
                 return PropagationResult::Conflict;
+            }
+            // バイナリドメインからの除去は Eq [x = 1-v] として記録（≠ リテラルは v1 対象外）
+            if (learning_enabled_ && prev_min == 0 && prev_max == 1 &&
+                (removed_value == 0 || removed_value == 1)) {
+                record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
+                                 Literal::Type::Eq, update.source_cid);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -1710,6 +1787,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // 下限が変化した場合 → on_set_min
                 if (new_min > prev_min) {
                     for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];
@@ -1735,13 +1813,17 @@ PropagationResult Solver::process_queue(Model& model) {
                         }
                     }
                     // Bound NoGood 伝播
-                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
+                    if (nogood_learning_) {
+                    ScopedPropagator sp_ng(model, Model::kSourceNoGood);
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, activity_inc_)) {
                         return PropagationResult::Conflict;
                     }
+                }
                 }
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
                     for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];
@@ -1767,13 +1849,17 @@ PropagationResult Solver::process_queue(Model& model) {
                         }
                     }
                     // Bound NoGood 伝播
-                    if (nogood_learning_ && !nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
+                    if (nogood_learning_) {
+                    ScopedPropagator sp_ng(model, Model::kSourceNoGood);
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, activity_inc_)) {
                         return PropagationResult::Conflict;
                     }
+                }
                 }
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
                 if (removed_value > new_min && removed_value < new_max) {
                     for (const auto& w : constraint_indices) {
+                    ScopedPropagator sp_guard(model, static_cast<uint32_t>(w.constraint_idx));
                         if (verbose_) {
                             auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
                             auto& is = instance_stats_[w.constraint_idx];
@@ -1817,6 +1903,7 @@ PropagationResult Solver::process_queue(Model& model) {
         cs.call_count++;
         is.call_count++;
         size_t before = model.pending_updates_size();
+        ScopedPropagator sp_guard(model, static_cast<uint32_t>(batch_idx));
         if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
             cs.fail_count++;
             cs.fail_depth_sum += current_decision_;
@@ -1827,6 +1914,7 @@ PropagationResult Solver::process_queue(Model& model) {
         }
         if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
     } else {
+        ScopedPropagator sp_guard(model, static_cast<uint32_t>(batch_idx));
         if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
             bump_activity(model, batch_idx, constraints[batch_idx]->var_ids_ref().front());
             return PropagationResult::Conflict;

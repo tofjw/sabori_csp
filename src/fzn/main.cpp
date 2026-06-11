@@ -48,6 +48,7 @@ bool g_no_elimination = false;
 // 局所性統計を出力する。
 bool g_community_analysis = false;
 bool g_use_gac = false;
+bool g_learning = false;
 
 void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* model = nullptr) {
     if (!g_print_stats) return;
@@ -257,6 +258,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_learning) solver.set_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -305,6 +307,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_learning) solver.set_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -375,6 +378,8 @@ int main(int argc, char* argv[]) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-G") == 0) {
             g_use_gac = true;
+        } else if (std::strcmp(argv[i], "-L") == 0) {
+            g_learning = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
         } else if (std::strcmp(argv[i], "-E") == 0) {
