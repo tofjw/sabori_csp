@@ -518,6 +518,35 @@ public:
      */
     void clear_pending_updates();
 
+    // ===== バッチ propagator スケジューリング =====
+    // イベントごとの即時フル伝播の代わりに、制約を「スケジュール」しておき
+    // イベントキューが空になった時点で propagate_batch() を1回だけ実行する。
+    // 同一制約の重複スケジュールはフラグで排除（propagator queue の第一段階）。
+
+    /**
+     * @brief 制約をバッチ伝播キューに登録（重複登録は無視）
+     */
+    void schedule_constraint_batch(size_t c_idx) {
+        if (c_idx < constraint_scheduled_.size() && !constraint_scheduled_[c_idx]) {
+            constraint_scheduled_[c_idx] = 1;
+            scheduled_queue_.push_back(c_idx);
+        }
+    }
+
+    /**
+     * @brief スケジュール済み制約を1つ取り出す（なければ SIZE_MAX）
+     */
+    size_t pop_scheduled_constraint() {
+        if (scheduled_head_ >= scheduled_queue_.size()) return SIZE_MAX;
+        size_t c = scheduled_queue_[scheduled_head_++];
+        constraint_scheduled_[c] = 0;
+        if (scheduled_head_ == scheduled_queue_.size()) {
+            scheduled_queue_.clear();
+            scheduled_head_ = 0;
+        }
+        return c;
+    }
+
 private:
     std::vector<std::unique_ptr<Variable>> variables_;
     std::vector<ConstraintPtr> constraints_;
@@ -551,6 +580,11 @@ private:
     // 伝播キュー（制約が追加した保留中のドメイン更新操作）
     std::vector<PendingUpdate> pending_updates_;
     size_t pending_read_idx_ = 0;
+
+    // バッチ propagator スケジューリング状態
+    std::vector<uint8_t> constraint_scheduled_;  // 制約ごとの登録済みフラグ
+    std::vector<size_t> scheduled_queue_;
+    size_t scheduled_head_ = 0;
 
     // NoGood ブルームフィルタ（変数選択タイブレーク用）
     std::vector<Bloom512> var_ng_bloom_;

@@ -267,6 +267,20 @@ public:
     virtual void rewind_to(int /*save_point*/) {}
 
     /**
+     * @brief バッチ伝播（propagator queue）
+     *
+     * イベントコールバック内で model.schedule_constraint_batch(model_index())
+     * を呼んだ制約に対し、イベントキューが空になった時点で1回だけ呼ばれる。
+     * フル再計算型の propagator（GAC, bounds(Z) 等）をイベント毎ではなく
+     * イベントバッチ毎に実行するために使う。
+     *
+     * @param model モデルへの参照
+     * @param save_point バックトラック用セーブポイント
+     * @return 伝播が成功すればtrue、矛盾検出時はfalse
+     */
+    virtual bool propagate_batch(Model& /*model*/, int /*save_point*/) { return true; }
+
+    /**
      * @brief 制約伝播失敗時の activity bump（制約固有化可能）
      *
      * デフォルトでは全 instantiated 変数に均等加算。

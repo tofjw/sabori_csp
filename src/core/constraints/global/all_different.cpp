@@ -251,10 +251,9 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    // 確定で区間 [value, value] が固定されたので bounds(Z) フィルタを実行
-    if (!propagate_bounds_z(model, save_point)) {
-        return false;
-    }
+    // 確定で区間 [value, value] が固定された → bounds(Z) フィルタをバッチ登録
+    // （イベントキューが空になった時点で propagate_batch が1回実行される）
+    model.schedule_constraint_batch(model_index());
 
     if (unfixed_count_ <= 1) {
       size_t last_idx = SIZE_MAX;
@@ -540,7 +539,8 @@ bool AllDifferentConstraint::on_set_min(Model& model, int save_point,
         bz_expected_min_epoch_[internal_var_idx] = 0;
         return true;
     }
-    return propagate_bounds_z(model, save_point);
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 bool AllDifferentConstraint::on_set_max(Model& model, int save_point,
@@ -554,6 +554,11 @@ bool AllDifferentConstraint::on_set_max(Model& model, int save_point,
         bz_expected_max_epoch_[internal_var_idx] = 0;
         return true;
     }
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool AllDifferentConstraint::propagate_batch(Model& model, int save_point) {
     return propagate_bounds_z(model, save_point);
 }
 

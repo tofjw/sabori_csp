@@ -570,9 +570,20 @@ void Model::sync_to_domains() {
 void Model::clear_pending_updates() {
     pending_updates_.clear();
     pending_read_idx_ = 0;
+    // 破棄されたイベントに紐づくバッチスケジュールも無効化する
+    for (size_t i = scheduled_head_; i < scheduled_queue_.size(); ++i) {
+        constraint_scheduled_[scheduled_queue_[i]] = 0;
+    }
+    scheduled_queue_.clear();
+    scheduled_head_ = 0;
 }
 
 void Model::build_constraint_watch_list() {
+    // バッチスケジューリング状態を制約数に合わせて初期化
+    constraint_scheduled_.assign(constraints_.size(), 0);
+    scheduled_queue_.clear();
+    scheduled_head_ = 0;
+
     // 変数インデックス → 関連する制約インデックスのリスト
     var_to_constraint_indices_.clear();
     var_to_constraint_indices_.resize(variables_.size());

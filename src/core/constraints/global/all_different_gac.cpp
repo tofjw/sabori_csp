@@ -46,10 +46,6 @@ bool AllDifferentGACConstraint::prepare_propagation(Model& model) {
         gac_enabled_ = all_sparse;
     }
 
-    // ハイブリッド方式: bounds イベントは親の bounds(Z) で処理するため有効のまま。
-    // フル GAC は instantiate / remove_value イベントでのみ実行する
-    clear_pending_echoes();
-
     if (gac_enabled_) {
         size_t n = var_ids_.size();
         size_t m = total_values_;
@@ -83,24 +79,8 @@ bool AllDifferentGACConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
     matching_valid_ = false;
-
-    // 親の forward checking が enqueue した値除去をエコーとして登録し、
-    // バッチ末尾の除去を処理した後に GAC を1回だけ実行する
-    // （登録しないと除去1件ごとに on_remove_value で GAC がフル実行される）
-    if (gac_enabled_ && unfixed_count_ >= 2) {
-        size_t first = pending_echoes_.size();
-        for (size_t k = 0; k < var_ids_.size(); ++k) {
-            if (k == internal_var_idx) continue;
-            size_t vid = var_ids_[k];
-            if (model.is_instantiated(vid)) continue;
-            if (model.contains(vid, value)) {
-                pending_echoes_.push_back({vid, value, false});
-            }
-        }
-        if (pending_echoes_.size() > first) {
-            pending_echoes_.back().run_after = true;
-        }
-    }
+    // 親の on_instantiate が schedule_constraint_batch 済み。
+    // propagate_batch の仮想ディスパッチで GAC 版が実行される
     return true;
 }
 
@@ -112,21 +92,9 @@ bool AllDifferentGACConstraint::on_remove_value(Model& model, int save_point,
                                                        internal_var_idx, removed_value);
     }
     matching_valid_ = false;
-
-    // 自分(または親)が enqueue した除去のエコーなら GAC 再実行をスキップ。
-    // バッチ末尾のエコー消費時のみ1回実行して fixpoint を回復する
-    if (pending_echo_head_ < pending_echoes_.size()) {
-        const auto& e = pending_echoes_[pending_echo_head_];
-        if (e.var_id == var_idx && e.value == removed_value) {
-            bool run_after = e.run_after;
-            ++pending_echo_head_;
-            if (pending_echo_head_ == pending_echoes_.size()) {
-                clear_pending_echoes();
-            }
-            return run_after ? run_gac_filtering(model) : true;
-        }
-    }
-    return run_gac_filtering(model);
+    // イベント毎のフル GAC 実行はせず、バッチ登録のみ（重複登録はフラグで排除）
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 bool AllDifferentGACConstraint::on_set_min(Model& model, int save_point,
@@ -137,9 +105,8 @@ bool AllDifferentGACConstraint::on_set_min(Model& model, int save_point,
         return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
                                                    internal_var_idx, new_min, old_min);
     }
-    // bounds イベントは高頻度（他制約の bounds 伝播で毎ノード大量に発生）なので
-    // フル GAC は走らせず、軽量な親処理（Hall ペア + bounds(Z)）に委譲する。
-    // フル GAC は instantiate / remove_value イベントでのみ実行
+    // 親が Hall ペアチェック + バッチ登録を行う。
+    // バッチ実行は propagate_batch の仮想ディスパッチで GAC 版になる
     matching_valid_ = false;
     return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
                                                internal_var_idx, new_min, old_min);
@@ -161,8 +128,15 @@ bool AllDifferentGACConstraint::on_set_max(Model& model, int save_point,
 void AllDifferentGACConstraint::rewind_to(int save_point) {
     AllDifferentConstraint::rewind_to(save_point);
     matching_valid_ = false;
-    // バックトラックで破棄された enqueue のエコーは届かないため無効化
-    clear_pending_echoes();
+}
+
+bool AllDifferentGACConstraint::propagate_batch(Model& model, int save_point) {
+    if (!gac_enabled_) {
+        // GAC 無効時は親の bounds(Z) バッチにフォールバック
+        return AllDifferentConstraint::propagate_batch(model, save_point);
+    }
+    // GAC は domain consistency なので bounds(Z) は不要（GAC 実行で包含）
+    return run_gac_filtering(model);
 }
 
 // ============================================================================
@@ -172,10 +146,6 @@ void AllDifferentGACConstraint::rewind_to(int save_point) {
 bool AllDifferentGACConstraint::run_gac_filtering(Model& model) {
     if (unfixed_count_ <= 1) return true;
     if (unfixed_count_ > pool_n_) return false;
-
-    // fixpoint を再計算するので、未消費の古いエコーは破棄して
-    // ここで enqueue する除去のエコーを登録し直す
-    clear_pending_echoes();
 
     if (!find_maximum_matching(model)) return false;
     matching_valid_ = true;
@@ -398,8 +368,6 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
             if (reachable_[n + j]) continue;
             if (scc_id_[i] != -1 && scc_id_[i] == scc_id_[n + j]) continue;
 
-            // 自己除去: エコーが届いても再実行不要（GAC は1パスで fixpoint）
-            pending_echoes_.push_back({var_ids_[i], val, false});
             model.enqueue_remove_value(var_ids_[i], val);
         }
     }

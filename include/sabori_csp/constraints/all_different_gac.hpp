@@ -60,6 +60,11 @@ public:
 
     void rewind_to(int save_point);
 
+    /**
+     * @brief バッチ伝播: GAC 有効なら Régin フィルタ、無効なら親の bounds(Z)
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
 private:
     bool gac_enabled_ = false;
 
@@ -72,23 +77,6 @@ private:
     std::vector<int> match_var_;
     std::vector<int> match_val_;
     bool matching_valid_ = false;
-
-    // ===== エコー集約 =====
-    // 自分(または親の forward-checking)が enqueue した値除去のエコーを検出し、
-    // 1除去ごとの GAC フル実行を「バッチ末尾で1回」に集約する。
-    // GAC フィルタは1パスで fixpoint に達するため、自己除去のエコーでは再実行不要。
-    struct PendingEcho {
-        size_t var_id;
-        Domain::value_type value;
-        bool run_after;  // バッチ末尾: このエコー消費後に GAC を1回実行
-    };
-    std::vector<PendingEcho> pending_echoes_;
-    size_t pending_echo_head_ = 0;
-
-    void clear_pending_echoes() {
-        pending_echoes_.clear();
-        pending_echo_head_ = 0;
-    }
 
     // 作業配列（再利用）
     std::vector<int> hk_dist_;

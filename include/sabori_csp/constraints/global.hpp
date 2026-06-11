@@ -65,6 +65,11 @@ public:
     void rewind_to(int save_point);
 
     /**
+     * @brief バッチ伝播: bounds(Z) フィルタを1回実行
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
+    /**
      * @brief 現在のプールサイズを取得
      */
     size_t pool_size() const { return pool_n_; }

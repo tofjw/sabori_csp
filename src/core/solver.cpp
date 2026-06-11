@@ -1552,6 +1552,7 @@ const std::vector<Domain::value_type>& Solver::select_best_assignment() {
 PropagationResult Solver::process_queue(Model& model) {
     const auto& constraints = model.constraints();
 
+    for (;;) {
     while (model.has_pending_updates()) {
         if (stopped_) return PropagationResult::Stopped;
 
@@ -1803,6 +1804,35 @@ PropagationResult Solver::process_queue(Model& model) {
         }
         }
     }
+
+    // イベントキューが空 → スケジュールされたバッチ propagator を1つ実行。
+    // バッチが新たなイベントを enqueue したら先にそれを処理する（イベント優先）
+    size_t batch_idx = model.pop_scheduled_constraint();
+    if (batch_idx == SIZE_MAX) break;
+    if (stopped_) return PropagationResult::Stopped;
+
+    if (verbose_) {
+        auto& cs = constraint_stats_[constraints[batch_idx]->name()];
+        auto& is = instance_stats_[batch_idx];
+        cs.call_count++;
+        is.call_count++;
+        size_t before = model.pending_updates_size();
+        if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
+            cs.fail_count++;
+            cs.fail_depth_sum += current_decision_;
+            is.fail_count++;
+            is.fail_depth_sum += current_decision_;
+            bump_activity(model, batch_idx, constraints[batch_idx]->var_ids_ref().front());
+            return PropagationResult::Conflict;
+        }
+        if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
+    } else {
+        if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
+            bump_activity(model, batch_idx, constraints[batch_idx]->var_ids_ref().front());
+            return PropagationResult::Conflict;
+        }
+    }
+    }  // for (;;)
 
     return PropagationResult::Ok;
 }
