@@ -78,6 +78,7 @@ struct NoGood {
     size_t last_active = 0;  // 最後に発火（矛盾 or ドメイン削除）したリスタート番号
     size_t id = 0;  // ブルームフィルタ用通し番号
     bool permanent = false;  // trueならメンテナンスで削除しない（解NG用）
+    bool transient = false;  // trueならリスタート時に削除（fallback 節用）
 
     NoGood(std::vector<Literal> lits)
         : literals(std::move(lits))
@@ -520,7 +521,8 @@ public:
     /**
      * @brief 衝突検出点での学習（モデルが衝突状態のまま呼ぶこと）
      */
-    void learn_at_conflict(const Model& model, const Literal& trial);
+    void learn_at_conflict(const Model& model, const Literal& trial,
+                           bool from_bisect = false);
 
     /**
      * @brief 推論時点 T の bounds を再構成（L2 の int_lin 説明用ユーティリティ）
@@ -651,6 +653,29 @@ public:
         uint32_t aux = 0;
         bool valid = false;
     } apply_fail_;
+
+    /// 最適化で incumbent が未発見の間 true (mode4: 初解まで学習遅延)
+    bool optimize_no_incumbent_ = false;
+    /// improvement probe 実行中 (probe 中の衝突から学習しないためのフラグ)
+    bool in_probe_ = false;
+
+    // ===== 学習ポリシーの EMA バンディット (mix_p と同型) =====
+    // アーム: 0=学習なし 1=説明節のみ(フォールバック節は学習しない) 2=フル
+    static constexpr size_t kLearnArmCount = 3;
+    double learn_arm_reward_[kLearnArmCount] = {1.0, 1.0, 1.0};
+    size_t learn_arm_ = 2;                       ///< 現在のアーム
+    size_t learn_arm_cycles_[kLearnArmCount] = {0, 0, 0};  ///< 診断: アーム別サイクル数
+    // 学習アーム報酬は改善の「大きさ」を EMA 正規化して使う
+    // (改善有無だけでは小刻み改善アームと大ジャンプアームを区別できない)
+    bool in_optimize_search_ = false;
+    bool obj_cycle_start_valid_ = false;
+    double obj_at_cycle_start_ = 0.0;
+    double ema_obj_delta_ = 0.0;
+    // エポック制: アームを kLearnEpochLen サイクル維持し、集計シグナルで更新
+    // (サイクル単位ではクレジットがノイズに埋もれ、アームが無差別化する)
+    static constexpr size_t kLearnEpochLen = 8;
+    double learn_epoch_signal_ = 0.0;
+    size_t learn_epoch_pos_ = 0;
 
     /// 推論トレイルを new_size に切り詰め、var_trail_index_ も同期する
     void truncate_inference_trail(size_t new_size) {

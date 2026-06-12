@@ -50,6 +50,26 @@ bool g_community_analysis = false;
 bool g_use_gac = false;
 bool g_learning = false;
 
+/**
+ * @brief LCG (-L) の自動有効化判定 (SABORI_AUTO_LCG=1 で有効、既定 off)
+ *
+ * 全年度ゲートの特徴分析 (2026-06-13, 非タイ118問) に基づく静的バンド則:
+ * - 満足問題 (single solution): 有効 (incumbent 機構がなく毒が発生しない。
+ *   fillomino の UNSAT 証明など証明能力が純増)
+ * - 最適化: obj の宣言ドメイン幅が [100, 1e6) のとき有効。
+ *   幅 < 100 は改善段数が少なく学習の利得が出ない (+4/-11)、
+ *   幅 >= 1e6 は bisect/probe クロール型で incumbent 毒が支配的 (+6/-14)。
+ *   バンド内は +51/-30。
+ * gac_favorable (constraint_registry) と同型の事前判定。
+ */
+bool auto_lcg_enabled() {
+    static const bool v = []{
+        const char* e = std::getenv("SABORI_AUTO_LCG");
+        return e ? (std::atoi(e) != 0) : false;
+    }();
+    return v;
+}
+
 void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* model = nullptr) {
     if (!g_print_stats) return;
     const auto& s = solver.stats();
@@ -68,7 +88,10 @@ void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* mode
               << "\n";
     if (g_learning) {
         std::cerr << "% Learning: explained=" << solver.learn_explained_count_
-                  << " fallback=" << solver.learn_fallback_count_ << "\n";
+                  << " fallback=" << solver.learn_fallback_count_
+                  << " arm_cycles(off/expl/full)=" << solver.learn_arm_cycles_[0]
+                  << "/" << solver.learn_arm_cycles_[1]
+                  << "/" << solver.learn_arm_cycles_[2] << "\n";
         for (const auto& [why, cnt] : solver.learn_fb_reasons_) {
             std::cerr << "%   fb " << why << ": " << cnt << "\n";
         }
@@ -265,7 +288,10 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
-    if (g_learning) { solver.set_learning(true); solver.set_learn_diagnostics(g_print_stats); }
+    if (g_learning || (auto_lcg_enabled() && !find_all)) {
+        solver.set_learning(true);
+        solver.set_learn_diagnostics(g_print_stats);
+    }
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -314,7 +340,23 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
-    if (g_learning) { solver.set_learning(true); solver.set_learn_diagnostics(g_print_stats); }
+    if (g_learning) {
+        solver.set_learning(true);
+        solver.set_learn_diagnostics(g_print_stats);
+    } else if (auto_lcg_enabled()) {
+        // 最適化: obj の宣言ドメイン幅 [100, 1e6) のときだけ学習を有効化
+        size_t oi = model->find_variable_index(objective_var_name);
+        if (oi != SIZE_MAX) {
+            const auto lo = model->var_min(oi);
+            const auto hi = model->var_max(oi);
+            // オーバーフロー回避: __int128 で幅を計算
+            const __int128 span = static_cast<__int128>(hi) - static_cast<__int128>(lo) + 1;
+            if (span >= 100 && span < 1000000) {
+                solver.set_learning(true);
+                solver.set_learn_diagnostics(g_print_stats);
+            }
+        }
+    }
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);

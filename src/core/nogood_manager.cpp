@@ -34,8 +34,10 @@ void NoGoodManager::clear(size_t n_vars) {
 
 // ===== Core operations =====
 
-void NoGoodManager::add_nogood(const std::vector<Literal>& literals, size_t restart_count) {
+void NoGoodManager::add_nogood(const std::vector<Literal>& literals,
+                               size_t restart_count, bool transient) {
     auto ng = std::make_unique<NoGood>(literals);
+    ng->transient = transient;
     auto* ng_ptr = ng.get();
     ng_ptr->id = ng_id_counter_++;
     ng_ptr->last_active = restart_count;
@@ -234,9 +236,9 @@ void NoGoodManager::enqueue_unit_nogoods(Model& model) const {
 
 void NoGoodManager::learn_from_conflict(const std::vector<Literal>& decision_trail,
                                          std::vector<double>& activity, double activity_inc,
-                                         size_t restart_count) {
+                                         size_t restart_count, bool transient) {
     if (decision_trail.size() >= 2) {
-        add_nogood(decision_trail, restart_count);
+        add_nogood(decision_trail, restart_count, transient);
         for (const auto& lit : decision_trail) {
             activity[lit.var_idx] += activity_inc * 0.01 / decision_trail.size();
         }
@@ -279,6 +281,17 @@ void NoGoodManager::add_solution_nogood(const Model& model, const std::vector<Li
 }
 
 // ===== Maintenance (GC) =====
+
+void NoGoodManager::remove_transient() {
+    nogoods_.erase(
+        std::remove_if(nogoods_.begin(), nogoods_.end(),
+            [&](const auto& ng) {
+                if (!ng->transient) return false;
+                remove_nogood(ng.get());
+                return true;
+            }),
+        nogoods_.end());
+}
 
 void NoGoodManager::gc(size_t restart_count, size_t inactive_limit) {
     // 非活性 NoGood の削除

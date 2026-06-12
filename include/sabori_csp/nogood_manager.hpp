@@ -47,7 +47,8 @@ public:
      * @param literals リテラルのリスト
      * @param restart_count 現在のリスタート番号（last_active 初期値）
      */
-    void add_nogood(const std::vector<Literal>& literals, size_t restart_count);
+    void add_nogood(const std::vector<Literal>& literals, size_t restart_count,
+                    bool transient = false);
 
     /**
      * @brief NoGood を削除し、watched literal を解除
@@ -109,7 +110,7 @@ public:
      */
     void learn_from_conflict(const std::vector<Literal>& decision_trail,
                              std::vector<double>& activity, double activity_inc,
-                             size_t restart_count);
+                             size_t restart_count, bool transient = false);
 
     // ===== Conflict learning 連携 =====
 
@@ -154,6 +155,11 @@ public:
                              size_t restart_count);
 
     // ===== Maintenance (GC) =====
+
+    /**
+     * @brief transient な NoGood を全削除（リスタート時に呼ぶ）
+     */
+    void remove_transient();
 
     /**
      * @brief 非活性 NoGood の削除・ソート・容量制限
