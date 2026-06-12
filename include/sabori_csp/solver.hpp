@@ -629,6 +629,9 @@ public:
     std::vector<Literal> reason_buf_;            ///< 説明バッファ（再利用）
     std::vector<std::pair<Literal,int>> below_buf_;  ///< 下位レベルリテラル + level
     std::vector<uint32_t> mark_stamp_;           ///< トレイル位置のマーク（エポック方式）
+    /// 変数ごとの推論トレイル位置（昇順）。add_fact の locate と bounds_at を
+    /// 全トレイル走査 O(trail) から当該変数のエントリ数に削減する
+    std::vector<std::vector<uint32_t>> var_trail_index_;
     uint32_t mark_epoch_ = 0;
     size_t learn_explained_count_ = 0;   ///< 説明ベースで学習できた衝突数
     size_t learn_fallback_count_ = 0;    ///< フォールバックした衝突数
@@ -648,6 +651,14 @@ public:
         uint32_t aux = 0;
         bool valid = false;
     } apply_fail_;
+
+    /// 推論トレイルを new_size に切り詰め、var_trail_index_ も同期する
+    void truncate_inference_trail(size_t new_size) {
+        for (size_t i = inference_trail_.size(); i-- > new_size; ) {
+            var_trail_index_[inference_trail_[i].var_idx].pop_back();
+        }
+        inference_trail_.resize(new_size);
+    }
 
     /// 適用失敗を記録（learning off なら従来どおり種なしフォールバック扱い）
     void note_apply_fail(const PendingUpdate& u, Literal::Type ty, int64_t value) {

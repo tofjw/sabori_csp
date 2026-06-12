@@ -60,6 +60,14 @@ bool Solver::init_search(Model& model) {
     best_assignment_.assign(variables.size(), kNoValue);
     current_best_assignment_.assign(variables.size(), kNoValue);
     current_decision_ = 0;
+    if (learning_enabled_) {
+        inference_trail_.clear();
+        level_start_.clear();
+        var_trail_index_.assign(variables.size(), {});
+        mark_stamp_.clear();
+        mark_epoch_ = 0;
+        apply_fail_.valid = false;
+    }
     stats_ = SolverStats{};
     instance_stats_.assign(model.constraints().size(), ConstraintStats{});
     model.resize_var_ng_bloom(variables.size());
@@ -943,12 +951,15 @@ void Solver::record_inference(uint32_t var_idx, int64_t value,
                               uint32_t aux) {
     const size_t cd = static_cast<size_t>(current_decision_);
     if (level_start_.size() > cd + 1) {
-        inference_trail_.resize(level_start_[cd + 1]);
+        truncate_inference_trail(level_start_[cd + 1]);
         level_start_.resize(cd + 1);
     }
     while (level_start_.size() <= cd) {
         level_start_.push_back(static_cast<uint32_t>(inference_trail_.size()));
     }
+    if (var_trail_index_.size() <= var_idx) var_trail_index_.resize(var_idx + 1);
+    var_trail_index_[var_idx].push_back(
+        static_cast<uint32_t>(inference_trail_.size()));
     inference_trail_.push_back({value, var_idx,
                                 source_cid & 0xFFFFFFu,
                                 static_cast<uint32_t>(type), aux});
@@ -1102,11 +1113,13 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
             if (model.presolve_max(l.var_idx) <= l.value) return true;
             break;
         }
-        // 成立時点のトレイルエントリ(最古の満たすエントリ)を探す
+        // 成立時点のトレイルエントリ(最古の満たすエントリ)を探す。
+        // 変数別索引で当該変数のエントリのみ走査する（旧: 全トレイル走査）
         ptrdiff_t found = -1;
-        for (size_t i = trail_end; i-- > 0;) {
+        const auto& vlist = var_trail_index_[l.var_idx];
+        for (size_t k = vlist.size(); k-- > 0;) {
+            const size_t i = vlist[k];
             const auto& e = inference_trail_[i];
-            if (e.var_idx != static_cast<uint32_t>(l.var_idx)) continue;
             const auto ty = static_cast<Literal::Type>(e.lit_type);
             bool relevant, sat;
             switch (l.type) {
@@ -1295,9 +1308,16 @@ std::pair<Domain::value_type, Domain::value_type> Solver::bounds_at(
     Domain::value_type lo = model.presolve_min(var_idx);
     Domain::value_type hi = model.presolve_max(var_idx);
     bool lo_found = false, hi_found = false;
-    for (size_t i = std::min(t, inference_trail_.size()); i-- > 0; ) {
-        const auto& e = inference_trail_[i];
-        if (e.var_idx != var_idx) continue;
+    // 変数別索引上で t 未満の最後のエントリから逆走（旧: 全トレイル走査）
+    const auto& vlist = var_trail_index_[var_idx];
+    const size_t tcap = std::min(t, inference_trail_.size());
+    size_t start = 0;
+    if (tcap > 0) {
+        start = std::upper_bound(vlist.begin(), vlist.end(),
+                                 static_cast<uint32_t>(tcap - 1)) - vlist.begin();
+    }
+    for (size_t k = start; k-- > 0; ) {
+        const auto& e = inference_trail_[vlist[k]];
         const auto ty = static_cast<Literal::Type>(e.lit_type);
         if (!lo_found && (ty == Literal::Type::Geq || ty == Literal::Type::Eq)) {
             lo = e.value;
@@ -1812,7 +1832,7 @@ void Solver::backtrack(Model& model, int save_point) {
     if (__builtin_expect(learning_enabled_, 0)) {
         const size_t lv = static_cast<size_t>(save_point + 1);
         if (level_start_.size() > lv) {
-            inference_trail_.resize(level_start_[lv]);
+            truncate_inference_trail(level_start_[lv]);
             level_start_.resize(lv);
         }
     }
