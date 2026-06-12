@@ -94,7 +94,11 @@ Literal Literal::negate() const {
 
 PropagationResult Solver::apply_unit_nogoods(Model& model) {
     if (nogood_mgr_.unit_nogoods().empty()) return PropagationResult::Ok;
-    nogood_mgr_.enqueue_unit_nogoods(model);
+    {
+        // unit nogood は root 事実。stale な発生源/aux を継承しないようタグ付け
+        ScopedPropagator sp(model, Model::kSourcePresolve);
+        nogood_mgr_.enqueue_unit_nogoods(model);
+    }
     return process_queue(model);
 }
 
@@ -1405,10 +1409,46 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
         bool ok = false;
         if (src == (Model::kSourceNoGood & 0xFFFFFFu)) {
             if (NoGood* ng = nogood_mgr_.find_by_id(e.aux)) {
+                // nogood N が正当化するのは「N の残りリテラルが全て真のとき、
+                // 自変数のリテラル lit_k の否定」だけ。記録された推論
+                // (適用後の実 bounds) はドメインの穴や前境界との合成で
+                // ¬lit_k より強くなり得るため、厳密一致のみ説明とする
+                // (不一致は demote)。値を検証しないと不健全な節になる
+                // (2014/amaze の偽 UNSAT で実証)
+                const Literal* on_var = nullptr;
+                size_t unsat = 0;
                 for (const auto& lit : ng->literals) {
-                    if (lit.is_satisfied(model)) local_reason.push_back(lit);
+                    if (lit.is_satisfied(model)) {
+                        local_reason.push_back(lit);
+                    } else {
+                        ++unsat;
+                        on_var = &lit;
+                    }
                 }
-                ok = (local_reason.size() + 1 == ng->literals.size());
+                if (unsat == 1 &&
+                    on_var->var_idx == static_cast<size_t>(e.var_idx)) {
+                    switch (static_cast<Literal::Type>(e.lit_type)) {
+                    case Literal::Type::Geq:
+                        // ¬(x <= v) = x >= v+1 と厳密一致するか
+                        ok = (on_var->type == Literal::Type::Leq &&
+                              on_var->value == e.value - 1);
+                        break;
+                    case Literal::Type::Leq:
+                        ok = (on_var->type == Literal::Type::Geq &&
+                              on_var->value == e.value + 1);
+                        break;
+                    default:  // Eq: バイナリ変数の ¬(x = 1-w) → x = w のみ
+                        ok = (on_var->type == Literal::Type::Eq &&
+                              (e.value == 0 || e.value == 1) &&
+                              on_var->value == 1 - e.value &&
+                              model.presolve_min(e.var_idx) == 0 &&
+                              model.presolve_max(e.var_idx) == 1);
+                        break;
+                    }
+                }
+                if (!ok && learn_diag_) ++learn_fb_reasons_["ngdiag:strict-miss"];
+            } else if (learn_diag_) {
+                ++learn_fb_reasons_["ngdiag:id-lost"];
             }
         } else if (src < constraints.size()) {
             // 説明コンテキスト: 被説明推論の位置と、その時点の bounds 再構成
@@ -2261,7 +2301,7 @@ PropagationResult Solver::process_queue(Model& model) {
             }
             if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), update.value,
-                                 Literal::Type::Eq, update.source_cid);
+                                 Literal::Type::Eq, update.source_cid, update.aux);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -2279,7 +2319,7 @@ PropagationResult Solver::process_queue(Model& model) {
             }
             if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), model.var_min(var_idx),
-                                 Literal::Type::Geq, update.source_cid);
+                                 Literal::Type::Geq, update.source_cid, update.aux);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -2340,7 +2380,7 @@ PropagationResult Solver::process_queue(Model& model) {
             }
             if (__builtin_expect(learning_enabled_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), model.var_max(var_idx),
-                                 Literal::Type::Leq, update.source_cid);
+                                 Literal::Type::Leq, update.source_cid, update.aux);
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -2415,7 +2455,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 if (prev_min == 0 && prev_max == 1 &&
                     (removed_value == 0 || removed_value == 1)) {
                     record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
-                                     Literal::Type::Eq, update.source_cid);
+                                     Literal::Type::Eq, update.source_cid, update.aux);
                 } else {
                     // 境界値の除去で bounds が動いた場合は Geq/Leq として記録する。
                     // 記録しないと bounds_at の再構成・add_fact の locate が
@@ -2424,11 +2464,11 @@ PropagationResult Solver::process_queue(Model& model) {
                     const auto nmax = model.var_max(var_idx);
                     if (nmin > prev_min) {
                         record_inference(static_cast<uint32_t>(var_idx), nmin,
-                                         Literal::Type::Geq, update.source_cid);
+                                         Literal::Type::Geq, update.source_cid, update.aux);
                     }
                     if (nmax < prev_max) {
                         record_inference(static_cast<uint32_t>(var_idx), nmax,
-                                         Literal::Type::Leq, update.source_cid);
+                                         Literal::Type::Leq, update.source_cid, update.aux);
                     }
                 }
             }
