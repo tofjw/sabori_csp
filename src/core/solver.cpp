@@ -374,7 +374,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // UNKNOWN: リスタート
             model.clear_pending_updates();
             backtrack(model, root_point);
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 nogood_mgr_.remove_transient();  // fallback 節はリスタートを跨がせない
             }
 
@@ -444,7 +444,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                 // 学習ポリシーのバンディット。最適化では改善の「大きさ」を
                 // EMA 正規化したシグナルで評価する (小刻み改善と大ジャンプを区別)
                 // 既定 off (全年度ゲート 54/55 < 静的 full 63/55)。RNG 消費も避ける
-                if (__builtin_expect(learning_enabled_, 0) && learn_bandit_enabled()) {
+                if (__builtin_expect(learn_active_, 0) && learn_bandit_enabled()) {
                     double lsignal = signal;
                     if (in_optimize_search_ && best_objective_.has_value()) {
                         const double cur = static_cast<double>(*best_objective_);
@@ -878,7 +878,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                 prev_improving_solution_ = current_best_assignment_;
                 optimize_no_incumbent_ = false;
-                if (__builtin_expect(learning_enabled_, 0)) {
+                if (__builtin_expect(learn_active_, 0)) {
                     // 新 incumbent: 旧 incumbent 近傍で学んだ fallback 節は
                     // 改善経路を塞ぐだけなので捨てる
                     nogood_mgr_.remove_transient();
@@ -905,7 +905,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             // UNKNOWN: リスタート
             model.clear_pending_updates();
             backtrack(model, root_point);
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 nogood_mgr_.remove_transient();  // fallback 節はリスタートを跨がせない
             }
             current_decision_ = root_point;
@@ -978,7 +978,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 // 学習ポリシーのバンディット。最適化では改善の「大きさ」を
                 // EMA 正規化したシグナルで評価する (小刻み改善と大ジャンプを区別)
                 // 既定 off (全年度ゲート 54/55 < 静的 full 63/55)。RNG 消費も避ける
-                if (__builtin_expect(learning_enabled_, 0) && learn_bandit_enabled()) {
+                if (__builtin_expect(learn_active_, 0) && learn_bandit_enabled()) {
                     double lsignal = signal;
                     if (in_optimize_search_ && best_objective_.has_value()) {
                         const double cur = static_cast<double>(*best_objective_);
@@ -1633,7 +1633,7 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
         // 全値枯渇によるプレフィクス nogood（従来挙動）。
         // 1UIP 学習は衝突検出点（try_* 内の learn_at_conflict）で別途行う
         nogood_mgr_.learn_from_conflict(decision_trail_, activity_,
-                                        (learning_enabled_ && !ng_bump_enabled())
+                                        (learn_active_ && !ng_bump_enabled())
                                             ? 0.0 : activity_inc_,
                                         stats_.restart_count);
     }
@@ -1709,7 +1709,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
                                      ng_usage_bloom_});
         ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
-        if (learning_enabled_) {
+        if (learn_active_) {
             // 決定自体を推論トレイルに記録（process_queue を通らないため明示）
             record_inference(static_cast<uint32_t>(frame.var_idx), val,
                              Literal::Type::Eq, Model::kSourceDecision);
@@ -1722,7 +1722,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         }
         // propagate_ok == false のときの last_conflict_source_ は
         // bump_activity（ハンドラ失敗）/ nogood 伝播が設定済み（上書きしない）
-        if (learning_enabled_ && queue_res == PropagationResult::Conflict) {
+        if (learn_active_ && queue_res == PropagationResult::Conflict) {
             learn_at_conflict(model, {frame.var_idx, val, Literal::Type::Eq});
         }
         if (propagate_ok) {
@@ -1793,7 +1793,7 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         }
 
         PropagationResult queue_res = process_queue(model);
-        if (learning_enabled_ && queue_res == PropagationResult::Conflict) {
+        if (learn_active_ && queue_res == PropagationResult::Conflict) {
             learn_at_conflict(model, decision_lit, /*from_bisect=*/true);
         }
         if (queue_res == PropagationResult::Ok) {
@@ -2081,18 +2081,18 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
     if (nogood_learning_) {
         ScopedPropagator sp_guard(model, Model::kSourceNoGood);
         if (!nogood_mgr_.propagate_eq_watches(model, var_idx, val,
-                                               stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                                               stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
             last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
         // instantiate は Leq/Geq 両方を充足しうる
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true,
-                                                  stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                                                  stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
             last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
         if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false,
-                                                  stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                                                  stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
             last_conflict_source_ = Model::kSourceNoGood;
             return false;
         }
@@ -2109,7 +2109,7 @@ void Solver::backtrack(Model& model, int save_point) {
     // (enumerate の次値・bisect の反対側) で死んだ兄弟試行のエントリが残り、
     // bounds 単調性の前提を壊して analyze_conflict が死んだ枝の事実を
     // 参照してしまう (不健全な学習節の元)。ここで確実に落とす。
-    if (__builtin_expect(learning_enabled_, 0)) {
+    if (__builtin_expect(learn_active_, 0)) {
         const size_t lv = static_cast<size_t>(save_point + 1);
         if (level_start_.size() > lv) {
             truncate_inference_trail(level_start_[lv]);
@@ -2314,7 +2314,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 note_apply_fail(update, Literal::Type::Eq, update.value);
                 return PropagationResult::Conflict;
             }
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), update.value,
                                  Literal::Type::Eq, update.source_cid, update.aux);
             }
@@ -2332,7 +2332,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 note_apply_fail(update, Literal::Type::Geq, update.value);
                 return PropagationResult::Conflict;
             }
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 // 要求値で記録する (発生源が正当化できるのは要求値まで)。
                 // 穴で実 min がさらに上がった場合は「未説明の事実」として
                 // 追加記録する (source=Decision → 解決時はリテラル保持で健全)。
@@ -2390,7 +2390,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // Bound NoGood 伝播
                 if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
-                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
                         last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
@@ -2404,7 +2404,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 note_apply_fail(update, Literal::Type::Leq, update.value);
                 return PropagationResult::Conflict;
             }
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 record_inference(static_cast<uint32_t>(var_idx), update.value,
                                  Literal::Type::Leq, update.source_cid, update.aux);
                 {
@@ -2458,7 +2458,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // Bound NoGood 伝播
                 if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
-                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
                         last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
@@ -2484,7 +2484,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 return PropagationResult::Conflict;
             }
             // バイナリドメインからの除去は Eq [x = 1-v] として記録（≠ リテラルは v1 対象外）
-            if (__builtin_expect(learning_enabled_, 0)) {
+            if (__builtin_expect(learn_active_, 0)) {
                 if (prev_min == 0 && prev_max == 1 &&
                     (removed_value == 0 || removed_value == 1)) {
                     record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
@@ -2555,7 +2555,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     // Bound NoGood 伝播
                     if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
-                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, true, stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
                         last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }
@@ -2594,7 +2594,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     // Bound NoGood 伝播
                     if (nogood_learning_) {
                     ScopedPropagator sp_ng(model, Model::kSourceNoGood);
-                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, (learning_enabled_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
+                    if (!nogood_mgr_.propagate_bound_nogoods(model, var_idx, false, stats_.restart_count, activity_, (learn_active_ && !ng_bump_enabled()) ? 0.0 : activity_inc_)) {
                         last_conflict_source_ = Model::kSourceNoGood;
                         return PropagationResult::Conflict;
                     }

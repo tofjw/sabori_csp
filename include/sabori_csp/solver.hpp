@@ -174,6 +174,12 @@ public:
      */
     void set_learning(bool enabled) {
         learning_enabled_ = enabled;
+        // learn_active_ = 今 LCG を実際に動かすか(記録/解析/節追加/bump)。
+        // proof-burst では停滞時のみ true にするが、既定(burst off)では
+        // learning_enabled_ に追従して従来の静的 full -L と等価。
+        // SABORI_LEARN_INACTIVE=1 で強制 off(F1 の軌道中立検証用)。
+        const char* inact = std::getenv("SABORI_LEARN_INACTIVE");
+        learn_active_ = enabled && !(inact && std::atoi(inact) != 0);
         nogood_mgr_.set_learning_mode(enabled);
     }
 
@@ -624,6 +630,7 @@ private:
 public:
     // ===== Conflict learning 状態（末尾配置: 既存メンバのレイアウト維持）=====
     bool learning_enabled_ = false;
+    bool learn_active_ = false;   ///< 今 LCG を実働させるか(proof-burst で停滞時に toggle)
     std::vector<InferenceEntry> inference_trail_;
     std::vector<uint32_t> level_start_;          ///< level → トレイル開始位置
     uint32_t last_conflict_source_ = 0xFFFFFFu;  ///< 衝突を検出した制約
