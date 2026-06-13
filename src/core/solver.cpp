@@ -1430,12 +1430,28 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
                     switch (static_cast<Literal::Type>(e.lit_type)) {
                     case Literal::Type::Geq:
                         // ¬(x <= v) = x >= v+1 と厳密一致するか
-                        ok = (on_var->type == Literal::Type::Leq &&
-                              on_var->value == e.value - 1);
+                        if (on_var->type == Literal::Type::Leq &&
+                            on_var->value == e.value - 1) {
+                            ok = true;
+                        } else if (on_var->type == Literal::Type::Eq &&
+                                   on_var->value == e.value - 1) {
+                            // 下端の除去: ¬(x = m-1) ∧ x >= m-1 ⇒ x >= m
+                            // (前境界リテラルを理由に合成)
+                            local_reason.push_back({e.var_idx, e.value - 1,
+                                                    Literal::Type::Geq});
+                            ok = true;
+                        }
                         break;
                     case Literal::Type::Leq:
-                        ok = (on_var->type == Literal::Type::Geq &&
-                              on_var->value == e.value + 1);
+                        if (on_var->type == Literal::Type::Geq &&
+                            on_var->value == e.value + 1) {
+                            ok = true;
+                        } else if (on_var->type == Literal::Type::Eq &&
+                                   on_var->value == e.value + 1) {
+                            local_reason.push_back({e.var_idx, e.value + 1,
+                                                    Literal::Type::Leq});
+                            ok = true;
+                        }
                         break;
                     default:  // Eq: バイナリ変数の ¬(x = 1-w) → x = w のみ
                         ok = (on_var->type == Literal::Type::Eq &&
@@ -2318,8 +2334,19 @@ PropagationResult Solver::process_queue(Model& model) {
                 return PropagationResult::Conflict;
             }
             if (__builtin_expect(learning_enabled_, 0)) {
-                record_inference(static_cast<uint32_t>(var_idx), model.var_min(var_idx),
+                // 要求値で記録する (発生源が正当化できるのは要求値まで)。
+                // 穴で実 min がさらに上がった場合は「未説明の事実」として
+                // 追加記録する (source=Decision → 解決時はリテラル保持で健全)。
+                // 種 (現実 bounds) の locate 可能性を保つため
+                record_inference(static_cast<uint32_t>(var_idx), update.value,
                                  Literal::Type::Geq, update.source_cid, update.aux);
+                {
+                    const auto amin = model.var_min(var_idx);
+                    if (amin > update.value) {
+                        record_inference(static_cast<uint32_t>(var_idx), amin,
+                                         Literal::Type::Geq, Model::kSourceDecision);
+                    }
+                }
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -2379,8 +2406,15 @@ PropagationResult Solver::process_queue(Model& model) {
                 return PropagationResult::Conflict;
             }
             if (__builtin_expect(learning_enabled_, 0)) {
-                record_inference(static_cast<uint32_t>(var_idx), model.var_max(var_idx),
+                record_inference(static_cast<uint32_t>(var_idx), update.value,
                                  Literal::Type::Leq, update.source_cid, update.aux);
+                {
+                    const auto amax = model.var_max(var_idx);
+                    if (amax < update.value) {
+                        record_inference(static_cast<uint32_t>(var_idx), amax,
+                                         Literal::Type::Leq, Model::kSourceDecision);
+                    }
+                }
             }
             if (verbose_ && community_analysis_.is_enabled() && propagation_source_ != SIZE_MAX) {
                 community_analysis_.on_propagation(var_idx, propagation_source_);
@@ -2456,19 +2490,24 @@ PropagationResult Solver::process_queue(Model& model) {
                     (removed_value == 0 || removed_value == 1)) {
                     record_inference(static_cast<uint32_t>(var_idx), 1 - removed_value,
                                      Literal::Type::Eq, update.source_cid, update.aux);
-                } else {
-                    // 境界値の除去で bounds が動いた場合は Geq/Leq として記録する。
-                    // 記録しないと bounds_at の再構成・add_fact の locate が
-                    // この変化を見られず、説明可能な衝突までフォールバックする
-                    const auto nmin = model.var_min(var_idx);
-                    const auto nmax = model.var_max(var_idx);
-                    if (nmin > prev_min) {
-                        record_inference(static_cast<uint32_t>(var_idx), nmin,
-                                         Literal::Type::Geq, update.source_cid, update.aux);
+                } else if (removed_value == prev_min) {
+                    // 下端の除去: 発生源が正当化できるのは ¬(x=prev_min) と
+                    // 前境界の合成 = x >= prev_min+1 まで。実 min が穴で
+                    // さらに上なら未説明事実として追加記録
+                    record_inference(static_cast<uint32_t>(var_idx), prev_min + 1,
+                                     Literal::Type::Geq, update.source_cid, update.aux);
+                    const auto amin = model.var_min(var_idx);
+                    if (amin > prev_min + 1) {
+                        record_inference(static_cast<uint32_t>(var_idx), amin,
+                                         Literal::Type::Geq, Model::kSourceDecision);
                     }
-                    if (nmax < prev_max) {
-                        record_inference(static_cast<uint32_t>(var_idx), nmax,
-                                         Literal::Type::Leq, update.source_cid, update.aux);
+                } else if (removed_value == prev_max) {
+                    record_inference(static_cast<uint32_t>(var_idx), prev_max - 1,
+                                     Literal::Type::Leq, update.source_cid, update.aux);
+                    const auto amax = model.var_max(var_idx);
+                    if (amax < prev_max - 1) {
+                        record_inference(static_cast<uint32_t>(var_idx), amax,
+                                         Literal::Type::Leq, Model::kSourceDecision);
                     }
                 }
             }
