@@ -1652,6 +1652,104 @@ bool IntLeReifConstraint::on_final_instantiate(const Model& model) {
     return le == (model.value(b_id_) == 1);
 }
 
+bool IntLeReifConstraint::explain(const Model& /*model*/, const ExplainContext& ctx,
+                                  size_t var_idx, Domain::value_type value,
+                                  uint8_t lit_type, uint32_t /*aux*/,
+                                  std::vector<Literal>& out) const {
+    // 意味: b=1 ⇔ x <= y。推論時点 T の bounds から検証付きで説明する
+    const size_t base = out.size();
+    auto rollback = [&]() { out.resize(base); return false; };
+    const auto xb = ctx.bounds_at(x_id_);
+    const auto yb = ctx.bounds_at(y_id_);
+    const auto bb = ctx.bounds_at(b_id_);
+    const auto ty = static_cast<Literal::Type>(lit_type);
+
+    if (var_idx == b_id_) {
+        if (value == 1) {
+            // [b=1] ← x.max <= y.min (x<=y が常に真)
+            if (xb.second <= yb.first) {
+                out.push_back({x_id_, xb.second, Literal::Type::Leq});
+                out.push_back({y_id_, yb.first, Literal::Type::Geq});
+                return true;
+            }
+            return rollback();
+        }
+        // [b=0] ← x.min > y.max (x<=y が常に偽)
+        if (xb.first > yb.second) {
+            out.push_back({x_id_, xb.first, Literal::Type::Geq});
+            out.push_back({y_id_, yb.second, Literal::Type::Leq});
+            return true;
+        }
+        return rollback();
+    }
+
+    if (var_idx == x_id_) {
+        if (bb.first == 1 && bb.second == 1 && ty == Literal::Type::Leq) {
+            // b=1 → x<=y: y<=value ⟹ x<=value
+            if (yb.second <= value) {
+                out.push_back({b_id_, 1, Literal::Type::Eq});
+                out.push_back({y_id_, value, Literal::Type::Leq});
+                return true;
+            }
+        } else if (bb.first == 0 && bb.second == 0 && ty == Literal::Type::Geq) {
+            // b=0 → x>y: y>=value-1 ⟹ x>y>=value-1 ⟹ x>=value
+            if (yb.first >= value - 1) {
+                out.push_back({b_id_, 0, Literal::Type::Eq});
+                out.push_back({y_id_, value - 1, Literal::Type::Geq});
+                return true;
+            }
+        }
+        return rollback();
+    }
+
+    if (var_idx == y_id_) {
+        if (bb.first == 1 && bb.second == 1 && ty == Literal::Type::Geq) {
+            // b=1 → x<=y: x>=value ⟹ y>=value
+            if (xb.first >= value) {
+                out.push_back({b_id_, 1, Literal::Type::Eq});
+                out.push_back({x_id_, value, Literal::Type::Geq});
+                return true;
+            }
+        } else if (bb.first == 0 && bb.second == 0 && ty == Literal::Type::Leq) {
+            // b=0 → x>y: x<=value+1 ⟹ y<x<=value+1 ⟹ y<=value
+            if (xb.second <= value + 1) {
+                out.push_back({b_id_, 0, Literal::Type::Eq});
+                out.push_back({x_id_, value + 1, Literal::Type::Leq});
+                return true;
+            }
+        }
+        return rollback();
+    }
+    return rollback();
+}
+
+bool IntLeReifConstraint::explain_failure(const Model& model,
+                                          std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    if (!model.is_instantiated(b_id_)) return false;
+    const auto xmin = model.var_min(x_id_), xmax = model.var_max(x_id_);
+    const auto ymin = model.var_min(y_id_), ymax = model.var_max(y_id_);
+    if (model.value(b_id_) == 1) {
+        // b=1 なのに x.min > y.max (x<=y が成立不能)
+        if (xmin > ymax) {
+            out.push_back({b_id_, 1, Literal::Type::Eq});
+            out.push_back({x_id_, xmin, Literal::Type::Geq});
+            out.push_back({y_id_, ymax, Literal::Type::Leq});
+            return true;
+        }
+    } else {
+        // b=0 なのに x.max <= y.min (x>y が成立不能)
+        if (xmax <= ymin) {
+            out.push_back({b_id_, 0, Literal::Type::Eq});
+            out.push_back({x_id_, xmax, Literal::Type::Leq});
+            out.push_back({y_id_, ymin, Literal::Type::Geq});
+            return true;
+        }
+    }
+    out.resize(base);
+    return false;
+}
+
 // ============================================================================
 // IntMaxConstraint implementation
 // ============================================================================

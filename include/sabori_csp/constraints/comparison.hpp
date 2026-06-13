@@ -260,6 +260,12 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
+    bool explain(const Model& model, const ExplainContext& ctx,
+                 size_t var_idx, Domain::value_type value,
+                 uint8_t lit_type, uint32_t aux,
+                 std::vector<Literal>& out) const override;
+    bool explain_failure(const Model& model, std::vector<Literal>& out) const override;
+
 private:
     size_t x_id_, y_id_, b_id_;
 };

@@ -704,6 +704,83 @@ bool ArrayBoolOrConstraint::on_final_instantiate(const Model& model) {
     return or_result == (model.value(r_id_) == 1);
 }
 
+bool ArrayBoolOrConstraint::explain(const Model& model, const ExplainContext& /*ctx*/,
+                                    size_t var_idx, Domain::value_type value,
+                                    uint8_t /*lit_type*/, uint32_t /*aux*/,
+                                    std::vector<Literal>& out) const {
+    // r = OR(b_i)。ArrayBoolAnd の双対 (0↔1)。全て二値 Eq 推論
+    const size_t base = out.size();
+    auto is_fixed = [&](size_t vid, Domain::value_type v) {
+        return model.is_instantiated(vid) && model.value(vid) == v;
+    };
+
+    if (var_idx == r_id_) {
+        if (value == 1) {
+            // [r=1] の理由: b_i = 1 が1つあれば十分
+            for (size_t i = 0; i < n_; ++i) {
+                if (is_fixed(var_ids_[i], 1)) {
+                    out.push_back({var_ids_[i], 1, Literal::Type::Eq});
+                    return true;
+                }
+            }
+            return false;
+        }
+        // [r=0] の理由: 全 b_i = 0
+        for (size_t i = 0; i < n_; ++i) {
+            if (!is_fixed(var_ids_[i], 0)) { out.resize(base); return false; }
+            out.push_back({var_ids_[i], 0, Literal::Type::Eq});
+        }
+        return true;
+    }
+
+    // b 変数への推論
+    if (value == 0) {
+        // [b_i=0] の理由: r=0
+        if (!is_fixed(r_id_, 0)) return false;
+        out.push_back({r_id_, 0, Literal::Type::Eq});
+        return true;
+    }
+    // [b_i=1] の理由: r=1 かつ 他の全 b_j=0
+    if (!is_fixed(r_id_, 1)) return false;
+    out.push_back({r_id_, 1, Literal::Type::Eq});
+    for (size_t j = 0; j < n_; ++j) {
+        size_t vj = var_ids_[j];
+        if (vj == var_idx) continue;
+        if (!is_fixed(vj, 0)) { out.resize(base); return false; }
+        out.push_back({vj, 0, Literal::Type::Eq});
+    }
+    return true;
+}
+
+bool ArrayBoolOrConstraint::explain_failure(const Model& model,
+                                            std::vector<Literal>& out) const {
+    const size_t base = out.size();
+    auto is_fixed = [&](size_t vid, Domain::value_type v) {
+        return model.is_instantiated(vid) && model.value(vid) == v;
+    };
+    if (is_fixed(r_id_, 0)) {
+        // r=0 なのに b_i=1 が存在
+        for (size_t i = 0; i < n_; ++i) {
+            if (is_fixed(var_ids_[i], 1)) {
+                out.push_back({r_id_, 0, Literal::Type::Eq});
+                out.push_back({var_ids_[i], 1, Literal::Type::Eq});
+                return true;
+            }
+        }
+    }
+    if (is_fixed(r_id_, 1)) {
+        // r=1 なのに 全 b_i=0
+        out.push_back({r_id_, 1, Literal::Type::Eq});
+        for (size_t i = 0; i < n_; ++i) {
+            if (!is_fixed(var_ids_[i], 0)) { out.resize(base); return false; }
+            out.push_back({var_ids_[i], 0, Literal::Type::Eq});
+        }
+        return true;
+    }
+    out.resize(base);
+    return false;
+}
+
 bool ArrayBoolOrConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                     size_t last_var_internal_idx) {
     (void)save_point;
