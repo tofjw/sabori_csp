@@ -498,13 +498,37 @@ bool IntEqReifConstraint::explain(const Model& /*model*/, const ExplainContext& 
         return rollback();
     }
     if (bb.first == 0 && bb.second == 0) {
-        // b=0 → x ≠ y: バイナリドメインでの [var = 1-v] 推論 (Eq 記録) のみ対応
-        if (static_cast<Literal::Type>(lit_type) == Literal::Type::Eq &&
-            fixed(ob) && ob.first == 1 - value &&
-            (value == 0 || value == 1)) {
-            out.push_back({b_id_, 0, Literal::Type::Eq});
-            out.push_back({other, ob.first, Literal::Type::Eq});
-            return true;
+        // b=0 → x ≠ y。other 固定 v が var の境界を削り bound が締まる
+        const auto ty = static_cast<Literal::Type>(lit_type);
+        const auto vb = (var_idx == x_id_) ? xb : yb;
+        if (ty == Literal::Type::Eq) {
+            // バイナリ: ¬(var = 1-v)
+            if (fixed(ob) && ob.first == 1 - value &&
+                (value == 0 || value == 1)) {
+                out.push_back({b_id_, 0, Literal::Type::Eq});
+                out.push_back({other, ob.first, Literal::Type::Eq});
+                return true;
+            }
+            return rollback();
+        }
+        if (ty == Literal::Type::Geq) {
+            // var >= value: other=value-1 が var の下端だったため除去
+            if (fixed(ob) && ob.first == value - 1 && vb.first == value - 1) {
+                out.push_back({b_id_, 0, Literal::Type::Eq});
+                out.push_back({other, value - 1, Literal::Type::Eq});
+                out.push_back({var_idx, value - 1, Literal::Type::Geq});
+                return true;
+            }
+            return rollback();
+        }
+        if (ty == Literal::Type::Leq) {
+            if (fixed(ob) && ob.first == value + 1 && vb.second == value + 1) {
+                out.push_back({b_id_, 0, Literal::Type::Eq});
+                out.push_back({other, value + 1, Literal::Type::Eq});
+                out.push_back({var_idx, value + 1, Literal::Type::Leq});
+                return true;
+            }
+            return rollback();
         }
         return rollback();
     }
@@ -1101,13 +1125,40 @@ bool IntNeReifConstraint::explain(const Model& /*model*/, const ExplainContext& 
         return rollback();
     }
     if (bb.first == 1 && bb.second == 1) {
-        // b=1 → x != y: バイナリドメインでの [var = 1-v] 推論のみ対応
-        if (static_cast<Literal::Type>(lit_type) == Literal::Type::Eq &&
-            fixed(ob) && ob.first == 1 - value &&
-            (value == 0 || value == 1)) {
-            out.push_back({b_id_, 1, Literal::Type::Eq});
-            out.push_back({other, ob.first, Literal::Type::Eq});
-            return true;
+        // b=1 → x != y。other が固定 v のとき var から v を除去する。
+        const auto vty = static_cast<Literal::Type>(lit_type);
+        // 自変数の推論時点 bounds (この推論の直前)
+        const auto vb = (var_idx == x_id_) ? xb : yb;
+        if (vty == Literal::Type::Eq) {
+            // バイナリ: ¬(var = 1-v) 推論
+            if (fixed(ob) && ob.first == 1 - value &&
+                (value == 0 || value == 1)) {
+                out.push_back({b_id_, 1, Literal::Type::Eq});
+                out.push_back({other, ob.first, Literal::Type::Eq});
+                return true;
+            }
+            return rollback();
+        }
+        if (vty == Literal::Type::Geq) {
+            // var >= value: other 固定 (value-1) が var の下端だったため除去
+            // ⇒ b=1 ∧ other=value-1 ∧ (前 min = value-1) で正当化
+            if (fixed(ob) && ob.first == value - 1 && vb.first == value - 1) {
+                out.push_back({b_id_, 1, Literal::Type::Eq});
+                out.push_back({other, value - 1, Literal::Type::Eq});
+                out.push_back({var_idx, value - 1, Literal::Type::Geq});
+                return true;
+            }
+            return rollback();
+        }
+        if (vty == Literal::Type::Leq) {
+            // var <= value: other 固定 (value+1) が var の上端だったため除去
+            if (fixed(ob) && ob.first == value + 1 && vb.second == value + 1) {
+                out.push_back({b_id_, 1, Literal::Type::Eq});
+                out.push_back({other, value + 1, Literal::Type::Eq});
+                out.push_back({var_idx, value + 1, Literal::Type::Leq});
+                return true;
+            }
+            return rollback();
         }
         return rollback();
     }

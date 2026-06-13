@@ -1512,6 +1512,15 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
             else if (src < constraints.size()) why += constraints[src]->name();
             else why += "src-" + std::to_string(src);
             ++learn_fb_reasons_[why];
+            if (src < constraints.size() &&
+                constraints[src]->name() == "int_ne_reif") {
+                static int dl = 20;
+                if (dl > 0) { --dl;
+                    std::cerr << "% [nereif] var=" << e.var_idx
+                              << " val=" << e.value << " ty=" << int(e.lit_type)
+                              << " pos=" << pos << "\n";
+                }
+            }
         }
         if (!resolved) {
             kept_buf.push_back({e.var_idx, e.value,
