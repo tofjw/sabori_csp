@@ -1153,6 +1153,80 @@ void Solver::record_inference(uint32_t var_idx, int64_t value,
                                 static_cast<uint32_t>(type), aux});
 }
 
+bool Solver::compute_reason(const Model& model, size_t pos,
+                            std::vector<Literal>& out) const {
+    const auto& constraints = model.constraints();
+    const auto& e = inference_trail_[pos];
+    const uint32_t src = e.reason_cid;
+    out.clear();
+    if (src == (Model::kSourceNoGood & 0xFFFFFFu)) {
+        NoGood* ng = nogood_mgr_.find_by_id(e.aux);
+        if (!ng) return false;
+        // nogood N が正当化するのは「N の残りリテラルが全て真のとき、
+        // 自変数のリテラル lit_k の否定」だけ。記録された推論 (適用後の実
+        // bounds) はドメインの穴・前境界との合成で ¬lit_k より強くなり得る
+        // ため、厳密一致のみ説明とする (2014/amaze の偽 UNSAT で実証)
+        const Literal* on_var = nullptr;
+        size_t unsat = 0;
+        for (const auto& lit : ng->literals) {
+            if (lit.is_satisfied(model)) {
+                out.push_back(lit);
+            } else {
+                ++unsat;
+                on_var = &lit;
+            }
+        }
+        if (unsat != 1 || on_var->var_idx != static_cast<size_t>(e.var_idx)) {
+            out.clear();
+            return false;
+        }
+        switch (static_cast<Literal::Type>(e.lit_type)) {
+        case Literal::Type::Geq:
+            if (on_var->type == Literal::Type::Leq && on_var->value == e.value - 1) {
+                return true;
+            } else if (on_var->type == Literal::Type::Eq && on_var->value == e.value - 1) {
+                out.push_back({e.var_idx, e.value - 1, Literal::Type::Geq});
+                return true;
+            }
+            break;
+        case Literal::Type::Leq:
+            if (on_var->type == Literal::Type::Geq && on_var->value == e.value + 1) {
+                return true;
+            } else if (on_var->type == Literal::Type::Eq && on_var->value == e.value + 1) {
+                out.push_back({e.var_idx, e.value + 1, Literal::Type::Leq});
+                return true;
+            }
+            break;
+        default:  // Eq: バイナリ変数の ¬(x = 1-w) → x = w のみ
+            if (on_var->type == Literal::Type::Eq &&
+                (e.value == 0 || e.value == 1) &&
+                on_var->value == 1 - e.value &&
+                model.presolve_min(e.var_idx) == 0 &&
+                model.presolve_max(e.var_idx) == 1) {
+                return true;
+            }
+            break;
+        }
+        out.clear();
+        return false;
+    }
+    if (src < constraints.size()) {
+        struct Ctx : ExplainContext {
+            const Solver* s; const Model* m; size_t pos;
+            size_t trail_pos() const override { return pos; }
+            std::pair<Domain::value_type, Domain::value_type>
+            bounds_at(size_t var_idx) const override {
+                return s->bounds_at(*m, static_cast<uint32_t>(var_idx), pos);
+            }
+        } ctx;
+        ctx.s = this; ctx.m = &model; ctx.pos = pos;
+        return constraints[src]->explain(model, ctx, e.var_idx, e.value,
+                                         static_cast<uint8_t>(e.lit_type),
+                                         e.aux, out);
+    }
+    return false;  // 決定 (kSourceDecision) 等
+}
+
 void Solver::analyze_conflict(const Model& model, const Literal* trial,
                               std::vector<Literal>& out) {
     // 1UIP 衝突分析 (docs-dev/conflict-learning-design.md §4)。
@@ -1405,82 +1479,7 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
 
         const auto& e = inference_trail_[pos];
         const uint32_t src = e.reason_cid;
-        local_reason.clear();
-        bool ok = false;
-        if (src == (Model::kSourceNoGood & 0xFFFFFFu)) {
-            if (NoGood* ng = nogood_mgr_.find_by_id(e.aux)) {
-                // nogood N が正当化するのは「N の残りリテラルが全て真のとき、
-                // 自変数のリテラル lit_k の否定」だけ。記録された推論
-                // (適用後の実 bounds) はドメインの穴や前境界との合成で
-                // ¬lit_k より強くなり得るため、厳密一致のみ説明とする
-                // (不一致は demote)。値を検証しないと不健全な節になる
-                // (2014/amaze の偽 UNSAT で実証)
-                const Literal* on_var = nullptr;
-                size_t unsat = 0;
-                for (const auto& lit : ng->literals) {
-                    if (lit.is_satisfied(model)) {
-                        local_reason.push_back(lit);
-                    } else {
-                        ++unsat;
-                        on_var = &lit;
-                    }
-                }
-                if (unsat == 1 &&
-                    on_var->var_idx == static_cast<size_t>(e.var_idx)) {
-                    switch (static_cast<Literal::Type>(e.lit_type)) {
-                    case Literal::Type::Geq:
-                        // ¬(x <= v) = x >= v+1 と厳密一致するか
-                        if (on_var->type == Literal::Type::Leq &&
-                            on_var->value == e.value - 1) {
-                            ok = true;
-                        } else if (on_var->type == Literal::Type::Eq &&
-                                   on_var->value == e.value - 1) {
-                            // 下端の除去: ¬(x = m-1) ∧ x >= m-1 ⇒ x >= m
-                            // (前境界リテラルを理由に合成)
-                            local_reason.push_back({e.var_idx, e.value - 1,
-                                                    Literal::Type::Geq});
-                            ok = true;
-                        }
-                        break;
-                    case Literal::Type::Leq:
-                        if (on_var->type == Literal::Type::Geq &&
-                            on_var->value == e.value + 1) {
-                            ok = true;
-                        } else if (on_var->type == Literal::Type::Eq &&
-                                   on_var->value == e.value + 1) {
-                            local_reason.push_back({e.var_idx, e.value + 1,
-                                                    Literal::Type::Leq});
-                            ok = true;
-                        }
-                        break;
-                    default:  // Eq: バイナリ変数の ¬(x = 1-w) → x = w のみ
-                        ok = (on_var->type == Literal::Type::Eq &&
-                              (e.value == 0 || e.value == 1) &&
-                              on_var->value == 1 - e.value &&
-                              model.presolve_min(e.var_idx) == 0 &&
-                              model.presolve_max(e.var_idx) == 1);
-                        break;
-                    }
-                }
-                if (!ok && learn_diag_) ++learn_fb_reasons_["ngdiag:strict-miss"];
-            } else if (learn_diag_) {
-                ++learn_fb_reasons_["ngdiag:id-lost"];
-            }
-        } else if (src < constraints.size()) {
-            // 説明コンテキスト: 被説明推論の位置と、その時点の bounds 再構成
-            struct Ctx : ExplainContext {
-                const Solver* s; const Model* m; size_t pos;
-                size_t trail_pos() const override { return pos; }
-                std::pair<Domain::value_type, Domain::value_type>
-                bounds_at(size_t var_idx) const override {
-                    return s->bounds_at(*m, static_cast<uint32_t>(var_idx), pos);
-                }
-            } ctx;
-            ctx.s = this; ctx.m = &model; ctx.pos = pos;
-            ok = constraints[src]->explain(model, ctx, e.var_idx, e.value,
-                                           static_cast<uint8_t>(e.lit_type),
-                                           e.aux, local_reason);
-        }
+        const bool ok = compute_reason(model, pos, local_reason);
         // 説明できないエントリ（決定・未対応制約・verify 失敗）や、理由の
         // 登録に失敗したエントリは「解決せずリテラルとして学習節に残す」
         // （decision 扱いへの降格）。全面フォールバックより小さく強い節になる。
@@ -1512,15 +1511,6 @@ void Solver::analyze_conflict(const Model& model, const Literal* trial,
             else if (src < constraints.size()) why += constraints[src]->name();
             else why += "src-" + std::to_string(src);
             ++learn_fb_reasons_[why];
-            if (src < constraints.size() &&
-                constraints[src]->name() == "int_ne_reif") {
-                static int dl = 20;
-                if (dl > 0) { --dl;
-                    std::cerr << "% [nereif] var=" << e.var_idx
-                              << " val=" << e.value << " ty=" << int(e.lit_type)
-                              << " pos=" << pos << "\n";
-                }
-            }
         }
         if (!resolved) {
             kept_buf.push_back({e.var_idx, e.value,

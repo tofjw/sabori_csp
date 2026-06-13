@@ -630,6 +630,11 @@ public:
     std::vector<Literal> analysis_buf_;          ///< 分析バッファ（再利用）
     std::vector<Literal> reason_buf_;            ///< 説明バッファ（再利用）
     std::vector<std::pair<Literal,int>> below_buf_;  ///< 下位レベルリテラル + level
+
+    /// トレイル位置 pos の推論の理由リテラルを out に求める。
+    /// 解決ループ(及び将来の理由解析)で共用。決定/未対応/検証失敗なら false。
+    bool compute_reason(const Model& model, size_t pos,
+                        std::vector<Literal>& out) const;
     std::vector<uint32_t> mark_stamp_;           ///< トレイル位置のマーク（エポック方式）
     /// 変数ごとの推論トレイル位置（昇順）。add_fact の locate と bounds_at を
     /// 全トレイル走査 O(trail) から当該変数のエントリ数に削減する
