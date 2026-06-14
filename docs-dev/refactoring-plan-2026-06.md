@@ -146,8 +146,13 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
   - [x] **IntLinEqNeReifBase**: eq_reif/ne_reif を述語極性 `negated_` で統一（2026-06-15,
     commit 12aad80, 純net ~470行削減, golden byte一致 + brute 806 green）。b 推論/矛盾検出を
     `reconcile_b()` に集約。le_reif と異なり線形側の刈り込みは無い形状なので統一が綺麗に収まる。
-  - [ ] **le_reif/le_imp**: 形状が異なる（b 確定時に線形変数を `propagate_bounds_le/gt` で
-    刈り込む）。le 用の brute net を併設してから別途統一を検討。
+  - [x] **le_reif/le_imp**: 全クラス統一は見送り（le_imp は le_reif の b=1 半分で状態形状が
+    異なる: min のみ/max_rem 無し・推論は対偶のみ。統一すると未使用 max_rem 追跡と毎コールバックの
+    フラグ分岐を hot path に持ち込むため「hot path に限界的介入をしない」原則に反する）。
+    代わりに**共通の刈り込みカーネル `LinearConstraintBase::prune_sum_le` を抽出**し、
+    int_lin_le / le_reif / le_imp の3重複（sum<=bound の境界絞り loop）を一本化（2026-06-15,
+    commit fe736eb, net -48行, brute 1614 green + golden byte一致）。gt 方向（le_reif のみ）は
+    重複が無いため対象外。le 用 brute net は commit 8d555b0 で先行併設。
 - [ ] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
 - [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
 - [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
