@@ -153,7 +153,14 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
     int_lin_le / le_reif / le_imp の3重複（sum<=bound の境界絞り loop）を一本化（2026-06-15,
     commit fe736eb, net -48行, brute 1614 green + golden byte一致）。gt 方向（le_reif のみ）は
     重複が無いため対象外。le 用 brute net は commit 8d555b0 で先行併設。
-- [ ] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
+- [~] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
+  - [x] **presolve ヘルパ抽出**: ドメイン交差（x==y）を `intersect_eq`（IntEq / IntEqReif b=1 /
+    IntEqImp b=1 の逐語3複製）、境界対絞り込み（lo<=hi / strict）を `enforce_le`（IntLt / IntLe /
+    IntLeReif b=1=x<=y・b=0=y<x strict）に一本化（2026-06-15, commit 続き, net -69行, golden byte一致 +
+    scalar comparison brute net 2910 assertion）。安全網先行: `tests/cpp/test_cmp_reif_brute.cpp`。
+  - [ ] **propagation 側**（on_instantiate の相互固定 / on_set_min/max の bounds 相互伝播）は
+    素の制約と reif の b=1/b=0 分岐で部分的に重複するが、b ロジックと絡み presolve ほど逐語的でない。
+    別途検討（ROI 中・要 brute 継続）。
 - [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
 - [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
 
