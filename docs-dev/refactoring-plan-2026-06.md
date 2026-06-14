@@ -140,7 +140,14 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
   **potential 管理(min_rem/max_rem/fixed_sum)の差分更新は基底化しない**: eq=min+max /
   le=min のみ / ne=fixed_sum+unfixed_count と形状が分岐し、かつ on_instantiate/on_set_min/max
   という hot path に介入するため。集約のみで ROI を確保し、伝播セマンティクスは派生に残置。
-- [ ] **ReifConstraintBase**: enforce_b1 / enforce_b0 / infer_b の3フックを派生が実装する形に。reif は false UNSAT 事故リスクがあるため、**各制約の移行ごとにランダム全解数照合テストを追加**（〜450行削減）
+- [~] **ReifConstraintBase**: reif は false UNSAT 事故リスクがあるため、移行前に
+  ランダム全解数照合テストを併設（commit 6957db3, `tests/cpp/test_lin_reif_brute.cpp`,
+  eq/ne × b-free/fixed × ±係数, 806 assertion）。
+  - [x] **IntLinEqNeReifBase**: eq_reif/ne_reif を述語極性 `negated_` で統一（2026-06-15,
+    commit 12aad80, 純net ~470行削減, golden byte一致 + brute 806 green）。b 推論/矛盾検出を
+    `reconcile_b()` に集約。le_reif と異なり線形側の刈り込みは無い形状なので統一が綺麗に収まる。
+  - [ ] **le_reif/le_imp**: 形状が異なる（b 確定時に線形変数を `propagate_bounds_le/gt` で
+    刈り込む）。le 用の brute net を併設してから別途統一を検討。
 - [ ] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
 - [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
 - [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
