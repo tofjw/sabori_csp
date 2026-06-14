@@ -38,6 +38,22 @@ protected:
      */
     std::vector<VariablePtr> aggregate_terms(const std::vector<int64_t>& coeffs,
                                              const std::vector<VariablePtr>& vars);
+
+    /**
+     * @brief Σ c_i x_i <= bound を満たすよう線形変数の境界を絞る（enqueue 版）
+     *
+     * 確定済みの寄与分 fixed_sum と未確定変数の min ポテンシャル min_rem を前提に、
+     * 各未確定変数の上限/下限の緩和を enqueue する。先頭 coeffs_.size() 個を対象
+     * （reif/imp では末尾の b を除外。素の int_lin_le では b が無く全変数が対象）。
+     * int_lin_le / le_reif / le_imp で共通の刈り込みカーネル。
+     *
+     * @param bound    右辺上限
+     * @param fixed_sum 確定変数の c*v の和
+     * @param min_rem  未確定変数の最小ポテンシャル
+     * @param skip_idx スキップする内部インデックス（SIZE_MAX で全対象）
+     */
+    void prune_sum_le(Model& model, int64_t bound, int64_t fixed_sum,
+                      int64_t min_rem, size_t skip_idx) const;
 };
 
 
