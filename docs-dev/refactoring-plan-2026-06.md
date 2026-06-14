@@ -167,12 +167,13 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
     （2026-06-15, commit 続き, net -23行）。読み出し元（var_data_ / Domain 直接）も accessor に
     含め各経路の参照源を厳密保存（protein 教訓）。テンプレートなので伝播 hot path に仮想呼び出し無し。
     安全網: `tests/cpp/test_diffn_brute.cpp`（strict/nonstrict・0面積免除・強制分離）。golden byte 一致。
-  - [ ] **disjunctive は対象外と判定**: `_direct` 変種は DomainWriter 的な「読み書き方式だけの差」では
-    ない。`update_compulsory_part_direct` は CP=∅ 前提・trail 無しの**presolve 特化アルゴリズム**で
-    full 版（incremental CP 拡張 + trail）とロジックが別物 → 統合は強引で危険。`set_bits` /
-    `set_bits_direct` は bit-mask 幾何のみ共有し trail 挿入有無で分岐するため Trailer ポリシーで統合
-    可能だが、payoff ~30行・edge-finding 隣接の subtle 領域のため**要 disjunctive brute net 併設の
-    別タスク**に切り出し（今セッションでは見送り）。
+  - [x] **disjunctive `set_bits`**: `set_bits`(trail あり) / `set_bits_direct`(presolve, trail なし)の
+    timeline bit-mask 幾何を `apply_set_bits(timeline, start, len, trail)` に統一（2026-06-15, net -4行）。
+    trail(w) を各語書き込み直前に呼ぶポリシーで、direct は no-op・伝播版は旧値退避ラムダ。
+    安全網: `tests/cpp/test_disjunctive_brute.cpp`。golden byte 一致。
+  - [-] **disjunctive `update_compulsory_part` は統合しない**（確定判断）: `_direct` 版は CP=∅ 前提・
+    trail 無しの**presolve 特化アルゴリズム**で full 版（incremental CP 拡張 + trail）とロジックが
+    別物。読み書き方式だけの差ではないため DomainWriter 対象外。
 - [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
 
 **完了条件**: ゴールデン一致 + ctest green + ベンチ3本 + `bench_compare.py` 総合非劣化。
