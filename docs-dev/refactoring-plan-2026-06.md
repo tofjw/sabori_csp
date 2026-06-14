@@ -1,0 +1,175 @@
+# sabori_csp 全面リファクタリング計画 v2 (2026-06)
+
+作成: 2026-06-10
+状態: ドラフト（フェーズ0着手前）
+前史: [refactoring-plan.md](refactoring-plan.md)（2026-02 のリアーキテクチャ。Phase 0〜5, 7 完了、Phase 6 = Domain 表現のみ未着手）
+
+## 前回計画との関係
+
+2026-02 計画で **解消済み**（本計画では扱わない）:
+- Variable/VarData 二重 API（presolve/propagation の API 分離 + アサーション）
+- 制約登録の if-else チェーン（ConstraintRegistry 化）
+- shared_ptr 過剰使用（生ポインタ/unique_ptr 化）
+- Model 側 Trail の統一
+- `domain().values()` のヒープ確保・`pending_updates_` の deque・`is_instantiated()` 非 inline（2026-06-10 検証で解消済みを確認。2026-02-06 プロファイルメモは一部失効）
+
+**残った/その後発生した問題**（本計画の対象）:
+1. 旧 Phase 6（Domain 表現: `unordered_set` 除去・BoolDomain）が未着手のまま
+2. solver.cpp が 1,308 行 → **1,810 行に再肥大化**（community analysis / mode_reward RL / gradient / find_all 追加分が無計画に堆積。verbose 統計分岐の複製がファイルの3〜4割）
+3. 制約層のコピペ重複は前回スコープ外で手つかず（約18,000行中 1,400〜1,800 行が削減可能）
+4. テスト資産の形骸化（fzn ペアの 48/54 フォルダが ctest 未登録）
+5. リポジトリ衛生（in-source build 残骸 214 ファイルが git 追跡中、等）
+
+## 現状診断（2026-06-10 調査）
+
+### リポジトリ衛生
+- in-source build 残骸 **214 ファイルが git 追跡中**（`tests/cpp/CMakeFiles` 181件、`src/**/CMakeFiles`、`Makefile`×5、`cmake_install.cmake`×5）
+- `src2/`（古い in-source build の失敗物 828KB）、`Testing/`、`*~`/`#*#`/`.bak`/`.cpp-new` 約30個が放置
+- `benchmarks/minizinc_challenge/` 直下に実験フォルダ 237 個 + ベンチ HTML が無秩序に蓄積（2.1GB、未管理）
+- CLAUDE.md が存在しない `tests/fzn/run_tests.py` を参照。TESTING.md に Python テスト手順なし
+
+### テスト
+- `tests/fzn/constraints/` 54 フォルダ・約190ペア中、**ctest から実行されるのは 6 フォルダのみ**（残り約165ペアは飾り）
+- .expected が「特定の1解」を期待する形式で、ヒューリスティクス変更に脆い（diffn の3ペアは既に現行バイナリと不整合）
+- `tests/cpp/test_global_constraints.cpp` が 4,749 行・128 TEST_CASE の単一ファイル
+- bench_*.py が **31 本**あり、`cleanup_stale_processes`/`run_solver`/`judge_winner`/`generate_html` 等がコピペ重複（重複率 50〜90%）
+
+### 制約層の重複（src/core/constraints 約18,000行）
+- **int_lin_* 系 7 ファイル(3,117行)**: potential 管理（`current_fixed_sum_`/`min_rem_potential_`/`max_rem_potential_`）・差分更新・制約内部 trail がほぼ同一実装（〜800行重複）
+- **reified ボイラープレート**: b確定分岐 / b推論 / presolve 骨格が7ファイルで重複（〜650行）
+- **制約内部 trail パターン**（save_point チェック + push + rewind_to）が6ファイル以上で複製 ※Model 側 Trail は統一済みだが制約内部状態の trail は各自実装のまま
+- **sparse set プール**が all_different / all_different_except_0 / circuit で三重実装。`pool_sparse_` は `unordered_map`
+- **presolve(直接操作)/propagate(enqueue) の二重実装**（diffn `propagate_pairwise` / `_direct` 等）
+- comparison.cpp のドメイン交差・双方向伝播が3箇所以上で複製（〜290行）
+- `global.hpp` が 2,420 行の単一ヘッダ（26クラス）
+- 「現在未使用」の AllDifferentGAC が常時コンパイル対象
+
+### コア層
+- solver.cpp: `search_with_restart` と `search_with_restart_optimize` に restart 制御・mode_reward 更新が二重実装。SetMin/SetMax/RemoveValue の各ディスパッチに verbose/非 verbose の複製ブロック
+- Domain/SparseDomain/BoundsDomain: 継承でも variant でもないフラグ分岐で、`contains`/`remove_*`/走査のロジック複製。`removed_set_` が `unordered_set`（旧 Phase 6 残件）
+- コールバック署名が `var_idx` と `internal_var_idx` を両方引き回す
+- `remove_value()` 境界更新の線形スキャン（要再計測）
+
+---
+
+## 全体方針（鉄則）
+
+1. フェーズは「**安全網 → 衛生 → 機械的整理 → 構造変更 → 性能**」の順。挙動に触る前に検証手段を整える
+2. **1コミット = ビルド + 全テスト green**。バルク sed 置換は禁止（ビルド破壊実績あり）。1ファイルずつ変更 → ビルド → テスト
+3. **挙動に影響しうる変更はベンチマークゲート必須**: `bench_alldiff.py` / `bench_diffn.py` / `bench_circuit.py` で Wins 同等以上・Timeouts 同等以下。マージナル差はノイズなので、際どい場合は同一 fzn の直接実行で決定論比較
+4. **純リファクタの検証はゴールデンマスター**: 代表 fzn の `-a` 全解出力 + 探索統計の完全一致
+5. false UNSAT / false OPTIMAL が最悪の事故。伝播ロジックに触る変更には**ランダム全解数のブルートフォース照合テスト**を併設（alldiff bounds(Z) / circuit SCC で実績ある方式）
+6. ベンチ実行前に `pkill -x fzn_sabori; pkill -x fzn-cp-sat; pkill -x minizinc`（`pkill -f` 禁止）。並列4まで
+7. 各フェーズ末に work-log へ記録。フェーズ途中で停止しても資産が残る構成にする
+
+---
+
+## フェーズ0: 検証基盤（0.5〜1日）
+
+**目的**: 以降の全フェーズの合否を機械的に判定できる状態を作る。
+
+- [ ] **ゴールデンマスター** `tests/golden/run_golden.sh`:
+  - 代表 fzn 約20本（制約カテゴリ別 + tsp / accap 等）の `-a` 全解出力と `-v` 統計（ノード数・伝播数）を記録し、前後比較できるようにする
+- [ ] **再プロファイリング**: gprof でホットスポットの現状を取り直す（2026-02-06 データは一部失効済み。クリーンリビルド + 内蔵タイムアウトフラグ使用）。結果を docs-dev に記録し、フェーズ5の優先順位を確定する
+- [ ] ベンチ3本 + `bench_compare.py`（全問題セット）の baseline を `docs-dev/benchmarks-baseline-20260610.md` に固定記録
+- [ ] ctest 実行時間の現状記録
+
+**完了条件**: run_golden.sh が現行バイナリで green、プロファイル結果文書化。
+
+## フェーズ1: リポジトリ衛生（0.5日、挙動リスクゼロ）
+
+- [ ] git 追跡中のビルド成果物 214 件を `git rm --cached`
+- [ ] `.gitignore` 拡充: `**/CMakeFiles/`, `src/**/Makefile`, `cmake_install.cmake`, `src2/`, `Testing/`, `.claude/`, `.codex`, `*.bak`, `*.cpp-new`, `benchmarks/minizinc_challenge/20*/`, `benchmarks/minizinc_challenge/mznc*_probs/`, `benchmarks/minizinc_challenge/*.html`
+- [ ] CMakeLists.txt 冒頭に in-source build 拒否ガード
+- [ ] `src2/` 物理削除。`*~`/`#*#`/`.bak`/`.cpp-new` 全削除
+- [ ] ベンチ実験フォルダ 237 個の整理方針を決める（`archive/` 移動 or 削除。**要ユーザー判断**）
+- [ ] ドキュメント整合: CLAUDE.md のテストコマンド修正、TESTING.md に Python テスト手順 + fzn ペアの実行状況を明記
+- [ ] TODO.md の完了項目を work-log へ移す
+
+**完了条件**: 追跡ジャンク0。クリーンクローン + out-of-source build が一発で通る。
+
+## フェーズ2: テスト安全網の拡充（2〜4日）
+
+- [ ] **fzn ペアランナー** `tests/fzn/run_pairs.py` 新設、ctest 登録。期待値形式を3種に整理:
+  1. ステータスのみ（`UNSAT` 等）
+  2. 最適化: `_objective` 値 + `==========`
+  3. satisfy: 出力解を簡易チェッカで**充足検証**（特定解の一致は廃止）。解数を固定したい場合のみ `-a` + 解数
+- [ ] 既存 190 ペアを新形式へ移行（現行バイナリで再生成し、**差分は全件目視レビュー**。既存バグを「正」として固定しないこと。diffn の stale 3ペアもここで解消）
+- [ ] `test_global_constraints.cpp` を制約カテゴリ別 5〜6 ファイルに分割（タグ維持、機械的移動のみ）
+- [ ] Python テストの ctest 統合（PYTHONPATH を CMake で設定）
+- [ ] **ベンチ共通ライブラリ** `benchmarks/minizinc_challenge/lib_benchmark.py` を抽出し、主要4本（alldiff/diffn/circuit/compare）を先行移行。残り27本は随時
+- [ ] CLAUDE.md / TESTING.md のテストコマンドを最終形に更新
+
+**完了条件**: ctest が全 fzn ペア + Python テストを含めて green。最大テストファイル 1,500 行未満。
+**リスク**: .expected 再生成によるバグの固定 → 目視レビューで対処。
+
+## フェーズ3: 機械的な重複削減・死コード削除（1週間、挙動不変）
+
+- [ ] **TrailManager<State> テンプレート**: 制約内部 trail（save_point チェック/push/rewind）を共通化。int_lin_* 6ファイル → alldifferent → circuit の順に1ファイルずつ
+- [ ] **SparseSetPool クラス**: all_different / except_0 / circuit のプール実装を統一。`pool_sparse_` の `unordered_map` はこのときフラット配列化
+- [ ] **global.hpp (2,420行) 分割**: alldifferent / linear / reified / scheduling / element / graph 等のヘッダへ。global.hpp は集約 include として残し互換維持
+- [ ] **solver.cpp の verbose/統計複製の排除**: コールバック呼び出し + 統計記録を `invoke_callback_with_stats()` ヘルパへ一本化（SetMin/SetMax/RemoveValue 各2系統 → 1系統、〜300行削減）
+- [ ] **死コード処分**: AllDifferentGAC をベンチ再評価し、勝てなければ削除（履歴に残る）。コメントアウト大ブロック・未使用 public メソッドの削除
+
+**完了条件**: ゴールデンマスター完全一致 + ctest green + ベンチ3本ゲート（統計ヘルパは hot path のため）。
+**削減見込み**: 600〜800 行。
+
+## フェーズ4: 制約層の構造化（2〜3週間、中リスク）
+
+- [ ] **LinearConstraintBase**: int_lin_* 7ファイルの potential 管理・差分更新・prepare_propagation を基底化。**スコープは potential 管理のみ**（==/<=/!= の伝播セマンティクスは派生に残す）。1制約ずつ移行、都度ゴールデン + ベンチ（〜400行削減）
+- [ ] **ReifConstraintBase**: enforce_b1 / enforce_b0 / infer_b の3フックを派生が実装する形に。reif は false UNSAT 事故リスクがあるため、**各制約の移行ごとにランダム全解数照合テストを追加**（〜450行削減）
+- [ ] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
+- [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
+- [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
+
+**完了条件**: ゴールデン一致 + ctest green + ベンチ3本 + `bench_compare.py` 総合非劣化。
+**削減見込み**: 1,000 行強。
+
+## フェーズ5: Domain 表現と性能（2週間、高リスク・ベンチゲート厳格）
+
+旧計画 Phase 6 の継承 + フェーズ0 の再プロファイル結果で優先順位を確定。現時点の候補:
+
+- [ ] `BoundsDomain::removed_set_` の `unordered_set` → オフセット付きビットマップ/ソート済み vector（ドメイン幅で自動選択）
+- [ ] BoolDomain（min=0,max=1 の2bit 表現）の追加
+- [ ] Domain/SparseDomain/BoundsDomain のフラグ分岐 → 明確な内部表現切り替え（variant or 関数テーブル）に整理し、`contains`/`remove_*` のロジック複製を解消
+- [ ] `remove_value()` の境界更新 O(n) → 境界削除時のみの遅延スキャン（再計測で要否判断）
+- [ ] `rewind_dirty_constraints()` の virtual dispatch 削減（再計測で要否判断）
+
+**完了条件**: 項目ごとに ctest green + ベンチ3本 + bench_compare 非劣化 + gprof で対象ホットスポットの改善確認。
+**リスク**: Domain はソルバーの心臓部。1表現 = 1コミット、ランダム照合テスト併設。
+
+## フェーズ6: solver.cpp 再分解（2週間）
+
+フェーズ3〜5 で薄くなった後に実施。再肥大化（1,308→1,810行）の原因である後付け機能を分離する。
+
+- [ ] `search_with_restart` / `search_with_restart_optimize` の共通骨格抽出（restart 制御・cycle 管理・mode_reward 更新の二重実装解消）
+- [ ] mode_reward / mix_p 抽選を RestartController（または新 ModeRewardPolicy）へ移管
+- [ ] gradient ヒューリスティクスを optimize 専用 Strategy へ分離
+- [ ] 統計記録の残りを ConstraintStats レイヤへ
+- [ ] find_all + restart の解列挙設計レビュー（solution nogood 依存。2026-06-10 に root 確定変数 watch の無限ループバグを修正済み。1リテラル縮退時の unit nogood 化の非対称も解消）
+- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ。RestartController / ModeRewardPolicy の単体テスト追加
+
+**完了条件**: ゴールデン一致 + 全ベンチ非劣化。
+
+---
+
+## スケジュールと依存
+
+```
+フェーズ0 (0.5-1日) → 1 (0.5日) → 2 (2-4日)
+   → 3 (1週) → 4 (2-3週) → 5 (2週) → 6 (2週)
+```
+
+- 0→1→2 は順次必須。3以降は2の安全網が前提
+- 4 と 5 は項目単位で入れ替え可能。6 は最後（3〜5で薄くしてから解体）
+- 合計目安: **集中作業で 7〜9 週間**。各フェーズ末で停止可能
+
+## 期待効果まとめ
+
+| 領域 | 効果 |
+|------|------|
+| リポジトリ | 追跡ジャンク 214 件解消、2.1GB の未管理データに管理方針 |
+| テスト | 実行されないテスト 0 に（+165ペア有効化）、脆い .expected の根治 |
+| コード量 | 制約層 + solver で約 2,000 行削減（全体の約7%）、global.hpp 分割でビルド時間短縮 |
+| 性能 | Domain 表現刷新（再プロファイルに基づく）。ベンチゲートで非劣化保証 |
+| 保守性 | 新制約追加時の定型コード（trail/reif/linear）がテンプレートで完結 |

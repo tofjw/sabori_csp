@@ -1,0 +1,13 @@
+next_0 = 2;
+next_1 = 0;
+next_2 = 1;
+total = 8;
+----------
+next_0 = 1;
+next_1 = 2;
+next_2 = 0;
+total = 13;
+----------
+==========
+--- stats ---
+% Stats: fails=0 restarts=0 max_depth=1 avg_depth=0 nogoods=0 unit_nogoods=0 ng_check=0 ng_domain=0 ng_prune=0 ng_noop=0 bisect=0 enumerate=2

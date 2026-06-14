@@ -1,0 +1,14 @@
+{
+  "name": "sabori_min",
+  "version": "1.0.0",
+  "id": "io.test.sabori_min",
+  "executable": "/bin/true",
+  "mznlib": "./library",
+  "tags": ["cp"],
+  "supportsMzn": false,
+  "supportsFzn": true,
+  "needsSolns2Out": false,
+  "needsMznExecutable": false,
+  "needsStdlibDir": false,
+  "isGUIApplication": false
+}

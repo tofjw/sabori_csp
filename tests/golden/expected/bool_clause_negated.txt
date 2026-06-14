@@ -1,0 +1,13 @@
+n1 = false;
+n2 = false;
+----------
+n1 = false;
+n2 = true;
+----------
+n1 = true;
+n2 = false;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=2 avg_depth=0 nogoods=3 unit_nogoods=0 ng_check=11 ng_domain=8 ng_prune=3 ng_noop=0 bisect=0 enumerate=5
+% NG length distribution: 2:3

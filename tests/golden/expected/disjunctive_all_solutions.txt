@@ -1,0 +1,22 @@
+s1 = 1;
+s2 = 0;
+----------
+s1 = 1;
+s2 = 2;
+----------
+s1 = 0;
+s2 = 1;
+----------
+s1 = 2;
+s2 = 1;
+----------
+s1 = 0;
+s2 = 2;
+----------
+s1 = 2;
+s2 = 0;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=2 avg_depth=0 nogoods=6 unit_nogoods=0 ng_check=20 ng_domain=20 ng_prune=0 ng_noop=0 bisect=0 enumerate=9
+% NG length distribution: 2:6

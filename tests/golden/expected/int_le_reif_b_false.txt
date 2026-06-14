@@ -1,0 +1,32 @@
+b = 0;
+x = 10;
+y = 3;
+----------
+b = 0;
+x = 9;
+y = 3;
+----------
+b = 0;
+x = 8;
+y = 3;
+----------
+b = 0;
+x = 4;
+y = 3;
+----------
+b = 0;
+x = 5;
+y = 3;
+----------
+b = 0;
+x = 6;
+y = 3;
+----------
+b = 0;
+x = 7;
+y = 3;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=1 avg_depth=0 nogoods=7 unit_nogoods=0 ng_check=28 ng_domain=0 ng_prune=28 ng_noop=0 bisect=0 enumerate=8
+% NG length distribution: 1:7

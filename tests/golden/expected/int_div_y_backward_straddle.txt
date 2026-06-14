@@ -1,0 +1,44 @@
+x = -10;
+y = -3;
+z = 3;
+----------
+x = -9;
+y = -3;
+z = 3;
+----------
+x = 3;
+y = 1;
+z = 3;
+----------
+x = 6;
+y = 2;
+z = 3;
+----------
+x = -7;
+y = -2;
+z = 3;
+----------
+x = -6;
+y = -2;
+z = 3;
+----------
+x = 7;
+y = 2;
+z = 3;
+----------
+x = 9;
+y = 3;
+z = 3;
+----------
+x = 10;
+y = 3;
+z = 3;
+----------
+x = -3;
+y = -1;
+z = 3;
+----------
+==========
+--- stats ---
+% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=10 unit_nogoods=2 ng_check=96 ng_domain=69 ng_prune=27 ng_noop=0 bisect=11 enumerate=12
+% NG length distribution: 1:2 2:10

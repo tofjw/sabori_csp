@@ -1,0 +1,22 @@
+y = 10;
+----------
+y = 9;
+----------
+y = 2;
+----------
+y = 7;
+----------
+y = 3;
+----------
+y = 8;
+----------
+y = 4;
+----------
+y = 5;
+----------
+y = 6;
+----------
+==========
+--- stats ---
+% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=9 unit_nogoods=1 ng_check=50 ng_domain=25 ng_prune=25 ng_noop=0 bisect=7 enumerate=11
+% NG length distribution: 1:1 2:9

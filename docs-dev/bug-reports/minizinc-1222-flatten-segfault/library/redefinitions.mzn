@@ -1,0 +1,23 @@
+% sabori_csp redefinitions
+% This file includes all solver-specific redefinitions
+
+include "nosets.mzn";
+
+% predicate int_eq_imp(var int: a, var int: b, var bool: r);
+% predicate bool_eq_imp(var bool: a, var bool: b, var bool: r);
+
+include "fzn_all_different_int.mzn";
+include "fzn_circuit.mzn";
+include "fzn_table_int.mzn";
+include "fzn_count_eq.mzn";
+include "fzn_cumulative.mzn";
+include "fzn_disjunctive.mzn";
+include "fzn_disjunctive_strict.mzn";
+include "fzn_diffn.mzn";
+include "fzn_diffn_nonstrict.mzn";
+include "fzn_inverse.mzn";
+include "fzn_regular.mzn";
+include "fzn_nvalue.mzn";
+
+predicate int_lin_le_imp(array[int] of int: as, array[int] of var int: bs,
+                         int: c, var bool: r);

@@ -1,0 +1,24 @@
+x = 1;
+y = 1;
+z = 1;
+----------
+x = 2;
+y = 2;
+z = 2;
+----------
+x = 3;
+y = 3;
+z = 3;
+----------
+x = 4;
+y = 4;
+z = 4;
+----------
+x = 5;
+y = 5;
+z = 5;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=1 avg_depth=0 nogoods=5 unit_nogoods=0 ng_check=35 ng_domain=15 ng_prune=15 ng_noop=5 bisect=0 enumerate=6
+% NG length distribution: 3:5
