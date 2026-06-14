@@ -66,8 +66,7 @@ bool IntLinNeConstraint::on_instantiate(Model& model, int save_point,
     size_t internal_idx = internal_var_idx;
 
     // Trail に保存
-    if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, unfixed_count_}});
+    if (trail_.save_if_needed(save_point, {current_fixed_sum_, unfixed_count_})) {
         model.mark_constraint_dirty(model_index(), save_point);
     }
 
@@ -126,12 +125,10 @@ bool IntLinNeConstraint::on_final_instantiate(const Model& model) {
 }
 
 void IntLinNeConstraint::rewind_to(int save_point) {
-    while (!trail_.empty() && trail_.back().first > save_point) {
-        const auto& entry = trail_.back().second;
+    trail_.rewind_to(save_point, [&](const TrailEntry& entry) {
         current_fixed_sum_ = entry.fixed_sum;
         unfixed_count_ = entry.unfixed_count;
-        trail_.pop_back();
-    }
+    });
 }
 
 bool IntLinNeConstraint::prepare_propagation(Model& model) {
