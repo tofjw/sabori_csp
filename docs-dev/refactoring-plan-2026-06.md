@@ -90,18 +90,32 @@
 
 ## フェーズ2: テスト安全網の拡充（2〜4日）
 
-- [ ] **fzn ペアランナー** `tests/fzn/run_pairs.py` 新設、ctest 登録。期待値形式を3種に整理:
-  1. ステータスのみ（`UNSAT` 等）
-  2. 最適化: `_objective` 値 + `==========`
-  3. satisfy: 出力解を簡易チェッカで**充足検証**（特定解の一致は廃止）。解数を固定したい場合のみ `-a` + 解数
-- [ ] 既存 190 ペアを新形式へ移行（現行バイナリで再生成し、**差分は全件目視レビュー**。既存バグを「正」として固定しないこと。diffn の stale 3ペアもここで解消）
-- [ ] `test_global_constraints.cpp` を制約カテゴリ別 5〜6 ファイルに分割（タグ維持、機械的移動のみ）
-- [ ] Python テストの ctest 統合（PYTHONPATH を CMake で設定）
-- [ ] **ベンチ共通ライブラリ** `benchmarks/minizinc_challenge/lib_benchmark.py` を抽出し、主要4本（alldiff/diffn/circuit/compare）を先行移行。残り27本は随時
-- [ ] CLAUDE.md / TESTING.md のテストコマンドを最終形に更新
+**進捗 (2026-06-14)**: golden master が先行構築され ctest 登録済み（`golden_master`, ラベル
+`golden`, ~180 fzn の `-a -s` 出力照合）。Python テストも ctest 統合済み（`python_bindings`）。
+→ fzn の**リファクタ不変性網は完成**したため、堅牢ペアランナー(#1/#2)は **deferred**（下記理由）。
 
-**完了条件**: ctest が全 fzn ペア + Python テストを含めて green。最大テストファイル 1,500 行未満。
-**リスク**: .expected 再生成によるバグの固定 → 目視レビューで対処。
+- [x] Python テストの ctest 統合（`BUILD_PYTHON_BINDINGS` 時、`Python3_EXECUTABLE`+`PYTHONPATH`）→ commit 71d1124
+- [x] golden master を ctest 登録（`FZN_SABORI` で実バイナリ注入）→ commit 112256c
+- [ ] `test_global_constraints.cpp`(4,749行) を制約カテゴリ別 5〜6 ファイルに分割（機械的移動のみ）
+- [ ] **ベンチ共通ライブラリ** `lib_benchmark.py` 抽出、主要4本(alldiff/diffn/circuit/compare)先行移行
+- [ ] CLAUDE.md / TESTING.md のテストコマンドを最終形に更新（一部済: run_tests.py 誤参照修正・golden/python 追記）
+
+### deferred: 堅牢ペアランナー（`run_pairs.py`）— なぜ将来なお必要か
+golden は「**挙動が変わったか**」を見る不変性網であり、純リファクタ(Phase 3-6)には十分。
+だが以下は golden では担保できず、堅牢ランナーが必要になる:
+1. **正しさの担保**: golden は現状出力をそのまま凍結する＝**潜在バグも「正」として固定**する。
+   `.expected`(183, 手書き) や充足検証は「意図する正解」を符号化でき、潜在バグを検出しうる。
+2. **ヒューリスティクス変更への耐性**: 変数選択・restart 等を変えると golden は全面赤になり
+   無力（どれが真のリグレッションか分からない）。status/目的値/充足検証なら「正しさ」で判定でき、
+   探索チューニング時のリグレッション検出に使える。
+3. **非リファクタ変更**（新制約・伝播強化）の受け入れテストとして、特定解一致でなく充足性で見たい。
+
+→ **着手の引き金**: Phase 3-6 完了後にヒューリスティクス/伝播の改良フェーズへ移る時、
+   または golden が脆すぎて回帰判定に使えない場面が出た時。設計は計画初版の3形式
+   （ステータスのみ / 最適化 obj+`==========` / satisfy 充足検証）を踏襲。`.expected`(183) は
+   その時に「廃止 or 堅牢形式へ移行」を決める（現状は golden と重複のため保留）。
+
+**完了条件（改）**: ctest が C++ + fzn(golden) + Python を含めて green。最大テストファイル 1,500 行未満。
 
 ## フェーズ3: 機械的な重複削減・死コード削除（1週間、挙動不変）
 
