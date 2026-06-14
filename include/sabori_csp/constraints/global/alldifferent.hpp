@@ -148,11 +148,6 @@ private:
         size_t old_unfixed_count;
     };
     ConstraintTrail<TrailEntry> pool_trail_;
-
-    /**
-     * @brief プールから値を削除
-     */
-    bool remove_from_pool(int save_point, Domain::value_type value);
 };
 
 
@@ -212,8 +207,6 @@ private:
         size_t old_unfixed_count;
     };
     ConstraintTrail<TrailEntry> pool_trail_;
-
-    bool remove_from_pool(int save_point, Domain::value_type value);
 };
 
 } // namespace sabori_csp

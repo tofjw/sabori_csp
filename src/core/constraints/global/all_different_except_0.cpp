@@ -97,18 +97,6 @@ PresolveResult AllDifferentExcept0Constraint::presolve(Model& model) {
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
-bool AllDifferentExcept0Constraint::remove_from_pool(int save_point, Domain::value_type value) {
-    if (!pool_.contains(value)) {
-        return false;  // 既にプールにない
-    }
-
-    // Trail に保存
-    pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_});
-
-    pool_.remove(value);
-    return true;
-}
-
 bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
                                                     size_t var_idx, size_t internal_var_idx,
                                                     Domain::value_type value,
