@@ -159,6 +159,13 @@ bool Solver::init_search(Model& model) {
 
     if (verbose_) {
         std::cerr << "% [verbose] presolve done\n";
+        // objective_coupling 計測用: 最適化時、root 伝播(presolve) 後の目的変数ドメイン幅。
+        // 宣言時の span と比較して root 伝播がどれだけ目的を縮めたかを測る。
+        if (optimizing_ && obj_var_idx_ != SIZE_MAX
+            && obj_var_idx_ < model.variables().size()) {
+            std::cerr << "% [objcoupling] obj_root_min=" << model.presolve_min(obj_var_idx_)
+                      << " obj_root_max=" << model.presolve_max(obj_var_idx_) << "\n";
+        }
         size_t n_vars = model.variables().size();
         size_t n_defined = 0;
         for (size_t i = 0; i < n_vars; ++i) {
