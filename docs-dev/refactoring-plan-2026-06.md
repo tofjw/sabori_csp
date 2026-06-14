@@ -161,7 +161,18 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
   - [ ] **propagation 側**（on_instantiate の相互固定 / on_set_min/max の bounds 相互伝播）は
     素の制約と reif の b=1/b=0 分岐で部分的に重複するが、b ロジックと絡み presolve ほど逐語的でない。
     別途検討（ROI 中・要 brute 継続）。
-- [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
+- [~] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。
+  - [x] **diffn**: `propagate_pairwise`(enqueue) と `propagate_pairwise_direct`(presolve 直接)を
+    accessor ポリシー(`EnqueueAccess`/`DirectAccess`)付きテンプレート `diffn_pairwise<Acc>` に統一
+    （2026-06-15, commit 続き, net -23行）。読み出し元（var_data_ / Domain 直接）も accessor に
+    含め各経路の参照源を厳密保存（protein 教訓）。テンプレートなので伝播 hot path に仮想呼び出し無し。
+    安全網: `tests/cpp/test_diffn_brute.cpp`（strict/nonstrict・0面積免除・強制分離）。golden byte 一致。
+  - [ ] **disjunctive は対象外と判定**: `_direct` 変種は DomainWriter 的な「読み書き方式だけの差」では
+    ない。`update_compulsory_part_direct` は CP=∅ 前提・trail 無しの**presolve 特化アルゴリズム**で
+    full 版（incremental CP 拡張 + trail）とロジックが別物 → 統合は強引で危険。`set_bits` /
+    `set_bits_direct` は bit-mask 幾何のみ共有し trail 挿入有無で分岐するため Trailer ポリシーで統合
+    可能だが、payoff ~30行・edge-finding 隣接の subtle 領域のため**要 disjunctive brute net 併設の
+    別タスク**に切り出し（今セッションでは見送り）。
 - [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
 
 **完了条件**: ゴールデン一致 + ctest green + ベンチ3本 + `bench_compare.py` 総合非劣化。
