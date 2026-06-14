@@ -433,42 +433,8 @@ bool IntLinLeReifConstraint::on_remove_value(Model& /*model*/, int /*save_point*
 }
 
 bool IntLinLeReifConstraint::propagate_bounds_le(Model& model, size_t skip_idx) {
-    // b=1: sum <= bound → 各変数の境界を絞る（int_lin_le と同じロジック）
-    int64_t slack = bound_ - current_fixed_sum_;
-
-    for (size_t j = 0; j < coeffs_.size(); ++j) {
-        if (j == skip_idx) continue;
-        size_t vid = var_ids_[j];
-        if (model.is_instantiated(vid)) continue;
-
-        int64_t c = coeffs_[j];
-
-        int64_t rest_min;
-        if (c >= 0) {
-            rest_min = min_rem_potential_ - c * model.var_min(vid);
-        } else {
-            rest_min = min_rem_potential_ - c * model.var_max(vid);
-        }
-        int64_t available = slack - rest_min;
-
-        if (c > 0) {
-            int64_t new_max = available / c;
-            if (new_max < model.var_max(vid)) {
-                model.enqueue_set_max(vid, new_max);
-            }
-        } else {
-            int64_t abs_c = -c;
-            int64_t new_min;
-            if (available >= 0) {
-                new_min = -(available / abs_c);
-            } else {
-                new_min = ((-available) + abs_c - 1) / abs_c;
-            }
-            if (new_min > model.var_min(vid)) {
-                model.enqueue_set_min(vid, new_min);
-            }
-        }
-    }
+    // b=1: sum <= bound → 各変数の境界を絞る（int_lin_le / le_imp と共通のカーネル）
+    prune_sum_le(model, bound_, current_fixed_sum_, min_rem_potential_, skip_idx);
     return true;
 }
 

@@ -308,44 +308,7 @@ bool IntLinLeImpConstraint::on_remove_value(Model& /*model*/, int /*save_point*/
 }
 
 bool IntLinLeImpConstraint::propagate_bounds(Model& model, size_t skip_idx) {
-    int64_t slack = bound_ - current_fixed_sum_;
-
-    size_t n_linear = coeffs_.size();
-    for (size_t j = 0; j < n_linear; ++j) {
-        if (j == skip_idx) continue;
-        size_t vid = var_ids_[j];
-        if (model.is_instantiated(vid)) continue;
-
-        int64_t c = coeffs_[j];
-
-        // rest_min = min_rem_potential_ minus j's min contribution
-        int64_t rest_min;
-        if (c >= 0) {
-            rest_min = min_rem_potential_ - c * model.var_min(vid);
-        } else {
-            rest_min = min_rem_potential_ - c * model.var_max(vid);
-        }
-        int64_t available = slack - rest_min;  // c * x_j <= available
-
-        if (c > 0) {
-            int64_t new_max = available / c;  // floor division (available >= 0)
-            if (new_max < model.var_max(vid)) {
-                model.enqueue_set_max(vid, new_max);
-            }
-        } else {
-            int64_t abs_c = -c;
-            // c * x_j <= available → x_j >= ceil(-available / abs_c)
-            int64_t new_min;
-            if (available >= 0) {
-                new_min = -(available / abs_c);
-            } else {
-                new_min = ((-available) + abs_c - 1) / abs_c;
-            }
-            if (new_min > model.var_min(vid)) {
-                model.enqueue_set_min(vid, new_min);
-            }
-        }
-    }
+    prune_sum_le(model, bound_, current_fixed_sum_, min_rem_potential_, skip_idx);
     return true;
 }
 
