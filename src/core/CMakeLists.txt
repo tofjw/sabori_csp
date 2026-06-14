@@ -27,8 +27,7 @@ add_library(sabori_csp_core
   constraints/global/int_element_monotonic.cpp
   constraints/global/array_int_maximum.cpp
   constraints/global/array_int_minimum.cpp
-  constraints/global/int_lin_eq_reif.cpp
-  constraints/global/int_lin_ne_reif.cpp
+  constraints/global/int_lin_eq_ne_reif.cpp
   constraints/global/int_lin_le_reif.cpp
   constraints/global/int_lin_le_imp.cpp
   constraints/global/array_var_int_element.cpp
