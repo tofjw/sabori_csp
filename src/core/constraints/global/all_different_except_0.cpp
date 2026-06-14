@@ -103,9 +103,7 @@ bool AllDifferentExcept0Constraint::remove_from_pool(int save_point, Domain::val
     }
 
     // Trail に保存
-    if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
-    }
+    pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_});
 
     pool_.remove(value);
     return true;
@@ -121,8 +119,7 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
     }
 
     // Trail に保存（unfixed_count 更新のため）
-    if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
+    if (pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_})) {
         model.mark_constraint_dirty(model_index(), save_point);
     }
 
@@ -246,12 +243,10 @@ bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {
 }
 
 void AllDifferentExcept0Constraint::rewind_to(int save_point) {
-    while (!pool_trail_.empty() && pool_trail_.back().first > save_point) {
-        const auto& entry = pool_trail_.back().second;
+    pool_trail_.rewind_to(save_point, [&](const TrailEntry& entry) {
         pool_.restore_active_count(entry.old_pool_n);
         unfixed_count_ = entry.old_unfixed_count;
-        pool_trail_.pop_back();
-    }
+    });
 }
 
 bool AllDifferentExcept0Constraint::check_hall_pair(Model& model, size_t trigger_var_idx) {

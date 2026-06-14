@@ -3,6 +3,7 @@
 
 #include "sabori_csp/constraint.hpp"
 #include "sabori_csp/sparse_set_pool.hpp"
+#include "sabori_csp/constraint_trail.hpp"
 #include <numeric>
 #include <vector>
 #include <memory>
@@ -146,7 +147,7 @@ private:
         size_t old_pool_n;
         size_t old_unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> pool_trail_;
+    ConstraintTrail<TrailEntry> pool_trail_;
 
     /**
      * @brief プールから値を削除
@@ -210,7 +211,7 @@ private:
         size_t old_pool_n;
         size_t old_unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> pool_trail_;
+    ConstraintTrail<TrailEntry> pool_trail_;
 
     bool remove_from_pool(int save_point, Domain::value_type value);
 };
