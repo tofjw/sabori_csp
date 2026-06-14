@@ -331,29 +331,17 @@ private:
 
 
 /**
- * @brief int_lin_eq_reif制約: (Σ(coeffs[i] * vars[i]) == target) <-> b
+ * @brief int_lin_eq_reif / int_lin_ne_reif の共通基底
  *
- * 線形等式の reified 版（双方向）。
- * b が 1 の場合、線形等式を強制。
- * b が 0 の場合、線形等式の否定（sum != target）を強制。
- * 線形変数の bounds から b を推論可能。
+ * (Σ(coeffs[i] * vars[i]) == target) <-> b （eq）と、その否定（ne, sum != target）は、
+ * 内部状態（fixed_sum / min,max ポテンシャル / unfixed_count / trail）と差分更新が
+ * 完全に一致し、述語 P=(sum==target) の極性のみが異なるため、negated_ で出し分ける。
+ *
+ * eq/ne とも線形変数の bounds は刈り込まず、bounds から b を推論し、b 確定時は矛盾検出
+ * のみ行う（既存仕様を踏襲。線形側の刈り込みは le_reif/le_imp のみ）。
  */
-class IntLinEqReifConstraint : public LinearConstraintBase {
+class IntLinEqNeReifBase : public LinearConstraintBase {
 public:
-    /**
-     * @brief コンストラクタ
-     * @param coeffs 係数リスト
-     * @param vars 変数リスト
-     * @param target 目標値
-     * @param b reified 変数
-     */
-    IntLinEqReifConstraint(std::vector<int64_t> coeffs,
-                           std::vector<VariablePtr> vars,
-                           int64_t target,
-                           VariablePtr b);
-
-    std::string name() const override;
-
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
     int64_t target() const { return target_; }
     size_t b_id() const { return b_id_; }
@@ -367,25 +355,16 @@ public:
                         Domain::value_type prev_min, Domain::value_type prev_max) override;
     bool on_final_instantiate(const Model& model) override;
 
-    /**
-     * @brief 下限更新時のインクリメンタル伝播
-     */
     bool on_set_min(Model& model, int save_point,
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_min,
                     Domain::value_type old_min) override;
 
-    /**
-     * @brief 上限更新時のインクリメンタル伝播
-     */
     bool on_set_max(Model& model, int save_point,
                     size_t var_idx, size_t internal_var_idx,
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
 
-    /**
-     * @brief 値削除時のインクリメンタル伝播
-     */
     bool on_remove_value(Model& model, int save_point,
                          size_t var_idx, size_t internal_var_idx,
                          Domain::value_type removed_value) override;
@@ -395,9 +374,18 @@ public:
     void init_activity(const Model& model, double* activity) const override;
 
 protected:
-
+    /**
+     * @brief コンストラクタ
+     * @param negated false: (sum==target)<->b / true: (sum!=target)<->b
+     */
+    IntLinEqNeReifBase(std::vector<int64_t> coeffs,
+                       std::vector<VariablePtr> vars,
+                       int64_t target,
+                       VariablePtr b,
+                       bool negated);
 
 private:
+    bool negated_;
     int64_t target_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
@@ -417,96 +405,46 @@ private:
      * @brief trail 保存ヘルパー
      */
     void save_trail_if_needed(Model& model, int save_point);
+
+    /**
+     * @brief ポテンシャル更新後に b<->述語 を整合させる
+     *
+     * b 未確定なら bounds から b を推論（enqueue）、b 確定なら矛盾を検出する。
+     * @return false なら矛盾
+     */
+    bool reconcile_b(Model& model, int64_t min_sum, int64_t max_sum);
+};
+
+
+/**
+ * @brief int_lin_eq_reif制約: (Σ(coeffs[i] * vars[i]) == target) <-> b
+ */
+class IntLinEqReifConstraint : public IntLinEqNeReifBase {
+public:
+    IntLinEqReifConstraint(std::vector<int64_t> coeffs,
+                           std::vector<VariablePtr> vars,
+                           int64_t target,
+                           VariablePtr b)
+        : IntLinEqNeReifBase(std::move(coeffs), std::move(vars), target, b,
+                             /*negated=*/false) {}
+
+    std::string name() const override { return "int_lin_eq_reif"; }
 };
 
 
 /**
  * @brief int_lin_ne_reif制約: (Σ(coeffs[i] * vars[i]) != target) <-> b
- *
- * 線形不等式の reified 版（双方向）。
- * b が 1 の場合、線形不等式を強制（sum != target）。
- * b が 0 の場合、線形等式を強制（sum == target）。
- * 線形変数の bounds から b を推論可能。
  */
-class IntLinNeReifConstraint : public LinearConstraintBase {
+class IntLinNeReifConstraint : public IntLinEqNeReifBase {
 public:
-    /**
-     * @brief コンストラクタ
-     * @param coeffs 係数リスト
-     * @param vars 変数リスト
-     * @param target 目標値
-     * @param b reified 変数
-     */
     IntLinNeReifConstraint(std::vector<int64_t> coeffs,
                            std::vector<VariablePtr> vars,
                            int64_t target,
-                           VariablePtr b);
+                           VariablePtr b)
+        : IntLinEqNeReifBase(std::move(coeffs), std::move(vars), target, b,
+                             /*negated=*/true) {}
 
-    std::string name() const override;
-
-    const std::vector<int64_t>& coeffs() const { return coeffs_; }
-    int64_t target() const { return target_; }
-    size_t b_id() const { return b_id_; }
-
-    bool prepare_propagation(Model& model) override;
-    PresolveResult presolve(Model& model) override;
-
-    bool on_instantiate(Model& model, int save_point,
-                        size_t var_idx, size_t internal_var_idx,
-                        Domain::value_type value,
-                        Domain::value_type prev_min, Domain::value_type prev_max) override;
-    bool on_final_instantiate(const Model& model) override;
-
-    /**
-     * @brief 下限更新時のインクリメンタル伝播
-     */
-    bool on_set_min(Model& model, int save_point,
-                    size_t var_idx, size_t internal_var_idx,
-                    Domain::value_type new_min,
-                    Domain::value_type old_min) override;
-
-    /**
-     * @brief 上限更新時のインクリメンタル伝播
-     */
-    bool on_set_max(Model& model, int save_point,
-                    size_t var_idx, size_t internal_var_idx,
-                    Domain::value_type new_max,
-                    Domain::value_type old_max) override;
-
-    /**
-     * @brief 値削除時のインクリメンタル伝播
-     */
-    bool on_remove_value(Model& model, int save_point,
-                         size_t var_idx, size_t internal_var_idx,
-                         Domain::value_type removed_value) override;
-
-    void rewind_to(int save_point);
-
-    void init_activity(const Model& model, double* activity) const override;
-
-protected:
-
-
-private:
-    int64_t target_;
-    int64_t current_fixed_sum_;
-    int64_t min_rem_potential_;
-    int64_t max_rem_potential_;
-    size_t unfixed_count_;
-
-    struct TrailEntry {
-        int64_t fixed_sum;
-        int64_t min_pot;
-        int64_t max_pot;
-        size_t unfixed_count;
-    };
-    ConstraintTrail<TrailEntry> trail_;
-    size_t b_id_;
-
-    /**
-     * @brief trail 保存ヘルパー
-     */
-    void save_trail_if_needed(Model& model, int save_point);
+    std::string name() const override { return "int_lin_ne_reif"; }
 };
 
 
