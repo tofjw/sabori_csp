@@ -14,8 +14,8 @@ namespace sabori_csp {
 AllDifferentGACConstraint::AllDifferentGACConstraint(std::vector<VariablePtr> vars)
     : AllDifferentConstraint(std::move(vars)) {
     // GAC 用の安定マッピングを構築（pool 構築後のスナップショット）
-    total_values_ = pool_values_.size();
-    gac_idx_to_val_ = pool_values_;
+    total_values_ = pool_.capacity();
+    gac_idx_to_val_ = pool_.values();
     for (size_t i = 0; i < total_values_; ++i) {
         gac_val_to_idx_[gac_idx_to_val_[i]] = static_cast<int>(i);
     }
@@ -145,7 +145,7 @@ bool AllDifferentGACConstraint::propagate_batch(Model& model, int save_point) {
 
 bool AllDifferentGACConstraint::run_gac_filtering(Model& model) {
     if (unfixed_count_ <= 1) return true;
-    if (unfixed_count_ > pool_n_) return false;
+    if (unfixed_count_ > pool_.size()) return false;
 
     if (!find_maximum_matching(model)) return false;
     matching_valid_ = true;

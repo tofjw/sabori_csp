@@ -2,7 +2,7 @@
 #define SABORI_CSP_CONSTRAINTS_GLOBAL_ALLDIFFERENT_HPP
 
 #include "sabori_csp/constraint.hpp"
-#include <unordered_map>
+#include "sabori_csp/sparse_set_pool.hpp"
 #include <numeric>
 #include <vector>
 #include <memory>
@@ -71,7 +71,7 @@ public:
     /**
      * @brief 現在のプールサイズを取得
      */
-    size_t pool_size() const { return pool_n_; }
+    size_t pool_size() const { return pool_.size(); }
 
     /**
      * @brief 未確定変数の数を取得
@@ -92,9 +92,7 @@ public:
 
 protected:
     // 値プール（Sparse Set）— サブクラスからアクセス可能
-    std::vector<Domain::value_type> pool_values_;  // Dense 配列
-    std::unordered_map<Domain::value_type, size_t> pool_sparse_;  // 値→インデックス
-    size_t pool_n_;  // 有効な値の数
+    SparseSetPool pool_;
 
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
@@ -205,9 +203,7 @@ protected:
 private:
     bool check_hall_pair(Model& model, size_t trigger_var_idx);
 
-    std::vector<Domain::value_type> pool_values_;
-    std::unordered_map<Domain::value_type, size_t> pool_sparse_;
-    size_t pool_n_;
+    SparseSetPool pool_;
     size_t unfixed_count_;
 
     struct TrailEntry {

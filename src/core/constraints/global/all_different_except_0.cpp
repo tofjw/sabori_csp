@@ -11,7 +11,6 @@ namespace sabori_csp {
 
 AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
-    , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築（値0を除外）
     std::set<Domain::value_type> all_values;
@@ -22,33 +21,15 @@ AllDifferentExcept0Constraint::AllDifferentExcept0Constraint(std::vector<Variabl
             }
         });
     }
-
-    pool_values_.assign(all_values.begin(), all_values.end());
-    pool_n_ = pool_values_.size();
-    for (size_t i = 0; i < pool_n_; ++i) {
-        pool_sparse_[pool_values_[i]] = i;
-    }
+    pool_.assign(std::vector<Domain::value_type>(all_values.begin(), all_values.end()));
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
     for (const auto& var : vars) {
         if (var->is_assigned()) {
             auto val = var->assigned_value().value();
             if (val != 0) {
-                auto it = pool_sparse_.find(val);
-                if (it != pool_sparse_.end() && it->second < pool_n_) {
-                    // Sparse Set から削除（スワップ）
-                    size_t idx = it->second;
-                    size_t last_idx = pool_n_ - 1;
-                    Domain::value_type last_val = pool_values_[last_idx];
-
-                    pool_values_[idx] = last_val;
-                    pool_values_[last_idx] = val;
-                    pool_sparse_[last_val] = idx;
-                    pool_sparse_[val] = last_idx;
-                    --pool_n_;
-                }
+                pool_.remove(val);  // 0 はプールに存在しないので remove は no-op
             }
-            // 値0の場合はプール操作をスキップ
         } else {
             ++unfixed_count_;
         }
@@ -63,10 +44,7 @@ std::string AllDifferentExcept0Constraint::name() const {
 
 bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
     // presolve 後の変数状態に基づいてプールと未確定カウントを再構築
-    pool_n_ = pool_values_.size();
-    for (size_t i = 0; i < pool_n_; ++i) {
-        pool_sparse_[pool_values_[i]] = i;
-    }
+    pool_.reset_all_active();
     unfixed_count_ = 0;
     pool_trail_.clear();
 
@@ -74,18 +52,7 @@ bool AllDifferentExcept0Constraint::prepare_propagation(Model& model) {
         if (model.is_instantiated(var_ids_[i])) {
             auto val = model.value(var_ids_[i]);
             if (val != 0) {
-                auto it = pool_sparse_.find(val);
-                if (it != pool_sparse_.end() && it->second < pool_n_) {
-                    size_t idx = it->second;
-                    size_t last_idx = pool_n_ - 1;
-                    Domain::value_type last_val = pool_values_[last_idx];
-
-                    pool_values_[idx] = last_val;
-                    pool_values_[last_idx] = val;
-                    pool_sparse_[last_val] = idx;
-                    pool_sparse_[val] = last_idx;
-                    --pool_n_;
-                } else {
+                if (!pool_.remove(val)) {
                     // 非0値がプールにない = 重複
                     return false;
                 }
@@ -131,27 +98,16 @@ PresolveResult AllDifferentExcept0Constraint::presolve(Model& model) {
 }
 
 bool AllDifferentExcept0Constraint::remove_from_pool(int save_point, Domain::value_type value) {
-    auto it = pool_sparse_.find(value);
-    if (it == pool_sparse_.end() || it->second >= pool_n_) {
+    if (!pool_.contains(value)) {
         return false;  // 既にプールにない
     }
 
     // Trail に保存
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
     }
 
-    // Sparse Set から削除（スワップ）
-    size_t idx = it->second;
-    size_t last_idx = pool_n_ - 1;
-    Domain::value_type last_val = pool_values_[last_idx];
-
-    pool_values_[idx] = last_val;
-    pool_values_[last_idx] = value;
-    pool_sparse_[last_val] = idx;
-    pool_sparse_[value] = last_idx;
-    --pool_n_;
-
+    pool_.remove(value);
     return true;
 }
 
@@ -166,7 +122,7 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
 
     // Trail に保存（unfixed_count 更新のため）
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
         model.mark_constraint_dirty(model_index(), save_point);
     }
 
@@ -194,22 +150,13 @@ bool AllDifferentExcept0Constraint::on_instantiate(Model& model, int save_point,
     }
 
     // 非0値: プールから削除
-    auto it = pool_sparse_.find(value);
-    if (it == pool_sparse_.end() || it->second >= pool_n_) {
+    if (!pool_.contains(value)) {
         // 既にプールにない = 他の変数が使用済み
         return false;
     }
 
     // プールから削除
-    size_t idx = it->second;
-    size_t last_idx = pool_n_ - 1;
-    Domain::value_type last_val = pool_values_[last_idx];
-
-    pool_values_[idx] = last_val;
-    pool_values_[last_idx] = value;
-    pool_sparse_[last_val] = idx;
-    pool_sparse_[value] = last_idx;
-    --pool_n_;
+    pool_.remove(value);
 
     // 確定した非0値を他の未確定変数のドメインから削除
     for (size_t i = 0; i < var_ids_.size(); ++i) {
@@ -247,27 +194,26 @@ bool AllDifferentExcept0Constraint::on_last_uninstantiated(Model& model, int /*s
         auto val = model.value(last_var_id);
         if (val == 0) return true;  // 0は常にOK
         // その値がプールに残っているか
-        auto it = pool_sparse_.find(val);
-        return (it != pool_sparse_.end() && it->second < pool_n_);
+        return pool_.contains(val);
     }
 
-    if (pool_n_ == 0) {
+    if (pool_.size() == 0) {
         // 全ての非0値が使用済み。変数は0しか取れない
         if (model.contains(last_var_id, 0)) {
             model.enqueue_instantiate(last_var_id, 0);
         } else {
             return false;
         }
-    } else if (pool_n_ == 1 && !model.contains(last_var_id, 0)) {
+    } else if (pool_.size() == 1 && !model.contains(last_var_id, 0)) {
         // 0がドメインにない場合のみ、残りの非0値で確定
-        Domain::value_type remaining_value = pool_values_[0];
+        Domain::value_type remaining_value = pool_.value_at(0);
         if (model.contains(last_var_id, remaining_value)) {
             model.enqueue_instantiate(last_var_id, remaining_value);
         } else {
             return false;
         }
     }
-    // pool_n_ >= 1 かつ 0がドメインにある場合: 0も取れるので確定しない
+    // pool_.size() >= 1 かつ 0がドメインにある場合: 0も取れるので確定しない
 
     return true;
 }
@@ -302,7 +248,7 @@ bool AllDifferentExcept0Constraint::on_final_instantiate(const Model& model) {
 void AllDifferentExcept0Constraint::rewind_to(int save_point) {
     while (!pool_trail_.empty() && pool_trail_.back().first > save_point) {
         const auto& entry = pool_trail_.back().second;
-        pool_n_ = entry.old_pool_n;
+        pool_.restore_active_count(entry.old_pool_n);
         unfixed_count_ = entry.old_unfixed_count;
         pool_trail_.pop_back();
     }
@@ -380,8 +326,7 @@ void AllDifferentExcept0Constraint::bump_activity(const Model& model, size_t tri
         if (val == 0)
             return;
 
-        auto it = pool_sparse_.find(val);
-        if (it != pool_sparse_.end() && it->second >= pool_n_) {
+        if (pool_.consumed(val)) {
             size_t count = 0;
             for (size_t vid : var_ids_) {
                 if (model.contains(vid, val) && !model.contains(vid, 0)) {

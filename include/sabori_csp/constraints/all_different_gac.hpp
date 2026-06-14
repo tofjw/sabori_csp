@@ -106,8 +106,7 @@ private:
     /// 値がプール内（未消費）かチェック
     inline bool is_val_in_pool(int val_idx) const {
         auto val = gac_idx_to_val_[val_idx];
-        auto it = pool_sparse_.find(val);
-        return it != pool_sparse_.end() && it->second < pool_n_;
+        return pool_.contains(val);
     }
 };
 

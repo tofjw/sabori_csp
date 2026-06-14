@@ -9,6 +9,7 @@ add_executable(test_sabori_csp
   test_arith_logical.cpp
   test_solver_misc.cpp
   test_nogood.cpp
+  test_sparse_set_pool.cpp
 )
 
 target_link_libraries(test_sabori_csp

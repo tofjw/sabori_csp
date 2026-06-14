@@ -36,37 +36,18 @@ inline void bz_pathset(std::vector<int>& a, int start, int end, int to) {
 
 AllDifferentConstraint::AllDifferentConstraint(std::vector<VariablePtr> vars)
     : Constraint(extract_var_ids(vars))
-    , pool_n_(0)
     , unfixed_count_(0) {
     // 全変数の値の和集合をプールとして構築
     std::set<Domain::value_type> all_values;
     for (const auto& var : vars) {
         var->domain().for_each_value([&](auto v) { all_values.insert(v); });
     }
-
-    pool_values_.assign(all_values.begin(), all_values.end());
-    pool_n_ = pool_values_.size();
-    for (size_t i = 0; i < pool_n_; ++i) {
-        pool_sparse_[pool_values_[i]] = i;
-    }
+    pool_.assign(std::vector<Domain::value_type>(all_values.begin(), all_values.end()));
 
     // 既に確定している変数の値をプールから削除 + 未確定カウント初期化
     for (const auto& var : vars) {
         if (var->is_assigned()) {
-            auto val = var->assigned_value().value();
-            auto it = pool_sparse_.find(val);
-            if (it != pool_sparse_.end() && it->second < pool_n_) {
-                // Sparse Set から削除（スワップ）
-                size_t idx = it->second;
-                size_t last_idx = pool_n_ - 1;
-                Domain::value_type last_val = pool_values_[last_idx];
-
-                pool_values_[idx] = last_val;
-                pool_values_[last_idx] = val;
-                pool_sparse_[last_val] = idx;
-                pool_sparse_[val] = last_idx;
-                --pool_n_;
-            }
+            pool_.remove(var->assigned_value().value());
         } else {
             ++unfixed_count_;
         }
@@ -81,10 +62,7 @@ std::string AllDifferentConstraint::name() const {
 
 bool AllDifferentConstraint::prepare_propagation(Model& model) {
     // presolve 後の変数状態に基づいてプールと未確定カウントを再構築
-    pool_n_ = pool_values_.size();
-    for (size_t i = 0; i < pool_n_; ++i) {
-        pool_sparse_[pool_values_[i]] = i;
-    }
+    pool_.reset_all_active();
     unfixed_count_ = 0;
     pool_trail_.clear();
     ++bz_epoch_;  // 前回探索のエコー検出エントリを無効化
@@ -92,19 +70,7 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         auto vid = var_ids_[i];
         if (model.is_instantiated(vid)) {
-            auto val = model.value(vid);
-            auto it = pool_sparse_.find(val);
-            if (it != pool_sparse_.end() && it->second < pool_n_) {
-                size_t idx = it->second;
-                size_t last_idx = pool_n_ - 1;
-                Domain::value_type last_val = pool_values_[last_idx];
-
-                pool_values_[idx] = last_val;
-                pool_values_[last_idx] = val;
-                pool_sparse_[last_val] = idx;
-                pool_sparse_[val] = last_idx;
-                --pool_n_;
-            } else {
+            if (!pool_.remove(model.value(vid))) {
                 // 値がプールにない = 重複
                 return false;
             }
@@ -114,7 +80,7 @@ bool AllDifferentConstraint::prepare_propagation(Model& model) {
         }
     }
 
-    if (unfixed_count_ > pool_n_) return false;
+    if (unfixed_count_ > pool_.size()) return false;
 
     return true;
 }
@@ -179,27 +145,16 @@ PresolveResult AllDifferentConstraint::presolve(Model& model) {
 }
 
 bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type value) {
-    auto it = pool_sparse_.find(value);
-    if (it == pool_sparse_.end() || it->second >= pool_n_) {
+    if (!pool_.contains(value)) {
         return false;  // 既にプールにない
     }
 
     // Trail に保存（同一レベルでも複数回保存する可能性あり）
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
     }
 
-    // Sparse Set から削除（スワップ）
-    size_t idx = it->second;
-    size_t last_idx = pool_n_ - 1;
-    Domain::value_type last_val = pool_values_[last_idx];
-
-    pool_values_[idx] = last_val;
-    pool_values_[last_idx] = value;
-    pool_sparse_[last_val] = idx;
-    pool_sparse_[value] = last_idx;
-    --pool_n_;
-
+    pool_.remove(value);
     return true;
 }
 
@@ -212,34 +167,25 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // プールから値を削除
-    auto it = pool_sparse_.find(value);
-    if (it == pool_sparse_.end() || it->second >= pool_n_) {
+    if (!pool_.contains(value)) {
         // 既にプールにない = 他の変数が使用済み
         return false;
     }
 
     // Trail に保存
     if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_n_, unfixed_count_}});
+        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
         model.mark_constraint_dirty(model_index(), save_point);
     }
 
     // プールから削除
-    size_t idx = it->second;
-    size_t last_idx = pool_n_ - 1;
-    Domain::value_type last_val = pool_values_[last_idx];
-
-    pool_values_[idx] = last_val;
-    pool_values_[last_idx] = value;
-    pool_sparse_[last_val] = idx;
-    pool_sparse_[value] = last_idx;
-    --pool_n_;
+    pool_.remove(value);
 
     // 未確定カウントをデクリメント（O(1)）
     --unfixed_count_;
 
     // 鳩の巣原理: 未確定変数 > 利用可能な値 なら矛盾
-    if (unfixed_count_ > pool_n_) {
+    if (unfixed_count_ > pool_.size()) {
         return false;
     }
 
@@ -284,17 +230,16 @@ bool AllDifferentConstraint::on_last_uninstantiated(Model& model, int /*save_poi
     if (model.is_instantiated(last_var_id)) {
         auto val = model.value(last_var_id);
         // その値がプールに残っているか（他の変数と重複していないか）
-        auto it = pool_sparse_.find(val);
-        return (it != pool_sparse_.end() && it->second < pool_n_);
+        return pool_.contains(val);
     }
 
     // 利用可能な値が1つだけなら自動決定
-    if (pool_n_ == 1) {
-        Domain::value_type remaining_value = pool_values_[0];
+    if (pool_.size() == 1) {
+        Domain::value_type remaining_value = pool_.value_at(0);
         model.enqueue_instantiate(last_var_id, remaining_value);
     }
     // 利用可能な値が0なら矛盾
-    else if (pool_n_ == 0) {
+    else if (pool_.size() == 0) {
         return false;
     }
     // 複数の値が利用可能な場合は、ドメインを絞り込む
@@ -565,7 +510,7 @@ bool AllDifferentConstraint::propagate_batch(Model& model, int save_point) {
 void AllDifferentConstraint::rewind_to(int save_point) {
     while (!pool_trail_.empty() && pool_trail_.back().first > save_point) {
         const auto& entry = pool_trail_.back().second;
-        pool_n_ = entry.old_pool_n;
+        pool_.restore_active_count(entry.old_pool_n);
         unfixed_count_ = entry.old_unfixed_count;
         pool_trail_.pop_back();
     }
@@ -578,8 +523,7 @@ void AllDifferentConstraint::bump_activity(const Model& model, size_t trigger_va
                                            bool& need_rescale, std::mt19937& rng) const {
     if (model.is_instantiated(trigger_var_idx)) {
         auto val = model.value(trigger_var_idx);
-        auto it = pool_sparse_.find(val);
-        if (it != pool_sparse_.end() && it->second >= pool_n_) {
+        if (pool_.consumed(val)) {
             size_t count = 0;
             for (size_t vid : var_ids_) {
                 if (model.contains(vid, val)) {
