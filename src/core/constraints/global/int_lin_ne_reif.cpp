@@ -14,7 +14,7 @@ IntLinNeReifConstraint::IntLinNeReifConstraint(std::vector<int64_t> coeffs,
                                                  std::vector<VariablePtr> vars,
                                                  int64_t target,
                                                  VariablePtr b)
-    : Constraint()
+    : LinearConstraintBase()
     , target_(target)
     , current_fixed_sum_(0)
     , min_rem_potential_(0)
@@ -22,32 +22,10 @@ IntLinNeReifConstraint::IntLinNeReifConstraint(std::vector<int64_t> coeffs,
     , unfixed_count_(0) {
     b_id_ = b->id();
 
-    // 同一変数の係数を集約
-    std::unordered_map<Variable*, int64_t> aggregated;
-    for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
-    }
-
-    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
-    std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
-        if (coeff == 0) continue;  // 係数が0の変数は除外
-        unique_vars.push_back(var_ptr);
-        coeffs_.push_back(coeff);
-    }
-
-    // 全ての係数が0になった場合: b ↔ (0 != target)
-    if (coeffs_.empty()) {
-        // var_ids_ には b だけを含める
-        unique_vars.push_back(b);
-        var_ids_ = extract_var_ids(unique_vars);
-        return;
-    }
-
-    // b を末尾に追加
+    // 線形項を集約（同一変数の係数を合算、係数0を除外）。b は末尾に追加する。
+    // 係数が全て0でも var_ids_ には b だけが残り、presolve で b を確定させる。
+    auto unique_vars = aggregate_terms(coeffs, vars);
     unique_vars.push_back(b);
-
-    // 変数IDキャッシュを構築
     var_ids_ = extract_var_ids(unique_vars);
 
     // 注意: 内部状態は presolve() で初期化

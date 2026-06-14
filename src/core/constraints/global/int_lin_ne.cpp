@@ -13,29 +13,12 @@ namespace sabori_csp {
 IntLinNeConstraint::IntLinNeConstraint(std::vector<int64_t> coeffs,
                                          std::vector<VariablePtr> vars,
                                          int64_t target)
-    : Constraint()
+    : LinearConstraintBase()
     , target_(target)
     , current_fixed_sum_(0)
     , unfixed_count_(0) {
-    // 同一変数の係数を集約
-    std::unordered_map<Variable*, int64_t> aggregated;
-    for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
-    }
-
-    // 一意な変数リストと係数リストを再構築（係数が0の変数は除外）
-    std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
-        if (coeff == 0) continue;  // 係数が0の変数は除外
-        // shared_ptr を探す
-        for (const auto& var : vars) {
-            if (var == var_ptr) {
-                unique_vars.push_back(var);
-                coeffs_.push_back(coeff);
-                break;
-            }
-        }
-    }
+    // 線形項を集約（同一変数の係数を合算、係数0を除外）
+    auto unique_vars = aggregate_terms(coeffs, vars);
 
     // 全ての係数が0になった場合: presolve で処理
     if (unique_vars.empty()) {
