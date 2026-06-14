@@ -123,7 +123,8 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
 - [ ] **SparseSetPool クラス**: all_different / except_0 / circuit のプール実装を統一。`pool_sparse_` の `unordered_map` はこのときフラット配列化
 - [ ] **global.hpp (2,420行) 分割**: alldifferent / linear / reified / scheduling / element / graph 等のヘッダへ。global.hpp は集約 include として残し互換維持
 - [ ] **solver.cpp の verbose/統計複製の排除**: コールバック呼び出し + 統計記録を `invoke_callback_with_stats()` ヘルパへ一本化（SetMin/SetMax/RemoveValue 各2系統 → 1系統、〜300行削減）
-- [ ] **死コード処分**: AllDifferentGAC をベンチ再評価し、勝てなければ削除（履歴に残る）。コメントアウト大ブロック・未使用 public メソッドの削除
+- [ ] **死コード処分**: コメントアウト大ブロック・未使用 public メソッドの削除。
+  **AllDifferentGAC は削除しない**（feature/lcg で自動切換え(adaptive GAC dispatch)を検討中のため保持。2026-06-14 ユーザー判断）
 
 **完了条件**: ゴールデンマスター完全一致 + ctest green + ベンチ3本ゲート（統計ヘルパは hot path のため）。
 **削減見込み**: 600〜800 行。
