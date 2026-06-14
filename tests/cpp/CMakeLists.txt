@@ -12,6 +12,7 @@ add_executable(test_sabori_csp
   test_sparse_set_pool.cpp
   test_lin_reif_brute.cpp
   test_cmp_reif_brute.cpp
+  test_diffn_brute.cpp
 )
 
 target_link_libraries(test_sabori_csp
