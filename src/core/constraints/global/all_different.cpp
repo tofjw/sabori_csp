@@ -150,9 +150,7 @@ bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type
     }
 
     // Trail に保存（同一レベルでも複数回保存する可能性あり）
-    if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
-    }
+    pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_});
 
     pool_.remove(value);
     return true;
@@ -173,8 +171,7 @@ bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // Trail に保存
-    if (pool_trail_.empty() || pool_trail_.back().first != save_point) {
-        pool_trail_.push_back({save_point, {pool_.active_count(), unfixed_count_}});
+    if (pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_})) {
         model.mark_constraint_dirty(model_index(), save_point);
     }
 
@@ -508,12 +505,10 @@ bool AllDifferentConstraint::propagate_batch(Model& model, int save_point) {
 }
 
 void AllDifferentConstraint::rewind_to(int save_point) {
-    while (!pool_trail_.empty() && pool_trail_.back().first > save_point) {
-        const auto& entry = pool_trail_.back().second;
+    pool_trail_.rewind_to(save_point, [&](const TrailEntry& entry) {
         pool_.restore_active_count(entry.old_pool_n);
         unfixed_count_ = entry.old_unfixed_count;
-        pool_trail_.pop_back();
-    }
+    });
     // バックトラック後はエコー検出用の expected エントリを一括無効化
     ++bz_epoch_;
 }
