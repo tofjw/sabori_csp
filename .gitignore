@@ -62,3 +62,7 @@ squashfs-root/
 
 # MinZinc AppImage
 *.AppImage
+
+# Catch2 catch_discover_tests 生成物 (in-source 残骸対策)
+**/*_include.cmake
+**/*_tests.cmake
