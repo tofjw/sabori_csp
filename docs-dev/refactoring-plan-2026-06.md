@@ -134,7 +134,12 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
 
 ## フェーズ4: 制約層の構造化（2〜3週間、中リスク）
 
-- [ ] **LinearConstraintBase**: int_lin_* 7ファイルの potential 管理・差分更新・prepare_propagation を基底化。**スコープは potential 管理のみ**（==/<=/!= の伝播セマンティクスは派生に残す）。1制約ずつ移行、都度ゴールデン + ベンチ（〜400行削減）
+- [~] **LinearConstraintBase**: 基底クラスを新設し、コンストラクタの線形項集約（係数合算・
+  係数0除外・unique_vars 構築）と係数列 coeffs_ を `aggregate_terms` に共通化（2026-06-15,
+  commit 0bde8a4, 7制約・~80行削減, golden green）。
+  **potential 管理(min_rem/max_rem/fixed_sum)の差分更新は基底化しない**: eq=min+max /
+  le=min のみ / ne=fixed_sum+unfixed_count と形状が分岐し、かつ on_instantiate/on_set_min/max
+  という hot path に介入するため。集約のみで ROI を確保し、伝播セマンティクスは派生に残置。
 - [ ] **ReifConstraintBase**: enforce_b1 / enforce_b0 / infer_b の3フックを派生が実装する形に。reif は false UNSAT 事故リスクがあるため、**各制約の移行ごとにランダム全解数照合テストを追加**（〜450行削減）
 - [ ] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
 - [ ] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。diffn / disjunctive から開始
