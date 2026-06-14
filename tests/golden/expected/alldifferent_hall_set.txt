@@ -1,0 +1,16 @@
+x1 = 2;
+x2 = 1;
+x3 = 3;
+x4 = 4;
+x5 = 5;
+----------
+x1 = 1;
+x2 = 2;
+x3 = 3;
+x4 = 4;
+x5 = 5;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=1 avg_depth=0 nogoods=2 unit_nogoods=0 ng_check=6 ng_domain=3 ng_prune=3 ng_noop=0 bisect=0 enumerate=3
+% NG length distribution: 2:2

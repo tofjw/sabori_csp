@@ -1,0 +1,7 @@
+obj = 9;
+----------
+obj = 7;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=6 avg_depth=2 nogoods=0 unit_nogoods=0 ng_check=0 ng_domain=0 ng_prune=0 ng_noop=0 bisect=3 enumerate=6

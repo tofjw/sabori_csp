@@ -1,0 +1,19 @@
+obj = 9;
+x = 1;
+y = 1;
+----------
+obj = 7;
+x = 1;
+y = 2;
+----------
+obj = 5;
+x = 1;
+y = 3;
+----------
+obj = 3;
+x = 1;
+y = 4;
+----------
+==========
+--- stats ---
+% Stats: fails=0 restarts=0 max_depth=2 avg_depth=0 nogoods=0 unit_nogoods=0 ng_check=0 ng_domain=0 ng_prune=0 ng_noop=0 bisect=0 enumerate=5

@@ -1,0 +1,84 @@
+b = false;
+x = 1;
+y = 1;
+----------
+b = false;
+x = 5;
+y = 1;
+----------
+b = false;
+x = 4;
+y = 1;
+----------
+b = false;
+x = 3;
+y = 1;
+----------
+b = false;
+x = 2;
+y = 1;
+----------
+b = false;
+x = 2;
+y = 2;
+----------
+b = false;
+x = 1;
+y = 2;
+----------
+b = false;
+x = 5;
+y = 2;
+----------
+b = false;
+x = 4;
+y = 2;
+----------
+b = false;
+x = 3;
+y = 2;
+----------
+b = false;
+x = 2;
+y = 3;
+----------
+b = false;
+x = 1;
+y = 3;
+----------
+b = false;
+x = 5;
+y = 3;
+----------
+b = false;
+x = 4;
+y = 3;
+----------
+b = false;
+x = 3;
+y = 3;
+----------
+b = false;
+x = 2;
+y = 4;
+----------
+b = false;
+x = 1;
+y = 4;
+----------
+b = false;
+x = 5;
+y = 4;
+----------
+b = false;
+x = 4;
+y = 4;
+----------
+b = false;
+x = 3;
+y = 4;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=2 avg_depth=0 nogoods=20 unit_nogoods=0 ng_check=185 ng_domain=90 ng_prune=10 ng_noop=85 bisect=0 enumerate=37
+% NG length distribution: 3:20

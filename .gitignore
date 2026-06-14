@@ -16,8 +16,38 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-# CMake
+# CMake (in-source build 残骸を含む)
 compile_commands.json
+**/CMakeFiles/
+**/cmake_install.cmake
+**/CTestTestfile.cmake
+src/**/Makefile
+tests/**/Makefile
+/Makefile
+CMakeCache.txt
+*.cmake-tmp
+
+# 旧 in-source build / 実験物 / バックアップ
+src2/
+Testing/
+*.bak
+*.cpp-new
+*.cpp~
+CLAUDE.md~
+
+# エディタ一時ファイル
+.#*
+*.orig
+
+# ローカルツール設定
+.claude/
+.codex
+
+# ベンチマーク実験データ (MiniZinc Challenge 問題・結果)
+benchmarks/minizinc_challenge/20*/
+benchmarks/minizinc_challenge/mznc*_probs/
+benchmarks/minizinc_challenge/*.html
+benchmarks/minizinc_challenge/squashfs-root/
 
 # OS
 .DS_Store

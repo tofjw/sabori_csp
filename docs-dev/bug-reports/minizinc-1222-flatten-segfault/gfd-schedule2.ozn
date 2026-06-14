@@ -1,0 +1,11 @@
+output let {array [int] of string: X_INTRODUCED_1870_ = ((((["% item\t k, g, f, day\n"]++["% "++format(name[i])++"\t "++format(kind[i])++", "++format(assignedGroup[i])++", "++format(groupFacility[assignedGroup[i]])++", "++format(itemProcessDay[i])++" ("++format(producedDay[i])++" - "++format(deadLineDay[i])++")\n" | i in 1..N])++["assignedGroup = "++format(assignedGroup)++";\n"])++["groupFacility = "++format(groupFacility)++";\n"])++["groupProcessDay = "++format(groupProcessDay)++";\n"])++["objective = "++format(objective)++";\n"]} in (X_INTRODUCED_1870_);
+int: N = 25;
+array [1..N] of string: name = ["i1","i2","i3","i4","i5","i6","i7","i8","i9","i10","i11","i12","i13","i14","i15","i16","i17","i18","i19","i20","i21","i22","i23","i24","i25"];
+array [1..N] of int: kind = [1,2,2,3,3,1,2,2,3,1,2,1,1,3,3,3,2,1,1,3,3,3,1,2,1];
+array [1..N] of int: assignedGroup;
+array [1..N] of int: groupFacility;
+array [1..N] of int: itemProcessDay;
+array [1..N] of int: producedDay = [10,10,10,4,10,10,8,10,7,10,9,1,10,8,7,10,10,10,10,3,10,10,10,10,3];
+array [1..N] of int: deadLineDay = [11,16,20,14,20,12,15,11,19,20,20,5,20,20,12,20,20,20,20,20,20,16,20,20,12];
+array [1..N] of int: groupProcessDay;
+int: objective;

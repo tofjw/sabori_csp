@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
+
+# In-source ビルド禁止（生成物がソースツリーを汚染するのを防ぐ）
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR
+    "In-source build は禁止です。別ディレクトリでビルドしてください:\n"
+    "  cmake -B build -DCMAKE_BUILD_TYPE=Release\n"
+    "  cmake --build build")
+endif()
+
 project(sabori_csp VERSION 0.1.0 LANGUAGES CXX)
 
 # C++17

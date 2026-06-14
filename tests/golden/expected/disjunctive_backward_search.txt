@@ -1,0 +1,10 @@
+s3 = 2;
+s4 = 0;
+----------
+s3 = 0;
+s4 = 2;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=1 avg_depth=0 nogoods=2 unit_nogoods=0 ng_check=3 ng_domain=3 ng_prune=0 ng_noop=0 bisect=0 enumerate=3
+% NG length distribution: 2:2
