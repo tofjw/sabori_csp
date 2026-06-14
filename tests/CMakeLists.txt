@@ -66,3 +66,27 @@ set_tests_properties(fzn_output_format PROPERTIES
     LABELS "fzn;output"
     TIMEOUT 60
 )
+
+# Python binding tests (pybind11 ビルド時のみ。ABI 一致のため Python3_EXECUTABLE を使用)
+if(BUILD_PYTHON_BINDINGS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -m pytest --version
+        RESULT_VARIABLE _pytest_rc OUTPUT_QUIET ERROR_QUIET
+    )
+    if(_pytest_rc EQUAL 0)
+        add_test(
+            NAME python_bindings
+            COMMAND ${Python3_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}/python -q
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        )
+        # 拡張は python/sabori_csp/ に出力されるため PYTHONPATH を通す
+        set_tests_properties(python_bindings PROPERTIES
+            LABELS "python"
+            ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/python"
+            TIMEOUT 120
+        )
+    else()
+        message(STATUS "pytest が ${Python3_EXECUTABLE} で見つからないため python_bindings テストをスキップ")
+    endif()
+endif()
