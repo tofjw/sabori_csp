@@ -174,10 +174,22 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
   - [-] **disjunctive `update_compulsory_part` は統合しない**（確定判断）: `_direct` 版は CP=∅ 前提・
     trail 無しの**presolve 特化アルゴリズム**で full 版（incremental CP 拡張 + trail）とロジックが
     別物。読み書き方式だけの差ではないため DomainWriter 対象外。
-- [ ] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化。全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施
+- [deferred] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化（4イベント
+  コールバックから冗長な `var_idx` を除去し、必要な制約は `var_ids_[internal_var_idx]` で O(1) 導出）。
+  全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施。
+  - **2026-06-15 に着手判断 → defer（ユーザー判断）**: 機能改善ゼロ・churn 高（base 仮想4 + 制約 ~28
+    ファイル + solver dispatch 7箇所、`var_idx` 使用箇所の本体置換）。実体的な Phase 4 dedup
+    （reif 統一 / le カーネル / comparison ヘルパ / diffn・disjunctive DomainWriter, 計 ~610行・
+    7コミット）は完了済み。CLAUDE.md の「big-bang 回避・逐次推奨」とも整合し、専用セッションに切り出す。
+    - 着手時はこの方向で: solver は `var_idx` と `w.internal_var_idx` を両方保持（`var_idx ==
+      var_ids_[internal_var_idx]`）。`internal_var_idx` のみ残し、`override` でコンパイラに全 override の
+      非互換を検出させて1ファイルずつ修正。
 
 **完了条件**: ゴールデン一致 + ctest green + ベンチ3本 + `bench_compare.py` 総合非劣化。
 **削減見込み**: 1,000 行強。
+**進捗 (2026-06-15)**: 実体的 dedup 完了（reif/le/comparison/diffn/disjunctive, ~610行削減・全 golden
+byte一致）。残りは署名整理のみ（defer）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn /
+disjunctive, 計 ~2920+ assertion）。
 
 ## フェーズ5: Domain 表現と性能（2週間、高リスク・ベンチゲート厳格）
 
