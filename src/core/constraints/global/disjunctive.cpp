@@ -215,7 +215,14 @@ int DisjunctiveConstraint::find_last_valid_excluding(int lo, int hi, int dur, si
     return -1;
 }
 
-void DisjunctiveConstraint::set_bits_direct(int start, int len) {
+namespace {
+
+// timeline ビット [start, start+len) を 1 にセットする共通カーネル。各語 w への
+// 書き込み直前に trail(w)（trail 退避 or no-op）を呼ぶ。set_bits（trail あり）と
+// set_bits_direct（presolve, trail なし）の bit-mask 幾何を1箇所に集約する。
+// trail(w) は timeline[w] への書き込み前に呼ばれるため、旧値の退避に使える。
+template <class Trail>
+void apply_set_bits(std::vector<uint64_t>& timeline, int start, int len, Trail trail) {
     if (len <= 0) return;
     int end = start + len;
     int first_word = start / 64;
@@ -225,17 +232,32 @@ void DisjunctiveConstraint::set_bits_direct(int start, int len) {
     if (first_word == last_word) {
         uint64_t mask = (len >= 64) ? ~0ULL : ((1ULL << len) - 1);
         mask <<= start_bit;
-        timeline_[first_word] |= mask;
+        trail(first_word);
+        timeline[first_word] |= mask;
         return;
     }
 
-    timeline_[first_word] |= (~0ULL << start_bit);
+    // First word
+    trail(first_word);
+    timeline[first_word] |= (~0ULL << start_bit);
+
+    // Middle words
     for (int w = first_word + 1; w < last_word; ++w) {
-        timeline_[w] = ~0ULL;
+        trail(w);
+        timeline[w] = ~0ULL;
     }
+
+    // Last word
     int end_bit = (end - 1) % 64;
     uint64_t last_mask = (end_bit == 63) ? ~0ULL : ((1ULL << (end_bit + 1)) - 1);
-    timeline_[last_word] |= last_mask;
+    trail(last_word);
+    timeline[last_word] |= last_mask;
+}
+
+}  // namespace
+
+void DisjunctiveConstraint::set_bits_direct(int start, int len) {
+    apply_set_bits(timeline_, start, len, [](int) {});
 }
 
 void DisjunctiveConstraint::ensure_dirty_marked(Model& model, int save_point) {
@@ -247,35 +269,9 @@ void DisjunctiveConstraint::ensure_dirty_marked(Model& model, int save_point) {
 void DisjunctiveConstraint::set_bits(Model& model, int save_point, int start, int len) {
     if (len <= 0) return;
     ensure_dirty_marked(model, save_point);
-
-    int end = start + len;
-    int first_word = start / 64;
-    int last_word  = (end - 1) / 64;
-    int start_bit  = start % 64;
-
-    if (first_word == last_word) {
-        uint64_t mask = (len >= 64) ? ~0ULL : ((1ULL << len) - 1);
-        mask <<= start_bit;
-        trail_.push_back({save_point, {first_word, timeline_[first_word]}});
-        timeline_[first_word] |= mask;
-        return;
-    }
-
-    // First word
-    trail_.push_back({save_point, {first_word, timeline_[first_word]}});
-    timeline_[first_word] |= (~0ULL << start_bit);
-
-    // Middle words
-    for (int w = first_word + 1; w < last_word; ++w) {
+    apply_set_bits(timeline_, start, len, [&](int w) {
         trail_.push_back({save_point, {w, timeline_[w]}});
-        timeline_[w] = ~0ULL;
-    }
-
-    // Last word
-    int end_bit = (end - 1) % 64;
-    uint64_t last_mask = (end_bit == 63) ? ~0ULL : ((1ULL << (end_bit + 1)) - 1);
-    trail_.push_back({save_point, {last_word, timeline_[last_word]}});
-    timeline_[last_word] |= last_mask;
+    });
 }
 
 int DisjunctiveConstraint::find_next_zero(int from) const {
