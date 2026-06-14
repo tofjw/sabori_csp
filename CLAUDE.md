@@ -42,9 +42,11 @@ cmake --build build
 ./build/src/fzn/fzn_sabori -a problem.fzn  # 全解探索
 
 # テスト
-ctest --test-dir build                              # 全テスト
+ctest --test-dir build                              # 全テスト (C++ + FlatZinc)
 ./build/tests/cpp/test_sabori_csp "[constraint]"   # C++タグ指定
-pytest tests/fzn/run_tests.py -v -k alldifferent   # FlatZinc特定制約
+ctest --test-dir build -L fzn                       # FlatZinc 統合テストのみ
+PYTHONPATH=python pytest tests/python/              # Python バインディング
+bash tests/golden/run_golden.sh check               # ゴールデンマスター (リファクタ検証)
 ```
 
 ## 開発ルール

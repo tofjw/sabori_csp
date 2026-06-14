@@ -66,17 +66,50 @@ ctest --test-dir build --output-on-failure
 ./build/src/fzn/fzn_sabori -a tests/fzn/constraints/int_ne/simple.fzn
 ```
 
+#### ctest 経由（統合テスト）
+FlatZinc 統合テストは `tests/CMakeLists.txt` で `add_test` 登録され、ctest から実行される。
+```bash
+ctest --test-dir build -L fzn          # FlatZinc ラベルのテストのみ
+ctest --test-dir build -R int_div      # 名前で絞り込み
+```
+
+### Python テスト
+
+pybind11 バインディングのテスト。`tests/python/` に配置。
+
+拡張 `_sabori_csp` は `python/sabori_csp/` にビルドされるため、`PYTHONPATH=python` を指定する。
+```bash
+PYTHONPATH=python pytest tests/python/                   # 全 Python テスト
+PYTHONPATH=python pytest tests/python/test_globals.py    # 特定ファイル
+```
+
+事前に `cmake --build build` で `_sabori_csp` 拡張をビルドしておくこと。
+
+### ゴールデンマスター（リファクタ検証）
+
+純リファクタで挙動が変わっていないことを機械判定する。代表 fzn の `-a -s` 出力
+（全解 + 決定論的統計、timing は除外）の指紋を `tests/golden/expected/` に記録し、前後比較する。
+
+```bash
+bash tests/golden/run_golden.sh check   # 期待値と一致するか検証（既定。不一致なら exit 1）
+bash tests/golden/run_golden.sh record  # 現行バイナリで期待値を再生成（意図的な変更後のみ）
+bash tests/golden/run_golden.sh list    # 対象 fzn コーパスを再構築
+```
+
+注意: `record` は「現状の挙動を正」として固定する。バグ修正・仕様変更で出力が変わった場合のみ、
+差分を目視確認してから再生成すること。
+
 ## テスト構成
 
 ```
 tests/
 ├── cpp/                    # C++単体テスト (Catch2)
-│   └── test_constraints.cpp
+├── python/                 # Python バインディングテスト (pytest)
+├── golden/                 # ゴールデンマスター (run_golden.sh + corpus + expected/)
 └── fzn/                    # FlatZinc統合テスト
-    └── constraints/        # 制約ごとのテスト
-        ├── int_eq/
-        ├── int_lt/
-        └── int_ne/
+    ├── constraints/        # 制約ごとのテスト (.fzn + .expected)
+    ├── output_format/      # 出力形式テスト
+    └── problems/           # 問題テスト (tsp 等)
 ```
 
 ## タグ一覧
