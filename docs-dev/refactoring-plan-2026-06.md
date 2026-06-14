@@ -119,10 +119,10 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
 
 ## フェーズ3: 機械的な重複削減・死コード削除（1週間、挙動不変）
 
-- [ ] **TrailManager<State> テンプレート**: 制約内部 trail（save_point チェック/push/rewind）を共通化。int_lin_* 6ファイル → alldifferent → circuit の順に1ファイルずつ
-- [ ] **SparseSetPool クラス**: all_different / except_0 / circuit のプール実装を統一。`pool_sparse_` の `unordered_map` はこのときフラット配列化
-- [ ] **global.hpp (2,420行) 分割**: alldifferent / linear / reified / scheduling / element / graph 等のヘッダへ。global.hpp は集約 include として残し互換維持
-- [ ] **solver.cpp の verbose/統計複製の排除**: コールバック呼び出し + 統計記録を `invoke_callback_with_stats()` ヘルパへ一本化（SetMin/SetMax/RemoveValue 各2系統 → 1系統、〜300行削減）
+- [x] **TrailManager<State> テンプレート**: 制約内部 trail（save_point チェック/push/rewind）を共通化。`ConstraintTrail<State>`（`include/sabori_csp/constraint_trail.hpp`）として int_lin_* 7制約 + all_different 系2制約に適用（2026-06-15, commit b803462/65eb553）。circuit は trail が union-find と密結合のため見送り
+- [x] **SparseSetPool クラス**: all_different / except_0 のプール実装を `SparseSetPool`（`include/sabori_csp/sparse_set_pool.hpp`）に統一。`pool_sparse_` の `unordered_map` は offset 付きフラット配列（広域は map フォールバック）に自動選択化（2026-06-15, commit 5256c19）。circuit は元からフラット配列（unordered_map 不使用）のため対象外
+- [x] **global.hpp (2,420行) 分割**: alldifferent / linear / reified / scheduling / element / graph 等のヘッダへ（commit 0ae11c6）
+- [x] **solver.cpp の verbose/統計複製の排除**: コールバック呼び出し + 統計記録をヘルパへ一本化（commit 35ccc92）
 - [ ] **死コード処分**: コメントアウト大ブロック・未使用 public メソッドの削除。
   **AllDifferentGAC は削除しない**（feature/lcg で自動切換え(adaptive GAC dispatch)を検討中のため保持。2026-06-14 ユーザー判断）
 
