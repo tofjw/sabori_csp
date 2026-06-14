@@ -285,14 +285,12 @@ bool IntLinLeReifConstraint::on_final_instantiate(const Model& model) {
 }
 
 void IntLinLeReifConstraint::rewind_to(int save_point) {
-    while (!trail_.empty() && trail_.back().first > save_point) {
-        const auto& entry = trail_.back().second;
+    trail_.rewind_to(save_point, [&](const TrailEntry& entry) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
         max_rem_potential_ = entry.max_pot;
         unfixed_count_ = entry.unfixed_count;
-        trail_.pop_back();
-    }
+    });
 }
 
 bool IntLinLeReifConstraint::prepare_propagation(Model& model) {
@@ -365,8 +363,7 @@ bool IntLinLeReifConstraint::prepare_propagation(Model& model) {
 }
 
 void IntLinLeReifConstraint::save_trail_if_needed(Model& model, int save_point) {
-    if (trail_.empty() || trail_.back().first != save_point) {
-        trail_.push_back({save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_}});
+    if (trail_.save_if_needed(save_point, {current_fixed_sum_, min_rem_potential_, max_rem_potential_, unfixed_count_})) {
         model.mark_constraint_dirty(model_index(), save_point);
     }
 }

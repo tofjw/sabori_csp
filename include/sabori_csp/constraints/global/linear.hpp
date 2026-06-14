@@ -2,6 +2,7 @@
 #define SABORI_CSP_CONSTRAINTS_GLOBAL_LINEAR_HPP
 
 #include "sabori_csp/constraint.hpp"
+#include "sabori_csp/constraint_trail.hpp"
 #include <unordered_map>
 #include <numeric>
 #include <vector>
@@ -117,7 +118,7 @@ private:
         int64_t min_pot;
         int64_t max_pot;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
 
     /**
      * @brief trail 保存ヘルパー
@@ -218,7 +219,7 @@ private:
         int64_t fixed_sum;
         int64_t min_pot;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
 
     bool is_easy_;
 
@@ -302,7 +303,7 @@ private:
         int64_t fixed_sum;
         size_t unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
 
 };
 
@@ -388,7 +389,7 @@ private:
         int64_t max_pot;
         size_t unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
     size_t b_id_;
 
     /**
@@ -479,7 +480,7 @@ private:
         int64_t max_pot;
         size_t unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
     size_t b_id_;
 
     /**
@@ -578,7 +579,7 @@ private:
         int64_t max_pot;
         size_t unfixed_count;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
     size_t b_id_;
 
     /**
@@ -672,7 +673,7 @@ private:
         int64_t fixed_sum;
         int64_t min_pot;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    ConstraintTrail<TrailEntry> trail_;
     size_t b_id_;
 
     /**
