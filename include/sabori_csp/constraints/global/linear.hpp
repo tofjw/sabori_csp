@@ -126,11 +126,6 @@ private:
     void save_trail_if_needed(Model& model, int save_point);
 
     /**
-     * @brief infeasibility チェックのみ（bounds 変化なし時用）
-     */
-    bool check_feasibility();
-
-    /**
      * @brief total_max 減少時の伝播（c>0: set_min, c<0: set_max）
      * @param skip_idx トリガー変数の内部インデックス（スキップ）
      */

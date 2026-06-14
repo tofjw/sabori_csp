@@ -144,18 +144,6 @@ PresolveResult AllDifferentConstraint::presolve(Model& model) {
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
-bool AllDifferentConstraint::remove_from_pool(int save_point, Domain::value_type value) {
-    if (!pool_.contains(value)) {
-        return false;  // 既にプールにない
-    }
-
-    // Trail に保存（同一レベルでも複数回保存する可能性あり）
-    pool_trail_.save_if_needed(save_point, {pool_.active_count(), unfixed_count_});
-
-    pool_.remove(value);
-    return true;
-}
-
 bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
 					    size_t var_idx, size_t internal_var_idx, Domain::value_type value,
 					    Domain::value_type prev_min,

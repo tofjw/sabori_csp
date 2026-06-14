@@ -306,12 +306,6 @@ bool IntLinEqConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
     return true;
 }
 
-bool IntLinEqConstraint::check_feasibility() {
-    int64_t total_min = current_fixed_sum_ + min_rem_potential_;
-    int64_t total_max = current_fixed_sum_ + max_rem_potential_;
-    return !(total_min > target_sum_ || total_max < target_sum_);
-}
-
 bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     int64_t total_max = current_fixed_sum_ + max_rem_potential_;
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
