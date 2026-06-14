@@ -123,8 +123,11 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
 - [x] **SparseSetPool クラス**: all_different / except_0 のプール実装を `SparseSetPool`（`include/sabori_csp/sparse_set_pool.hpp`）に統一。`pool_sparse_` の `unordered_map` は offset 付きフラット配列（広域は map フォールバック）に自動選択化（2026-06-15, commit 5256c19）。circuit は元からフラット配列（unordered_map 不使用）のため対象外
 - [x] **global.hpp (2,420行) 分割**: alldifferent / linear / reified / scheduling / element / graph 等のヘッダへ（commit 0ae11c6）
 - [x] **solver.cpp の verbose/統計複製の排除**: コールバック呼び出し + 統計記録をヘルパへ一本化（commit 35ccc92）
-- [ ] **死コード処分**: コメントアウト大ブロック・未使用 public メソッドの削除。
-  **AllDifferentGAC は削除しない**（feature/lcg で自動切換え(adaptive GAC dispatch)を検討中のため保持。2026-06-14 ユーザー判断）
+- [x] **死コード処分**: 呼び出し元のない private メソッド3件を削除（remove_from_pool ×2 /
+  check_feasibility, 2026-06-15 commit 9ccab04）。
+  **AllDifferentGAC は削除しない**（feature/lcg で自動切換え(adaptive GAC dispatch)を検討中のため保持。2026-06-14 ユーザー判断）。
+  bump_activity の `#if 0` ブロック群は activity ヒューリスティクスの A/B 実験アーカイブ
+  （日付ラベル付き・active なチューニング領域）のため停滞死コードではなく保持。
 
 **完了条件**: ゴールデンマスター完全一致 + ctest green + ベンチ3本ゲート（統計ヘルパは hot path のため）。
 **削減見込み**: 600〜800 行。
