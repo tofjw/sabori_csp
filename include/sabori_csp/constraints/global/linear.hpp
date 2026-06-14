@@ -12,11 +12,41 @@ namespace sabori_csp {
 
 
 /**
+ * @brief 線形制約 int_lin_* の共通基底
+ *
+ * 全ての int_lin_* 系制約（eq/le/ne とその reif/imp）が共有する係数列 coeffs_ と、
+ * コンストラクタでの線形項集約ロジックを集約する。伝播セマンティクス（==/<=/!=）は
+ * 派生クラスに残す。
+ */
+class LinearConstraintBase : public Constraint {
+public:
+    /// 係数リストを取得
+    const std::vector<int64_t>& coeffs() const { return coeffs_; }
+
+protected:
+    std::vector<int64_t> coeffs_;  // 集約後の係数列（派生共通）
+
+    /**
+     * @brief 線形項を集約する（同一変数の係数を合算し、係数0の項を除外）
+     *
+     * 集約後の係数を coeffs_ に格納し、対応する変数リスト（同順）を返す。
+     * var_ids_ の構築は呼び出し側が行う（reif の b 追加などがあるため）。
+     *
+     * @param coeffs 元の係数リスト
+     * @param vars   元の変数リスト（coeffs と同長）
+     * @return 集約後の一意な変数リスト（coeffs_ と同順・同長）
+     */
+    std::vector<VariablePtr> aggregate_terms(const std::vector<int64_t>& coeffs,
+                                             const std::vector<VariablePtr>& vars);
+};
+
+
+/**
  * @brief int_lin_eq制約: Σ(coeffs[i] * vars[i]) == target_sum
  *
  * O(1) の差分更新で bounds consistency を維持。
  */
-class IntLinEqConstraint : public Constraint {
+class IntLinEqConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -101,7 +131,6 @@ protected:
 
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t target_sum_;
 
     // 現在の状態
@@ -142,7 +171,7 @@ private:
 /**
  * @brief int_lin_le制約: Σ(coeffs[i] * vars[i]) <= bound
  */
-class IntLinLeConstraint : public Constraint {
+class IntLinLeConstraint : public LinearConstraintBase {
 public:
     IntLinLeConstraint(std::vector<int64_t> coeffs,
                        std::vector<VariablePtr> vars,
@@ -205,7 +234,6 @@ protected:
     bool propagate_bounds(Model& model, size_t skip_idx);
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
@@ -231,7 +259,7 @@ private:
  * 線形不等式制約。全変数が確定したときに和が target と等しくないことを確認。
  * 残り1変数の場合、禁止値を除外する。
  */
-class IntLinNeConstraint : public Constraint {
+class IntLinNeConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -284,7 +312,6 @@ protected:
 
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t target_;
 
     // 現在の確定変数の和
@@ -311,7 +338,7 @@ private:
  * b が 0 の場合、線形等式の否定（sum != target）を強制。
  * 線形変数の bounds から b を推論可能。
  */
-class IntLinEqReifConstraint : public Constraint {
+class IntLinEqReifConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -371,7 +398,6 @@ protected:
 
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t target_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
@@ -402,7 +428,7 @@ private:
  * b が 0 の場合、線形等式を強制（sum == target）。
  * 線形変数の bounds から b を推論可能。
  */
-class IntLinNeReifConstraint : public Constraint {
+class IntLinNeReifConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -462,7 +488,6 @@ protected:
 
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t target_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
@@ -493,7 +518,7 @@ private:
  * b が 0 の場合、線形不等式の否定（sum > bound）を強制。
  * 線形変数の bounds から b を推論可能。
  */
-class IntLinLeReifConstraint : public Constraint {
+class IntLinLeReifConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -561,7 +586,6 @@ protected:
     bool propagate_bounds_gt(Model& model, size_t skip_idx);
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
@@ -595,7 +619,7 @@ private:
  * - _reif: (P) <-> b （双方向）
  * - _imp: b -> P （単方向、b から P への含意のみ）
  */
-class IntLinLeImpConstraint : public Constraint {
+class IntLinLeImpConstraint : public LinearConstraintBase {
 public:
     /**
      * @brief コンストラクタ
@@ -659,7 +683,6 @@ protected:
 
 
 private:
-    std::vector<int64_t> coeffs_;
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
