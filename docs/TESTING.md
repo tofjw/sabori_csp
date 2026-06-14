@@ -99,6 +99,11 @@ bash tests/golden/run_golden.sh list    # 対象 fzn コーパスを再構築
 注意: `record` は「現状の挙動を正」として固定する。バグ修正・仕様変更で出力が変わった場合のみ、
 差分を目視確認してから再生成すること。
 
+ctest にも `golden_master`（ラベル `golden`）として登録済み:
+```bash
+ctest --test-dir build -L golden
+```
+
 ## テスト構成
 
 ```

@@ -90,3 +90,18 @@ if(BUILD_PYTHON_BINDINGS)
         message(STATUS "pytest が ${Python3_EXECUTABLE} で見つからないため python_bindings テストをスキップ")
     endif()
 endif()
+
+# ゴールデンマスター: 代表 fzn 約180本の -a -s 出力を照合しリファクタ不変性を検証。
+# 実際にビルドした fzn_sabori を FZN_SABORI 経由で渡す（build ディレクトリ非依存）。
+if(BUILD_FZN)
+    add_test(
+        NAME golden_master
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/golden/run_golden.sh check
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(golden_master PROPERTIES
+        LABELS "golden;fzn"
+        ENVIRONMENT "FZN_SABORI=$<TARGET_FILE:fzn_sabori>"
+        TIMEOUT 120
+    )
+endif()
