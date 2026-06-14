@@ -2,7 +2,12 @@
 add_executable(test_sabori_csp
   test_constraints.cpp
   test_domain_model.cpp
-  test_global_constraints.cpp
+  test_alldifferent.cpp
+  test_linear_constraints.cpp
+  test_graph_constraints.cpp
+  test_element_table.cpp
+  test_arith_logical.cpp
+  test_solver_misc.cpp
   test_nogood.cpp
 )
 
