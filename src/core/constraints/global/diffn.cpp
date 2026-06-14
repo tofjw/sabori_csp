@@ -33,38 +33,67 @@ std::string DiffnConstraint::name() const {
 
 // ---------- Pairwise propagation (callback版: model 経由) ----------
 
-bool DiffnConstraint::propagate_pairwise(Model& model) {
-    for (size_t i = 0; i < n_; ++i) {
-        auto x_i  = var_ids_[i];
-        auto y_i  = var_ids_[n_ + i];
-        auto dx_i = var_ids_[2 * n_ + i];
-        auto dy_i = var_ids_[3 * n_ + i];
+namespace {
 
-        auto xi_min  = model.var_min(x_i);
-        auto xi_max  = model.var_max(x_i);
-        auto yi_min  = model.var_min(y_i);
-        auto yi_max  = model.var_max(y_i);
-        auto dxi_min = model.var_min(dx_i);
-        auto dyi_min = model.var_min(dy_i);
+// DomainWriter 抽象: 読み出し元（var_data_ 経由 / Domain 直接）と書き込み方式
+// （enqueue / 即時 remove）の差だけをポリシーに切り出し、pairwise 分離ロジック本体を
+// 1 箇所に集約する。テンプレートなので hot path（伝播版）に仮想呼び出しは入らない。
+
+// 伝播版: bounds は var_data_（model.var_min/max）、書き込みは enqueue（矛盾は
+// solver がキュー処理時に検出するため set_* は常に成功扱い）。
+struct EnqueueAccess {
+    Model& model;
+    Domain::value_type lo(size_t vid) const { return model.var_min(vid); }
+    Domain::value_type hi(size_t vid) const { return model.var_max(vid); }
+    bool set_min(size_t vid, Domain::value_type v) { model.enqueue_set_min(vid, v); return true; }
+    bool set_max(size_t vid, Domain::value_type v) { model.enqueue_set_max(vid, v); return true; }
+};
+
+// presolve 版: bounds は Domain 直接（var_data_ は presolve 中ラグするため）、書き込みは
+// 即時 remove（false で矛盾を即検出）。
+struct DirectAccess {
+    Model& model;
+    Domain::value_type lo(size_t vid) const { return model.variable(vid)->min(); }
+    Domain::value_type hi(size_t vid) const { return model.variable(vid)->max(); }
+    bool set_min(size_t vid, Domain::value_type v) { return model.variable(vid)->remove_below(v); }
+    bool set_max(size_t vid, Domain::value_type v) { return model.variable(vid)->remove_above(v); }
+};
+
+// pairwise obligatory-region 分離。各矩形ペアで分離可能方向を数え、1方向のみなら
+// その方向へ bounds を絞る。読み書きは Acc に委譲（伝播版/presolve 版で共通）。
+template <class Acc>
+bool diffn_pairwise(const std::vector<size_t>& var_ids, size_t n, bool strict, Acc a) {
+    for (size_t i = 0; i < n; ++i) {
+        auto x_i  = var_ids[i];
+        auto y_i  = var_ids[n + i];
+        auto dx_i = var_ids[2 * n + i];
+        auto dy_i = var_ids[3 * n + i];
+
+        auto xi_min  = a.lo(x_i);
+        auto xi_max  = a.hi(x_i);
+        auto yi_min  = a.lo(y_i);
+        auto yi_max  = a.hi(y_i);
+        auto dxi_min = a.lo(dx_i);
+        auto dyi_min = a.lo(dy_i);
 
         // nonstrict: サイズ 0 の矩形はスキップ
-        if (!strict_ && (dxi_min == 0 || dyi_min == 0)) continue;
+        if (!strict && (dxi_min == 0 || dyi_min == 0)) continue;
 
-        for (size_t j = i + 1; j < n_; ++j) {
-            auto x_j  = var_ids_[j];
-            auto y_j  = var_ids_[n_ + j];
-            auto dx_j = var_ids_[2 * n_ + j];
-            auto dy_j = var_ids_[3 * n_ + j];
+        for (size_t j = i + 1; j < n; ++j) {
+            auto x_j  = var_ids[j];
+            auto y_j  = var_ids[n + j];
+            auto dx_j = var_ids[2 * n + j];
+            auto dy_j = var_ids[3 * n + j];
 
-            auto xj_min  = model.var_min(x_j);
-            auto xj_max  = model.var_max(x_j);
-            auto yj_min  = model.var_min(y_j);
-            auto yj_max  = model.var_max(y_j);
-            auto dxj_min = model.var_min(dx_j);
-            auto dyj_min = model.var_min(dy_j);
+            auto xj_min  = a.lo(x_j);
+            auto xj_max  = a.hi(x_j);
+            auto yj_min  = a.lo(y_j);
+            auto yj_max  = a.hi(y_j);
+            auto dxj_min = a.lo(dx_j);
+            auto dyj_min = a.lo(dy_j);
 
             // nonstrict: サイズ 0 の矩形はスキップ
-            if (!strict_ && (dxj_min == 0 || dyj_min == 0)) continue;
+            if (!strict && (dxj_min == 0 || dyj_min == 0)) continue;
 
             // 4方向の分離可能性チェック
             bool can_left  = (xi_min + dxi_min <= xj_max);  // i が j の左
@@ -80,22 +109,20 @@ bool DiffnConstraint::propagate_pairwise(Model& model) {
                 // 強制分離: 1方向のみ可能 → bounds tightening
                 if (can_left) {
                     // i が j の左に強制: x[i] + dx[i] <= x[j]
-                    // → x[j] >= x[i].min + dx[i].min
-                    // → x[i] <= x[j].max - dx[i].min
-                    model.enqueue_set_min(x_j, xi_min + dxi_min);
-                    model.enqueue_set_max(x_i, xj_max - dxi_min);
+                    if (!a.set_min(x_j, xi_min + dxi_min)) return false;
+                    if (!a.set_max(x_i, xj_max - dxi_min)) return false;
                 } else if (can_right) {
                     // i が j の右に強制: x[j] + dx[j] <= x[i]
-                    model.enqueue_set_min(x_i, xj_min + dxj_min);
-                    model.enqueue_set_max(x_j, xi_max - dxj_min);
+                    if (!a.set_min(x_i, xj_min + dxj_min)) return false;
+                    if (!a.set_max(x_j, xi_max - dxj_min)) return false;
                 } else if (can_below) {
                     // i が j の下に強制: y[i] + dy[i] <= y[j]
-                    model.enqueue_set_min(y_j, yi_min + dyi_min);
-                    model.enqueue_set_max(y_i, yj_max - dyi_min);
+                    if (!a.set_min(y_j, yi_min + dyi_min)) return false;
+                    if (!a.set_max(y_i, yj_max - dyi_min)) return false;
                 } else {  // can_above
                     // i が j の上に強制: y[j] + dy[j] <= y[i]
-                    model.enqueue_set_min(y_i, yj_min + dyj_min);
-                    model.enqueue_set_max(y_j, yi_max - dyj_min);
+                    if (!a.set_min(y_i, yj_min + dyj_min)) return false;
+                    if (!a.set_max(y_j, yi_max - dyj_min)) return false;
                 }
             }
             // directions >= 2: 伝播なし
@@ -104,66 +131,16 @@ bool DiffnConstraint::propagate_pairwise(Model& model) {
     return true;
 }
 
-// ---------- Pairwise propagation (presolve版: model.variable() 経由) ----------
+}  // namespace
+
+bool DiffnConstraint::propagate_pairwise(Model& model) {
+    return diffn_pairwise(var_ids_, n_, strict_, EnqueueAccess{model});
+}
+
+// ---------- Pairwise propagation (presolve版: Domain 直接 + 即時 remove) ----------
 
 bool DiffnConstraint::propagate_pairwise_direct(Model& model) {
-    for (size_t i = 0; i < n_; ++i) {
-        auto xi_var  = model.variable(var_ids_[i]);
-        auto yi_var  = model.variable(var_ids_[n_ + i]);
-        auto dxi_var = model.variable(var_ids_[2 * n_ + i]);
-        auto dyi_var = model.variable(var_ids_[3 * n_ + i]);
-
-        auto xi_min  = xi_var->min();
-        auto xi_max  = xi_var->max();
-        auto yi_min  = yi_var->min();
-        auto yi_max  = yi_var->max();
-        auto dxi_min = dxi_var->min();
-        auto dyi_min = dyi_var->min();
-
-        if (!strict_ && (dxi_min == 0 || dyi_min == 0)) continue;
-
-        for (size_t j = i + 1; j < n_; ++j) {
-            auto xj_var  = model.variable(var_ids_[j]);
-            auto yj_var  = model.variable(var_ids_[n_ + j]);
-            auto dxj_var = model.variable(var_ids_[2 * n_ + j]);
-            auto dyj_var = model.variable(var_ids_[3 * n_ + j]);
-
-            auto xj_min  = xj_var->min();
-            auto xj_max  = xj_var->max();
-            auto yj_min  = yj_var->min();
-            auto yj_max  = yj_var->max();
-            auto dxj_min = dxj_var->min();
-            auto dyj_min = dyj_var->min();
-
-            if (!strict_ && (dxj_min == 0 || dyj_min == 0)) continue;
-
-            bool can_left  = (xi_min + dxi_min <= xj_max);
-            bool can_right = (xj_min + dxj_min <= xi_max);
-            bool can_below = (yi_min + dyi_min <= yj_max);
-            bool can_above = (yj_min + dyj_min <= yi_max);
-
-            int directions = can_left + can_right + can_below + can_above;
-
-            if (directions == 0) return false;
-
-            if (directions == 1) {
-                if (can_left) {
-                    if (!xj_var->remove_below(xi_min + dxi_min)) return false;
-                    if (!xi_var->remove_above(xj_max - dxi_min)) return false;
-                } else if (can_right) {
-                    if (!xi_var->remove_below(xj_min + dxj_min)) return false;
-                    if (!xj_var->remove_above(xi_max - dxj_min)) return false;
-                } else if (can_below) {
-                    if (!yj_var->remove_below(yi_min + dyi_min)) return false;
-                    if (!yi_var->remove_above(yj_max - dyi_min)) return false;
-                } else {  // can_above
-                    if (!yi_var->remove_below(yj_min + dyj_min)) return false;
-                    if (!yj_var->remove_above(yi_max - dyj_min)) return false;
-                }
-            }
-        }
-    }
-    return true;
+    return diffn_pairwise(var_ids_, n_, strict_, DirectAccess{model});
 }
 
 // ---------- Presolve ----------
