@@ -819,7 +819,7 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         model.clear_pending_updates();
 
         // x.min が 3 に上がった → y.min >= 4
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 3, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 3, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -841,7 +841,7 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         model.clear_pending_updates();
 
         // y.max が 7 に下がった → x.max <= 6
-        REQUIRE(c->on_set_max(model, 0, y->id(), 0, 7, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 1, 7, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -862,7 +862,7 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, y->id(), 0, 3, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 1, 3, 1) == true);
         REQUIRE_FALSE(model.has_pending_updates());
     }
 
@@ -874,7 +874,7 @@ TEST_CASE("IntLtConstraint on_set_min/on_set_max", "[constraint][int_lt][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 8, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 8, 10) == true);
         REQUIRE_FALSE(model.has_pending_updates());
     }
 }
@@ -888,7 +888,7 @@ TEST_CASE("IntLeConstraint on_set_min/on_set_max", "[constraint][int_le][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 5, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 5, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -909,7 +909,7 @@ TEST_CASE("IntLeConstraint on_set_min/on_set_max", "[constraint][int_le][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, y->id(), 0, 7, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 1, 7, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -932,7 +932,7 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 4, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 4, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -953,7 +953,7 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, y->id(), 0, 6, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 1, 6, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -974,7 +974,7 @@ TEST_CASE("IntEqConstraint on_set_min/on_set_max", "[constraint][int_eq][bounds]
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, y->id(), 0, 3, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 1, 3, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1004,7 +1004,7 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         model.set_min(0, x->id(), 5);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 5, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 5, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1026,7 +1026,7 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, m->id(), 0, 7, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 2, 7, 10) == true);
 
         bool found_x = false, found_y = false;
         while (model.has_pending_updates()) {
@@ -1055,7 +1055,7 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         model.set_max(0, x->id(), 6);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 6, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 6, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1077,7 +1077,7 @@ TEST_CASE("IntMaxConstraint on_set_min/on_set_max", "[constraint][int_max][bound
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, m->id(), 0, 3, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 2, 3, 1) == true);
         REQUIRE_FALSE(model.has_pending_updates());
     }
 }
@@ -1092,7 +1092,7 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, m->id(), 0, 4, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 2, 4, 1) == true);
 
         bool found_x = false, found_y = false;
         while (model.has_pending_updates()) {
@@ -1121,7 +1121,7 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         model.set_max(0, x->id(), 6);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 6, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 6, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1143,7 +1143,7 @@ TEST_CASE("IntMinConstraint on_set_min/on_set_max", "[constraint][int_min][bound
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, m->id(), 0, 7, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 2, 7, 10) == true);
         REQUIRE_FALSE(model.has_pending_updates());
     }
 }
@@ -1159,7 +1159,7 @@ TEST_CASE("IntEqReifConstraint on_set_min/on_set_max", "[constraint][int_eq_reif
         model.clear_pending_updates();
 
         // x.max=3 < y.min=5 なので b=0
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 3, 5) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 3, 5) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1184,7 +1184,7 @@ TEST_CASE("IntEqReifConstraint on_set_min/on_set_max", "[constraint][int_eq_reif
         model.set_min(0, x->id(), 4);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 4, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 4, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1208,7 +1208,7 @@ TEST_CASE("IntNeReifConstraint on_set_min/on_set_max", "[constraint][int_ne_reif
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 3, 5) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 3, 5) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1233,7 +1233,7 @@ TEST_CASE("IntNeReifConstraint on_set_min/on_set_max", "[constraint][int_ne_reif
         model.set_min(0, x->id(), 4);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 4, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 4, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1257,7 +1257,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, y->id(), 0, 5, 3) == true);
+        REQUIRE(c->on_set_min(model, 0, 1, 5, 3) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1279,7 +1279,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.add_constraint(std::move(c_uptr));
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 6, 4) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 6, 4) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1304,7 +1304,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.set_min(0, x->id(), 5);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, x->id(), 0, 5, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 0, 5, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1329,7 +1329,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.set_max(0, y->id(), 7);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, y->id(), 0, 7, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 1, 7, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1354,7 +1354,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.set_min(0, y->id(), 4);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_min(model, 0, y->id(), 0, 4, 1) == true);
+        REQUIRE(c->on_set_min(model, 0, 1, 4, 1) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {
@@ -1379,7 +1379,7 @@ TEST_CASE("IntLeReifConstraint on_set_min/on_set_max", "[constraint][int_le_reif
         model.set_max(0, x->id(), 8);
         model.clear_pending_updates();
 
-        REQUIRE(c->on_set_max(model, 0, x->id(), 0, 8, 10) == true);
+        REQUIRE(c->on_set_max(model, 0, 0, 8, 10) == true);
 
         bool found = false;
         while (model.has_pending_updates()) {

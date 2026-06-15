@@ -188,7 +188,7 @@ bool InverseConstraint::prepare_propagation(Model& model) {
 }
 
 bool InverseConstraint::on_instantiate(Model& model, int /*save_point*/,
-                                        size_t /*var_idx*/, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type value,
                                         Domain::value_type /*prev_min*/,
                                         Domain::value_type /*prev_max*/) {
@@ -275,7 +275,7 @@ bool InverseConstraint::on_final_instantiate(const Model& model) {
 }
 
 bool InverseConstraint::on_remove_value(Model& model, int /*save_point*/,
-                                         size_t /*var_idx*/, size_t internal_var_idx,
+                                         size_t internal_var_idx,
                                          Domain::value_type removed_value) {
     if (internal_var_idx < n_) {
         // f[i] lost value v → invf[v - f_offset] loses (i + invf_offset)
@@ -297,7 +297,7 @@ bool InverseConstraint::on_remove_value(Model& model, int /*save_point*/,
 }
 
 bool InverseConstraint::on_set_min(Model& model, int /*save_point*/,
-                                    size_t /*var_idx*/, size_t internal_var_idx,
+                                    size_t internal_var_idx,
                                     Domain::value_type new_min, Domain::value_type old_min) {
     // Values old_min..new_min-1 have been removed; clamp to valid range
     if (internal_var_idx < n_) {
@@ -327,7 +327,7 @@ bool InverseConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool InverseConstraint::on_set_max(Model& model, int /*save_point*/,
-                                    size_t /*var_idx*/, size_t internal_var_idx,
+                                    size_t internal_var_idx,
                                     Domain::value_type new_max, Domain::value_type old_max) {
     // Values new_max+1..old_max have been removed; clamp to valid range
     if (internal_var_idx < n_) {

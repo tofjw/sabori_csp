@@ -184,11 +184,11 @@ bool RegularConstraint::prepare_propagation(Model& model) {
 }
 
 bool RegularConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t var_idx, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type value,
                                         Domain::value_type prev_min,
                                         Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
@@ -207,21 +207,21 @@ bool RegularConstraint::propagate_batch(Model& model, int save_point) {
 }
 
 bool RegularConstraint::on_remove_value(Model& model, int save_point,
-                                         size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                         size_t /*internal_var_idx*/,
                                          Domain::value_type /*removed_value*/) {
     model.schedule_constraint_batch(model_index());
     return true;
 }
 
 bool RegularConstraint::on_set_min(Model& model, int save_point,
-                                    size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                    size_t /*internal_var_idx*/,
                                     Domain::value_type /*new_min*/, Domain::value_type /*old_min*/) {
     model.schedule_constraint_batch(model_index());
     return true;
 }
 
 bool RegularConstraint::on_set_max(Model& model, int save_point,
-                                    size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                    size_t /*internal_var_idx*/,
                                     Domain::value_type /*new_max*/, Domain::value_type /*old_max*/) {
     model.schedule_constraint_batch(model_index());
     return true;

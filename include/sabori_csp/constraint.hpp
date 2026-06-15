@@ -137,7 +137,7 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_instantiate(Model& model, int save_point,
-                                size_t var_idx, size_t internal_var_idx,
+                                size_t internal_var_idx,
                                 Domain::value_type value,
                                 Domain::value_type prev_min, Domain::value_type prev_max);
 
@@ -182,7 +182,7 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_set_min(Model& model, int save_point,
-                            size_t var_idx, size_t internal_var_idx,
+                            size_t internal_var_idx,
                             Domain::value_type new_min,
                             Domain::value_type old_min);
 
@@ -200,7 +200,7 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_set_max(Model& model, int save_point,
-                            size_t var_idx, size_t internal_var_idx,
+                            size_t internal_var_idx,
                             Domain::value_type new_max,
                             Domain::value_type old_max);
 
@@ -217,7 +217,7 @@ public:
      * @return 伝播が成功すればtrue、失敗すればfalse
      */
     virtual bool on_remove_value(Model& model, int save_point,
-                                  size_t var_idx, size_t internal_var_idx,
+                                  size_t internal_var_idx,
                                   Domain::value_type removed_value);
 
     /**

@@ -155,12 +155,12 @@ TEST_CASE("AllDifferentConstraint rewind_to", "[constraint][all_different][trail
 
     // Simulate instantiation at level 1
     model.instantiate(1, x->id(), 1);
-    REQUIRE(c.on_instantiate(model, 1, 0, 0, 1, 1, 3));
+    REQUIRE(c.on_instantiate(model, 1, 0, 1, 1, 3));
     REQUIRE(c.pool_size() == 2);
 
     // Simulate instantiation at level 2
     model.instantiate(2, y->id(), 2);
-    REQUIRE(c.on_instantiate(model, 2, 1, 0, 2, 1, 3));
+    REQUIRE(c.on_instantiate(model, 2, 0, 2, 1, 3));
     REQUIRE(c.pool_size() == 1);
 
     // Rewind to level 1

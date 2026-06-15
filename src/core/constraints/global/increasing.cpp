@@ -100,11 +100,11 @@ bool IncreasingConstraint::prepare_propagation(Model& model) {
 }
 
 bool IncreasingConstraint::on_instantiate(Model& model, int save_point,
-                                            size_t var_idx, size_t internal_var_idx,
+                                            size_t internal_var_idx,
                                             Domain::value_type value,
                                             Domain::value_type prev_min,
                                             Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx,
                                      value, prev_min, prev_max)) {
         return false;
     }
@@ -138,7 +138,7 @@ bool IncreasingConstraint::on_final_instantiate(const Model& model) {
 }
 
 bool IncreasingConstraint::on_set_min(Model& model, int /*save_point*/,
-                                        size_t /*var_idx*/, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type new_min,
                                         Domain::value_type /*old_min*/) {
     Domain::value_type offset = strict_ ? 1 : 0;
@@ -152,7 +152,7 @@ bool IncreasingConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IncreasingConstraint::on_set_max(Model& model, int /*save_point*/,
-                                        size_t /*var_idx*/, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type new_max,
                                         Domain::value_type /*old_max*/) {
     Domain::value_type offset = strict_ ? 1 : 0;

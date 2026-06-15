@@ -145,10 +145,10 @@ PresolveResult AllDifferentConstraint::presolve(Model& model) {
 }
 
 bool AllDifferentConstraint::on_instantiate(Model& model, int save_point,
-					    size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+					    size_t internal_var_idx, Domain::value_type value,
 					    Domain::value_type prev_min,
 					    Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value, prev_min, prev_max)) {
       return false;
     }
 
@@ -452,15 +452,17 @@ bool AllDifferentConstraint::check_hall_pair(Model& model, size_t trigger_var_id
 }
 
 bool AllDifferentConstraint::on_remove_value(Model& model, int save_point,
-                                              size_t var_idx, size_t internal_var_idx,
+                                              size_t internal_var_idx,
                                               Domain::value_type removed_value) {
+    const size_t var_idx = var_id(internal_var_idx);
     return check_hall_pair(model, var_idx);
 }
 
 bool AllDifferentConstraint::on_set_min(Model& model, int save_point,
-                                         size_t var_idx, size_t internal_var_idx,
+                                         size_t internal_var_idx,
                                          Domain::value_type new_min,
                                          Domain::value_type old_min) {
+    const size_t var_idx = var_id(internal_var_idx);
     if (!check_hall_pair(model, var_idx)) return false;
     // 自分が enqueue した set_min のエコーならフィルタ済みなのでスキップ
     if (internal_var_idx < bz_expected_min_epoch_.size() &&
@@ -474,9 +476,10 @@ bool AllDifferentConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool AllDifferentConstraint::on_set_max(Model& model, int save_point,
-                                         size_t var_idx, size_t internal_var_idx,
+                                         size_t internal_var_idx,
                                          Domain::value_type new_max,
                                          Domain::value_type old_max) {
+    const size_t var_idx = var_id(internal_var_idx);
     if (!check_hall_pair(model, var_idx)) return false;
     if (internal_var_idx < bz_expected_max_epoch_.size() &&
         bz_expected_max_epoch_[internal_var_idx] == bz_epoch_ &&

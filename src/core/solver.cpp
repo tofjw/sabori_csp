@@ -1346,7 +1346,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
             is.call_count++;
             size_t before = model.pending_updates_size();
             if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-                                        var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
+                                        w.internal_var_idx, val, prev_min, prev_max)) {
                 cs.fail_count++;
                 cs.fail_depth_sum += current_decision_;
                 is.fail_count++;
@@ -1357,7 +1357,7 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
         } else {
             if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-                                        var_idx, w.internal_var_idx, val, prev_min, prev_max)) {
+                                        w.internal_var_idx, val, prev_min, prev_max)) {
                 bump_activity(model, w.constraint_idx, var_idx);
                 return false;
             }
@@ -1640,7 +1640,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!invoke_cb(var_idx, w, [&]{
                         return constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                            var_idx, w.internal_var_idx, actual_new_min, prev_min);
+                            w.internal_var_idx, actual_new_min, prev_min);
                     })) {
                         return PropagationResult::Conflict;
                     }
@@ -1672,7 +1672,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 for (const auto& w : constraint_indices) {
                     if (!invoke_cb(var_idx, w, [&]{
                         return constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                            var_idx, w.internal_var_idx, actual_new_max, prev_max);
+                            w.internal_var_idx, actual_new_max, prev_max);
                     })) {
                         return PropagationResult::Conflict;
                     }
@@ -1707,7 +1707,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_set_min(model, current_decision_,
-                                var_idx, w.internal_var_idx, new_min, prev_min);
+                                w.internal_var_idx, new_min, prev_min);
                         })) {
                             return PropagationResult::Conflict;
                         }
@@ -1722,7 +1722,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_set_max(model, current_decision_,
-                                var_idx, w.internal_var_idx, new_max, prev_max);
+                                w.internal_var_idx, new_max, prev_max);
                         })) {
                             return PropagationResult::Conflict;
                         }
@@ -1737,7 +1737,7 @@ PropagationResult Solver::process_queue(Model& model) {
                     for (const auto& w : constraint_indices) {
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
-                                var_idx, w.internal_var_idx, removed_value);
+                                w.internal_var_idx, removed_value);
                         })) {
                             return PropagationResult::Conflict;
                         }

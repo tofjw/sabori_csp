@@ -123,11 +123,11 @@ TEST_CASE("IntLinEqConstraint rewind_to", "[constraint][int_lin_eq][trail]") {
 
     // Simulate instantiation at level 1
     model.instantiate(1, x->id(), 2);
-    c.on_instantiate(model, 1, 0, 0, 2, 1, 5);
+    c.on_instantiate(model, 1, 0, 2, 1, 5);
 
     // Simulate instantiation at level 2
     model.instantiate(2, y->id(), 4);
-    c.on_instantiate(model, 2, 1, 0, 4, 1, 5);
+    c.on_instantiate(model, 2, 0, 4, 1, 5);
 
     // Verify final state
     REQUIRE(c.on_final_instantiate(model) == true);  // 2 + 4 = 6

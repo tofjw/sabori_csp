@@ -181,11 +181,12 @@ PresolveResult IntLinLeReifConstraint::presolve(Model& model) {
 }
 
 bool IntLinLeReifConstraint::on_instantiate(Model& model, int save_point,
-                                              size_t var_idx, size_t internal_var_idx,
+                                              size_t internal_var_idx,
                                               Domain::value_type value,
                                               Domain::value_type prev_min,
                                               Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+    const size_t var_idx = var_id(internal_var_idx);
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
@@ -347,9 +348,10 @@ void IntLinLeReifConstraint::save_trail_if_needed(Model& model, int save_point) 
 }
 
 bool IntLinLeReifConstraint::on_set_min(Model& model, int save_point,
-                                         size_t var_idx, size_t internal_var_idx,
+                                         size_t internal_var_idx,
                                          Domain::value_type new_min,
                                          Domain::value_type old_min) {
+    const size_t var_idx = var_id(internal_var_idx);
     if (var_idx == b_id_) return true;  // b の変更は無視
     size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
@@ -386,9 +388,10 @@ bool IntLinLeReifConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool IntLinLeReifConstraint::on_set_max(Model& model, int save_point,
-                                         size_t var_idx, size_t internal_var_idx,
+                                         size_t internal_var_idx,
                                          Domain::value_type new_max,
                                          Domain::value_type old_max) {
+    const size_t var_idx = var_id(internal_var_idx);
     if (var_idx == b_id_) return true;  // b の変更は無視
     size_t idx = internal_var_idx;
     int64_t c = coeffs_[idx];
@@ -425,7 +428,7 @@ bool IntLinLeReifConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool IntLinLeReifConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
-                                              size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                              size_t /*internal_var_idx*/,
                                               Domain::value_type /*removed_value*/) {
     // 境界変化は solver が on_set_min/on_set_max をディスパッチするため、
     // 内部値の除去では bounds が変わらず potentials も不変。
