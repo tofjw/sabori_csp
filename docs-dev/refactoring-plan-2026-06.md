@@ -241,10 +241,14 @@ byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn
   enum（Continue / BreakInnerLoop / ReturnOptimal）を返す（handle_ascent の AscentAction と同パターン）
 - [x] **単体テスト追加**: `test_mode_reward_policy.cpp`（5 TC, グリッド値域/決定性/改善バイアス）+
   `test_restart_controller.cpp`（7 TC, cycle/grow-shrink/cap-floor）。ctest 234/234。
-- [ ] 統計記録の残りを ConstraintStats レイヤへ
+- [x] **統計記録を ConstraintStats レイヤへ集約**: verbose 統計記録（type別 + instance別の
+  call/fail/fail_depth/reduction）+ 失敗時 bump_activity の3経路重複（propagate_instantiate /
+  process_queue invoke_cb / batch propagator）を member template `record_constraint_call(model,
+  constraint_idx, bump_var_idx, call)` に一本化。inline template で hot path はインライン化。
+  hot path のため golden byte一致 + A/B 計測（tsp/magic_square 30x, 非劣化）で二重検証。
 - [ ] find_all + restart の解列挙設計レビュー（solution nogood 依存。2026-06-10 に root 確定変数 watch の無限ループバグを修正済み。1リテラル縮退時の unit nogood 化の非対称も解消）
-- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ（現状 1,650 行。残りは統計層分離 +
-  search_with_restart 系の更なる共通化が必要）。
+- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ（現状 1,600 行。helper を同ファイル
+  内に持つため残りは run_search 系/フレーム管理の別ファイル分離が必要。重複・関数肥大は解消済み）。
 
 **完了条件**: ゴールデン一致 + 全ベンチ非劣化。**現状**: ヘルパ抽出 4 + クラス化 2 + 単体テスト 2 commit、
 全 golden byte一致（軌道不変＝ベンチ不要）。RestartController / ModeRewardPolicy / GradientStrategy の
