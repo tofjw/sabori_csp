@@ -11,6 +11,7 @@ add_executable(test_sabori_csp
   test_nogood.cpp
   test_sparse_set_pool.cpp
   test_mode_reward_policy.cpp
+  test_restart_controller.cpp
   test_lin_reif_brute.cpp
   test_cmp_reif_brute.cpp
   test_diffn_brute.cpp
