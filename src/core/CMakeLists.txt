@@ -10,6 +10,7 @@ add_library(sabori_csp_core
   model_simplifier.cpp
   one_hot_channel_aggregator.cpp
   community_analysis.cpp
+  gradient_strategy.cpp
   # Constraints
   constraints/arithmetic.cpp
   constraints/comparison.cpp
