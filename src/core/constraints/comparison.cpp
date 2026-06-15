@@ -90,6 +90,54 @@ PresolveResult enforce_le(Model& model, size_t lo_id, size_t hi_id, bool strict,
     return PresolveResult::Unchanged;
 }
 
+// 共通 propagation ヘルパー（キューイング）。x==y の相互固定・bounds 相互伝播は
+// 素の制約 IntEq・reif の b=1 分岐・imp の b=1 分岐で逐語複製されていたため一本化する。
+
+/**
+ * @brief x == y で一方が確定していれば他方を同じ値に固定する（キューイング）
+ * @return 矛盾（他方のドメインに値がない）なら false
+ */
+bool eq_fix_mutual(Model& model, size_t x_id, size_t y_id) {
+    if (model.is_instantiated(x_id) && !model.is_instantiated(y_id)) {
+        auto val = model.value(x_id);
+        if (!model.contains(y_id, val)) {
+            return false;
+        }
+        model.enqueue_instantiate(y_id, val);
+    }
+    if (model.is_instantiated(y_id) && !model.is_instantiated(x_id)) {
+        auto val = model.value(y_id);
+        if (!model.contains(x_id, val)) {
+            return false;
+        }
+        model.enqueue_instantiate(x_id, val);
+    }
+    return true;
+}
+
+/**
+ * @brief x == y で changed_var の bound 変化を他方へ相互伝播する（キューイング）
+ * @param changed_var bound が変化した変数（x_id / y_id のいずれか）
+ * @param bound 設定された新しい bound 値
+ * @param is_min true なら set_min、false なら set_max
+ */
+void eq_propagate_bound(Model& model, size_t changed_var, size_t x_id, size_t y_id,
+                        Domain::value_type bound, bool is_min) {
+    size_t target;
+    if (changed_var == x_id) {
+        target = y_id;
+    } else if (changed_var == y_id) {
+        target = x_id;
+    } else {
+        return;
+    }
+    if (is_min) {
+        model.enqueue_set_min(target, bound);
+    } else {
+        model.enqueue_set_max(target, bound);
+    }
+}
+
 }  // namespace
 
 // ============================================================================
@@ -125,19 +173,8 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point,
     }
 
     // x == y なので、一方が確定したら他方も同じ値に固定（キューイング）
-    if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_)) {
-        auto val = model.value(x_id_);
-        if (!model.contains(y_id_, val)) {
-            return false;
-        }
-        model.enqueue_instantiate(y_id_, val);
-    }
-    if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_)) {
-        auto val = model.value(y_id_);
-        if (!model.contains(x_id_, val)) {
-            return false;
-        }
-        model.enqueue_instantiate(x_id_, val);
+    if (!eq_fix_mutual(model, x_id_, y_id_)) {
+        return false;
     }
 
     return true;
@@ -146,26 +183,16 @@ bool IntEqConstraint::on_instantiate(Model& model, int save_point,
 bool IntEqConstraint::on_set_min(Model& model, int /*save_point*/,
                                   size_t internal_var_idx, Domain::value_type new_min,
                                   Domain::value_type /*old_min*/) {
-    const size_t var_idx = var_id(internal_var_idx);
     // x == y: bounds を相互伝播
-    if (var_idx == x_id_) {
-        model.enqueue_set_min(y_id_, new_min);
-    } else if (var_idx == y_id_) {
-        model.enqueue_set_min(x_id_, new_min);
-    }
+    eq_propagate_bound(model, var_id(internal_var_idx), x_id_, y_id_, new_min, /*is_min=*/true);
     return true;
 }
 
 bool IntEqConstraint::on_set_max(Model& model, int /*save_point*/,
                                   size_t internal_var_idx, Domain::value_type new_max,
                                   Domain::value_type /*old_max*/) {
-    const size_t var_idx = var_id(internal_var_idx);
     // x == y: bounds を相互伝播
-    if (var_idx == x_id_) {
-        model.enqueue_set_max(y_id_, new_max);
-    } else if (var_idx == y_id_) {
-        model.enqueue_set_max(x_id_, new_max);
-    }
+    eq_propagate_bound(model, var_id(internal_var_idx), x_id_, y_id_, new_max, /*is_min=*/false);
     return true;
 }
 
@@ -319,19 +346,8 @@ bool IntEqReifConstraint::on_instantiate(Model& model, int save_point,
     if (model.is_instantiated(b_id_)) {
         if (model.value(b_id_) == 1) {
             // x == y を強制
-            if (model.is_instantiated(x_id_) && !model.is_instantiated(y_id_)) {
-                auto val = model.value(x_id_);
-                if (!model.contains(y_id_, val)) {
-                    return false;
-                }
-                model.enqueue_instantiate(y_id_, val);
-            }
-            if (model.is_instantiated(y_id_) && !model.is_instantiated(x_id_)) {
-                auto val = model.value(y_id_);
-                if (!model.contains(x_id_, val)) {
-                    return false;
-                }
-                model.enqueue_instantiate(x_id_, val);
+            if (!eq_fix_mutual(model, x_id_, y_id_)) {
+                return false;
             }
         } else {
             // x != y を強制
@@ -378,11 +394,7 @@ bool IntEqReifConstraint::on_set_min(Model& model, int /*save_point*/,
         }
     } else if (model.value(b_id_) == 1) {
         // x == y: bounds を相互伝播
-        if (var_idx == x_id_) {
-            model.enqueue_set_min(y_id_, new_min);
-        } else if (var_idx == y_id_) {
-            model.enqueue_set_min(x_id_, new_min);
-        }
+        eq_propagate_bound(model, var_idx, x_id_, y_id_, new_min, /*is_min=*/true);
     }
     // b = 0: bounds だけでは伝播不可
     return true;
@@ -404,11 +416,7 @@ bool IntEqReifConstraint::on_set_max(Model& model, int /*save_point*/,
         }
     } else if (model.value(b_id_) == 1) {
         // x == y: bounds を相互伝播
-        if (var_idx == x_id_) {
-            model.enqueue_set_max(y_id_, new_max);
-        } else if (var_idx == y_id_) {
-            model.enqueue_set_max(x_id_, new_max);
-        }
+        eq_propagate_bound(model, var_idx, x_id_, y_id_, new_max, /*is_min=*/false);
     }
     // b = 0: bounds だけでは伝播不可
     return true;
@@ -560,11 +568,8 @@ bool IntEqImpConstraint::on_set_min(Model& model, int /*save_point*/,
             model.enqueue_instantiate(b_id_, 0);
         }
     } else if (model.value(b_id_) == 1) {
-        if (var_idx == x_id_) {
-            model.enqueue_set_min(y_id_, new_min);
-        } else if (var_idx == y_id_) {
-            model.enqueue_set_min(x_id_, new_min);
-        }
+        // b=1: x == y の bounds 相互伝播
+        eq_propagate_bound(model, var_idx, x_id_, y_id_, new_min, /*is_min=*/true);
     }
     return true;
 }
@@ -580,11 +585,8 @@ bool IntEqImpConstraint::on_set_max(Model& model, int /*save_point*/,
             model.enqueue_instantiate(b_id_, 0);
         }
     } else if (model.value(b_id_) == 1) {
-        if (var_idx == x_id_) {
-            model.enqueue_set_max(y_id_, new_max);
-        } else if (var_idx == y_id_) {
-            model.enqueue_set_max(x_id_, new_max);
-        }
+        // b=1: x == y の bounds 相互伝播
+        eq_propagate_bound(model, var_idx, x_id_, y_id_, new_max, /*is_min=*/false);
     }
     return true;
 }
