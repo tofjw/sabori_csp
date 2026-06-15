@@ -514,6 +514,44 @@ private:
     }
 
     /**
+     * @brief 制約呼び出しを統計記録付きで実行する（ConstraintStats レイヤ）
+     *
+     * verbose 時に type 別 constraint_stats_ / instance 別 instance_stats_ へ
+     * call/fail/fail_depth/reduction を記録し、失敗時は bump_activity を呼ぶ。
+     * call は制約メソッド（on_instantiate / on_set_* / propagate_batch 等）を呼び bool を返す
+     * ジェネリックラムダ。成功 true / 失敗(conflict) false を返す。
+     * テンプレートなので hot path でインライン化される。
+     * propagate_instantiate / process_queue / batch propagator の3経路で共通利用。
+     */
+    template <class CallFn>
+    inline bool record_constraint_call(Model& model, size_t constraint_idx,
+                                       size_t bump_var_idx, CallFn&& call) {
+        if (verbose_) {
+            const auto& constraints = model.constraints();
+            auto& cs = constraint_stats_[constraints[constraint_idx]->name()];
+            auto& is = instance_stats_[constraint_idx];
+            cs.call_count++;
+            is.call_count++;
+            size_t before = model.pending_updates_size();
+            if (!call()) {
+                cs.fail_count++;
+                cs.fail_depth_sum += current_decision_;
+                is.fail_count++;
+                is.fail_depth_sum += current_decision_;
+                bump_activity(model, constraint_idx, bump_var_idx);
+                return false;
+            }
+            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
+        } else {
+            if (!call()) {
+                bump_activity(model, constraint_idx, bump_var_idx);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * @brief Activity を減衰（リスタート時に呼ぶ）
      */
     void decay_activities();
