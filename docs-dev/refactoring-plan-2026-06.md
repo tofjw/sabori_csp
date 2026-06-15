@@ -216,13 +216,20 @@ byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn
 を実施（全 commit golden byte一致）。`search_with_restart_optimize` は ~460→~200 行、
 `search_with_restart` は ~200→~150 行。solver.cpp 全体は 1,784→1,650 行。
 
-- [~] `search_with_restart` / `search_with_restart_optimize` の共通骨格抽出（restart 制御・cycle 管理・mode_reward 更新の二重実装解消）
+- [x] `search_with_restart` / `search_with_restart_optimize` の共通骨格抽出（restart 制御・cycle 管理・mode_reward 更新の二重実装解消）— 実用上の限界点まで完了
   - [x] **mode_reward EMA 更新 + mix_p 再抽選**（byte一致 32行重複）→ ヘルパ→ ModeRewardPolicy へ移管
   - [x] **restart 共通簿記**（restart_count++ / community report / select_best_assignment / bloom /
     restart pivot / NoGood GC+rebuild / activity 減衰）→ `apply_restart_bookkeeping(model)`。経路差の
     temporal_activity_ リセット・gradient リセットは呼出側に残置
-  - [ ] cycle begin/end 構造の共通化は見送り（optimize は domain_count 追跡 + cycle_interrupted で
-    形状が異なる）
+  - [x] **restart 末尾**（mode 再抽選 + shuffle + init_tracking + unassigned_trail クリア）→
+    `resample_and_reshuffle(model)`。非対称（temporal リセット/gradient disable）は呼出側に残しフラグ回避
+  - [x] **timeout エピローグ**（community report + verbose + sync_nogood_stats）→ `finish_search_on_timeout()`
+  - [x] **内側 SAT 処理を focused helper に委譲する対称構造**: optimize=`run_improvement_probe`、
+    通常 find_all=`handle_find_all_solution`（`FindAllAction` enum）。両ループが薄く並行に
+    （search_with_restart ~141→~85 行）
+  - [-] cycle begin/end 構造 / UNKNOWN backtrack プロローグの共通化は見送り（optimize は domain_count 追跡 +
+    cycle_interrupted、UNKNOWN は break/return・戻り値・current_decision_ が分岐し、シグナル enum 無しでは
+    綺麗に収まらない。2箇所のみで分岐本体も別物のため callback/template 間接化は over-engineering）
 - [x] **mode_reward / mix_p 抽選を ModeRewardPolicy クラスへ移管**（`mode_reward_policy.hpp`, header-only）。
   状態(reward/p_idx/mix_p/improvement/max_depth)+抽選ロジックをカプセル化。Solver からは
   `mix_p()` / `note_improvement()` / `observe_depth()` / `update_and_resample(rng)` / `set_fixed()`。
