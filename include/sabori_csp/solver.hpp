@@ -10,6 +10,7 @@
 #include "sabori_csp/variable_selector.hpp"
 #include "sabori_csp/restart_controller.hpp"
 #include "sabori_csp/mode_reward_policy.hpp"
+#include "sabori_csp/gradient_strategy.hpp"
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
 #include <map>
@@ -341,16 +342,6 @@ private:
     void apply_restart_bookkeeping(Model& model);
 
     /**
-     * @brief 改善解からの疑似勾配計算と勾配変数の選択（optimize 専用）
-     *
-     * prev_improving_solution_ と current_best_assignment_ の差分から各 eligible 変数の
-     * 勾配符号を更新し、activity 最小（タイは var_size 最大）の1変数を gradient_var_idx_ /
-     * gradient_direction_ / gradient_ref_val_ に選ぶ。improvement probe にヒントを与える。
-     * 呼び出し前に gradient_var_idx_=SIZE_MAX / gradient_direction_=0 を満たすこと。
-     */
-    void compute_improvement_gradient(const Model& model);
-
-    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,
@@ -566,12 +557,8 @@ private:
     std::vector<Domain::value_type> current_best_assignment_;
 
     // 疑似勾配（最適化用）
-    std::vector<Domain::value_type> prev_improving_solution_;
-    std::vector<double> gradient_;  // 疑似勾配（直前の改善方向）
-    std::vector<size_t> gradient_eligible_vars_;  // 勾配を利用する変数インデックス
-    size_t gradient_var_idx_ = SIZE_MAX;
-    int gradient_direction_ = 0;
-    Domain::value_type gradient_ref_val_ = 0;
+    // 疑似勾配ヒント（optimize 専用）。状態と計算は GradientStrategy にカプセル化。
+    GradientStrategy gradient_strategy_;
 
     // リスタート（Adaptive Restart）
     RestartController restart_ctrl_;
