@@ -410,6 +410,24 @@ private:
      */
     ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
 
+    /**
+     * @brief handle_find_all_solution の戻り値
+     *
+     * ContinueLoop: 解を NoGood 登録し探索継続（inner restart ループを continue）。
+     * Stop: 列挙完了 or コールバック停止 or timeout/UNSAT → 呼び出し側は nullopt を返す。
+     */
+    enum class FindAllAction { ContinueLoop, Stop };
+
+    /**
+     * @brief 全解探索（find_all）の解処理（search_with_restart 専用）
+     *
+     * 解をコールバック報告 → solution NoGood 登録 → root へ backtrack → unit nogood 伝播。
+     * 伝播で全変数確定する間は有効解を報告し続ける。終了条件（コールバック停止 / 全解列挙 /
+     * timeout / UNSAT）では sync_nogood_stats() 済みで Stop を返す。
+     */
+    FindAllAction handle_find_all_solution(Model& model, SolutionCallback& callback,
+                                           const Solution& result, int root_point);
+
     // ===== run_search ヘルパー =====
 
     /// 全値/全ブランチ失敗時の共通処理

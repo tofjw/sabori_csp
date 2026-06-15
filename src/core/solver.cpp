@@ -229,6 +229,67 @@ void Solver::finish_search_on_timeout() {
     sync_nogood_stats();
 }
 
+Solver::FindAllAction Solver::handle_find_all_solution(
+        Model& model, SolutionCallback& callback, const Solution& result, int root_point) {
+    // 全解探索: コールバックに報告し、解をNGとして追加して続行
+    if (!callback(result)) {
+        sync_nogood_stats();
+        return FindAllAction::Stop;  // コールバックが停止を要求
+    }
+    model.clear_pending_updates();
+    // リテラル収集はバックトラック前、NoGood 登録は root 確定変数を
+    // 除外するためバックトラック後に行う
+    auto sol_lits = nogood_mgr_.collect_solution_literals(model);
+    backtrack(model, root_point);
+    nogood_mgr_.add_solution_nogood(model, sol_lits, stats_.restart_count);
+
+    // If still all assigned after backtrack, no decisions were undone
+    // (presolve fully solved the problem) — no more solutions exist.
+    if (var_selector_.all_assigned()) {
+        sync_nogood_stats();
+        return FindAllAction::Stop;
+    }
+
+    if (apply_unit_nogoods(model) != PropagationResult::Ok) {
+        // Conflict (UNSAT) も Stopped (timeout) も探索終了。
+        // 呼出側は is_stopped() で区別する。
+        model.clear_pending_updates();
+        sync_nogood_stats();
+        return FindAllAction::Stop;
+    }
+
+    // unit nogood + permanent NG の伝播で全変数が確定する場合がある
+    // その場合、有効な解なら報告して続行する
+    while (var_selector_.all_assigned()) {
+        if (verify_solution(model)) {
+            auto sol = build_solution(model);
+            if (!callback(sol)) {
+                sync_nogood_stats();
+                return FindAllAction::Stop;
+            }
+            model.clear_pending_updates();
+            auto inner_lits = nogood_mgr_.collect_solution_literals(model);
+            backtrack(model, root_point);
+            nogood_mgr_.add_solution_nogood(model, inner_lits, stats_.restart_count);
+            // If still all assigned after backtrack, no decisions to undo
+            if (var_selector_.all_assigned()) {
+                sync_nogood_stats();
+                return FindAllAction::Stop;
+            }
+            if (apply_unit_nogoods(model) != PropagationResult::Ok) {
+                model.clear_pending_updates();
+                sync_nogood_stats();
+                return FindAllAction::Stop;
+            }
+        } else {
+            sync_nogood_stats();
+            return FindAllAction::Stop;
+        }
+    }
+
+    return FindAllAction::ContinueLoop;
+}
+
 Solver::ProbeAction Solver::run_improvement_probe(
         Model& model, SolutionCallback& callback, int root_point) {
     // --- improvement probe: best objective 側から ~5% 改善を軽量プローブで試みる ---
@@ -438,62 +499,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
             if (res == SearchResult::SAT) {
                 if (find_all) {
-                    // 全解探索: コールバックに報告し、解をNGとして追加して続行
-                    if (!callback(*result)) {
-                        sync_nogood_stats();
-                        return std::nullopt;  // コールバックが停止を要求
-                    }
-                    model.clear_pending_updates();
-                    // リテラル収集はバックトラック前、NoGood 登録は root 確定変数を
-                    // 除外するためバックトラック後に行う
-                    auto sol_lits = nogood_mgr_.collect_solution_literals(model);
-                    backtrack(model, root_point);
-                    nogood_mgr_.add_solution_nogood(model, sol_lits, stats_.restart_count);
-
-                    // If still all assigned after backtrack, no decisions were undone
-                    // (presolve fully solved the problem) — no more solutions exist.
-                    if (var_selector_.all_assigned()) {
-                        sync_nogood_stats();
+                    if (handle_find_all_solution(model, callback, *result, root_point)
+                            == FindAllAction::Stop) {
                         return std::nullopt;
                     }
-
-                    if (apply_unit_nogoods(model) != PropagationResult::Ok) {
-                        // Conflict (UNSAT) も Stopped (timeout) も探索終了。
-                        // 呼出側は is_stopped() で区別する。
-                        model.clear_pending_updates();
-                        sync_nogood_stats();
-                        return std::nullopt;
-                    }
-
-                    // unit nogood + permanent NG の伝播で全変数が確定する場合がある
-                    // その場合、有効な解なら報告して続行する
-                    while (var_selector_.all_assigned()) {
-                        if (verify_solution(model)) {
-                            auto sol = build_solution(model);
-                            if (!callback(sol)) {
-                                sync_nogood_stats();
-                                return std::nullopt;
-                            }
-                            model.clear_pending_updates();
-                            auto inner_lits = nogood_mgr_.collect_solution_literals(model);
-                            backtrack(model, root_point);
-                            nogood_mgr_.add_solution_nogood(model, inner_lits, stats_.restart_count);
-                            // If still all assigned after backtrack, no decisions to undo
-                            if (var_selector_.all_assigned()) {
-                                sync_nogood_stats();
-                                return std::nullopt;
-                            }
-                            if (apply_unit_nogoods(model) != PropagationResult::Ok) {
-                                model.clear_pending_updates();
-                                sync_nogood_stats();
-                                return std::nullopt;
-                            }
-                        } else {
-                            sync_nogood_stats();
-                            return std::nullopt;
-                        }
-                    }
-
                     continue;
                 }
                 sync_nogood_stats();
