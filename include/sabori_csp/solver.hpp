@@ -342,6 +342,24 @@ private:
     void apply_restart_bookkeeping(Model& model);
 
     /**
+     * @brief restart 直前: mix_p 再抽選とスキャン順の再シャッフル・追跡リセット
+     *
+     * mode_policy_.update_and_resample → var_selector_ のシャッフル + init_tracking →
+     * unassigned_trail_ クリアを行う。両 search ループの restart 末尾で共通。
+     * temporal_activity_ リセット（通常のみ）・gradient ヒント無効化（最適化のみ）は
+     * 経路差があるため呼び出し側に残す。
+     */
+    void resample_and_reshuffle(Model& model);
+
+    /**
+     * @brief 探索が timeout で停止した際の共通エピローグ（ログ + nogood 統計同期）
+     *
+     * community 動的レポート（最終）と verbose ログを出力し、sync_nogood_stats() を呼ぶ。
+     * 戻り値は呼び出し側で異なる（通常: nullopt / 最適化: best_solution_）ため返さない。
+     */
+    void finish_search_on_timeout();
+
+    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,

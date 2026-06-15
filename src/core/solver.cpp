@@ -210,6 +210,25 @@ void Solver::apply_restart_bookkeeping(Model& model) {
     decay_activities();
 }
 
+void Solver::resample_and_reshuffle(Model& model) {
+    // restart 前: 報酬更新と p 抽選
+    mode_policy_.update_and_resample(rng_);
+    // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
+    var_selector_.shuffle(rng_);
+    var_selector_.init_tracking(model);
+    unassigned_trail_.clear();
+}
+
+void Solver::finish_search_on_timeout() {
+    if (community_analysis_.is_enabled() && verbose_) {
+        community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
+    }
+    if (verbose_) {
+        std::cerr << "% [verbose] search stopped (timeout)\n";
+    }
+    sync_nogood_stats();
+}
+
 Solver::ProbeAction Solver::run_improvement_probe(
         Model& model, SolutionCallback& callback, int root_point) {
     // --- improvement probe: best objective 側から ~5% 改善を軽量プローブで試みる ---
@@ -500,13 +519,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             // Temporal activity リセット
             std::fill(temporal_activity_.begin(), temporal_activity_.end(), 0);
 
-            // restart 前: 報酬更新と p 抽選
-            mode_policy_.update_and_resample(rng_);
-
-            // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
-            var_selector_.shuffle(rng_);
-            var_selector_.init_tracking(model);
-            unassigned_trail_.clear();
+            resample_and_reshuffle(model);
 
             if (verbose_) {
                 std::cerr << "% [verbose] restart #" << stats_.restart_count
@@ -534,13 +547,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         }
     }
 
-    if (community_analysis_.is_enabled() && verbose_) {
-        community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
-    }
-    if (verbose_) {
-        std::cerr << "% [verbose] search stopped (timeout)\n";
-    }
-    sync_nogood_stats();
+    finish_search_on_timeout();
     return std::nullopt;
 }
 
@@ -688,13 +695,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             apply_restart_bookkeeping(model);
 
-            // restart 前: 報酬更新と p 抽選
-            mode_policy_.update_and_resample(rng_);
-
-            // スキャン順シャッフル
-            var_selector_.shuffle(rng_);
-            var_selector_.init_tracking(model);
-            unassigned_trail_.clear();
+            resample_and_reshuffle(model);
 
             // 解が見つからなかった場合: 探索を多様化するため勾配を使わない
             gradient_strategy_.disable_hint();
@@ -729,13 +730,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
         }
     }
 
-    if (community_analysis_.is_enabled() && verbose_) {
-        community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count + 1);
-    }
-    if (verbose_) {
-        std::cerr << "% [verbose] search stopped (timeout)\n";
-    }
-    sync_nogood_stats();
+    finish_search_on_timeout();
     return best_solution_;
 }
 
