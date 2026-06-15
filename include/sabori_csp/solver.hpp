@@ -9,6 +9,7 @@
 #include "sabori_csp/nogood_manager.hpp"
 #include "sabori_csp/variable_selector.hpp"
 #include "sabori_csp/restart_controller.hpp"
+#include "sabori_csp/mode_reward_policy.hpp"
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
 #include <map>
@@ -213,8 +214,7 @@ public:
      * 注意: リスタートごとの適応サンプリングが効くため、初期値としてのみ機能する
      */
     void set_activity_first(bool enabled) {
-        current_p_idx_ = enabled ? (kModeGridSize - 1) : 0;
-        mix_p_ = enabled ? 1.0 : 0.0;
+        mode_policy_.set_fixed(enabled);
     }
 
     /**
@@ -329,15 +329,6 @@ private:
     std::optional<Solution> search_with_restart_optimize(
         Model& model, SolutionCallback callback);
 
-    /**
-     * @brief restart 直前の mode_reward 更新と mix_p の再サンプル
-     *
-     * 直近 restart の改善有無（improvement_in_restart_ / restart_max_depth_）から
-     * EMA で mode_reward_ を更新し、報酬比例で current_p_idx_ を再抽選して mix_p_ を更新する。
-     * improvement_in_restart_ と restart_max_depth_ は消費後リセットする。
-     * search_with_restart / search_with_restart_optimize の restart 後処理で共通利用。
-     */
-    void update_mode_reward_and_resample();
 
     /**
      * @brief restart 直後の共通簿記
@@ -541,16 +532,10 @@ private:
     bool nogood_learning_ = true;
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
-    // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理
-    // decision ごとに rng で activity_first を抽選し、reward は restart で抽選した bucket + 隣接に加算
-    static constexpr size_t kModeGridSize = 5;
-    static constexpr double kModeRewardDecay = 0.5;
-    static constexpr double kModeRewardFloor = 0.1;
-    double mix_p_ = 0.5;             // 現在の混合比（restart で再サンプル）
-    size_t current_p_idx_ = 2;       // mode_reward_ のどのバケットを使っているか
-    double mode_reward_[kModeGridSize] = {1.0, 1.0, 1.0, 1.0, 1.0};
-    size_t restart_max_depth_ = 0;   // 直近 restart 内で到達した最大探索深さ
-    bool improvement_in_restart_ = false;  // この restart 内で SAT/probe による改善が起きたか
+    // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理。
+    // decision ごとに rng で activity_first を抽選し、reward は restart で抽選した bucket + 隣接に加算。
+    // 状態と抽選ロジックは ModeRewardPolicy にカプセル化（mode_reward_policy.hpp）。
+    ModeRewardPolicy mode_policy_;
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 
