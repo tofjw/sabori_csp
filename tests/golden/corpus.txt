@@ -96,6 +96,12 @@ tests/fzn/constraints/int_div/reverse_propagation.fzn
 tests/fzn/constraints/int_div/simple.fzn
 tests/fzn/constraints/int_div/y_backward_straddle.fzn
 tests/fzn/constraints/int_div/zero_quotient.fzn
+tests/fzn/constraints/int_element_monotonic/all_solutions.fzn
+tests/fzn/constraints/int_element_monotonic/constant_array.fzn
+tests/fzn/constraints/int_element_monotonic/non_decreasing.fzn
+tests/fzn/constraints/int_element_monotonic/non_increasing.fzn
+tests/fzn/constraints/int_element_monotonic/reverse_propagation.fzn
+tests/fzn/constraints/int_element_monotonic/unsat.fzn
 tests/fzn/constraints/int_eq/simple.fzn
 tests/fzn/constraints/int_eq_imp/b_false.fzn
 tests/fzn/constraints/int_eq_imp/b_true.fzn
@@ -144,6 +150,10 @@ tests/fzn/constraints/int_lin_ne_reif/b_true.fzn
 tests/fzn/constraints/int_lin_ne_reif/deduce_false.fzn
 tests/fzn/constraints/int_lin_ne_reif/deduce_true.fzn
 tests/fzn/constraints/int_lt/simple.fzn
+tests/fzn/constraints/int_lt_reif/boundary_equal.fzn
+tests/fzn/constraints/int_lt_reif/boundary_off_by_one.fzn
+tests/fzn/constraints/int_lt_reif/simple.fzn
+tests/fzn/constraints/int_lt_reif/unsat.fzn
 tests/fzn/constraints/int_max/basic.fzn
 tests/fzn/constraints/int_max/x_larger.fzn
 tests/fzn/constraints/int_mod/all_solutions.fzn

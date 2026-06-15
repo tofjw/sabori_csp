@@ -1,0 +1,11 @@
+% int_lt_reif UNSAT: force b=1 (claims x<y) but pin x=y=5 so x<y is false.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 0..1: b :: output_var;
+
+constraint int_lt_reif(x, y, b);
+constraint int_eq(x, 5);
+constraint int_eq(y, 5);
+constraint int_eq(b, 1);
+
+solve satisfy;

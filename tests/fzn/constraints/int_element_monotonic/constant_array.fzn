@@ -1,5 +1,6 @@
 % Constant array (all same value), treated as non-decreasing
 var 1..4: idx :: output_var;
 var 1..100: result :: output_var;
-constraint array_int_element(idx, [42, 42, 42, 42], result);
+array [1..4] of int: arr = [42, 42, 42, 42];
+constraint array_int_element(idx, arr, result);
 solve satisfy;

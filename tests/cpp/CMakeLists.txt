@@ -17,6 +17,7 @@ add_executable(test_sabori_csp
   test_diffn_brute.cpp
   test_disjunctive_brute.cpp
   test_find_all_consistency.cpp
+  test_one_hot_channel.cpp
 )
 
 target_link_libraries(test_sabori_csp

@@ -1,0 +1,10 @@
+% int_lt_reif boundary: x == y-1 is the smallest gap where x<y holds => b=1.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 0..1: b :: output_var;
+
+constraint int_lt_reif(x, y, b);
+constraint int_eq(x, 4);
+constraint int_eq(y, 5);
+
+solve satisfy;

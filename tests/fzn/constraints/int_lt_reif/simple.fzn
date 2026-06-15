@@ -1,0 +1,10 @@
+% int_lt_reif test: (x < y) <-> b, SAT case where x<y holds => b=1
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 0..1: b :: output_var;
+
+constraint int_lt_reif(x, y, b);
+constraint int_eq(x, 2);
+constraint int_eq(y, 5);
+
+solve satisfy;

@@ -1,0 +1,11 @@
+% int_lt_reif boundary: x == y is the < boundary => x<y false => b must be 0.
+% Distinguishes int_lt_reif (strict) from int_le_reif (would give b=1 here).
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 0..1: b :: output_var;
+
+constraint int_lt_reif(x, y, b);
+constraint int_eq(x, 4);
+constraint int_eq(y, 4);
+
+solve satisfy;

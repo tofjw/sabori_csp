@@ -1,6 +1,7 @@
 % int_element with non-decreasing array, index fixed
 var 1..5: idx :: output_var;
 var 1..100: result :: output_var;
+array [1..5] of int: arr = [10, 20, 30, 40, 50];
 constraint int_eq(idx, 3);
-constraint array_int_element(idx, [10, 20, 30, 40, 50], result);
+constraint array_int_element(idx, arr, result);
 solve satisfy;
