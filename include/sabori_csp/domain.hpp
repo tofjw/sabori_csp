@@ -110,7 +110,7 @@ public:
     void for_each_value(F&& f) const {
         if (bounds_only_) {
             for (value_type v = min_; v <= max_; ++v) {
-                if (removed_set_.find(v) == removed_set_.end()) {
+                if (!is_removed(v)) {
                     f(v);
                 }
             }
@@ -129,7 +129,7 @@ public:
         if (bounds_only_) {
             out.reserve(n_);
             for (value_type v = min_; v <= max_; ++v) {
-                if (removed_set_.find(v) == removed_set_.end()) {
+                if (!is_removed(v)) {
                     out.push_back(v);
                 }
             }
@@ -157,7 +157,7 @@ public:
     bool sparse_contains(value_type value) const {
         if (bounds_only_) {
             if (value < min_ || value > max_) return false;
-            return removed_set_.find(value) == removed_set_.end();
+            return !is_removed(value);
         }
         auto idx_val = static_cast<size_t>(value - offset_);
         if (value < offset_ || idx_val >= sparse_.size()) return false;
@@ -262,6 +262,16 @@ public:
     void update_bounds();
 
 private:
+    /**
+     * @brief bounds-only モードで値が除去済みか（O(1) メンバシップ判定）
+     *
+     * removed_set_ への find 問い合わせを一本化する。bounds-only 専用
+     * （sparse-set モードでは removed_set_ は空のまま使用しない）。
+     */
+    bool is_removed(value_type v) const {
+        return removed_set_.find(v) != removed_set_.end();
+    }
+
     std::vector<value_type> values_;  // Dense 配列
     std::vector<size_t> sparse_;      // フラット sparse 配列（sparse_[val - offset_] = index）
     value_type offset_;               // = 初期 min 値

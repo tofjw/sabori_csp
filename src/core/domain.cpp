@@ -65,7 +65,7 @@ Domain::Domain(std::vector<value_type> values)
 bool Domain::contains(value_type value) const {
     if (value < min_ || value > max_) return false;
     if (bounds_only_) {
-        return removed_set_.find(value) == removed_set_.end();
+        return !is_removed(value);
     }
     auto idx_val = static_cast<size_t>(value - offset_);
     if (idx_val >= sparse_.size()) {
@@ -77,7 +77,7 @@ bool Domain::contains(value_type value) const {
 bool Domain::remove(value_type value) {
     if (bounds_only_) {
         if (value < min_ || value > max_) return true;  // 範囲外
-        if (removed_set_.find(value) != removed_set_.end()) return true;  // 既に除去済み
+        if (is_removed(value)) return true;  // 既に除去済み
         if (n_ == 1) return false;  // 空になる
         removed_values_.push_back(value);
         removed_set_.insert(value);
@@ -225,7 +225,7 @@ std::vector<Domain::value_type> Domain::values() const {
         std::vector<value_type> result;
         result.reserve(n_);
         for (value_type v = min_; v <= max_; ++v) {
-            if (removed_set_.find(v) == removed_set_.end()) {
+            if (!is_removed(v)) {
                 result.push_back(v);
             }
         }
