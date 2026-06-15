@@ -153,14 +153,17 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
     int_lin_le / le_reif / le_imp の3重複（sum<=bound の境界絞り loop）を一本化（2026-06-15,
     commit fe736eb, net -48行, brute 1614 green + golden byte一致）。gt 方向（le_reif のみ）は
     重複が無いため対象外。le 用 brute net は commit 8d555b0 で先行併設。
-- [~] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（〜200行削減）
+- [x] comparison.cpp のドメイン交差・双方向伝播ヘルパ抽出（presolve + propagation 両側完了）
   - [x] **presolve ヘルパ抽出**: ドメイン交差（x==y）を `intersect_eq`（IntEq / IntEqReif b=1 /
     IntEqImp b=1 の逐語3複製）、境界対絞り込み（lo<=hi / strict）を `enforce_le`（IntLt / IntLe /
     IntLeReif b=1=x<=y・b=0=y<x strict）に一本化（2026-06-15, commit 続き, net -69行, golden byte一致 +
     scalar comparison brute net 2910 assertion）。安全網先行: `tests/cpp/test_cmp_reif_brute.cpp`。
-  - [ ] **propagation 側**（on_instantiate の相互固定 / on_set_min/max の bounds 相互伝播）は
-    素の制約と reif の b=1/b=0 分岐で部分的に重複するが、b ロジックと絡み presolve ほど逐語的でない。
-    別途検討（ROI 中・要 brute 継続）。
+  - [x] **propagation 側**（2026-06-15 完了）: x==y の逐語複製のみ一本化。
+    `eq_fix_mutual(model,x,y)→bool`（相互固定: IntEq / IntEqReif b=1 の on_instantiate 2箇所）+
+    `eq_propagate_bound(model,changed,x,y,bound,is_min)`（bounds 相互伝播: IntEq / IntEqReif b=1 /
+    IntEqImp b=1 の on_set_min/max 計6箇所）。le/lt は offset 差・new_min vs var_min 再読の差で逐語でなく、
+    IntEqImp の on_instantiate も else-if 構造が異なるため対象外（presolve ほど逐語的でない方針通り、
+    逐語複製のみ集約）。brute net 2924 assertion + golden 182 byte一致。
 - [~] **presolve/propagate 二重実装の統一**: ドメイン更新を抽象化（直接 or enqueue を切り替える DomainWriter）。
   - [x] **diffn**: `propagate_pairwise`(enqueue) と `propagate_pairwise_direct`(presolve 直接)を
     accessor ポリシー(`EnqueueAccess`/`DirectAccess`)付きテンプレート `diffn_pairwise<Acc>` に統一
