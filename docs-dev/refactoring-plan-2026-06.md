@@ -212,14 +212,28 @@ byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn
 
 フェーズ3〜5 で薄くなった後に実施。再肥大化（1,308→1,810行）の原因である後付け機能を分離する。
 
-- [ ] `search_with_restart` / `search_with_restart_optimize` の共通骨格抽出（restart 制御・cycle 管理・mode_reward 更新の二重実装解消）
-- [ ] mode_reward / mix_p 抽選を RestartController（または新 ModeRewardPolicy）へ移管
-- [ ] gradient ヒューリスティクスを optimize 専用 Strategy へ分離
+**進捗 (2026-06-15)**: ヘルパ抽出で二重実装解消 + optimize 関数のスリム化を実施（全 commit golden
+byte一致）。`search_with_restart_optimize` は ~460→~200 行、`search_with_restart` は ~200→~150 行。
+
+- [~] `search_with_restart` / `search_with_restart_optimize` の共通骨格抽出（restart 制御・cycle 管理・mode_reward 更新の二重実装解消）
+  - [x] **mode_reward EMA 更新 + mix_p 再抽選**（byte一致 32行重複）→ `update_mode_reward_and_resample()`
+  - [x] **restart 共通簿記**（restart_count++ / community report / select_best_assignment / bloom /
+    restart pivot / NoGood GC+rebuild / activity 減衰）→ `apply_restart_bookkeeping(model)`。経路差の
+    temporal_activity_ リセット・gradient リセットは呼出側に残置
+  - [ ] cycle begin/end 構造の共通化は見送り（optimize は domain_count 追跡 + cycle_interrupted で
+    形状が異なる）
+- [x] **mode_reward / mix_p 抽選を関数へ移管**: `update_mode_reward_and_resample()` に集約（RestartController
+  への移管は次段。まず関数単位で decouple）
+- [x] **gradient ヒューリスティクスを optimize 専用ヘルパへ分離**: `compute_improvement_gradient(model)`
+- [x] **improvement probe を分離**: `run_improvement_probe(model, callback, root_point)` が `ProbeAction`
+  enum（Continue / BreakInnerLoop / ReturnOptimal）を返す（handle_ascent の AscentAction と同パターン）
 - [ ] 統計記録の残りを ConstraintStats レイヤへ
 - [ ] find_all + restart の解列挙設計レビュー（solution nogood 依存。2026-06-10 に root 確定変数 watch の無限ループバグを修正済み。1リテラル縮退時の unit nogood 化の非対称も解消）
-- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ。RestartController / ModeRewardPolicy の単体テスト追加
+- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ。RestartController / ModeRewardPolicy の単体テスト追加（ヘルパ抽出は済んだので次はクラス化フェーズ）
 
-**完了条件**: ゴールデン一致 + 全ベンチ非劣化。
+**完了条件**: ゴールデン一致 + 全ベンチ非劣化。**現状**: ヘルパ抽出 4 commit 完了、全 golden byte一致
+（軌道不変＝ベンチ不要）。次段はヘルパのクラス化（RestartController / ModeRewardPolicy / GradientStrategy）
+と単体テスト追加、または Phase 5 へ。
 
 ---
 
