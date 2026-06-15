@@ -392,6 +392,24 @@ private:
      */
     enum class AscentAction { Return, Continue, TryNext };
 
+    /**
+     * @brief run_improvement_probe の戻り値
+     *
+     * Continue: probe 完了、optimize ループの後続処理へ進む。
+     * BreakInnerLoop: timeout（process_queue Stopped）→ inner restart ループを break。
+     * ReturnOptimal: 伝播で改善不能が証明された → best_solution_ を返して終了。
+     */
+    enum class ProbeAction { Continue, BreakInnerLoop, ReturnOptimal };
+
+    /**
+     * @brief best objective 側からの軽量 improvement probe（optimize 専用）
+     *
+     * probe_fail_limit_>0 のとき、obj レンジの ~5% 改善目標を仮定して軽量探索する。
+     * SAT/UNSAT/UNKNOWN に応じて目的変数境界を永続縮小し、root 状態を再構築する。
+     * probe_fail_limit_==0 や target が無効なら何もせず Continue を返す。
+     */
+    ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
+
     // ===== run_search ヘルパー =====
 
     /// 全値/全ブランチ失敗時の共通処理
