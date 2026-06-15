@@ -174,22 +174,26 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
   - [-] **disjunctive `update_compulsory_part` は統合しない**（確定判断）: `_direct` 版は CP=∅ 前提・
     trail 無しの**presolve 特化アルゴリズム**で full 版（incremental CP 拡張 + trail）とロジックが
     別物。読み書き方式だけの差ではないため DomainWriter 対象外。
-- [deferred] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化（4イベント
-  コールバックから冗長な `var_idx` を除去し、必要な制約は `var_ids_[internal_var_idx]` で O(1) 導出）。
-  全制約に波及するため**フェーズ最後**に、シグネチャ変更でコンパイラに非互換を検出させる形で実施。
-  - **2026-06-15 に着手判断 → defer（ユーザー判断）**: 機能改善ゼロ・churn 高（base 仮想4 + 制約 ~28
-    ファイル + solver dispatch 7箇所、`var_idx` 使用箇所の本体置換）。実体的な Phase 4 dedup
-    （reif 統一 / le カーネル / comparison ヘルパ / diffn・disjunctive DomainWriter, 計 ~610行・
-    7コミット）は完了済み。CLAUDE.md の「big-bang 回避・逐次推奨」とも整合し、専用セッションに切り出す。
-    - 着手時はこの方向で: solver は `var_idx` と `w.internal_var_idx` を両方保持（`var_idx ==
-      var_ids_[internal_var_idx]`）。`internal_var_idx` のみ残し、`override` でコンパイラに全 override の
-      非互換を検出させて1ファイルずつ修正。
+- [x] **コールバック署名整理**: `var_idx`/`internal_var_idx` の引き回しを一本化（4イベント
+  コールバックから冗長な `var_idx` を除去し、必要な制約は `var_id(internal_var_idx)` で O(1) 導出）。
+  （2026-06-15, commit 4312dda, 48ファイル・注入47箇所, golden 182 byte一致 + ctest 222/222 + python 100）。
+  - base 仮想4 + 定義（constraint.hpp/.cpp）、135 override、solver dispatch 7箇所、明示的 base/parent
+    呼び出しを更新。`internal_var_idx` を唯一の真実とし、dispatch が不整合ペアを渡す余地を構造的に排除。
+    var_idx を使わない hot-path 線形/scheduling コールバックは引数1つ減。
+  - **安全網**: 派生 135 宣言は全て既に `override` 付き（当初 grep アーティファクトで「未付与」と誤認 →
+    paren マッチで再検証し判明）。基底署名変更がコンパイラで全 override 検証され、grep 完全性でも残存
+    旧シグネチャ 0 を確認。
+  - **テスト修正の要点**: `test_constraints.cpp` は比較制約に「実グローバル id + dummy internal=0」の
+    **不整合ペア**を渡していた（旧コードは var_idx しか見ないので通っていた）。リファクタで internal が
+    真実になるため正しい内部 index へ補正（x→0/y→1/m·b→2）。リテラル index を渡す graph/linear/alldiff は
+    第3引数を落とすだけ（internal 値保存で挙動不変）。
+  - net +39行（注入47 が param 削減を相殺）。目的は行数でなく重複/不整合源の除去。
 
 **完了条件**: ゴールデン一致 + ctest green + ベンチ3本 + `bench_compare.py` 総合非劣化。
 **削減見込み**: 1,000 行強。
 **進捗 (2026-06-15)**: 実体的 dedup 完了（reif/le/comparison/diffn/disjunctive, ~610行削減・全 golden
-byte一致）。残りは署名整理のみ（defer）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn /
-disjunctive, 計 ~2920+ assertion）。
+byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn / disjunctive, 計 ~2920+ assertion）。
+**署名整理も完了**（commit 4312dda, golden 182 byte一致）→ **Phase 4 全完了**。次は Phase 5 または Phase 6。
 
 ## フェーズ5: Domain 表現と性能（2週間、高リスク・ベンチゲート厳格）
 
