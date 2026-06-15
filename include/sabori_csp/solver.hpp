@@ -340,6 +340,16 @@ private:
     void update_mode_reward_and_resample();
 
     /**
+     * @brief restart 直後の共通簿記
+     *
+     * restart_count 更新・community 動的レポート/リセット・current_best_assignment_ 再選択・
+     * bloom リセット・restart pivot 選択・NoGood GC + bloom 再構築・activity 減衰を行う。
+     * search_with_restart / search_with_restart_optimize で共通。
+     * temporal_activity_ リセットや mode_reward 更新は呼び出し側に残す（経路差があるため）。
+     */
+    void apply_restart_bookkeeping(Model& model);
+
+    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,

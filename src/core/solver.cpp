@@ -209,6 +209,26 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     return count;
 }
 
+void Solver::apply_restart_bookkeeping(Model& model) {
+    stats_.restart_count++;
+    if (community_analysis_.is_enabled()) {
+        if (verbose_) community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
+        community_analysis_.reset_stats();
+    }
+    current_best_assignment_ = select_best_assignment();
+    ng_usage_bloom_ = Bloom512{};
+
+    // リスタート後の起点変数を選択（探索多様化）
+    var_selector_.select_restart_pivot(model, activity_, rng_);
+
+    // NoGood GC + ブルームフィルタ再構築
+    nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
+    nogood_mgr_.rebuild_var_ng_blooms(model);
+
+    // Activity 減衰
+    decay_activities();
+}
+
 void Solver::update_mode_reward_and_resample() {
     //   signal = 改善あり ? 2.0 : 1/(1+restart_max_depth_)
     //   r ← α*r + (1-α)*bucket_signal  (α = kModeRewardDecay)
@@ -349,23 +369,7 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
                 return std::nullopt;
             }
 
-            stats_.restart_count++;
-            if (community_analysis_.is_enabled()) {
-                if (verbose_) community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
-                community_analysis_.reset_stats();
-            }
-            current_best_assignment_ = select_best_assignment();
-            ng_usage_bloom_ = Bloom512{};
-
-            // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, rng_);
-
-            // NoGood GC + ブルームフィルタ再構築
-            nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
-            nogood_mgr_.rebuild_var_ng_blooms(model);
-
-            // Activity 減衰
-            decay_activities();
+            apply_restart_bookkeeping(model);
 
             // Temporal activity リセット
             std::fill(temporal_activity_.begin(), temporal_activity_.end(), 0);
@@ -772,23 +776,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                 }
             }
 
-            stats_.restart_count++;
-            if (community_analysis_.is_enabled()) {
-                if (verbose_) community_analysis_.print_dynamic_report(std::cerr, stats_.restart_count);
-                community_analysis_.reset_stats();
-            }
-            current_best_assignment_ = select_best_assignment();
-            ng_usage_bloom_ = Bloom512{};
-
-            // リスタート後の起点変数を選択（探索多様化）
-            var_selector_.select_restart_pivot(model, activity_, rng_);
-
-            // NoGood GC + ブルームフィルタ再構築
-            nogood_mgr_.gc(stats_.restart_count, nogood_inactive_restart_limit_);
-            nogood_mgr_.rebuild_var_ng_blooms(model);
-
-            // Activity 減衰
-            decay_activities();
+            apply_restart_bookkeeping(model);
 
             // restart 前: 報酬更新と p 抽選
             update_mode_reward_and_resample();
