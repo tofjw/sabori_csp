@@ -170,11 +170,12 @@ PresolveResult ArrayBoolAndConstraint::presolve(Model& model) {
 }
 
 bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
-                                             size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                             size_t internal_var_idx, Domain::value_type value,
                                              Domain::value_type prev_min,
                                              Domain::value_type prev_max) {
+    const size_t var_idx = var_id(internal_var_idx);
     // 基底クラスの処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -498,10 +499,11 @@ PresolveResult ArrayBoolOrConstraint::presolve(Model& model) {
 }
 
 bool ArrayBoolOrConstraint::on_instantiate(Model& model, int save_point,
-                                            size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                            size_t internal_var_idx, Domain::value_type value,
                                             Domain::value_type prev_min,
                                             Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    const size_t var_idx = var_id(internal_var_idx);
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -818,11 +820,12 @@ PresolveResult BoolClauseConstraint::presolve(Model& model) {
 }
 
 bool BoolClauseConstraint::on_instantiate(Model& model, int save_point,
-                                           size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                           size_t internal_var_idx, Domain::value_type value,
                                            Domain::value_type prev_min,
                                            Domain::value_type prev_max) {
+    const size_t var_idx = var_id(internal_var_idx);
     if (is_tautology_) return true;  // 恒真節: 何もしない
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1019,11 +1022,11 @@ PresolveResult BoolNotConstraint::presolve(Model& model) {
 }
 
 bool BoolNotConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                        size_t internal_var_idx, Domain::value_type value,
                                         Domain::value_type prev_min,
                                         Domain::value_type prev_max) {
     // 基底クラスの処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1109,11 +1112,11 @@ PresolveResult ArrayBoolXorConstraint::presolve(Model& model) {
 }
 
 bool ArrayBoolXorConstraint::on_instantiate(Model& model, int save_point,
-                                             size_t var_idx, size_t internal_var_idx,
+                                             size_t internal_var_idx,
                                              Domain::value_type value,
                                              Domain::value_type prev_min,
                                              Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1231,10 +1234,10 @@ PresolveResult BoolXorConstraint::presolve(Model& model) {
 }
 
 bool BoolXorConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                        size_t internal_var_idx, Domain::value_type value,
                                         Domain::value_type prev_min,
                                         Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }

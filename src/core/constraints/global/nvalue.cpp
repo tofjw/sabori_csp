@@ -216,11 +216,11 @@ bool NValueConstraint::prepare_propagation(Model& model) {
 }
 
 bool NValueConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, size_t internal_var_idx,
+                                       size_t internal_var_idx,
                                        Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx,
                                      value, prev_min, prev_max)) {
         return false;
     }
@@ -298,7 +298,7 @@ bool NValueConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 }
 
 bool NValueConstraint::on_remove_value(Model& model, int save_point,
-                                        size_t var_idx, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type removed_value) {
     if (internal_var_idx >= num_x_) {
         // n variable domain changed
@@ -327,7 +327,7 @@ bool NValueConstraint::on_remove_value(Model& model, int save_point,
 }
 
 bool NValueConstraint::on_set_min(Model& model, int save_point,
-                                   size_t var_idx, size_t internal_var_idx,
+                                   size_t internal_var_idx,
                                    Domain::value_type new_min,
                                    Domain::value_type old_min) {
     if (internal_var_idx >= num_x_) {
@@ -365,7 +365,7 @@ bool NValueConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool NValueConstraint::on_set_max(Model& model, int save_point,
-                                   size_t var_idx, size_t internal_var_idx,
+                                   size_t internal_var_idx,
                                    Domain::value_type new_max,
                                    Domain::value_type old_max) {
     if (internal_var_idx >= num_x_) {

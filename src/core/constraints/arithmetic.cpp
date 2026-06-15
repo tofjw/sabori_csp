@@ -142,11 +142,11 @@ bool IntTimesConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
-                                         size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                         size_t internal_var_idx, Domain::value_type value,
                                          Domain::value_type prev_min,
                                          Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -320,7 +320,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntTimesConstraint::on_set_min(Model& model, int /*save_point*/,
-                                     size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                     size_t /*internal_var_idx*/,
                                      Domain::value_type /*new_min*/,
                                      Domain::value_type /*old_min*/) {
     auto x_min = model.var_min(x_id_);
@@ -356,11 +356,11 @@ bool IntTimesConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntTimesConstraint::on_set_max(Model& model, int save_point,
-                                     size_t var_idx, size_t internal_var_idx,
+                                     size_t internal_var_idx,
                                      Domain::value_type new_max,
                                      Domain::value_type /*old_max*/) {
     // on_set_min と同じ伝播（全変数の境界が相互に影響するため）
-    return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
+    return on_set_min(model, save_point, internal_var_idx, new_max, 0);
 }
 
 bool IntTimesConstraint::on_final_instantiate(const Model& model) {
@@ -514,11 +514,11 @@ bool IntAbsConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, size_t internal_var_idx, Domain::value_type value,
+                                       size_t internal_var_idx, Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
     // 基底クラスの処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -576,7 +576,7 @@ bool IntAbsConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntAbsConstraint::on_set_min(Model& model, int /*save_point*/,
-                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   size_t /*internal_var_idx*/,
                                    Domain::value_type /*new_min*/,
                                    Domain::value_type /*old_min*/) {
     auto x_min = model.var_min(x_id_);
@@ -610,11 +610,11 @@ bool IntAbsConstraint::on_set_min(Model& model, int /*save_point*/,
 }
 
 bool IntAbsConstraint::on_set_max(Model& model, int save_point,
-                                   size_t var_idx, size_t internal_var_idx,
+                                   size_t internal_var_idx,
                                    Domain::value_type new_max,
                                    Domain::value_type /*old_max*/) {
     // |x| = y は全変数の境界が相互に影響するため on_set_min と同一のロジック
-    return on_set_min(model, save_point, var_idx, internal_var_idx, new_max, 0);
+    return on_set_min(model, save_point, internal_var_idx, new_max, 0);
 }
 
 bool IntAbsConstraint::on_final_instantiate(const Model& model) {
@@ -889,12 +889,12 @@ bool IntDivConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntDivConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, size_t internal_var_idx,
+                                       size_t internal_var_idx,
                                        Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -971,14 +971,14 @@ bool IntDivConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntDivConstraint::on_set_min(Model& model, int /*save_point*/,
-                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   size_t /*internal_var_idx*/,
                                    Domain::value_type /*new_min*/,
                                    Domain::value_type /*old_min*/) {
     return propagate_bounds(model);
 }
 
 bool IntDivConstraint::on_set_max(Model& model, int /*save_point*/,
-                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   size_t /*internal_var_idx*/,
                                    Domain::value_type /*new_max*/,
                                    Domain::value_type /*old_max*/) {
     return propagate_bounds(model);
@@ -1139,12 +1139,12 @@ bool IntModConstraint::propagate_bounds(Model& model) {
 }
 
 bool IntModConstraint::on_instantiate(Model& model, int save_point,
-                                       size_t var_idx, size_t internal_var_idx,
+                                       size_t internal_var_idx,
                                        Domain::value_type value,
                                        Domain::value_type prev_min,
                                        Domain::value_type prev_max) {
     // 基底クラスの 2WL 処理
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value,
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                      prev_min, prev_max)) {
         return false;
     }
@@ -1239,14 +1239,14 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool IntModConstraint::on_set_min(Model& model, int /*save_point*/,
-                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   size_t /*internal_var_idx*/,
                                    Domain::value_type /*new_min*/,
                                    Domain::value_type /*old_min*/) {
     return propagate_bounds(model);
 }
 
 bool IntModConstraint::on_set_max(Model& model, int /*save_point*/,
-                                   size_t /*var_idx*/, size_t /*internal_var_idx*/,
+                                   size_t /*internal_var_idx*/,
                                    Domain::value_type /*new_max*/,
                                    Domain::value_type /*old_max*/) {
     return propagate_bounds(model);

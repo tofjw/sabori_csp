@@ -70,11 +70,11 @@ bool AllDifferentGACConstraint::prepare_propagation(Model& model) {
 }
 
 bool AllDifferentGACConstraint::on_instantiate(Model& model, int save_point,
-                                                size_t var_idx, size_t internal_var_idx,
+                                                size_t internal_var_idx,
                                                 Domain::value_type value,
                                                 Domain::value_type prev_min,
                                                 Domain::value_type prev_max) {
-    if (!AllDifferentConstraint::on_instantiate(model, save_point, var_idx, internal_var_idx,
+    if (!AllDifferentConstraint::on_instantiate(model, save_point, internal_var_idx,
                                                 value, prev_min, prev_max)) {
         return false;
     }
@@ -85,11 +85,10 @@ bool AllDifferentGACConstraint::on_instantiate(Model& model, int save_point,
 }
 
 bool AllDifferentGACConstraint::on_remove_value(Model& model, int save_point,
-                                                 size_t var_idx, size_t internal_var_idx,
+                                                 size_t internal_var_idx,
                                                  Domain::value_type removed_value) {
     if (!gac_enabled_) {
-        return AllDifferentConstraint::on_remove_value(model, save_point, var_idx,
-                                                       internal_var_idx, removed_value);
+        return AllDifferentConstraint::on_remove_value(model, save_point, internal_var_idx, removed_value);
     }
     matching_valid_ = false;
     // イベント毎のフル GAC 実行はせず、バッチ登録のみ（重複登録はフラグで排除）
@@ -98,31 +97,27 @@ bool AllDifferentGACConstraint::on_remove_value(Model& model, int save_point,
 }
 
 bool AllDifferentGACConstraint::on_set_min(Model& model, int save_point,
-                                            size_t var_idx, size_t internal_var_idx,
+                                            size_t internal_var_idx,
                                             Domain::value_type new_min,
                                             Domain::value_type old_min) {
     if (!gac_enabled_) {
-        return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
-                                                   internal_var_idx, new_min, old_min);
+        return AllDifferentConstraint::on_set_min(model, save_point, internal_var_idx, new_min, old_min);
     }
     // 親が Hall ペアチェック + バッチ登録を行う。
     // バッチ実行は propagate_batch の仮想ディスパッチで GAC 版になる
     matching_valid_ = false;
-    return AllDifferentConstraint::on_set_min(model, save_point, var_idx,
-                                               internal_var_idx, new_min, old_min);
+    return AllDifferentConstraint::on_set_min(model, save_point, internal_var_idx, new_min, old_min);
 }
 
 bool AllDifferentGACConstraint::on_set_max(Model& model, int save_point,
-                                            size_t var_idx, size_t internal_var_idx,
+                                            size_t internal_var_idx,
                                             Domain::value_type new_max,
                                             Domain::value_type old_max) {
     if (!gac_enabled_) {
-        return AllDifferentConstraint::on_set_max(model, save_point, var_idx,
-                                                   internal_var_idx, new_max, old_max);
+        return AllDifferentConstraint::on_set_max(model, save_point, internal_var_idx, new_max, old_max);
     }
     matching_valid_ = false;
-    return AllDifferentConstraint::on_set_max(model, save_point, var_idx,
-                                               internal_var_idx, new_max, old_max);
+    return AllDifferentConstraint::on_set_max(model, save_point, internal_var_idx, new_max, old_max);
 }
 
 void AllDifferentGACConstraint::rewind_to(int save_point) {

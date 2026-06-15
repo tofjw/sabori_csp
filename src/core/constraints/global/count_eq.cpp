@@ -149,11 +149,11 @@ bool CountEqConstraint::prepare_propagation(Model& model) {
 }
 
 bool CountEqConstraint::on_instantiate(Model& model, int save_point,
-                                        size_t var_idx, size_t internal_var_idx,
+                                        size_t internal_var_idx,
                                         Domain::value_type value,
                                         Domain::value_type prev_min,
                                         Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
@@ -263,7 +263,7 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
 }
 
 bool CountEqConstraint::on_set_min(Model& model, int save_point,
-                                    size_t var_idx, size_t internal_var_idx,
+                                    size_t internal_var_idx,
                                     Domain::value_type new_min,
                                     Domain::value_type old_min) {
     size_t internal_idx = internal_var_idx;
@@ -286,7 +286,7 @@ bool CountEqConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool CountEqConstraint::on_set_max(Model& model, int save_point,
-                                    size_t var_idx, size_t internal_var_idx,
+                                    size_t internal_var_idx,
                                     Domain::value_type new_max,
                                     Domain::value_type old_max) {
     size_t internal_idx = internal_var_idx;
@@ -309,7 +309,7 @@ bool CountEqConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool CountEqConstraint::on_remove_value(Model& model, int save_point,
-                                          size_t var_idx, size_t internal_var_idx,
+                                          size_t internal_var_idx,
                                           Domain::value_type removed_value) {
     size_t internal_idx = internal_var_idx;
 
@@ -540,11 +540,11 @@ bool CountEqVarTargetConstraint::prepare_propagation(Model& model) {
 }
 
 bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
-                                                  size_t var_idx, size_t internal_var_idx,
+                                                  size_t internal_var_idx,
                                                   Domain::value_type value,
                                                   Domain::value_type prev_min,
                                                   Domain::value_type prev_max) {
-    if (!Constraint::on_instantiate(model, save_point, var_idx, internal_var_idx, value, prev_min, prev_max)) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value, prev_min, prev_max)) {
         return false;
     }
 
@@ -693,7 +693,7 @@ bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save
 }
 
 bool CountEqVarTargetConstraint::on_set_min(Model& model, int save_point,
-                                              size_t var_idx, size_t internal_var_idx,
+                                              size_t internal_var_idx,
                                               Domain::value_type new_min,
                                               Domain::value_type old_min) {
     if (!target_known_) return true;
@@ -715,7 +715,7 @@ bool CountEqVarTargetConstraint::on_set_min(Model& model, int save_point,
 }
 
 bool CountEqVarTargetConstraint::on_set_max(Model& model, int save_point,
-                                              size_t var_idx, size_t internal_var_idx,
+                                              size_t internal_var_idx,
                                               Domain::value_type new_max,
                                               Domain::value_type old_max) {
     if (!target_known_) return true;
@@ -737,7 +737,7 @@ bool CountEqVarTargetConstraint::on_set_max(Model& model, int save_point,
 }
 
 bool CountEqVarTargetConstraint::on_remove_value(Model& model, int save_point,
-                                                    size_t var_idx, size_t internal_var_idx,
+                                                    size_t internal_var_idx,
                                                     Domain::value_type removed_value) {
     if (!target_known_) return true;
 
