@@ -1209,28 +1209,11 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
-        if (verbose_) {
-            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
-            auto& is = instance_stats_[w.constraint_idx];
-            cs.call_count++;
-            is.call_count++;
-            size_t before = model.pending_updates_size();
-            if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-                                        w.internal_var_idx, val, prev_min, prev_max)) {
-                cs.fail_count++;
-                cs.fail_depth_sum += current_decision_;
-                is.fail_count++;
-                is.fail_depth_sum += current_decision_;
-                bump_activity(model, w.constraint_idx, var_idx);
-                return false;
-            }
-            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
-        } else {
-            if (!constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
-                                        w.internal_var_idx, val, prev_min, prev_max)) {
-                bump_activity(model, w.constraint_idx, var_idx);
-                return false;
-            }
+        if (!record_constraint_call(model, w.constraint_idx, var_idx, [&]{
+            return constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
+                        w.internal_var_idx, val, prev_min, prev_max);
+        })) {
+            return false;
         }
     }
 
@@ -1422,33 +1405,11 @@ const std::vector<Domain::value_type>& Solver::select_best_assignment() {
 PropagationResult Solver::process_queue(Model& model) {
     const auto& constraints = model.constraints();
 
-    // verbose 統計記録 + コールバック呼び出し + 失敗時 bump_activity を一本化
-    // (SetMin/SetMax/RemoveValue の dispatch で重複していた verbose/非verbose 2系統を統合)。
-    // call() はコールバック本体(on_set_min 等)を呼び bool を返すジェネリックラムダ。
-    // 成功時 true、失敗(conflict)時 false。テンプレートラムダなので hot path でインライン化される。
+    // verbose 統計記録 + コールバック呼び出し + 失敗時 bump_activity は record_constraint_call
+    // (ConstraintStats レイヤ) に集約。invoke_cb は (v_idx, w, call) → bool の薄いアダプタ。
     auto invoke_cb = [&](size_t v_idx, const auto& w, auto&& call) -> bool {
-        if (verbose_) {
-            auto& cs = constraint_stats_[constraints[w.constraint_idx]->name()];
-            auto& is = instance_stats_[w.constraint_idx];
-            cs.call_count++;
-            is.call_count++;
-            size_t before = model.pending_updates_size();
-            if (!call()) {
-                cs.fail_count++;
-                cs.fail_depth_sum += current_decision_;
-                is.fail_count++;
-                is.fail_depth_sum += current_decision_;
-                bump_activity(model, w.constraint_idx, v_idx);
-                return false;
-            }
-            if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
-        } else {
-            if (!call()) {
-                bump_activity(model, w.constraint_idx, v_idx);
-                return false;
-            }
-        }
-        return true;
+        return record_constraint_call(model, w.constraint_idx, v_idx,
+                                      std::forward<decltype(call)>(call));
     };
 
     for (;;) {
@@ -1625,26 +1586,11 @@ PropagationResult Solver::process_queue(Model& model) {
     if (batch_idx == SIZE_MAX) break;
     if (stopped_) return PropagationResult::Stopped;
 
-    if (verbose_) {
-        auto& cs = constraint_stats_[constraints[batch_idx]->name()];
-        auto& is = instance_stats_[batch_idx];
-        cs.call_count++;
-        is.call_count++;
-        size_t before = model.pending_updates_size();
-        if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
-            cs.fail_count++;
-            cs.fail_depth_sum += current_decision_;
-            is.fail_count++;
-            is.fail_depth_sum += current_decision_;
-            bump_activity(model, batch_idx, constraints[batch_idx]->var_ids_ref().front());
-            return PropagationResult::Conflict;
-        }
-        if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
-    } else {
-        if (!constraints[batch_idx]->propagate_batch(model, current_decision_)) {
-            bump_activity(model, batch_idx, constraints[batch_idx]->var_ids_ref().front());
-            return PropagationResult::Conflict;
-        }
+    if (!record_constraint_call(model, batch_idx,
+                                constraints[batch_idx]->var_ids_ref().front(), [&]{
+            return constraints[batch_idx]->propagate_batch(model, current_decision_);
+        })) {
+        return PropagationResult::Conflict;
     }
     }  // for (;;)
 
