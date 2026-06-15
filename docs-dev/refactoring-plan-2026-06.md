@@ -250,12 +250,16 @@ byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn
   constraint_idx, bump_var_idx, call)` に一本化。inline template で hot path はインライン化。
   hot path のため golden byte一致 + A/B 計測（tsp/magic_square 30x, 非劣化）で二重検証。
 - [ ] find_all + restart の解列挙設計レビュー（solution nogood 依存。2026-06-10 に root 確定変数 watch の無限ループバグを修正済み。1リテラル縮退時の unit nogood 化の非対称も解消）
-- [ ] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ（現状 1,600 行。helper を同ファイル
-  内に持つため残りは run_search 系/フレーム管理の別ファイル分離が必要。重複・関数肥大は解消済み）。
+- [x] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ（2026-06-16 達成: 1,600 → **414 行**）。
+  関数定義を3 TU へ機械的分配（commit fda9b35）: `solver_search.cpp`(606, restart 探索ループ系) /
+  `solver_frame.cpp`(372, 明示スタックのフレーム管理) / `solver_propagate.cpp`(253, 伝播エンジン)。
+  file-local static / 匿名 namespace が無く全関数が Solver::/Literal:: メンバのため、宣言(solver.hpp)を
+  共有したまま定義のみ分割。golden 182 byte一致 + ctest 234/234 + python 100。
 
-**完了条件**: ゴールデン一致 + 全ベンチ非劣化。**現状**: ヘルパ抽出 4 + クラス化 2 + 単体テスト 2 commit、
-全 golden byte一致（軌道不変＝ベンチ不要）。RestartController / ModeRewardPolicy / GradientStrategy の
-3クラスに整理完了。残: 統計層分離・find_all 設計レビュー・900行目標。
+**完了条件**: ゴールデン一致 + 全ベンチ非劣化。**現状**: ヘルパ抽出 4 + クラス化 2 + 単体テスト 2 +
+統計層集約 1 + **ファイル分割 1**(commit fda9b35) commit、全 golden byte一致（軌道不変＝ベンチ不要）。
+RestartController / ModeRewardPolicy / GradientStrategy の3クラスに整理完了 + solver.cpp 414 行（900行目標達成）。
+**残: find_all 解列挙設計レビューのみ**（これは純リファクタでなく設計判断を伴うため別途）。
 
 ---
 
