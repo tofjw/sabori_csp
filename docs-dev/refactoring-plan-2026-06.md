@@ -249,7 +249,12 @@ byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn
   process_queue invoke_cb / batch propagator）を member template `record_constraint_call(model,
   constraint_idx, bump_var_idx, call)` に一本化。inline template で hot path はインライン化。
   hot path のため golden byte一致 + A/B 計測（tsp/magic_square 30x, 非劣化）で二重検証。
-- [ ] find_all + restart の解列挙設計レビュー（solution nogood 依存。2026-06-10 に root 確定変数 watch の無限ループバグを修正済み。1リテラル縮退時の unit nogood 化の非対称も解消）
+- [x] find_all + restart の解列挙設計レビュー（2026-06-16 完了 → [find-all-enumeration-review-2026-06-16.md](find-all-enumeration-review-2026-06-16.md)）。
+  結論: restart+NoGood 列挙は**完全・重複なし・終了する**。独立オラクル照合
+  `tests/cpp/test_find_all_consistency.cpp`（restart on/off の2エンジンが同一解集合 + 重複ゼロ +
+  解析的解数一致、commit 8eaa808）を新設し、golden の自己照合では担保できなかった「独立オラクル」を補完。
+  唯一の未解決点はメモリ/伝播コストの O(#解) スケール（正しさでなく性能トレードオフ）で、対処
+  （find_all 時 DFS 既定化）は golden 再録 + 解順変更を伴うため**ユーザー判断待ちの将来項目**に分離。
 - [x] 目標: solver.cpp を探索ループ + フレーム管理のみの **900 行以下**へ（2026-06-16 達成: 1,600 → **414 行**）。
   関数定義を3 TU へ機械的分配（commit fda9b35）: `solver_search.cpp`(606, restart 探索ループ系) /
   `solver_frame.cpp`(372, 明示スタックのフレーム管理) / `solver_propagate.cpp`(253, 伝播エンジン)。
