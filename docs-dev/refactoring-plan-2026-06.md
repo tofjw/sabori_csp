@@ -198,18 +198,33 @@ golden は「**挙動が変わったか**」を見る不変性網であり、純
 byte一致）。brute 安全網を新規4本追加（lin_reif / cmp_reif / diffn / disjunctive, 計 ~2920+ assertion）。
 **署名整理も完了**（commit 4312dda, golden 182 byte一致）→ **Phase 4 全完了**。次は Phase 5 または Phase 6。
 
-## フェーズ5: Domain 表現と性能（2週間、高リスク・ベンチゲート厳格）
+## フェーズ5: Domain 表現と性能（**設計衛生のみ実施・2026-06-16 クローズ**）
 
-旧計画 Phase 6 の継承 + フェーズ0 の再プロファイル結果で優先順位を確定。現時点の候補:
+旧計画 Phase 6 の継承。**着手時の再判断**（フェーズ0 の再プロファイル + ユーザー方針）で
+「設計衛生の純リファクタのみ実施、性能最適化項目は別イニシアチブへ分離」と確定（2026-06-16）。
 
-- [ ] `BoundsDomain::removed_set_` の `unordered_set` → オフセット付きビットマップ/ソート済み vector（ドメイン幅で自動選択）
-- [ ] BoolDomain（min=0,max=1 の2bit 表現）の追加
-- [ ] Domain/SparseDomain/BoundsDomain のフラグ分岐 → 明確な内部表現切り替え（variant or 関数テーブル）に整理し、`contains`/`remove_*` のロジック複製を解消
-- [ ] `remove_value()` の境界更新 O(n) → 境界削除時のみの遅延スキャン（再計測で要否判断）
-- [ ] `rewind_dirty_constraints()` の virtual dispatch 削減（再計測で要否判断）
+### 実施（純リファクタ・golden 182 byte一致）
+- [x] **死コード 5 ファイル削除**（commit c2dfedf）: `SparseDomain`/`BoundsDomain`
+  （sparse_domain.{hpp,cpp} / bounds_domain.{hpp,cpp}）+ それらからしか include されない
+  `var_data.hpp`。実態はライブ実装が `Domain` 1クラス（内部 `bounds_only_` 分岐）のみで、
+  これらは全ブランチの全履歴で一度も CMakeLists に登録されたことがない放棄された Domain 分割の試み。
+  計画が想定した「Domain/SparseDomain/BoundsDomain のフラグ分岐」は**実在しなかった**。
+- [x] **`removed_set_` メンバシップ判定の DRY 化**（commit ac8527b）: bounds-only の
+  `removed_set_.find(v)==end()` パターン6箇所を private inline `is_removed()` に一本化。
 
-**完了条件**: 項目ごとに ctest green + ベンチ3本 + bench_compare 非劣化 + gprof で対象ホットスポットの改善確認。
-**リスク**: Domain はソルバーの心臓部。1表現 = 1コミット、ランダム照合テスト併設。
+### 見送り（確定・理由付き）
+- [-] **`removed_set_` の `unordered_set`→ビットマップ化**: bounds-only はレンジ>10000 専用で
+  上限ガードが無く、巨大レンジ（例 0..2³¹）でビットマップ即確保はメモリ激増（〜268MB/変数）。
+  遅延確保の unordered_set の方が最悪ケース安全。計画の「ドメイン幅で自動選択」はフラグ分岐を
+  一段増やし衛生目的（分岐削減）に逆行。かつ **profile-20260614 で flat profile 上位に不在＝性能 ROI 低**。
+- [-] **BoolDomain / Domain 内部表現の variant 化 / remove_value O(n) / rewind virtual dispatch**:
+  いずれも純リファクタでなく性能最適化（挙動変更リスク + 厳格ベンチゲート + gprof 検証が必要）。
+  profile-20260614 の結論「性能 ROI は Domain 表現でなく propagator 本体（IntLinEq 差分 / TTEF）と
+  核ループ定数倍（process_queue / set_min-max）」より、**Domain 表現刷新を最優先とする根拠は現データに無い**。
+  → **別イニシアチブ（性能最適化フェーズ）へ分離**。着手時は再プロファイルで対象を確定すること。
+
+**結論**: Phase 5 の純リファクタ（設計衛生）完了。リファクタリング計画 v2（Phase 0〜6）は**全クローズ**。
+残る性能最適化は計画の枠外の独立タスクとして再起票する。
 
 ## フェーズ6: solver.cpp 再分解（2週間）
 
