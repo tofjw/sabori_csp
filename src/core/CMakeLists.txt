@@ -4,6 +4,9 @@ add_library(sabori_csp_core
   variable.cpp
   constraint.cpp
   solver.cpp
+  solver_search.cpp
+  solver_frame.cpp
+  solver_propagate.cpp
   nogood_manager.cpp
   variable_selector.cpp
   model.cpp
