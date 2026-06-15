@@ -330,6 +330,16 @@ private:
         Model& model, SolutionCallback callback);
 
     /**
+     * @brief restart 直前の mode_reward 更新と mix_p の再サンプル
+     *
+     * 直近 restart の改善有無（improvement_in_restart_ / restart_max_depth_）から
+     * EMA で mode_reward_ を更新し、報酬比例で current_p_idx_ を再抽選して mix_p_ を更新する。
+     * improvement_in_restart_ と restart_max_depth_ は消費後リセットする。
+     * search_with_restart / search_with_restart_optimize の restart 後処理で共通利用。
+     */
+    void update_mode_reward_and_resample();
+
+    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,
