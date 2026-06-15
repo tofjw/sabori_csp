@@ -229,6 +229,49 @@ void Solver::apply_restart_bookkeeping(Model& model) {
     decay_activities();
 }
 
+void Solver::compute_improvement_gradient(const Model& model) {
+    // porbe の時は勾配が有効にすると少し改善することがある
+    double min_activity = -1.0;
+    size_t max_var_size = 0;
+    if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
+        const auto& variables = model.variables();
+        if (gradient_.empty()) {
+            gradient_.assign(variables.size(), 0.0);
+        }
+        for (size_t vi : gradient_eligible_vars_) {
+            if (prev_improving_solution_[vi] != kNoValue &&
+                current_best_assignment_[vi] != kNoValue) {
+                double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
+                if (delta < 0)
+                    gradient_[vi] = -1.0;
+                else if (delta > 0.0)
+                    gradient_[vi] = 1.0;
+                else
+                    gradient_[vi] = 0.0;
+            }
+        }
+        std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
+        size_t start_idx = idist(rng_);
+        for (size_t i = 0; i < gradient_eligible_vars_.size(); i++) {
+            auto idx = (start_idx + i) % gradient_eligible_vars_.size();
+            size_t vi = gradient_eligible_vars_[idx];
+            double g = gradient_[vi];
+            if (g != 0.0
+                && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
+                && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
+                if ((min_activity < 0 || activity_[vi] < min_activity)
+                    || (activity_[vi] == min_activity && max_var_size < model.var_size(vi))) {
+                    gradient_var_idx_ = vi;
+                    gradient_direction_ = (g > 0.0) ? +1 : -1;
+                    gradient_ref_val_ = current_best_assignment_[vi];
+                    min_activity = activity_[vi];
+                    max_var_size = model.var_size(vi);
+                }
+            }
+        }
+    }
+}
+
 void Solver::update_mode_reward_and_resample() {
     //   signal = 改善あり ? 2.0 : 1/(1+restart_max_depth_)
     //   r ← α*r + (1-α)*bucket_signal  (α = kModeRewardDecay)
@@ -483,47 +526,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     // 古い値が残らないよう、再選択できなかった場合は未設定状態にする。
                     gradient_var_idx_ = SIZE_MAX;
                     gradient_direction_ = 0;
-
-                    // porbe の時は勾配が有効にすると少し改善することがある
-                    double min_activity = -1.0;
-                    size_t max_var_size = 0;
-                    if (!gradient_eligible_vars_.empty() && !prev_improving_solution_.empty()) {
-                        const auto& variables = model.variables();
-                        if (gradient_.empty()) {
-                            gradient_.assign(variables.size(), 0.0);
-                        }
-                        for (size_t vi : gradient_eligible_vars_) {
-                            if (prev_improving_solution_[vi] != kNoValue &&
-                                current_best_assignment_[vi] != kNoValue) {
-                                double delta = static_cast<double>(current_best_assignment_[vi] - prev_improving_solution_[vi]);
-                                if (delta < 0)
-                                    gradient_[vi] = -1.0;
-                                else if (delta > 0.0)
-                                    gradient_[vi] = 1.0;
-                                else
-                                    gradient_[vi] = 0.0;
-                            }
-                        }
-                        std::uniform_int_distribution<size_t> idist(0, gradient_eligible_vars_.size() - 1);
-                        size_t start_idx = idist(rng_);
-                        for (size_t i = 0; i < gradient_eligible_vars_.size(); i++) {
-                            auto idx = (start_idx + i) % gradient_eligible_vars_.size();
-                            size_t vi = gradient_eligible_vars_[idx];
-                            double g = gradient_[vi];
-                            if (g != 0.0
-                                && !(g < 0.0 && current_best_assignment_[vi] == model.presolve_min(vi))
-                                && !(g > 0.0 && current_best_assignment_[vi] == model.presolve_max(vi))) {
-                                if ((min_activity < 0 || activity_[vi] < min_activity)
-                                    || (activity_[vi] == min_activity && max_var_size < model.var_size(vi))) {
-                                    gradient_var_idx_ = vi;
-                                    gradient_direction_ = (g > 0.0) ? +1 : -1;
-                                    gradient_ref_val_ = current_best_assignment_[vi];
-                                    min_activity = activity_[vi];
-                                    max_var_size = model.var_size(vi);
-                                }
-                            }
-                        }
-                    }
+                    compute_improvement_gradient(model);
                 }
 
                 // root へバックトラック

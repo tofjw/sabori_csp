@@ -350,6 +350,16 @@ private:
     void apply_restart_bookkeeping(Model& model);
 
     /**
+     * @brief 改善解からの疑似勾配計算と勾配変数の選択（optimize 専用）
+     *
+     * prev_improving_solution_ と current_best_assignment_ の差分から各 eligible 変数の
+     * 勾配符号を更新し、activity 最小（タイは var_size 最大）の1変数を gradient_var_idx_ /
+     * gradient_direction_ / gradient_ref_val_ に選ぶ。improvement probe にヒントを与える。
+     * 呼び出し前に gradient_var_idx_=SIZE_MAX / gradient_direction_=0 を満たすこと。
+     */
+    void compute_improvement_gradient(const Model& model);
+
+    /**
      * @brief 単一の探索（コンフリクト制限付き）
      */
     SearchResult run_search(Model& model, int conflict_limit, size_t depth,
