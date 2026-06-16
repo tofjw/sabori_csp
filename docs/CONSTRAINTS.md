@@ -16,6 +16,7 @@
 | `int_le_reif` | `IntLeReifConstraint` | (x <= y) <-> b |
 | `int_lt_reif` | `IntLinLeReifConstraint` | (x < y) <-> b |
 | `int_max` | `IntMaxConstraint` | max(x, y) = m |
+| `int_min` | `IntMinConstraint` | min(x, y) = m |
 
 ### 算術制約 (arithmetic)
 
@@ -423,6 +424,33 @@ IntMaxConstraint c(x, y, m);
 
 // 伝播後: m の範囲は [3, 7] に絞られる
 // (下限 = max(1,3) = 3, 上限 = max(5,7) = 7)
+```
+
+#### int_min 制約 (2変数版)
+
+2変数の最小値制約。`min(x, y) = m`
+
+**引数:**
+- `x`: 第1引数
+- `y`: 第2引数
+- `m`: 最小値を格納する変数
+
+**伝播ロジック:**
+- m の下限: min(x.min(), y.min())
+- m の上限: min(x.max(), y.max())
+- x, y の下限: m の下限で制限
+- x または y が確定して m.min と等しい場合: m を確定
+
+**例:**
+```cpp
+// m = min(x, y)
+auto x = make_var("x", 1, 5);
+auto y = make_var("y", 3, 7);
+auto m = make_var("m", 1, 10);
+IntMinConstraint c(x, y, m);
+
+// 伝播後: m の範囲は [1, 5] に絞られる
+// (下限 = min(1,3) = 1, 上限 = min(5,7) = 5)
 ```
 
 #### array_int_maximum / array_int_minimum 制約
