@@ -1,0 +1,36 @@
+# build 済みディレクトリ等は転送しない
+build/
+build_*/
+.cache/
+.git/
+.claude/
+.codex/
+__pycache__/
+*.pyc
+
+# benchmark の巨大なログ・成果物 (MZNC イメージには不要)
+benchmarks/minizinc_challenge/2026*/
+benchmarks/minizinc_challenge/2025*/
+benchmarks/minizinc_challenge/2024*/
+benchmarks/minizinc_challenge/2023*/
+benchmarks/minizinc_challenge/2022*/
+benchmarks/minizinc_challenge/2021*/
+benchmarks/minizinc_challenge/2020*/
+benchmarks/minizinc_challenge/squashfs-root/
+benchmarks/minizinc_challenge/mznc20*/
+benchmarks/minizinc_challenge/*.snap
+
+# テスト・ドキュメント (イメージに不要)
+Testing/
+docs-dev/
+
+# IDE/エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS ノイズ
+.DS_Store
+Thumbs.db
