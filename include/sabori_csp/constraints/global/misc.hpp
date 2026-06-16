@@ -59,8 +59,6 @@ public:
 
     void init_activity(const Model& model, double* activity) const override;
 
-    void rewind_to(int save_point) override;
-
     // テスト・診断用アクセサ
     size_t x_id() const { return x_id_; }
     const std::vector<Domain::value_type>& values() const { return values_; }
@@ -89,12 +87,6 @@ private:
     /// holes_ > 0 のときは partial coverage で、x が values_ 外を取りうる
     /// 分だけ伝播力が弱まる（at-most-one ベース）。
     size_t holes_;
-
-    /// 現在未確定の b_ids_ 数（bump_activity の O(1) 参照用）。
-    /// on_instantiate で減算、rewind_to で復元。
-    size_t uninstantiated_b_count_ = 0;
-    /// (save_point, 旧カウンタ値) の trail。
-    std::vector<std::pair<int, size_t>> trail_;
 };
 
 

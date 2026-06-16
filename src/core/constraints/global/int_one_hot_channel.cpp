@@ -231,9 +231,6 @@ PresolveResult IntOneHotChannelConstraint::presolve(Model& model) {
 
 bool IntOneHotChannelConstraint::prepare_propagation(Model& model) {
     init_watches();
-    // トレイル付きカウンタを初期化
-    trail_.clear();
-    uninstantiated_b_count_ = 0;
     // 状態整合チェック: presolve 段階で全部済んでいる前提だが、念のため
     // 不一致がないか最終確認のみ行う（ドメイン変更は伴わない）。
     int fixed_true = -1;
@@ -243,8 +240,6 @@ bool IntOneHotChannelConstraint::prepare_propagation(Model& model) {
                 if (fixed_true >= 0) return false;
                 fixed_true = static_cast<int>(i);
             }
-        } else {
-            ++uninstantiated_b_count_;
         }
         if (!model.is_defined_var(b_ids_[i]))
             assert(0);
@@ -268,16 +263,6 @@ bool IntOneHotChannelConstraint::on_instantiate(Model& model, int save_point,
     if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
                                     prev_min, prev_max)) {
         return false;
-    }
-
-    // b_i が確定したら未確定カウンタを 1 減らす（bump_activity の O(1) 化用）
-    if (var_idx != x_id_) {
-        int hit = find_b_index(var_idx);
-        if (hit >= 0) {
-            trail_.push_back({save_point, uninstantiated_b_count_});
-            model.mark_constraint_dirty(model_index(), save_point);
-            --uninstantiated_b_count_;
-        }
     }
 
     if (var_idx == x_id_) {
@@ -416,8 +401,12 @@ void IntOneHotChannelConstraint::bump_activity(const Model& model, size_t trigge
     else {
         auto var_size = model.var_size(x_id_);
         double density = 0.0;
-        // トレイル化したカウンタを直接参照（旧実装の O(N) ループを置換）
-        size_t n_bids = uninstantiated_b_count_;
+        size_t n_bids = 0;
+        for (size_t i = 0; i < b_ids_.size(); ++i) {
+            if (!model.is_instantiated(b_ids_[i])) {
+                n_bids++;
+            }
+        }
         if (trigger_var_idx != x_id_)
             n_bids++;
 
@@ -443,13 +432,6 @@ void IntOneHotChannelConstraint::init_activity(const Model& model, double* activ
     else {
         double density = static_cast<double>(var_size - holes_) / var_size;
         activity[x_id_] += density / var_size;
-    }
-}
-
-void IntOneHotChannelConstraint::rewind_to(int save_point) {
-    while (!trail_.empty() && trail_.back().first > save_point) {
-        uninstantiated_b_count_ = trail_.back().second;
-        trail_.pop_back();
     }
 }
 
