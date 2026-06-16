@@ -1,0 +1,20 @@
+# golden master 除外マニフェスト
+#
+# ここに列挙された fzn は golden master の byte 照合対象から「意図的に」除外する。
+# 1 行 = 1 fzn。形式:  <ROOT 相対パス>  # 理由
+#
+# 重要: tests/fzn/constraints/ 配下の .fzn は「corpus.txt に入って byte 照合される」か
+#       「この excluded.txt に理由付きで列挙される」かの どちらか でなければならない。
+#       どちらにも無い fzn は run_golden.sh check の audit が大声で失敗する
+#       (= Error 黙殺・stale corpus による死テスト化の恒久防止)。
+#
+# 除外できる正当な理由は原則 2 つだけ:
+#   (a) presolve/substitution 段階で UNSAT を検出し "Error:" を stdout に出す設計の fzn。
+#       golden の corpus 構築が Error: 行頭を除外するため byte 照合に乗らない。
+#       → これらは専用 .sh runner (ctest 登録済み) で別途検証していること。
+#   (b) タイムアウトや非決定的出力で byte 照合が不安定な fzn (現状なし)。
+
+# (a) int_lin_eq_subst: presolve 代入で UNSAT を検出し "Error: ... UNSAT after substitution" を出す。
+#     tests/fzn/constraints/int_lin_eq_subst/test_subst.sh (ctest: int_lin_eq_subst) で検証済み。
+tests/fzn/constraints/int_lin_eq_subst/unsat_eq.fzn  # presolve UNSAT (Error:出力)。test_subst.sh で検証
+tests/fzn/constraints/int_lin_eq_subst/unsat_le.fzn  # presolve UNSAT (Error:出力)。test_subst.sh で検証

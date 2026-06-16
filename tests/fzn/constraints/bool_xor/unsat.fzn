@@ -1,0 +1,11 @@
+% UNSAT: a xor b = c with a=1,b=1 forces c=0, but c pinned to 1.
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: c :: output_var;
+
+constraint bool_xor(a, b, c);
+constraint int_eq(a, 1);
+constraint int_eq(b, 1);
+constraint int_eq(c, 1);
+
+solve satisfy;

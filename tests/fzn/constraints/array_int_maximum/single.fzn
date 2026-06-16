@@ -1,0 +1,6 @@
+% Boundary: single-element array, max equals that element.
+var 1..10: m :: output_var;
+var 1..10: x1 :: output_var;
+constraint int_eq(x1, 7);
+constraint array_int_maximum(m, [x1]);
+solve satisfy;

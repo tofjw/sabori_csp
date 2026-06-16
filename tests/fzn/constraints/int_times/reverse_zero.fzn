@@ -1,0 +1,7 @@
+% Boundary: z=0 with a strictly-nonzero y forces x=0 (reverse propagation
+% across the product's zero, x straddling 0).
+var -3..3: x :: output_var;
+var 1..3: y :: output_var;
+var 0..0: z :: output_var;
+constraint int_times(x, y, z);
+solve satisfy;

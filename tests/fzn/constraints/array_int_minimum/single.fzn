@@ -1,0 +1,6 @@
+% Boundary: single-element array, min equals that element.
+var 1..10: m :: output_var;
+var 1..10: x1 :: output_var;
+constraint int_eq(x1, 4);
+constraint array_int_minimum(m, [x1]);
+solve satisfy;

@@ -1,0 +1,8 @@
+% Boundary: negative operand wins the minimum. min(-5, 2) = -5.
+var -10..10: x :: output_var;
+var -10..10: y :: output_var;
+var -10..10: m :: output_var;
+constraint int_eq(x, -5);
+constraint int_eq(y, 2);
+constraint int_min(x, y, m);
+solve satisfy;

@@ -1,0 +1,7 @@
+% int_min basic: m = min(x, y), m pinned to 3.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: m :: output_var;
+constraint int_min(x, y, m);
+constraint int_eq(m, 3);
+solve satisfy;

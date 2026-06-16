@@ -1,0 +1,7 @@
+% Boundary: int_le(x,y) with y pinned to its minimum tightens x.max to y.
+% y=2 over x in 1..5 => x in {1,2}.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_le(x, y);
+constraint int_eq(y, 2);
+solve satisfy;

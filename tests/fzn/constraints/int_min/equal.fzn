@@ -1,0 +1,8 @@
+% Boundary: x == y, so m = min(x,y) collapses to the shared value.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+var 1..5: m :: output_var;
+constraint int_min(x, y, m);
+constraint int_eq(x, 4);
+constraint int_eq(y, 4);
+solve satisfy;

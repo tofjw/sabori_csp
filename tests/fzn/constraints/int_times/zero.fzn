@@ -1,0 +1,6 @@
+% Boundary: y=0 annihilates the product, z=0 for any x (incl. negatives).
+var -5..5: x :: output_var;
+var 0..0: y :: output_var;
+var -100..100: z :: output_var;
+constraint int_times(x, y, z);
+solve satisfy;

@@ -1,0 +1,8 @@
+% Boundary: negative * negative = positive (sign handling).
+var -10..10: x :: output_var;
+var -10..10: y :: output_var;
+var -100..100: z :: output_var;
+constraint int_eq(x, -4);
+constraint int_eq(y, -5);
+constraint int_times(x, y, z);
+solve satisfy;

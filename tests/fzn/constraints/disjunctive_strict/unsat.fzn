@@ -1,0 +1,8 @@
+% UNSAT: two positive-duration tasks forced to overlap.
+% task1 [0,5), task2 [2,7) overlap on [2,5) -> strict disjunction impossible.
+var 0..0: s1 :: output_var;
+var 2..2: s2 :: output_var;
+var 5..5: d1;
+var 5..5: d2;
+constraint fzn_disjunctive_strict([s1, s2], [d1, d2]);
+solve satisfy;

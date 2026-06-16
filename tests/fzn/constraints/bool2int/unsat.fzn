@@ -1,0 +1,9 @@
+% UNSAT: bool2int(b,i) forces i == b(=1), but i pinned to 0.
+var bool: b :: output_var;
+var 0..10: i :: output_var;
+
+constraint bool2int(b, i);
+constraint int_eq(b, 1);
+constraint int_eq(i, 0);
+
+solve satisfy;

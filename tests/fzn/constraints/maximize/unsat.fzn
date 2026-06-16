@@ -1,0 +1,9 @@
+% UNSAT optimization: x+y=10 contradicts the pinned x=5,y=4 (sum 9).
+var 1..9: x :: output_var;
+var 1..9: y :: output_var;
+
+constraint int_lin_eq([1, 1], [x, y], 10);
+constraint int_eq(x, 5);
+constraint int_eq(y, 4);
+
+solve maximize x;
