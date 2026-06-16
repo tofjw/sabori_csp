@@ -1,0 +1,7 @@
+% UNSAT: int_ne(x,y) forbids x==y, but both are pinned to 2.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_ne(x, y);
+constraint int_eq(x, 2);
+constraint int_eq(y, 2);
+solve satisfy;

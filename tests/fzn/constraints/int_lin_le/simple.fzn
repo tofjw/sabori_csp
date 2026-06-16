@@ -1,0 +1,6 @@
+% int_lin_le SAT: 2x + 3y <= 12 over x,y in 1..5.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_lin_le([2, 3], [x, y], 12);
+constraint int_eq(x, 3);
+solve satisfy;

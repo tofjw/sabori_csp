@@ -1,0 +1,7 @@
+% UNSAT boundary: int_lt(x,y) is strict, so x==y (both pinned to 3) fails.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_lt(x, y);
+constraint int_eq(x, 3);
+constraint int_eq(y, 3);
+solve satisfy;

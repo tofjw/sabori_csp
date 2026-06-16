@@ -4,6 +4,7 @@ tests/fzn/constraints/all_equal/unsat.fzn
 tests/fzn/constraints/all_equal/with_fixed.fzn
 tests/fzn/constraints/alldifferent/hall_set.fzn
 tests/fzn/constraints/alldifferent/simple.fzn
+tests/fzn/constraints/alldifferent/unsat.fzn
 tests/fzn/constraints/alldifferent_except_0/all_solutions.fzn
 tests/fzn/constraints/alldifferent_except_0/hall_pair.fzn
 tests/fzn/constraints/alldifferent_except_0/hall_pair_with_zero.fzn
@@ -52,6 +53,9 @@ tests/fzn/constraints/bool_not/unsat.fzn
 tests/fzn/constraints/bool_xor/all_solutions.fzn
 tests/fzn/constraints/bool_xor/simple.fzn
 tests/fzn/constraints/bool_xor/unsat.fzn
+tests/fzn/constraints/circuit/simple.fzn
+tests/fzn/constraints/circuit/unsat_selfloop.fzn
+tests/fzn/constraints/circuit/unsat_subcircuit.fzn
 tests/fzn/constraints/count_eq/all_solutions.fzn
 tests/fzn/constraints/count_eq/propagation.fzn
 tests/fzn/constraints/count_eq/simple.fzn
@@ -118,6 +122,7 @@ tests/fzn/constraints/int_element_monotonic/non_increasing.fzn
 tests/fzn/constraints/int_element_monotonic/reverse_propagation.fzn
 tests/fzn/constraints/int_element_monotonic/unsat.fzn
 tests/fzn/constraints/int_eq/simple.fzn
+tests/fzn/constraints/int_eq/unsat.fzn
 tests/fzn/constraints/int_eq_imp/b_false.fzn
 tests/fzn/constraints/int_eq_imp/b_true.fzn
 tests/fzn/constraints/int_eq_imp/b_var.fzn
@@ -151,6 +156,9 @@ tests/fzn/constraints/int_lin_eq_subst/output_protected.fzn
 tests/fzn/constraints/int_lin_eq_subst/propagation_chain.fzn
 tests/fzn/constraints/int_lin_eq_subst/reif_false.fzn
 tests/fzn/constraints/int_lin_eq_subst/reif_true.fzn
+tests/fzn/constraints/int_lin_le/boundary_exact.fzn
+tests/fzn/constraints/int_lin_le/simple.fzn
+tests/fzn/constraints/int_lin_le/unsat.fzn
 tests/fzn/constraints/int_lin_le_imp/b_false.fzn
 tests/fzn/constraints/int_lin_le_imp/b_true.fzn
 tests/fzn/constraints/int_lin_le_imp/b_var.fzn
@@ -167,6 +175,7 @@ tests/fzn/constraints/int_lin_ne_reif/b_true.fzn
 tests/fzn/constraints/int_lin_ne_reif/deduce_false.fzn
 tests/fzn/constraints/int_lin_ne_reif/deduce_true.fzn
 tests/fzn/constraints/int_lt/simple.fzn
+tests/fzn/constraints/int_lt/unsat_equal.fzn
 tests/fzn/constraints/int_lt_reif/boundary_equal.fzn
 tests/fzn/constraints/int_lt_reif/boundary_off_by_one.fzn
 tests/fzn/constraints/int_lt_reif/simple.fzn
@@ -180,6 +189,7 @@ tests/fzn/constraints/int_mod/all_solutions.fzn
 tests/fzn/constraints/int_mod/negative.fzn
 tests/fzn/constraints/int_mod/simple.fzn
 tests/fzn/constraints/int_ne/simple.fzn
+tests/fzn/constraints/int_ne/unsat.fzn
 tests/fzn/constraints/int_ne_reif/b_false.fzn
 tests/fzn/constraints/int_ne_reif/b_true.fzn
 tests/fzn/constraints/int_ne_reif/deduce_false.fzn

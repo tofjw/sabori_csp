@@ -1,0 +1,12 @@
+x1 = 3;
+x2 = 1;
+x3 = 2;
+----------
+x1 = 2;
+x2 = 3;
+x3 = 1;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=1 avg_depth=0 nogoods=2 unit_nogoods=0 ng_check=8 ng_domain=3 ng_prune=3 ng_noop=2 bisect=0 enumerate=3
+% NG length distribution: 3:2

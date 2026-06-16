@@ -1,0 +1,10 @@
+% UNSAT: pinning a 2-cycle (1->2->1) over 4 nodes leaves nodes 3,4 in a
+% separate component -> not a single circuit.
+var 1..4: x1 :: output_var;
+var 1..4: x2 :: output_var;
+var 1..4: x3 :: output_var;
+var 1..4: x4 :: output_var;
+constraint circuit([x1, x2, x3, x4]);
+constraint int_eq(x1, 2);
+constraint int_eq(x2, 1);
+solve satisfy;

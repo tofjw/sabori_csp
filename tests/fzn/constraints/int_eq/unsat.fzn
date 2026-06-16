@@ -1,0 +1,7 @@
+% UNSAT: int_eq(x,y) forces x==y, but x=2 and y=3 are pinned apart.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_eq(x, y);
+constraint int_eq(x, 2);
+constraint int_eq(y, 3);
+solve satisfy;

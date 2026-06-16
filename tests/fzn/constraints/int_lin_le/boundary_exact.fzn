@@ -1,0 +1,7 @@
+% Boundary: sum exactly equal to the bound is allowed (<=). x+y=5 <= 5.
+var 1..5: x :: output_var;
+var 1..5: y :: output_var;
+constraint int_lin_le([1, 1], [x, y], 5);
+constraint int_eq(x, 2);
+constraint int_eq(y, 3);
+solve satisfy;
