@@ -1,0 +1,16 @@
+a = true;
+b = false;
+c = true;
+----------
+a = false;
+b = true;
+c = true;
+----------
+a = true;
+b = true;
+c = false;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=2 avg_depth=0 nogoods=3 unit_nogoods=1 ng_check=10 ng_domain=4 ng_prune=4 ng_noop=2 bisect=0 enumerate=5
+% NG length distribution: 1:1 3:3

@@ -1,0 +1,7 @@
+% UNSAT: x=3 is inside 2..4 so b must be 1, but b is pinned to 0.
+var 1..6: x :: output_var;
+var 0..1: b :: output_var;
+constraint set_in_reif(x, 2..4, b);
+constraint int_eq(x, 3);
+constraint int_eq(b, 0);
+solve satisfy;

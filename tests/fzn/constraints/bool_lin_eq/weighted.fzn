@@ -1,0 +1,6 @@
+% bool_lin_eq with distinct weights: a + 2b + 3c = 4 (only a=1,c=1 works).
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: c :: output_var;
+constraint bool_lin_eq([1, 2, 3], [a, b, c], 4);
+solve satisfy;

@@ -1,0 +1,6 @@
+% set_in_reif negative polarity: b pinned false forces x OUTSIDE 2..4.
+var 1..6: x :: output_var;
+var 0..1: b :: output_var;
+constraint set_in_reif(x, 2..4, b);
+constraint int_eq(b, 0);
+solve satisfy;

@@ -1,0 +1,13 @@
+a = true;
+b = false;
+c = true;
+----------
+a = false;
+b = true;
+c = true;
+----------
+a = true;
+b = true;
+c = false;
+----------
+==========

@@ -1,0 +1,9 @@
+% UNSAT: sum <= 1 required, but all three bools pinned true (sum 3).
+var bool: a :: output_var;
+var bool: b :: output_var;
+var bool: c :: output_var;
+constraint bool_lin_le([1, 1, 1], [a, b, c], 1);
+constraint int_eq(a, 1);
+constraint int_eq(b, 1);
+constraint int_eq(c, 1);
+solve satisfy;

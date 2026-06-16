@@ -44,6 +44,11 @@ tests/fzn/constraints/bool_clause/mixed.fzn
 tests/fzn/constraints/bool_clause/negated.fzn
 tests/fzn/constraints/bool_clause/simple.fzn
 tests/fzn/constraints/bool_clause/unit.fzn
+tests/fzn/constraints/bool_lin_eq/exactly_2.fzn
+tests/fzn/constraints/bool_lin_eq/unsat.fzn
+tests/fzn/constraints/bool_lin_eq/weighted.fzn
+tests/fzn/constraints/bool_lin_le/at_most_1.fzn
+tests/fzn/constraints/bool_lin_le/unsat.fzn
 tests/fzn/constraints/bool_lt_reif/simple.fzn
 tests/fzn/constraints/bool_lt_reif/unsat.fzn
 tests/fzn/constraints/bool_not/a_false.fzn
@@ -202,6 +207,9 @@ tests/fzn/constraints/int_times/zero.fzn
 tests/fzn/constraints/inverse/offsets.fzn
 tests/fzn/constraints/inverse/simple.fzn
 tests/fzn/constraints/inverse/three.fzn
+tests/fzn/constraints/inverse_offsets/one_based.fzn
+tests/fzn/constraints/inverse_offsets/unsat.fzn
+tests/fzn/constraints/inverse_offsets/zero_based.fzn
 tests/fzn/constraints/maximize/all_improving.fzn
 tests/fzn/constraints/maximize/simple.fzn
 tests/fzn/constraints/maximize/unsat.fzn
@@ -215,6 +223,13 @@ tests/fzn/constraints/nvalue/unsat.fzn
 tests/fzn/constraints/regular/allsol.fzn
 tests/fzn/constraints/regular/simple.fzn
 tests/fzn/constraints/regular/unsat.fzn
+tests/fzn/constraints/set_in/range.fzn
+tests/fzn/constraints/set_in/set_literal.fzn
+tests/fzn/constraints/set_in/unsat.fzn
+tests/fzn/constraints/set_in_reif/b_false.fzn
+tests/fzn/constraints/set_in_reif/range_true.fzn
+tests/fzn/constraints/set_in_reif/set_literal.fzn
+tests/fzn/constraints/set_in_reif/unsat.fzn
 tests/fzn/constraints/strictly_increasing/simple.fzn
 tests/fzn/constraints/strictly_increasing/unsat.fzn
 tests/fzn/constraints/table_int/allsol.fzn

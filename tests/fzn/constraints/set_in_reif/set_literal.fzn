@@ -1,0 +1,6 @@
+% set_in_reif with set literal: x=3 is not in {2,5}, so b must be 0.
+var 1..6: x :: output_var;
+var 0..1: b :: output_var;
+constraint set_in_reif(x, {2, 5}, b);
+constraint int_eq(x, 3);
+solve satisfy;

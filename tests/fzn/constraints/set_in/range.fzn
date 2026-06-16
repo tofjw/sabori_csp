@@ -1,0 +1,4 @@
+% set_in with a range: x must lie in 2..4 (decomposed to lb<=x<=ub).
+var 1..10: x :: output_var;
+constraint set_in(x, 2..4);
+solve satisfy;
