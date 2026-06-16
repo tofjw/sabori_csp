@@ -50,6 +50,7 @@ benchmarks/minizinc_challenge/20*/
 benchmarks/minizinc_challenge/mznc*_probs/
 benchmarks/minizinc_challenge/*.html
 benchmarks/minizinc_challenge/squashfs-root/
+benchmarks/minizinc_challenge/.fzn_cache_one_hot/
 
 # OS
 .DS_Store
