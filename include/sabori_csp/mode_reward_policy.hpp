@@ -39,6 +39,18 @@ public:
         mix_p_ = activity_first ? 1.0 : 0.0;
     }
 
+    /**
+     * @brief mix_p をバケット idx に固定し、以後の適応サンプリングを無効化する
+     *
+     * 計測用（A/B）。update_and_resample が早期 return するようになる。
+     */
+    void pin(size_t idx) {
+        if (idx >= kGridSize) idx = kGridSize - 1;
+        pinned_ = true;
+        p_idx_ = idx;
+        mix_p_ = static_cast<double>(idx) / static_cast<double>(kGridSize - 1);
+    }
+
     /// この restart 内で改善（SAT/probe）が起きたことを記録する
     void note_improvement() { improvement_ = true; }
 
@@ -55,6 +67,7 @@ public:
      * improvement_ / max_depth_ は消費後リセットする。
      */
     void update_and_resample(std::mt19937& rng) {
+        if (pinned_) { improvement_ = false; max_depth_ = 0; return; }
         double signal = improvement_
             ? 2.0
             : 1.0 / static_cast<double>(1 + max_depth_);
@@ -95,6 +108,7 @@ private:
     double mix_p_ = 0.5;          ///< 現在の混合比（restart で再サンプル）
     bool improvement_ = false;    ///< この restart 内で改善が起きたか
     size_t max_depth_ = 0;        ///< 直近 restart 内で到達した最大探索深さ
+    bool pinned_ = false;         ///< 計測用: true なら mix_p を固定し適応を無効化
 };
 
 } // namespace sabori_csp

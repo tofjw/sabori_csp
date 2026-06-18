@@ -6,11 +6,18 @@
 #include <numeric>
 #include <iomanip>
 #include <iostream>
+#include <cstdlib>
 
 namespace sabori_csp {
 
 Solver::Solver()
-    : rng_(12345678) {}
+    : rng_(12345678) {
+    // 計測用: SABORI_FIX_MIXP が設定されていれば mix_p を固定し適応を無効化する。
+    // 未設定なら従来どおりバンディット適応（デフォルト動作は不変）。
+    if (const char* env = std::getenv("SABORI_FIX_MIXP")) {
+        mode_policy_.pin(static_cast<size_t>(std::atoi(env)));
+    }
+}
 
 bool Literal::is_satisfied(const Model& model) const {
     switch (type) {
