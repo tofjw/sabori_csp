@@ -283,14 +283,19 @@ public:
     /**
      * @brief 制約伝播失敗時の activity bump（制約固有化可能）
      *
-     * デフォルトでは全 instantiated 変数に均等加算。
-     * サブクラスでオーバーライドして矛盾に関連する変数のみ bump できる。
+     * デフォルト実装は、presolve 後に境界（min/max）が動いた変数のみを対象とし、
+     * `activity_inc /（境界が動いた変数数）/ domain_size` を加算する
+     * （ドメインが小さいほど重く配分する fail-first 風の重み付け）。
+     * 一度も境界が動いていない変数（矛盾に無関係）は bump しない。
+     * サブクラスでオーバーライドし、制約の意味論を使って矛盾に寄与した変数へ
+     * より精密に配分できる（IntLinEq / AllDifferent / Circuit など）。
      *
      * @param model モデルへの参照
      * @param trigger_var_idx 矛盾のトリガーとなった変数のインデックス
      * @param activity Solver の activity 配列へのポインタ
-     * @param activity_inc 加算する activity 値
+     * @param activity_inc 加算する activity 値（配分前の総量）
      * @param need_rescale rescale が必要なら true にセット
+     * @param rng bump_variable_activity の jitter（0.9〜1.0 倍）用の乱数生成器
      */
     virtual void bump_activity(const Model& model, size_t trigger_var_idx,
                                double* activity, double activity_inc,
