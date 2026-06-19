@@ -176,14 +176,15 @@ int DisjunctiveConstraint::find_first_valid_excluding(int lo, int hi, int dur, s
             // Inside CP range: linear scan (CP is typically small)
             ++pos;
         } else {
-            // Outside CP: can use find_next_zero to skip
+            // Outside CP: find_next_zero で占有ブロックを飛ばせる。ただし自タスクの CP 区間
+            // [cp_lo,cp_hi) のビットは自分のものなので、その区間を飛び越えてはならない。
+            // timeline 上は CP ビットも 1 なので find_next_zero は CP を丸ごとスキップしうる。
+            // その結果、CP 内/直下の妥当な開始位置を取り逃して false UNSAT になる（bug）。
             int next = find_next_zero(pos + 1);
-            // If next lands inside CP, that's fine - bits there are ours
-            if (has_cp && next >= cp_lo && next < cp_hi) {
-                pos = next;
-            } else {
-                pos = (next > pos + 1) ? next : pos + 1;
+            if (has_cp && cp_lo > pos && cp_lo < next) {
+                next = cp_lo;  // 未訪問の自 CP 区間へ降りて候補に含める
             }
+            pos = (next > pos + 1) ? next : pos + 1;
         }
     }
     return -1;
@@ -204,12 +205,12 @@ int DisjunctiveConstraint::find_last_valid_excluding(int lo, int hi, int dur, si
             // Inside own CP range: linear scan (CP is typically small)
             --pos;
         } else {
+            // find_first_valid_excluding と対称: 自タスクの CP 区間を下方向に飛び越さない。
             int prev = find_prev_zero(pos - 1);
-            if (has_cp && prev >= cp_lo && prev < cp_hi) {
-                pos = prev;
-            } else {
-                pos = (prev < pos - 1) ? prev : pos - 1;
+            if (has_cp && cp_hi - 1 < pos && cp_hi - 1 > prev) {
+                prev = cp_hi - 1;  // 未訪問の自 CP 区間へ上がって候補に含める
             }
+            pos = (prev < pos - 1) ? prev : pos - 1;
         }
     }
     return -1;

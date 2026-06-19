@@ -16,6 +16,7 @@ add_executable(test_sabori_csp
   test_cmp_reif_brute.cpp
   test_diffn_brute.cpp
   test_disjunctive_brute.cpp
+  test_cumulative_brute.cpp
   test_find_all_consistency.cpp
   test_one_hot_channel.cpp
 )
