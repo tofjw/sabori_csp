@@ -67,7 +67,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
 void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
-    activity_[frame.var_idx] += activity_inc_;
+    if (decvar_bump_enabled_) activity_[frame.var_idx] += activity_inc_;
     temporal_activity_[frame.var_idx]++;
 
     stats_.fail_count++;

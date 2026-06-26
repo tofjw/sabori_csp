@@ -51,6 +51,19 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {
         nogood_mgr_.set_activity_bump(std::atoi(env) == 0);
     }
+    // 計測用: NoGood bump をさらに学習時/伝播時に分けて切る。
+    //   SABORI_NG_LEARN_BUMP=0 → 学習時 bump（0.01 スケール）のみ無効
+    //   SABORI_NG_PROP_BUMP=0  → 伝播時 bump（フルスケール/n）のみ無効
+    if (const char* env = std::getenv("SABORI_NG_LEARN_BUMP")) {
+        nogood_mgr_.set_learn_bump(std::atoi(env) != 0);
+    }
+    if (const char* env = std::getenv("SABORI_NG_PROP_BUMP")) {
+        nogood_mgr_.set_prop_bump(std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_DECVAR_BUMP=0 で決定変数の activity bump（handle_failure, フルスケール）を無効化。
+    if (const char* env = std::getenv("SABORI_DECVAR_BUMP")) {
+        decvar_bump_enabled_ = (std::atoi(env) != 0);
+    }
 }
 
 bool Literal::is_satisfied(const Model& model) const {

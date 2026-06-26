@@ -186,7 +186,10 @@ public:
 
     /// 計測用 ablation: NoGood 由来の activity bump を on/off（既定 on）。
     /// off にすると学習・伝播（枝刈り）はそのまま、activity への寄与だけ止める。
-    void set_activity_bump(bool enabled) { activity_bump_enabled_ = enabled; }
+    /// 学習時 bump（0.01 スケール）と伝播時 bump（フルスケール/n）を別々に制御できる。
+    void set_activity_bump(bool enabled) { learn_bump_enabled_ = enabled; prop_bump_enabled_ = enabled; }
+    void set_learn_bump(bool enabled) { learn_bump_enabled_ = enabled; }  ///< 学習時 bump のみ
+    void set_prop_bump(bool enabled) { prop_bump_enabled_ = enabled; }    ///< 伝播時 bump のみ
 
     // ===== Debug =====
 
@@ -220,7 +223,8 @@ private:
     static constexpr size_t max_nogoods_ = 100000;
 
     // 計測用 ablation: NoGood 由来の activity bump を止めるか（既定 false=bump する）
-    bool activity_bump_enabled_ = true;
+    bool learn_bump_enabled_ = true;  ///< 計測用: 学習時 activity bump（:223, 0.01 スケール）
+    bool prop_bump_enabled_ = true;   ///< 計測用: 伝播時 activity bump（:74/100/122, フルスケール/n）
 
     // 統計カウンタ
     size_t check_count_ = 0;

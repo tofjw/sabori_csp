@@ -125,7 +125,27 @@ net +17 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign 
 | ng_prune vs ng_off | pure pruning (learning + propagation only) | **+9** (seeds 0/+7/−1/0/+3, noisy) |
 | ng_full vs ng_off | total (checksum) | +17 (matches the +18 above) |
 
-The reading is blunt: **the NoGood's value flows mainly through activity.** Removing the activity bump costs +18 (and never flips sign), while pure pruning contributes a smaller, noisier +9. So "the weak learning works" is, in substance, more about *the learned clause fattening activity and steering variable selection* than about the clause pruning itself.
+The reading is blunt: **the NoGood's value flows mainly through activity.** Removing the activity bump costs +18 (and never flips sign), while pure pruning contributes a smaller, noisier +9. So "the weak learning works" is, in substance, more about *the learned clause reinforcing activity and steering variable selection* than about the clause pruning itself.
+
+#### Going deeper: the activity supply is a redundant ensemble
+
+So *which* of the activity bumps does the work? There are actually several conflict-driven bump paths: the NoGood **learn-time** bump (`:223`, but at a tiny `activity_inc × 0.01` scale), the NoGood **propagation-time** bump (`:74/100/122`, full `activity_inc / n`), and the **decision-variable** bump (`handle_failure`, full `activity_inc`, always-on — the largest single bump). I toggled each one alone and in combination (`bench_ng_compensation.py`, same 38 problems × 5 seeds):
+
+| Removed | net (how much worse than full) |
+|---|---|
+| learn bump only (0.01) | +7 |
+| propagation bump only (full/n) | +2 |
+| decision-variable bump only (full) | +8 |
+| all three together | +14 |
+| + the constraint bump too (= all conflict-driven activity bumps off) | **+21 (positive across all seeds)** |
+
+Every prediction was wrong. By magnitude the smallest path — the 0.01 learn bump — beats the full-scale propagation bump on its own (+7 vs +2), and even the largest (decision-variable) is only +8 alone. **No single source is load-bearing; but the cost accumulates monotonically as you remove more, and removing all of them is the worst (+21, all seeds positive).** That's the signature of a **redundant ensemble**:
+
+- **Activity-driven tendency control genuinely works** — turning off *all* conflict-driven bumps costs +21, consistently across seeds. The "tendency" thesis is reinforced, not weakened.
+- **But the supply paths substitute for each other** — no single channel can be credited. Remove one and the others compensate. It's not "which channel" but "is there *enough* activity signal."
+- **Per-event magnitude doesn't predict impact.** The 0.01 learn bump matters because it fires on every conflict across all decision-trail variables — cumulative effect = magnitude × frequency × breadth.
+
+> Note: the earlier `ng_full vs ng_prune = +18` and the "+14 for all three" here don't match because 30s wall-clock judging wobbles run-to-run. The robust facts are the *monotonicity within one run* and "all-off = +21, every seed." Also, by `fails` the all-off config looks dramatically *faster* — but by objective value it's the worst: it just fails less without searching productively. Judging by objective rather than node count was essential; node count would have given the opposite conclusion.
 
 This is the flip side of Section 2: because the NoGood reaches variable selection mainly via activity, the Bloom tiebreak — trying to deliver the same signal through a thinner pipe — never gets a turn. And by the same logic, refinements layered on the activity/value-selection that activity already dominates (Section 4, Section 7) tend to be hard to improve. **What's effective is the foundation that grows activity (NoGood, mix_p); cleverness piled on top of live activity tends not to pay.** That's the biggest picture this article's measurements draw.
 
@@ -172,14 +192,16 @@ The blame layer has three levels (env `SABORI_BUMP_MODE`): **none** (no constrai
 
 What's refuted and what isn't, precisely:
 
-- **Refuted: the structural specialization.** structural doesn't beat base (37–41); net −4 is noise-level and the sign flips per seed (base+7 on one seed, structural+2 on others). The per-constraint structural blame layered on the generic poor man's explanation shows no gain over the generic version.
-- **Not refuted: poor man's explanation itself.** Note that *base is* the poor man's explanation. base vs none is net −7 toward none, but that's inside the same noise band — not enough to call localization useless either. What we can say is narrow: "the structural elaboration doesn't beat generic," not "poor man's explanation is worthless."
+- **The structural specialization doesn't beat base** (37–41); net −4 is noise-level and the sign flips per seed (base+7 on one seed, structural+2 on others). The per-constraint structural blame shows no gain over the generic version.
+- **And the generic (base) doesn't beat none either.** Note that *base is* the poor man's explanation. base vs none is net −7 toward none — and per-seed it's none in 3, base in 1, tie in 1, a *consistent* thin lean (unlike structural-vs-base, which truly sign-flipped). So "base is a reasonable baseline" doesn't hold: even the generic constraint-side blame is, if anything, slightly worse than skipping it. This fits Section 3 exactly — the constraint bump is just one more member of the redundant activity-supply ensemble. When the decision-variable and NoGood bumps are already present, it's surplus (so removing it doesn't hurt); only when everything else is off does it contribute (+7, in the all-off measurement). "Redundant when others are present, helpful when they're absent" — textbook compensation.
 
 A single seed first had me convinced structural was actively *worse* (base 9–6); five seeds erased it — narrow-sample win/loss flips with the seed.
 
-#### Verdict: keep poor man's explanation, structural is future work
+#### Verdict: the whole constraint-side blame is surplus; structural is the worst of it
 
-What's refuted is the *per-constraint structural* elaboration, not the idea of cheap unsound localization. The likely reason: each structural override was added at a different point in development, and they plausibly interfere with optimizations elsewhere (variable selection, restarts, value ordering), canceling out in aggregate. Kept on by default but reclassified as future work. The pretty story I started writing — "smart blame compensates for weak learning" — was denied by measurement, and that denial is the most valuable thing in this chapter.
+The measurement says two things. First, structural doesn't beat generic (the per-constraint cleverness is wasted). Second, the generic doesn't beat none either — the constraint-side blame is surplus *as a mechanism*. So the original bet, "poor man's explanation is a reasonable baseline," isn't supported here: the constraint bump is one more member of the redundant activity-supply ensemble (Section 3), and with the decision-variable and NoGood bumps already in place, it adds nothing.
+
+This doesn't mean localization is wrong in principle — the design split (cheap heuristic blame vs sound learning) is still sensible, and the all-off measurement shows the constraint bump *does* help once everything else is removed. What's refuted is the bet that piling blame (generic or structural) on top of the existing activity supply makes search faster. And the current default of `structural` (the weakest of the three) is worth revisiting. The pretty story I started writing — "smart blame compensates for weak learning" — was denied by measurement, and that denial is the most valuable thing in this chapter.
 
 ---
 
@@ -270,7 +292,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Variable selection | fixed/static mix of VSIDS / MRV / dom-wdeg | **bandit-learned mix** (mix_p) — works |
 | Variable-selection context | folded into activity | **NoGood-Bloom overlap** tiebreak — 93% no-op; another use or remove |
 | Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds |
-| Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; per-constraint structural elaboration showed no gain → future work |
+| Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
 | Propagation | 2-watched literal | same |
 | Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (problem-dependent; portfolio-only) |
@@ -281,7 +303,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 No world-first algorithm appears here. The value is in measuring each deviation and reporting both the wins and the losses:
 
 - **Effective (foundation + model transform):** the bandit mix (Section 1, robustness); decision-trail NoGood (Section 3, positive across all 5 seeds despite being weaker than LCG); one-hot aggregation (Section 8, net +6, large search-effort reduction).
-- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); per-constraint structural blame (Section 4, no gain over generic). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — consistent with "activity decides first, so the tiebreak / blame refinement never gets a turn."
+- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency

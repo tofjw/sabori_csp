@@ -635,6 +635,7 @@ private:
     bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
     bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
     bool onehot_enabled_ = true;  ///< 計測用 ablation: one-hot チャネル集約 presolve（SABORI_ONEHOT=0 で無効, 既定有効）
+    bool decvar_bump_enabled_ = true;  ///< 計測用 ablation: 決定変数の activity bump（handle_failure, SABORI_DECVAR_BUMP=0 で無効）
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理。

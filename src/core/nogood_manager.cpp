@@ -69,7 +69,7 @@ bool NoGoodManager::propagate_eq_watches(Model& model, size_t var_idx, Domain::v
         if (!propagate_nogood(model, ng, {var_idx, val, Literal::Type::Eq}, restart_count)) {
             ng->last_active = restart_count;
             prune_count_++;
-            if (activity_bump_enabled_) {
+            if (prop_bump_enabled_) {
                 size_t n = ng->literals.size();
                 for (const auto& lit : ng->literals) {
                     activity[lit.var_idx] += activity_inc / n;
@@ -97,7 +97,7 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Geq}, restart_count)) {
                         ng->last_active = restart_count;
                         prune_count_++;
-                        if (activity_bump_enabled_) {
+                        if (prop_bump_enabled_) {
                             size_t n = ng->literals.size();
                             for (const auto& lit : ng->literals) {
                                 activity[lit.var_idx] += activity_inc / n;
@@ -119,7 +119,7 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Leq}, restart_count)) {
                         ng->last_active = restart_count;
                         prune_count_++;
-                        if (activity_bump_enabled_) {
+                        if (prop_bump_enabled_) {
                             size_t n = ng->literals.size();
                             for (const auto& lit : ng->literals) {
                                 activity[lit.var_idx] += activity_inc / n;
@@ -225,7 +225,7 @@ void NoGoodManager::learn_from_conflict(const std::vector<Literal>& decision_tra
                                          size_t restart_count) {
     if (decision_trail.size() >= 2) {
         add_nogood(decision_trail, restart_count);
-        if (activity_bump_enabled_) {
+        if (learn_bump_enabled_) {
             for (const auto& lit : decision_trail) {
                 activity[lit.var_idx] += activity_inc * 0.01 / decision_trail.size();
             }
