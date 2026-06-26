@@ -104,6 +104,6 @@ There's a matching negative result from the same project, for balance: I also bu
 
 The full Japanese article walks the whole search stack the same way — bandit-learned variable-ordering mix, a Bloom-fingerprint NoGood-overlap tiebreak, inner/outer adaptive restarts, and a pseudo-gradient graft onto branch-and-bound — always framed as "standard skeleton + a thin self-tuning layer," with the same try-to-falsify-myself tone.
 
-Code and the long write-up: <https://github.com/tofjw/sabori_csp>. The solver is FlatZinc-compliant and I entered it in the MiniZinc Challenge 2025 (results pending — I'll write those up honestly whichever way they land).
+Code and the long write-up: <https://github.com/tofjw/sabori_csp>. The solver is FlatZinc-compliant and I entered it in the MiniZinc Challenge 2026 (results pending — I'll write those up honestly whichever way they land).
 
 Happy to be told I've reinvented something with a name I don't know — that's half the reason I'm posting.

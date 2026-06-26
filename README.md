@@ -4,7 +4,7 @@ A constraint solver (CSP / optimization) written from scratch in C++, FlatZinc-c
 
 > *sabori* (サボり) is Japanese for *slacking off — cutting corners*. That's the design thesis, not an apology: the solver deliberately skips expensive machinery where correctness doesn't depend on it, and spends the saved budget on lightweight self-tuning heuristics instead.
 
-[![MiniZinc Challenge 2025 — entrant](https://img.shields.io/badge/MiniZinc%20Challenge-2025%20entrant-blue)](https://www.minizinc.org/challenge/) ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue) ![License: MIT](https://img.shields.io/badge/License-MIT-green)
+[![MiniZinc Challenge 2026 — entrant](https://img.shields.io/badge/MiniZinc%20Challenge-2026%20entrant-blue)](https://www.minizinc.org/challenge/) ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue) ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
 ## What makes it interesting
 
