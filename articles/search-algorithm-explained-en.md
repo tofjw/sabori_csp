@@ -14,7 +14,7 @@ If I had to compress the whole article into one sentence answering its title:
 
 > **LCG stops wasted search with *logic* — sound learned clauses prune deductively. sabori_csp stops it with *tendency* — the same conflict information is fed mainly into activity, steering variable selection away from bad regions.**
 
-That claim isn't rhetorical; it falls out of an ablation that splits the NoGood's contribution into "pruning" and "activity bump" (Section 3).
+That claim isn't rhetorical; it falls out of an ablation that splits the NoGood's contribution into "pruning" and "activity bump" (Section 3). As a side effect, this write-up doubles as a small check of whether branching insights established for SAT/CDCL (activity implicitly capturing structure, etc.) reproduce in a CP solver.
 
 The four places the solver deviates from the standard recipe are below. The headline result: **the thing that was effective was the *foundation*, not the clever refinements layered on top.** The weak decision-trail NoGood learning (Section 3, part of the "standard" skeleton) was positive across all 5 seeds despite being weaker than LCG; of the four "smart adaptations" below, only the first (mix_p) clearly paid off.
 
@@ -51,9 +51,11 @@ Variable selection is the single biggest lever on CP/SAT performance, and many s
 
 ### What sabori does: a bandit over the mix ratio
 
-sabori represents "activity-first vs MRV-first" as a 5-point grid (0.0 / 0.25 / 0.5 / 0.75 / 1.0) and **re-samples the mix ratio `mix_p` every restart via reinforcement learning** (`include/sabori_csp/mode_reward_policy.hpp`). It's a 5-arm multi-armed bandit: each arm holds an EMA reward; a recent improvement gives a strong reward, otherwise a weak "reach-depth" signal; the next ratio is drawn proportional to reward, with a floor for exploration and a 0.1× spillover to neighbors for smoothing.
+sabori represents "activity-first vs MRV-first" as a 5-point grid (0.0 / 0.25 / 0.5 / 0.75 / 1.0) and **re-samples the mix ratio `mix_p` every restart via reinforcement learning** (`include/sabori_csp/mode_reward_policy.hpp`). It's a 5-arm multi-armed bandit: each arm holds an EMA reward; a recent improvement gives a strong reward, otherwise a weak "reach-depth" signal; the next ratio is drawn proportional to reward, with a floor for exploration and a 0.1× spillover to neighbors for smoothing. (VSIDS's own activity decay is itself exactly an EMA over the conflict signal — Liang & Ganesh et al. 2015, [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), write normalized VSIDS as `s_n = (1−f)·δ_n + f·s_{n−1}`; here the same EMA idea is lifted one level up, from variable activity to heuristic reward.)
 
-Where it sits: VSIDS and dom/wdeg adapt a *variable score*; sabori adapts the *mix of heuristics themselves* — one level more meta. Bandit-based strategy selection exists in the literature (restart/heuristic portfolio selection), but is uncommon inside a lightweight CP solver.
+Where it sits: VSIDS and dom/wdeg adapt a *variable score*; sabori adapts the *heuristic itself* — one level more meta. To be upfront about prior art: **"use a multi-armed bandit to pick variable-selection heuristics online during CSP solving" is not new.** Xia & Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach" ([arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018), put a MAB over ddeg/dom, wdeg/dom, impact and activity, and reach **the same "robustness (avoid the worst fixed choice)" conclusion this article does.** That core idea is theirs.
+
+sabori differs only in the details: (a) the arms are not distinct heuristics but a 5-point discretization of the *mix ratio* between two (MRV vs activity) — a continuous axis; (b) the bandit uses an **EMA reward with neighbor smoothing and an exploration floor**, not Thompson Sampling / UCB1; (c) it re-samples **per restart**, not per search node. So the framework is Xia & Yap's; the knobs (continuous mix, EMA, restart granularity) are where this differs.
 
 #### Measured: adaptive buys robustness, not raw speed
 
@@ -85,7 +87,7 @@ Toggling the tiebreak on/off (env `SABORI_BLOOM`; off means the path fingerprint
 
 **176 of 190 are ties (93%).** The tiebreak changes the outcome in only 14 cases, and in those, off edges out on (9–5) — well within noise. So the tiebreak provides no measurable gain and is a no-op 93% of the time. Adding a per-candidate 512-bit AND + popcount to the variable-selection hot path doesn't earn its keep *as a tiebreak*. Soft verdict: keep the fingerprint infrastructure (`var_ng_bloom`), find another use for it, or remove.
 
-Why doesn't it help? Because **the NoGood's main channel into variable selection is activity, not this tiebreak.** NoGoods bump the activity of involved variables both at learn time (`nogood_manager.cpp:223`) and when a learned NoGood fires and prunes (`:74/100/120`). So "which learned constraints is the current region tied to" already reaches variable selection through the thick pipe of activity. The Bloom tiebreak tries to deliver the same information through a thinner separate pipe — and activity decides first, so it rarely gets a turn. Section 3 shows the NoGood itself *is* effective; this is its weak afterthought.
+Why doesn't it help? Because **the NoGood's main channel into variable selection is activity, not this tiebreak.** NoGoods bump the activity of involved variables both at learn time (`nogood_manager.cpp:223`) and when a learned NoGood fires and prunes (`:74/100/120`). So "which learned constraints is the current region tied to" already reaches variable selection through the thick pipe of activity. The Bloom tiebreak tries to deliver the same information through a thinner separate pipe — and activity decides first, so it rarely gets a turn. This is the flip side of the community-analysis result (see the column): activity implicitly encodes structural centrality / which cluster a variable is near (Liang & Ganesh et al. 2015, [arXiv:1506.08905](https://arxiv.org/abs/1506.08905)), so an explicit structural-proximity tiebreak is redundant. Section 3 shows the NoGood itself *is* effective; this is its weak afterthought.
 
 ---
 
@@ -257,6 +259,8 @@ net +6, on ahead (non-negative in 4 of 5 seeds). Not the consistent blowout of t
 
 sabori has a `-c` community-analysis feature (`include/sabori_csp/community_analysis.hpp`): build a Variable Interaction Graph (VIG), detect communities by label propagation, compute modularity Q, and measure how locally search stays within communities. It looks appealing, but as the header states, it's **diagnostics only** — no benchmark showed a search speedup, because activity heuristics implicitly learn the same locality. The correct framing is "structure visualization / sticking diagnosis," and that negative result ("tried explicit community structure; activity already learns it implicitly") is itself the useful knowledge.
 
+This isn't a new observation — it lines up with prior work. Liang & Ganesh et al., "Understanding VSIDS Branching Heuristics" ([arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015), show that **VSIDS overwhelmingly picks the "bridge variables" connecting communities without any explicit community detection** (~80% of picked variables are bridges), and that activity ranks correlate strongly with temporal graph centrality (Spearman 0.79–0.82). Because activity already captures structural centrality, decomposing the VIG explicitly adds nothing — this column's result is a re-confirmation of that, not a discovery.
+
 ---
 
 ## Summary: standard skeleton + a thin adaptive layer, measured
@@ -290,6 +294,10 @@ Same goal (cut wasted search), different principle: **logic (deductive pruning)*
 
 Seen this way, the results line up. If activity — the "tendency pipe" — is what decides search, then **the foundations that feed it (NoGood, mix_p) work, and the layers that try to micro-adjust the same tendency through a different route (Bloom tiebreak, structural blame, gradient) go unrewarded because the thick pipe decides first.** One-hot aggregation is the exception only because its route is different — it shrinks the model rather than the tendency, so it helps independently.
 
+#### A side effect: replicating a SAT lesson in CP
+
+This write-up also doubles as a small cross-domain check: do branching insights established for SAT/CDCL hold in a CP solver? Liang & Ganesh (2015), cited above, is a **SAT** result — "activity captures structural centrality (bridge variables) without explicit detection, so activity is a strong structural signal." This article's negative results (explicit community analysis adds nothing; the Bloom tiebreak is redundant) are **that SAT lesson re-confirmed in CP**. And the "tendency" framing itself is, at bottom, a measurement of **how far the SAT lesson "activity is the dominant structural signal" carries into CP**. No world-first — but cross-domain reproducibility is a different kind of value, and it's the one this article actually delivers.
+
 The stance toward CDCL / LCG / MiniZinc-family solvers isn't "win with a clever trick" — it's "a lightweight solver that stops waste with tendency rather than logic, and measures what works and what doesn't, in the open."
 
 ---
@@ -307,6 +315,11 @@ All toggles default to current behavior; benchmark scripts are self-contained.
 | pseudo-gradient | `SABORI_GRADIENT` | `bench_gradient.py` |
 | one-hot aggregation | `SABORI_ONEHOT` | `bench_onehot.py` |
 | multi-seed | `SABORI_SEED` | (all of the above) |
+
+### References
+
+- Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS decay as an EMA; activity implicitly captures bridge variables / graph centrality (Sections 1, 2, and the community column).
+- Xia, Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach", [arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018. — prior work on online MAB selection of variable-ordering heuristics for robustness (Section 1).
 
 ### Source files referenced
 

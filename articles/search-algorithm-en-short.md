@@ -32,4 +32,4 @@ The pattern is consistent and, I think, the real lesson: **the foundation that g
 
 The full write-up walks all 8 components with complete tables, code references, and the honest negatives (including a community-detection feature that's diagnostics-only): **[search-algorithm-explained-en.md](search-algorithm-explained-en.md)** (original Japanese: [search-algorithm-explained.md](search-algorithm-explained.md)).
 
-Code: <https://github.com/tofjw/sabori_csp>. FlatZinc-compliant, entered in the MiniZinc Challenge 2025 (results pending — I'll write those up honestly whichever way they land). Happy to be told I've reinvented something with a name I don't know — if there's an established name for this idea, I'd genuinely like to hear it.
+Code: <https://github.com/tofjw/sabori_csp>. FlatZinc-compliant, entered in the MiniZinc Challenge 2026 (results pending — I'll write those up honestly whichever way they land). Happy to be told I've reinvented something with a name I don't know — if there's an established name for this idea, I'd genuinely like to hear it.
