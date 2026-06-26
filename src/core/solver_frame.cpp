@@ -90,7 +90,7 @@ void Solver::order_values(const Model& model, size_t var_idx) {
     auto& values = value_buffer_;
 
     // 疑似勾配ヒント（対象変数のみ）
-    if (gradient_strategy_.hint_active_for(var_idx)) {
+    if (gradient_enabled_ && gradient_strategy_.hint_active_for(var_idx)) {
         const int grad_dir = gradient_strategy_.direction();
         const auto grad_ref = gradient_strategy_.ref_val();
         // 先に全体をシャッフル
@@ -151,7 +151,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
                                      var_selector_.defined_unassigned_end(),
                                      var_selector_.unconstrained_unassigned_end(),
                                      ng_usage_bloom_});
-        ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
+        if (bloom_tiebreak_) ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
         bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                    frame.prev_min, frame.prev_max);
@@ -207,7 +207,7 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
                                      var_selector_.defined_unassigned_end(),
                                      var_selector_.unconstrained_unassigned_end(),
                                      ng_usage_bloom_});
-        ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
+        if (bloom_tiebreak_) ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
         // right_first なら branch==1 で右、branch==2 で左
         bool try_left = frame.right_first ? (frame.branch == 2) : (frame.branch == 1);
@@ -277,7 +277,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
 
         // 勾配ヒント > ベスト解 > ランダム の優先順位で分岐方向を決定
         bool right_first;
-        if (gradient_strategy_.hint_active_for(var_idx)) {
+        if (gradient_enabled_ && gradient_strategy_.hint_active_for(var_idx)) {
             // direction は ref_val を基準とした方向。
             // 右半分 [mid+1, prev_max] / 左半分 [prev_min, mid] のうち、
             // ref_val を超える/下回る値を含む側を先に試す。

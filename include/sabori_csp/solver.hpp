@@ -505,12 +505,45 @@ private:
      * @brief 制約伝播失敗時に、制約に含まれる割当済み変数の activity を加算
      */
     inline void bump_activity(const Model& model, size_t constraint_idx, size_t trigger_var_idx) {
+        // 計測用 ablation: SABORI_BUMP_MODE で制約側の責任配分を切り替える。
+        //   0 = 制約からの加点なし（activity は学習由来のみ）
+        //   1 = 基底クラスの poor man's explanation を強制（構造特化を無効化）
+        //   2 = 制約ごとの構造特化オーバーライド（既定・現行動作）
+        // さらに SABORI_BUMP_STRUCT_ONLY=<name部分一致> が設定されていれば、
+        //   その名前を含む制約だけ構造特化、それ以外は基底に強制する（制約別寄与の切り分け用）。
+        if (bump_mode_ == 0) {
+            return;
+        }
         const auto& constraint = model.constraints()[constraint_idx];
         bool need_rescale = false;
-        constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
+        bool use_structural;
+        if (!bump_struct_only_.empty()) {
+            if (!struct_mask_built_ || structural_mask_.size() != model.constraints().size()) {
+                build_structural_mask(model);
+            }
+            use_structural = structural_mask_[constraint_idx] != 0;
+        } else {
+            use_structural = (bump_mode_ == 2);
+        }
+        if (use_structural) {
+            constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
+        } else {
+            // 明示修飾で仮想ディスパッチを殺し、基底実装を強制する。
+            constraint->Constraint::bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
+        }
         if (need_rescale) {
             rescale_activities();
         }
+    }
+
+    /// SABORI_BUMP_STRUCT_ONLY 用: 各制約の name() が指定語を含むか一度だけ判定してマスク化。
+    inline void build_structural_mask(const Model& model) {
+        const auto& cs = model.constraints();
+        structural_mask_.assign(cs.size(), 0);
+        for (size_t i = 0; i < cs.size(); ++i) {
+            structural_mask_[i] = (cs[i]->name().find(bump_struct_only_) != std::string::npos) ? 1 : 0;
+        }
+        struct_mask_built_ = true;
     }
 
     /**
@@ -595,6 +628,13 @@ private:
 
     // 設定
     bool nogood_learning_ = true;
+    int bump_mode_ = 2;  ///< 計測用 ablation: 制約側 activity 配分 (0=なし/1=基底/2=構造特化, 既定2)
+    std::string bump_struct_only_;       ///< 計測用: 指定 name を含む制約だけ構造特化（空=無効）
+    std::vector<uint8_t> structural_mask_;  ///< constraint_idx → 構造特化を使うか
+    bool struct_mask_built_ = false;
+    bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
+    bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
+    bool onehot_enabled_ = true;  ///< 計測用 ablation: one-hot チャネル集約 presolve（SABORI_ONEHOT=0 で無効, 既定有効）
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理。

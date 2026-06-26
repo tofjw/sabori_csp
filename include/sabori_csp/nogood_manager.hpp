@@ -184,6 +184,10 @@ public:
     size_t prune_count() const { return prune_count_; }
     size_t domain_count() const { return domain_count_; }
 
+    /// 計測用 ablation: NoGood 由来の activity bump を on/off（既定 on）。
+    /// off にすると学習・伝播（枝刈り）はそのまま、activity への寄与だけ止める。
+    void set_activity_bump(bool enabled) { activity_bump_enabled_ = enabled; }
+
     // ===== Debug =====
 
     /**
@@ -214,6 +218,9 @@ private:
 
     // 容量制限
     static constexpr size_t max_nogoods_ = 100000;
+
+    // 計測用 ablation: NoGood 由来の activity bump を止めるか（既定 false=bump する）
+    bool activity_bump_enabled_ = true;
 
     // 統計カウンタ
     size_t check_count_ = 0;

@@ -12,10 +12,44 @@ namespace sabori_csp {
 
 Solver::Solver()
     : rng_(12345678) {
+    // 計測用: SABORI_SEED が設定されていれば RNG シードを差し替える（多シード検証用）。
+    // 未設定なら従来どおり固定シード（デフォルト動作は不変）。
+    if (const char* env = std::getenv("SABORI_SEED")) {
+        rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
+    }
     // 計測用: SABORI_FIX_MIXP が設定されていれば mix_p を固定し適応を無効化する。
     // 未設定なら従来どおりバンディット適応（デフォルト動作は不変）。
     if (const char* env = std::getenv("SABORI_FIX_MIXP")) {
         mode_policy_.pin(static_cast<size_t>(std::atoi(env)));
+    }
+    // 計測用: SABORI_BUMP_MODE で制約側 activity 配分を切り替える（既定2=現行動作）。
+    //   0 = 制約からの加点なし / 1 = 基底の poor man's explanation / 2 = 構造特化
+    if (const char* env = std::getenv("SABORI_BUMP_MODE")) {
+        bump_mode_ = std::atoi(env);
+    }
+    // 計測用: 指定 name を含む制約だけ構造特化、他は基底に強制（制約別寄与の切り分け）。
+    if (const char* env = std::getenv("SABORI_BUMP_STRUCT_ONLY")) {
+        bump_struct_only_ = env;
+    }
+    // 計測用: SABORI_BLOOM=0 で NoGood-Bloom 重なりタイブレークを無効化（既定有効）。
+    if (const char* env = std::getenv("SABORI_BLOOM")) {
+        bloom_tiebreak_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_GRADIENT=0 で擬似勾配ヒント（値順序バイアス）を無効化（既定有効）。
+    if (const char* env = std::getenv("SABORI_GRADIENT")) {
+        gradient_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_NOGOOD=0 で decision-trail NoGood 学習＋伝播をまるごと無効化（既定有効）。
+    if (const char* env = std::getenv("SABORI_NOGOOD")) {
+        nogood_learning_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_ONEHOT=0 で one-hot チャネル集約 presolve を無効化（既定有効）。
+    if (const char* env = std::getenv("SABORI_ONEHOT")) {
+        onehot_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_NG_NOBUMP=1 で NoGood 由来の activity bump だけ止める（学習・枝刈りは維持）。
+    if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {
+        nogood_mgr_.set_activity_bump(std::atoi(env) == 0);
     }
 }
 
@@ -233,12 +267,15 @@ bool Solver::presolve(Model& model) {
         // 同一 x に紐付く int_eq_reif(x, const, b_i) 群を IntOneHotChannel へ置換。
         // prepare_propagation の前に行うことで、集約後の制約配列に対して watch
         // 構造が初期化される。
-        OneHotChannelAggregator aggregator;
-        if (!aggregator.aggregate(model, verbose_)) {
-            return false;
+        // 計測用 ablation: SABORI_ONEHOT=0 で集約をスキップ（既定有効）。
+        if (onehot_enabled_) {
+            OneHotChannelAggregator aggregator;
+            if (!aggregator.aggregate(model, verbose_)) {
+                return false;
+            }
+            // 制約配列が変化したため、変数 → 制約インデックスを再構築
+            model.build_constraint_watch_list();
         }
-        // 制約配列が変化したため、変数 → 制約インデックスを再構築
-        model.build_constraint_watch_list();
 
         // Phase 1 後: 内部構造を再構築（ドメイン変更に対する整合性保証）
         if (!model.prepare_propagation()) {
