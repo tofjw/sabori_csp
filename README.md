@@ -8,16 +8,21 @@ A constraint solver (CSP / optimization) written from scratch in C++, FlatZinc-c
 
 ## What makes it interesting
 
-This is a hobby solver, not a Chuffed/OR-Tools competitor — but it makes a few unusual design bets worth a look if you care about CP/SAT internals:
+This is a hobby solver, not a Chuffed/OR-Tools competitor — but every design bet below was A/B-tested (5 seeds) rather than asserted, and the honest results point at one clean idea:
 
-- **"Poor man's explanation."** It runs **no lazy clause generation** and **no implication-graph analysis**. Conflict *learning* stays dumb and uniform (decision-trail NoGoods), while conflict *blame* (whose activity to bump) is heuristic-only — so it's allowed to be cheap and unsound, getting per-variable localization at dom/wdeg-like cost by just bumping the variables that moved. (I also layered per-constraint *structural* blame on top — `occupier_` for Circuit, the value pool for AllDifferent — then A/B tested it over 5 seeds: it buys nothing measurable over the generic version, so that elaboration is now future work. The honest negative result is in the write-up.) → [write-up (EN)](articles/poor-mans-explanation-en.md)
-- **Bandit-tuned variable ordering.** The MRV-vs-activity mixing ratio is a 5-arm multi-armed bandit re-sampled every restart, instead of a fixed rule. It doesn't beat the best fixed heuristic — it *robustly avoids the worst* one per problem.
-- **Adaptive inner/outer restarts** and a **pseudo-gradient** graft onto branch-and-bound for optimization. (There's also a Bloom-fingerprint NoGood-overlap tiebreak for variable selection — but A/B testing showed it's a no-op in 93% of cases: NoGood info already reaches variable selection through activity bumps, so the tiebreak rarely gets a turn. Needs a different use or removal. The write-up reports that honestly too.)
-- **Honest negative results included.** Explicit community detection (VIG + label propagation) is shipped as *diagnostics only* — it didn't speed up search on any benchmark, because activity heuristics learn the same locality implicitly. That's documented, not hidden.
+> **LCG stops wasted search with *logic* (sound learned clauses prune deductively). sabori_csp stops it with *tendency* — the same conflict info is fed mainly into activity to steer variable selection.**
 
-The full design tour, comparing every layer against CDCL / LCG / MiniZinc-family solvers: **[探索アルゴリズム解説 (JA)](articles/search-algorithm-explained.md)**.
+That isn't a slogan; it falls out of an ablation that splits the NoGood's contribution into "pruning" (+9, noisy) vs "activity bump" (+18, consistent). The effective things are the *foundation*; the clever refinements layered on top mostly aren't:
 
-The honest pitch: *no novel algorithm here* — just a standard backtracking + propagation + restart + activity + NoGood-learning skeleton, with a thin self-tuning layer on top, built to see how far cheap adaptation gets you without the heavy LCG apparatus.
+- **Effective:** the weak decision-trail NoGood learning (no LCG, no 1-UIP — yet net +17, positive across all 5 seeds, mostly via activity); a 5-arm bandit over the MRV-vs-activity mix (robustly avoids the *worst* fixed choice per problem); a one-hot channeling presolve (net +6, ~70% less search effort on one problem).
+- **No measurable gain (and reported as such):** a Bloom-fingerprint NoGood-overlap tiebreak (93% no-op — activity already carries the signal); per-constraint *structural* conflict-blame, a "poor man's explanation" I was proud of (no gain over the dumb generic version → future work).
+- **Problem-dependent:** a pseudo-gradient value hint (negative on average, but helps design/assignment and backfires on resource-coupled scheduling → portfolio-only).
+- **Honest negatives kept in:** community detection (VIG + label propagation) ships as *diagnostics only* — it didn't speed up search, because activity learns the same locality implicitly.
+
+Full write-up, every layer measured against CDCL / LCG / MiniZinc-family solvers:
+**[the short version (EN, start here)](articles/search-algorithm-en-short.md)** · **[full write-up (EN)](articles/search-algorithm-explained-en.md)** · **[日本語 短縮](articles/search-algorithm-short.md)** · **[日本語 全文](articles/search-algorithm-explained.md)**
+
+The honest pitch: *no novel algorithm here* — a standard backtracking + propagation + restart + activity + NoGood-learning skeleton with a thin self-tuning layer on top, built (and measured) to see how far cheap tendency-control gets you without the heavy LCG apparatus.
 
 ## Features
 

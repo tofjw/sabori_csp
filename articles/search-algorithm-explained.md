@@ -1,5 +1,7 @@
 # 自作 CP ソルバー sabori_csp の探索アルゴリズム —— CDCL / LCG / MiniZinc 系と何が違うのか
 
+> 短い版: [search-algorithm-short.md](search-algorithm-short.md) ／ English: [full](search-algorithm-explained-en.md) · [short](search-algorithm-en-short.md)
+
 ## TL;DR
 
 sabori_csp は FlatZinc 対応の C++ 制約ソルバーです。骨格そのものは
