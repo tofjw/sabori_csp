@@ -32,4 +32,4 @@ sabori_csp は標準的な骨格——バックトラッキング + 制約伝播
 
 全文では8つのコンポーネントすべてを、数表・ソース参照・正直なネガティブ結果（探索高速化に効かず診断専用となったコミュニティ分析も含む）付きで歩きます: **[search-algorithm-explained.md（日本語全文）](search-algorithm-explained.md)**（English: [full](search-algorithm-explained-en.md) / [short](search-algorithm-en-short.md)）。
 
-コード: <https://github.com/tofjw/sabori_csp>。FlatZinc 準拠、MiniZinc Challenge 2025 にエントリー済み（結果待ち。どう転んでも正直に書きます）。「それ、既に名前のある手法だよ」と教えてもらえると嬉しいです——もし定説があるなら、ぜひ知りたい。
+コード: <https://github.com/tofjw/sabori_csp>。FlatZinc 準拠、MiniZinc Challenge 2026 にエントリー済み（結果待ち。どう転んでも正直に書きます）。「それ、既に名前のある手法だよ」と教えてもらえると嬉しいです——もし定説があるなら、ぜひ知りたい。
