@@ -1,6 +1,23 @@
 # Sabori CSP
 
-A constraint satisfaction problem (CSP) solver written in C++ with FlatZinc support and MiniZinc integration.
+A constraint solver (CSP / optimization) written from scratch in C++, FlatZinc-compatible and pluggable into the MiniZinc toolchain.
+
+> *sabori* (サボり) is Japanese for *slacking off — cutting corners*. That's the design thesis, not an apology: the solver deliberately skips expensive machinery where correctness doesn't depend on it, and spends the saved budget on lightweight self-tuning heuristics instead.
+
+[![MiniZinc Challenge 2025 — entrant](https://img.shields.io/badge/MiniZinc%20Challenge-2025%20entrant-blue)](https://www.minizinc.org/challenge/) ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue) ![License: MIT](https://img.shields.io/badge/License-MIT-green)
+
+## What makes it interesting
+
+This is a hobby solver, not a Chuffed/OR-Tools competitor — but it makes a few unusual design bets worth a look if you care about CP/SAT internals:
+
+- **"Poor man's explanation."** It runs **no lazy clause generation** and **no implication-graph analysis**. Conflict *learning* stays dumb and uniform (decision-trail NoGoods), while conflict *blame* (whose activity to bump) is heuristic-only — so it's allowed to be cheap and unsound, getting per-variable localization at dom/wdeg-like cost by just bumping the variables that moved. (I also layered per-constraint *structural* blame on top — `occupier_` for Circuit, the value pool for AllDifferent — then A/B tested it over 5 seeds: it buys nothing measurable over the generic version, so that elaboration is now future work. The honest negative result is in the write-up.) → [write-up (EN)](articles/poor-mans-explanation-en.md)
+- **Bandit-tuned variable ordering.** The MRV-vs-activity mixing ratio is a 5-arm multi-armed bandit re-sampled every restart, instead of a fixed rule. It doesn't beat the best fixed heuristic — it *robustly avoids the worst* one per problem.
+- **Adaptive inner/outer restarts** and a **pseudo-gradient** graft onto branch-and-bound for optimization. (There's also a Bloom-fingerprint NoGood-overlap tiebreak for variable selection — but A/B testing showed it's a no-op in 93% of cases: NoGood info already reaches variable selection through activity bumps, so the tiebreak rarely gets a turn. Needs a different use or removal. The write-up reports that honestly too.)
+- **Honest negative results included.** Explicit community detection (VIG + label propagation) is shipped as *diagnostics only* — it didn't speed up search on any benchmark, because activity heuristics learn the same locality implicitly. That's documented, not hidden.
+
+The full design tour, comparing every layer against CDCL / LCG / MiniZinc-family solvers: **[探索アルゴリズム解説 (JA)](articles/search-algorithm-explained.md)**.
+
+The honest pitch: *no novel algorithm here* — just a standard backtracking + propagation + restart + activity + NoGood-learning skeleton, with a thin self-tuning layer on top, built to see how far cheap adaptation gets you without the heavy LCG apparatus.
 
 ## Features
 
