@@ -68,7 +68,7 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
                             std::vector<SearchFrame>& stack,
                             SearchResult& result, bool& ascending) {
     if (decvar_bump_enabled_) activity_[frame.var_idx] += activity_inc_;
-    temporal_activity_[frame.var_idx]++;
+    if (temporal_enabled_) temporal_activity_[frame.var_idx]++;
 
     stats_.fail_count++;
     save_partial_assignment(model);

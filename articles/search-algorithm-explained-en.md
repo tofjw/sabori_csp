@@ -16,7 +16,7 @@ If I had to compress the whole article into one sentence answering its title:
 
 That claim isn't rhetorical; it falls out of an ablation that splits the NoGood's contribution into "pruning" and "activity bump" (Section 3). As a side effect, this write-up doubles as a small check of whether branching insights established for SAT/CDCL (activity implicitly capturing structure, etc.) reproduce in a CP solver.
 
-The four places the solver deviates from the standard recipe are below. The headline result: **the thing that was effective was the *foundation*, not the clever refinements layered on top.** The weak decision-trail NoGood learning (Section 3, part of the "standard" skeleton) was positive across all 5 seeds despite being weaker than LCG; of the four "smart adaptations" below, only the first (mix_p) clearly paid off.
+The four places the solver deviates from the standard recipe are below. The headline result: **the thing that was effective was the *foundation*, not the clever refinements layered on top.** The strongest single lever is the primary variable-selection criterion `temporal_activity` (Section 1, a Last-Conflict-style mechanism — net +25, all seeds); the weak decision-trail NoGood learning (Section 3) is next (positive across all 5 seeds despite being weaker than LCG). Of the four "smart adaptations" below, only the first (mix_p) clearly paid off — and it turns out to be a tiebreak *under* that primary criterion, not the main event.
 
 1. **Variable-selection mix ratio, tuned per-restart by a bandit** (→ measured robustness = works)
 2. **A Bloom-fingerprint NoGood-overlap tiebreak for variable selection** (→ 93% no-op in A/B = doesn't help)
@@ -47,11 +47,33 @@ sabori_csp implements the obvious ones straight: 2-watched-literal NoGood propag
 
 ### Prior art
 
-Variable selection is the single biggest lever on CP/SAT performance, and many schemes exist: VSIDS (bump variables involved in conflicts, decay over time), MRV / fail-first (pick the smallest domain), dom/wdeg (domain size over constraint failure weight), IBS / CHB (impact- or reward-based). In practice the tuning question is "how do you mix MRV and activity," and most solvers fix one or hard-code a static rule (e.g. MRV primary, activity as tiebreak).
+Variable selection is the single biggest lever on CP/SAT performance, and many schemes exist: VSIDS (bump variables involved in conflicts, decay over time), MRV / fail-first (pick the smallest domain), dom/wdeg (domain size over constraint failure weight), IBS / CHB (impact- or reward-based), and **Last Conflict** (Lecoutre, Saïs, Tabary, Vidal 2009 — after a conflict, keep selecting the involved variable(s) until resolved; a cheap, strong conflict-directed ordering). In practice the tuning question is "how do you mix MRV and activity," and most solvers fix one or hard-code a static rule (e.g. MRV primary, activity as tiebreak).
 
-### What sabori does: a bandit over the mix ratio
+### What sabori does, part 1: the primary criterion is conflict-directed `temporal_activity` (Last Conflict family)
 
-sabori represents "activity-first vs MRV-first" as a 5-point grid (0.0 / 0.25 / 0.5 / 0.75 / 1.0) and **re-samples the mix ratio `mix_p` every restart via reinforcement learning** (`include/sabori_csp/mode_reward_policy.hpp`). It's a 5-arm multi-armed bandit: each arm holds an EMA reward; a recent improvement gives a strong reward, otherwise a weak "reach-depth" signal; the next ratio is drawn proportional to reward, with a floor for exploration and a 0.1× spillover to neighbors for smoothing. (VSIDS's own activity decay is itself exactly an EMA over the conflict signal — Liang & Ganesh et al. 2015, [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), write normalized VSIDS as `s_n = (1−f)·δ_n + f·s_{n−1}`; here the same EMA idea is lifted one level up, from variable activity to heuristic reward.)
+Honestly, sabori's variable selection isn't primarily "activity vs MRV." **The top-level criterion is a separate signal, `temporal_activity`** (`src/core/variable_selector.cpp`): a per-variable counter that goes **+1 on conflict, −1 on a successful assignment**. The selection hierarchy is:
+
+```
+1. highest temporal_activity (a variable involved in a recent, unresolved conflict)   ← primary
+2. (if tied) mix_p: activity-first or MRV-first                                        ← tiebreak
+3. (if still tied) NoGood-Bloom overlap (Section 2)                                    ← deeper
+```
+
+So it prioritizes "keep digging at whatever is currently in conflict until it's resolved," and activity/MRV only decide among the variables that *aren't* in conflict (`temporal_activity = 0`). This is a **generalization of Last Conflict** (Lecoutre et al. 2009): where classic LC forces the single last variable, this is counter-based, decays on success, and spans multiple variables.
+
+#### Measured: the strongest single lever in this article
+
+It's the primary criterion, yet it was never ablated — so I toggled it on/off (env `SABORI_TEMPORAL`; off keeps the counter at 0 for all variables, falling through to mix_p/MRV). 38 problems × 5 seeds, objective value:
+
+| Comparison | on win | off win | tie | net |
+|---|---|---|---|---|
+| temporal_on vs temporal_off | 55 | 30 | 105 | **+25** |
+
+net +25, **positive across all 5 seeds** (+5/+5/+4/+2/+9). That beats the NoGood (Section 3, +17) and the whole activity-bump machinery (Section 3, +21) — **the strongest single component measured in this article.** Conflict-directed search being strong in CP is textbook, but the empirical point is that *this Last-Conflict-style primary criterion is what moves sabori's search the most.* Keep in mind that the mix_p and Bloom mechanisms below sit *underneath* it as tiebreaks.
+
+### What sabori does, part 2: a bandit over the tiebreak mix ratio
+
+Only when the primary criterion (`temporal_activity`) ties does "activity-first vs MRV-first" come into play. sabori represents that **tiebreak mix ratio** as a 5-point grid (0.0 / 0.25 / 0.5 / 0.75 / 1.0) and **re-samples `mix_p` every restart via reinforcement learning** (`include/sabori_csp/mode_reward_policy.hpp`). It's a 5-arm multi-armed bandit: each arm holds an EMA reward; a recent improvement gives a strong reward, otherwise a weak "reach-depth" signal; the next ratio is drawn proportional to reward, with a floor for exploration and a 0.1× spillover to neighbors for smoothing. (VSIDS's own activity decay is itself exactly an EMA over the conflict signal — Liang & Ganesh et al. 2015, [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), write normalized VSIDS as `s_n = (1−f)·δ_n + f·s_{n−1}`; here the same EMA idea is lifted one level up, from variable activity to heuristic reward.)
 
 Where it sits: VSIDS and dom/wdeg adapt a *variable score*; sabori adapts the *heuristic itself* — one level more meta. To be upfront about prior art: **"use a multi-armed bandit to pick variable-selection heuristics online during CSP solving" is not new.** Xia & Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach" ([arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018), put a MAB over ddeg/dom, wdeg/dom, impact and activity, and reach **the same "robustness (avoid the worst fixed choice)" conclusion this article does.** That core idea is theirs.
 
@@ -75,7 +97,7 @@ The value isn't "beats every fixed heuristic" — it's **robustly avoiding the w
 
 ### What sabori does
 
-sabori approximates, in constant time, "how much does this unassigned variable appear in the learned NoGoods that the variables I've chosen on this path appear in" (`src/core/variable_selector.cpp`). Each NoGood gets a `Bloom512` fingerprint; each variable carries the OR of the fingerprints of NoGoods it appears in (`var_ng_bloom`); as the path descends, the chosen variables' fingerprints accumulate into `ng_usage_bloom_`. When MRV and activity tie, it prefers the candidate whose fingerprint overlaps most (AND + popcount). It's an idea I liked: context-dependent, approximate, constant-time. Note it's only a *tiebreak*, not the primary criterion.
+sabori approximates, in constant time, "how much does this unassigned variable appear in the learned NoGoods that the variables I've chosen on this path appear in" (`src/core/variable_selector.cpp`). Each NoGood gets a `Bloom512` fingerprint; each variable carries the OR of the fingerprints of NoGoods it appears in (`var_ng_bloom`); as the path descends, the chosen variables' fingerprints accumulate into `ng_usage_bloom_`. At the *bottom* of the selection hierarchy — when the primary `temporal_activity` (Section 1), then activity/MRV, all tie — it prefers the candidate whose fingerprint overlaps most (AND + popcount). It's an idea I liked: context-dependent, approximate, constant-time. Note it's the deepest *tiebreak*, not the primary criterion — which is exactly why it rarely gets a turn (93% no-op, below).
 
 #### Measured: it barely ever fires, and doesn't help
 
@@ -289,7 +311,8 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 
 | Axis | Prior art | sabori_csp |
 |---|---|---|
-| Variable selection | fixed/static mix of VSIDS / MRV / dom-wdeg | **bandit-learned mix** (mix_p) — works |
+| Variable selection (primary) | Last Conflict / conflict-history | **`temporal_activity`** (LC family, conflict recency) — A/B net +25, all seeds: the strongest single lever |
+| Variable selection (tiebreak) | fixed/static mix of VSIDS / MRV / dom-wdeg | **bandit-learned mix** (mix_p, when the primary ties) — robustness |
 | Variable-selection context | folded into activity | **NoGood-Bloom overlap** tiebreak — 93% no-op; another use or remove |
 | Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds |
 | Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
@@ -302,7 +325,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 
 No world-first algorithm appears here. The value is in measuring each deviation and reporting both the wins and the losses:
 
-- **Effective (foundation + model transform):** the bandit mix (Section 1, robustness); decision-trail NoGood (Section 3, positive across all 5 seeds despite being weaker than LCG); one-hot aggregation (Section 8, net +6, large search-effort reduction).
+- **Effective (foundation + model transform):** the strongest single lever is `temporal_activity` (Section 1, the Last-Conflict-style primary criterion — net +25, all seeds positive); then decision-trail NoGood (Section 3, +17, all seeds positive despite being weaker than LCG); the whole activity-bump machinery (Section 3, +21); one-hot aggregation (Section 8, +6). The mix_p bandit (Section 1) is a tiebreak under the primary criterion but still shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 
@@ -314,7 +337,7 @@ The opening question — "what's different from LCG" — now has a one-line answ
 
 Same goal (cut wasted search), different principle: **logic (deductive pruning)** vs **tendency (heuristic control)**. And this isn't speculation — Section 3's split shows it directly: sabori's NoGood does prune deductively too (pure pruning +9), but what's actually working is mostly the part that fattens activity to shift the tendency (+18). **sabori has logic, but the main reason it cuts waste is on the tendency side.**
 
-Seen this way, the results line up. If activity — the "tendency pipe" — is what decides search, then **the foundations that feed it (NoGood, mix_p) work, and the layers that try to micro-adjust the same tendency through a different route (Bloom tiebreak, structural blame, gradient) go unrewarded because the thick pipe decides first.** One-hot aggregation is the exception only because its route is different — it shrinks the model rather than the tendency, so it helps independently.
+Seen this way, the results line up. The "tendency" that decides search has two pillars: **strongest is conflict-directed recency (`temporal_activity` = Last-Conflict family, the primary criterion), then VSIDS-style activity (the tiebreak workhorse that NoGood feeds).** Both are heuristic "lean toward what recently conflicted," not logic. If those two pillars decide search, then **the foundations that feed them (temporal_activity, NoGood, mix_p) work, and the layers that try to micro-adjust the same tendency through a different route (Bloom tiebreak, structural blame, gradient) go unrewarded because the thick pillars decide first.** One-hot aggregation is the exception only because its route is different — it shrinks the model rather than the tendency, so it helps independently.
 
 #### A side effect: replicating a SAT lesson in CP
 
@@ -342,6 +365,7 @@ All toggles default to current behavior; benchmark scripts are self-contained.
 
 - Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS decay as an EMA; activity implicitly captures bridge variables / graph centrality (Sections 1, 2, and the community column).
 - Xia, Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach", [arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018. — prior work on online MAB selection of variable-ordering heuristics for robustness (Section 1).
+- Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict (prefer the conflict-involved variable until resolved); sabori's primary criterion `temporal_activity` is a generalization (counter-based, decaying, multi-variable) (Section 1).
 
 ### Source files referenced
 

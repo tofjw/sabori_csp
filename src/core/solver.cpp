@@ -64,6 +64,10 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_DECVAR_BUMP")) {
         decvar_bump_enabled_ = (std::atoi(env) != 0);
     }
+    // 計測用: SABORI_TEMPORAL=0 で temporal_activity（Last Conflict 系・変数選択の第1基準）を無効化。
+    if (const char* env = std::getenv("SABORI_TEMPORAL")) {
+        temporal_enabled_ = (std::atoi(env) != 0);
+    }
 }
 
 bool Literal::is_satisfied(const Model& model) const {
