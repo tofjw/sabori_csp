@@ -71,7 +71,7 @@ sabori_csp はこのうち、
 3. （さらに同点なら）NoGood-Bloom 重なり（2 章）                  ← さらに下
 ```
 
-つまり「いま揉めている変数を、片付くまで掘り続ける」を最優先にし、揉めていない（`temporal_activity = 0` の）変数群の中で初めて activity/MRV が効く。これは **Last Conflict（Lecoutre et al. 2009）の一般化**です——古典 LC が「最後の1変数を強制」なのに対し、こちらは**カウンタ化・成功で減衰・複数変数**に拡張した conflict-directed 順序付け。
+つまり「いま揉めている変数を、片付くまで掘り続ける」を最優先にし、揉めていない（`temporal_activity = 0` の）変数群の中で初めて activity/MRV が効く。これは **Last Conflict（Lecoutre et al. 2009）に着想を得た拡張**です——古典 LC が「最後の1変数を強制」なのに対し、こちらは**カウンタ化・成功で減衰・複数変数**へ広げた conflict-directed 順序付け。
 
 #### 実測：これが本記事で最強の単一レバー
 
@@ -542,9 +542,12 @@ sabori_csp に「世界初のアルゴリズム」は登場しません。価値
 
 ### 参考文献
 
+- Moskewicz, Madigan, Zhao, Zhang, Malik, "Chaff: Engineering an Efficient SAT Solver", DAC, 2001. — VSIDS の初出（本文で繰り返し参照する VSIDS の原典）。
+- Boussemart, Hemery, Lecoutre, Saïs, "Boosting Systematic Search by Weighting Constraints", ECAI, 2004. — dom/wdeg（制約単位の重み付け、4 章）。
+- Lecoutre, Saïs, Tabary, Vidal, "Recording and Minimizing Nogoods from Restarts", JSAT, 2007. — リスタート時に決定列から NoGood を記録する軽量手法（3 章）。
+- Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict（矛盾に関与した変数を解消まで優先）。sabori の第1基準 `temporal_activity` はこれに着想を得た拡張（カウンタ化・減衰・複数変数）（1 章）。
 - Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS 減衰の EMA 定式化、activity が bridge variable / グラフ中心性を暗黙に捉えること（1・2 章とコラム）。
 - Xia, Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach", [arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018. — 変数選択ヒューリスティクスを MAB で online 選択し robustness を得る先行研究（1 章）。
-- Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict（矛盾に関与した変数を解消まで優先）。sabori の第1基準 `temporal_activity` はこの一般化（カウンタ化・減衰・複数変数）（1 章）。
 
 ### 参考：本文で触れた主なソースファイル
 

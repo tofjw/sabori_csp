@@ -59,7 +59,7 @@ Honestly, sabori's variable selection isn't primarily "activity vs MRV." **The t
 3. (if still tied) NoGood-Bloom overlap (Section 2)                                    ← deeper
 ```
 
-So it prioritizes "keep digging at whatever is currently in conflict until it's resolved," and activity/MRV only decide among the variables that *aren't* in conflict (`temporal_activity = 0`). This is a **generalization of Last Conflict** (Lecoutre et al. 2009): where classic LC forces the single last variable, this is counter-based, decays on success, and spans multiple variables.
+So it prioritizes "keep digging at whatever is currently in conflict until it's resolved," and activity/MRV only decide among the variables that *aren't* in conflict (`temporal_activity = 0`). This is **inspired by Last Conflict** (Lecoutre et al. 2009): where classic LC forces the single last variable, this extends the idea to a counter that decays on success and spans multiple variables.
 
 #### Measured: the strongest single lever in this article
 
@@ -369,9 +369,12 @@ All toggles default to current behavior; benchmark scripts are self-contained.
 
 ### References
 
+- Moskewicz, Madigan, Zhao, Zhang, Malik, "Chaff: Engineering an Efficient SAT Solver", DAC, 2001. — origin of VSIDS (the branching heuristic referenced throughout).
+- Boussemart, Hemery, Lecoutre, Saïs, "Boosting Systematic Search by Weighting Constraints", ECAI, 2004. — dom/wdeg (per-constraint weighting, Section 4).
+- Lecoutre, Saïs, Tabary, Vidal, "Recording and Minimizing Nogoods from Restarts", JSAT, 2007. — recording NoGoods from the decision sequence at restart (Section 3).
+- Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict (prefer the conflict-involved variable until resolved); sabori's primary criterion `temporal_activity` is inspired by it, extended to a decaying multi-variable counter (Section 1).
 - Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS decay as an EMA; activity implicitly captures bridge variables / graph centrality (Sections 1, 2, and the community column).
 - Xia, Yap, "Learning Robust Search Strategies Using a Bandit-Based Approach", [arXiv:1805.03876](https://arxiv.org/abs/1805.03876), 2018. — prior work on online MAB selection of variable-ordering heuristics for robustness (Section 1).
-- Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict (prefer the conflict-involved variable until resolved); sabori's primary criterion `temporal_activity` is a generalization (counter-based, decaying, multi-variable) (Section 1).
 
 ### Source files referenced
 
