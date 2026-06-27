@@ -287,6 +287,16 @@ But "negative on average" is half the story. I first hypothesized "tight problem
 
 > **Having problem-specific strengths and weaknesses isn't inherently a flaw.** For a single solver running it always-on it averages negative, so you'd drop it. But assume a parallel portfolio / ensemble: run gradient-on and gradient-off in separate threads and take whichever finishes first, and the disagreement ("on wins valve-network, off wins hoist-benchmark") becomes diversity = an asset. Same spirit as mix_p (Section 1) as "insurance against the worst fixed choice": the gradient loses on its own average but can be worth a slot in a portfolio.
 
+#### Measured: the improvement probe is worse still
+
+This chapter has a second, independent mechanism — `run_improvement_probe`: a lightweight sub-search aimed at a ~5%-improvement sub-goal from the best objective side. It's distinct from the gradient hint (the gradient biases value ordering; the probe is a search device of its own). Toggled separately (env `SABORI_PROBE`, `benchmarks/minizinc_challenge/bench_probe.py`; 36 optimization problems × 5 seeds, objective value):
+
+| Comparison | on win | off win | tie | net |
+|---|---|---|---|---|
+| probe_on vs probe_off | 24 | 47 | 109 | **−23** |
+
+**Turning the probe off is better** (probe_off wins 47–24, net −23) — and **probe_off wins in 4 of 5 seeds, ties the fifth, and probe_on never wins**. That's a clearer drag than the gradient hint (−13), and the direction is robust (run-to-run wobble aside, 4/5 seeds and no win for probe_on). So **both of this chapter's optimization mechanisms (gradient hint + improvement probe) are net-negative, the probe more so.** Defaulting `probe_fail_limit_` to a positive value (probe on) costs objective on this set — **off looks like the right default**, the same way `structural` constraint blame (Section 4) does.
+
 ---
 
 ## 8. A presolve technique: one-hot channeling aggregation
@@ -325,7 +335,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Propagation | 2-watched literal | same |
 | Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (problem-dependent; portfolio-only) |
-| Optimization | branch-and-bound / LNS | branch-and-bound + gradient probe |
+| Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (A/B net −23 = harmful; off-by-default candidate) |
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop |
 | Structure analysis | (none) | community analysis (**diagnostics only**) |
 
@@ -333,7 +343,8 @@ No world-first algorithm appears here. The value is in measuring each deviation 
 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
-- **Problem-dependent (portfolio-only):** the pseudo-gradient (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
+- **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
+- **Harmful (off-by-default candidate):** the improvement probe (Section 7, a ~5%-improvement sub-search) is net −23, probe_off winning 4 of 5 seeds — a clearer drag than the gradient on optimization problems.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency
 

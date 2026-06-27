@@ -68,6 +68,10 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_TEMPORAL")) {
         temporal_enabled_ = (std::atoi(env) != 0);
     }
+    // 計測用: SABORI_PROBE=0 で improvement probe（最適化の軽量サブ探索）を無効化。
+    if (const char* env = std::getenv("SABORI_PROBE")) {
+        probe_enabled_ = (std::atoi(env) != 0);
+    }
 }
 
 bool Literal::is_satisfied(const Model& model) const {

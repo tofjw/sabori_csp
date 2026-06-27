@@ -119,7 +119,7 @@ Solver::ProbeAction Solver::run_improvement_probe(
     //   SAT → best が大幅改善、UNSAT → 下位 5% をカット
     // maximize: target = obj_lb + improvement (下端側から探索)
     //   SAT → best が大幅改善、UNSAT → 上位 5% をカット
-    if (probe_fail_limit_ <= 0) return ProbeAction::Continue;
+    if (probe_fail_limit_ <= 0 || !probe_enabled_) return ProbeAction::Continue;
 
     auto obj_lb = model.var_min(obj_var_idx_);
     auto obj_ub = model.var_max(obj_var_idx_);
