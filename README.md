@@ -10,16 +10,16 @@ A constraint solver (CSP / optimization) written from scratch in C++, FlatZinc-c
 
 This is a hobby solver, not a Chuffed/OR-Tools competitor. What's distinctive is *how* it cuts wasted search, easiest to state by contrast with LCG (lazy clause generation, à la Chuffed):
 
-> **LCG stops wasted search with *logic* — sound learned clauses prune deductively. sabori_csp stops it with *tendency* — the same conflict info is fed mainly into activity, steering the heuristic tendency of variable selection away from bad regions.**
+> **LCG stops wasted search with *logic* — sound learned clauses prune deductively. sabori_csp stops it with *tendency* — it feeds the same conflict info into the variable-selection heuristic, a conflict-directed lean toward recently-conflicted variables.**
 
 It's deliberately lightweight — **no LCG, no implication-graph analysis, no per-propagator explanations** — leaning on cheap, self-tuning heuristics instead. Every design bet below was A/B-tested rather than asserted, and the wins cluster on the *foundation*, not the cleverness layered on top:
 
-- **What does the work:** weak decision-trail NoGood learning (no LCG, no 1-UIP — yet turning it off consistently hurts, and a split shows the gain comes mainly through *activity*, not clause pruning); a 5-arm bandit over the MRV-vs-activity mix (robustly avoids the *worst* fixed choice per problem); a one-hot channeling presolve (a modest average win that cuts search effort dramatically on some problems).
+- **What does the work:** variable selection itself — a conflict-directed primary criterion (a generalization of **Last Conflict**) picks the most-recently-conflicted variable after a backtrack (the single most effective component), while **activity drives the descent** (its weight is masked by the former, but large once you turn that off). The weak decision-trail NoGood (no LCG, no 1-UIP — yet turning it off consistently hurts) feeds that activity; a 5-arm bandit tunes the activity-vs-MRV mix (robustly avoids the *worst* fixed choice); a one-hot channeling presolve cuts search effort dramatically on some problems.
 - **No measurable gain (reported, not hidden):** a Bloom-fingerprint NoGood-overlap tiebreak (almost always a no-op — activity already carries the signal); per-constraint *structural* conflict-blame, a "poor man's explanation" I was proud of (no gain over the dumb generic version → future work).
 - **Problem-dependent:** a pseudo-gradient value hint (negative on average, but helps design/assignment and backfires on resource-coupled scheduling → portfolio-only).
 - **Honest negatives kept in:** community detection (VIG + label propagation) ships as *diagnostics only* — it didn't speed up search, because activity learns the same locality implicitly.
 
-The consistent lesson: the foundation that grows activity works; the cleverness piled on top mostly doesn't, because activity is already the dominant signal. (Exact tables and methodology are in the write-ups.)
+The consistent lesson: the conflict-directed selection foundation works; the cleverness piled on top mostly doesn't, because the foundation already decides search. (Exact tables and methodology are in the write-ups.)
 
 Full write-up, every layer measured against CDCL / LCG / MiniZinc-family solvers:
 **[the short version (EN, start here)](articles/search-algorithm-en-short.md)** · **[full write-up (EN)](articles/search-algorithm-explained-en.md)** · **[日本語 短縮](articles/search-algorithm-short.md)** · **[日本語 全文](articles/search-algorithm-explained.md)**

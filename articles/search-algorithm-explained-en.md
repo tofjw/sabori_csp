@@ -8,7 +8,7 @@ sabori_csp is a FlatZinc-compatible constraint solver written in C++. Its skelet
 
 > backtracking search + constraint propagation + restarts + activity-based variable selection + NoGood learning
 
-There is no newly-invented "search algorithm" here. What makes it interesting is a thin self-tuning layer on top of that skeleton — and, more importantly, the fact that **every one of those additions was A/B-measured rather than asserted.** This article reports what worked and what didn't, honestly.
+There is no newly-invented "search algorithm" here. What makes it interesting is a thin self-tuning layer on top of that skeleton — and, more importantly, the fact that **every one of those additions was A/B-measured rather than asserted.** This article reports what worked and what didn't.
 
 If I had to compress the whole article into one sentence answering its title:
 
@@ -63,7 +63,7 @@ So it prioritizes "keep digging at whatever is currently in conflict until it's 
 
 #### Measured: the strongest single lever in this article
 
-It's the primary criterion, yet it was never ablated — so I toggled it on/off (env `SABORI_TEMPORAL`; off keeps the counter at 0 for all variables, falling through to mix_p/MRV). 38 problems × 5 seeds, objective value:
+To see how much this primary criterion is worth, I toggled it on/off (env `SABORI_TEMPORAL`; off keeps the counter at 0 for all variables, falling through to mix_p/MRV). 38 problems × 5 seeds, objective value:
 
 | Comparison | on win | off win | tie | net |
 |---|---|---|---|---|
