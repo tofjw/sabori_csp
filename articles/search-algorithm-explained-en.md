@@ -287,15 +287,22 @@ But "negative on average" is half the story. I first hypothesized "tight problem
 
 > **Having problem-specific strengths and weaknesses isn't inherently a flaw.** For a single solver running it always-on it averages negative, so you'd drop it. But assume a parallel portfolio / ensemble: run gradient-on and gradient-off in separate threads and take whichever finishes first, and the disagreement ("on wins valve-network, off wins hoist-benchmark") becomes diversity = an asset. Same spirit as mix_p (Section 1) as "insurance against the worst fixed choice": the gradient loses on its own average but can be worth a slot in a portfolio.
 
-#### Measured: the improvement probe is worse still
+#### Measured: the probe — where "head-to-head" and "vs CP-SAT" disagree
 
-This chapter has a second, independent mechanism — `run_improvement_probe`: a lightweight sub-search aimed at a ~5%-improvement sub-goal from the best objective side. It's distinct from the gradient hint (the gradient biases value ordering; the probe is a search device of its own). Toggled separately (env `SABORI_PROBE`, `benchmarks/minizinc_challenge/bench_probe.py`; 36 optimization problems × 5 seeds, objective value):
+This chapter has a second, independent mechanism — `run_improvement_probe`: a lightweight sub-search aimed at a ~5%-improvement sub-goal from the best objective side. It's distinct from the gradient hint (the gradient biases value ordering; the probe is a search device of its own). Toggled separately (env `SABORI_PROBE`, `benchmarks/minizinc_challenge/bench_probe.py`).
 
-| Comparison | on win | off win | tie | net |
-|---|---|---|---|---|
-| probe_on vs probe_off | 24 | 47 | 109 | **−23** |
+By the same **config-vs-config head-to-head (objective)** used throughout this article, the probe loses: 36 optimization problems × 5 seeds give net **−23** (probe_off wins 47–24, ahead in 4 of 5 seeds, probe_on never winning). On a different year set (2016+2025) it's net −13 — the direction ("off gives better objectives") reproduces.
 
-**Turning the probe off is better** (probe_off wins 47–24, net −23) — and **probe_off wins in 4 of 5 seeds, ties the fifth, and probe_on never wins**. That's a clearer drag than the gradient hint (−13), and the direction is robust (run-to-run wobble aside, 4/5 seeds and no win for probe_on). So **both of this chapter's optimization mechanisms (gradient hint + improvement probe) are net-negative, the probe more so.** Defaulting `probe_fail_limit_` to a positive value (probe on) costs objective on this set — **off looks like the right default**, the same way `structural` constraint blame (Section 4) does.
+But here, **changing the metric changed the conclusion.** The actual Challenge goal isn't "which of two configs has the better objective" — it's "**how many problems do you win against the field (CP-SAT)?**" Counting **Sabori vs CP-SAT** wins on the same 2016+2025, with the probe on vs off:
+
+| Config | Sabori wins | CP-SAT wins | ties |
+|---|---|---|---|
+| **probe on (default)** | **15** | 17 | 6 |
+| **probe off** | **12** | 17 | 9 |
+
+**The probe-on config wins more against CP-SAT in both years** (15 vs 12 combined; CP-SAT wins unchanged at 17). The probe converts ties into Sabori wins without losing a single extra one to CP-SAT. The reason: the probe **slightly worsens the objective on many problems** (hence the head-to-head loss) but **pushes a few across CP-SAT's threshold into wins** (hence the vs-field gain).
+
+> **Methodological note.** This article's ablations are mostly **config-vs-config head-to-head by objective** — "which is better on average." The Challenge goal is "beat the field," where a few threshold-crossing problems decide it. For most mechanisms the two metrics largely agree (so the other chapters' conclusions stand), but **the probe is a clear case where they diverge.** Reading the head-to-head −23 alone and calling it "off by default" was a mistake — **keeping the probe is the right call.**
 
 ---
 
@@ -335,7 +342,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Propagation | 2-watched literal | same |
 | Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (problem-dependent; portfolio-only) |
-| Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (A/B net −23 = harmful; off-by-default candidate) |
+| Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop |
 | Structure analysis | (none) | community analysis (**diagnostics only**) |
 
@@ -344,7 +351,7 @@ No world-first algorithm appears here. The value is in measuring each deviation 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
-- **Harmful (off-by-default candidate):** the improvement probe (Section 7, a ~5%-improvement sub-search) is net −23, probe_off winning 4 of 5 seeds — a clearer drag than the gradient on optimization problems.
+- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). The "off by default" call from the head-to-head alone was retracted — keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverged.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency
 

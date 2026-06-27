@@ -20,7 +20,7 @@ BINARY = str(BASE_DIR.parent.parent / "build" / "src" / "fzn" / "fzn_sabori")
 TIMEOUT = 30
 MAX_WORKERS = 4
 
-YEARS = ["2023", "2024"]
+YEARS = os.environ.get("SABORI_BENCH_YEARS", "2023,2024").split(",")
 SEEDS = [1, 2, 3, 4, 5]
 CONFIGS = [
     ("probe_on", "1"),
