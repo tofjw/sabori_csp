@@ -293,7 +293,7 @@ This chapter has a second, independent mechanism — `run_improvement_probe`: a 
 
 By the same **config-vs-config head-to-head (objective)** used throughout this article, the probe loses: 36 optimization problems × 5 seeds give net **−23** (probe_off wins 47–24, ahead in 4 of 5 seeds, probe_on never winning). On a different year set (2016+2025) it's net −13 — the direction ("off gives better objectives") reproduces.
 
-But here, **changing the metric changed the conclusion.** The actual Challenge goal isn't "which of two configs has the better objective" — it's "**how many problems do you win against the field (CP-SAT)?**" Counting **Sabori vs CP-SAT** wins on the same 2016+2025, with the probe on vs off:
+But here, **the metric you pick flips the verdict.** The actual Challenge goal isn't "which of two configs has the better objective" — it's "**how many problems do you win against the field (CP-SAT)?**" Counting **Sabori vs CP-SAT** wins on the same 2016+2025, with the probe on vs off:
 
 | Config | Sabori wins | CP-SAT wins | ties |
 |---|---|---|---|
@@ -302,7 +302,7 @@ But here, **changing the metric changed the conclusion.** The actual Challenge g
 
 **The probe-on config wins more against CP-SAT in both years** (15 vs 12 combined; CP-SAT wins unchanged at 17). The probe converts ties into Sabori wins without losing a single extra one to CP-SAT. The reason: the probe **slightly worsens the objective on many problems** (hence the head-to-head loss) but **pushes a few across CP-SAT's threshold into wins** (hence the vs-field gain).
 
-> **Methodological note.** This article's ablations are mostly **config-vs-config head-to-head by objective** — "which is better on average." The Challenge goal is "beat the field," where a few threshold-crossing problems decide it. For most mechanisms the two metrics largely agree (so the other chapters' conclusions stand), but **the probe is a clear case where they diverge.** Reading the head-to-head −23 alone and calling it "off by default" was a mistake — **keeping the probe is the right call.**
+> **Methodological note.** This article's ablations are mostly **config-vs-config head-to-head by objective** — "which is better on average." The Challenge goal is "beat the field," where a few threshold-crossing problems decide it. For most mechanisms the two metrics largely agree (so the other chapters' conclusions stand), but **the probe is a clear case where they diverge.** On the head-to-head −23 alone the probe looks droppable; against CP-SAT it wins more, so **keeping it is the right call.**
 
 ---
 
@@ -351,7 +351,7 @@ No world-first algorithm appears here. The value is in measuring each deviation 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
-- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). The "off by default" call from the head-to-head alone was retracted — keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverged.
+- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency
 
