@@ -61,7 +61,7 @@ Honestly, sabori's variable selection isn't primarily "activity vs MRV." **The t
 
 So it prioritizes "keep digging at whatever is currently in conflict until it's resolved," and activity/MRV only decide among the variables that *aren't* in conflict (`temporal_activity = 0`). This is **inspired by Last Conflict** (Lecoutre et al. 2009): where classic LC forces the single last variable, this extends the idea to a counter that decays on success and spans multiple variables.
 
-#### Measured: the strongest single lever in this article
+#### Measured: the single largest contributor
 
 To see how much this primary criterion is worth, I toggled it on/off (env `SABORI_TEMPORAL`; off keeps the counter at 0 for all variables, falling through to mix_p/MRV). 38 problems × 5 seeds, objective value:
 
@@ -71,7 +71,7 @@ To see how much this primary criterion is worth, I toggled it on/off (env `SABOR
 
 net +25, **positive across all 5 seeds** (+5/+5/+4/+2/+9). That's the *marginal* cost of removing this primary criterion from the full system, and in that sense it's the largest single lever — a strong conflict-directed override, as the CP literature would predict.
 
-But **"strongest primary criterion" does *not* mean activity is a sideshow** — a point worth nailing down. `temporal_activity` mostly decides the *first* pick right after a backtrack (the last-conflict variable); as search then descends normally, `temporal_activity` is ~0 for nearly all variables, and **the bulk of those descent selections are driven by activity (and MRV)** (instrumentation confirms: hot unassigned variables are only a few percent of selections on most problems). So **temporal picks the restart point and activity drives the descent** — they divide labor by search phase. Crucially, activity's effect is *masked* by temporal: removing the whole activity-bump machinery costs only +18 with temporal on, but **+81 with temporal off** (when activity drives every selection — Section 3). Activity is the descent workhorse, not a tiebreak; the mix_p below tunes *its* blend.
+But **the primary criterion being the biggest lever does *not* make activity a sideshow** — worth emphasizing. `temporal_activity` mostly decides the *first* pick right after a backtrack (the last-conflict variable); as search then descends normally, `temporal_activity` is ~0 for nearly all variables, and **the bulk of those descent selections are driven by activity (and MRV)** (instrumentation confirms: hot unassigned variables are only a few percent of selections on most problems). So **temporal picks the restart point and activity drives the descent** — they divide labor by search phase. Crucially, activity's effect is *masked* by temporal: removing the whole activity-bump machinery costs only +18 with temporal on, but **+81 with temporal off** (when activity drives every selection — Section 3). Activity is the descent workhorse, not a tiebreak; the mix_p below tunes *its* blend.
 
 ### What sabori does, part 2: a bandit over the tiebreak mix ratio
 
@@ -149,7 +149,7 @@ net +17 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign 
 | ng_prune vs ng_off | pure pruning (learning + propagation only) | **+9** (seeds 0/+7/−1/0/+3, noisy) |
 | ng_full vs ng_off | total (checksum) | +17 (matches the +18 above) |
 
-The reading is blunt: **the NoGood's value flows mainly through activity.** Removing the activity bump costs +18 (and never flips sign), while pure pruning contributes a smaller, noisier +9. So "the weak learning works" is, in substance, more about *the learned clause reinforcing activity and steering variable selection* than about the clause pruning itself.
+The reading is clear: **the NoGood's value flows mainly through activity.** Removing the activity bump costs +18 (and never flips sign), while pure pruning contributes a smaller, noisier +9. So "the weak learning works" is, in substance, more about *the learned clause reinforcing activity and steering variable selection* than about the clause pruning itself.
 
 #### Going deeper: the activity supply is a redundant ensemble
 
@@ -169,13 +169,13 @@ Every prediction was wrong. By magnitude the smallest path — the 0.01 learn bu
 - **But the supply paths substitute for each other** — no single channel can be credited. Remove one and the others compensate. It's not "which channel" but "is there *enough* activity signal."
 - **Per-event magnitude doesn't predict impact.** The 0.01 learn bump matters because it fires on every conflict across all decision-trail variables — cumulative effect = magnitude × frequency × breadth.
 
-> Note: the earlier `ng_full vs ng_prune = +18` and the "+14 for all three" here don't match because 30s wall-clock judging wobbles run-to-run. The robust facts are the *monotonicity within one run* and "all-off = +21, every seed." Also, by `fails` the all-off config looks dramatically *faster* — but by objective value it's the worst: it just fails less without searching productively. Judging by objective rather than node count was essential; node count would have given the opposite conclusion.
+> Note: the earlier `ng_full vs ng_prune = +18` and the "+14 for all three" here don't match because 30s wall-clock judging wobbles run-to-run. The robust facts are the *monotonicity within one run* and "all-off = +21, every seed." Also, by `fails` the all-off config looks much *faster* — but by objective value it's the worst: it just fails less without searching productively. Judging by objective rather than node count was essential; node count would have given the opposite conclusion.
 
 #### Important caveat: this +21 is the marginal effect, *masked* by temporal
 
 That "+21 for all-off" is measured **with temporal on**. As Section 1 noted, temporal decides the first pick after a backtrack and activity drives the descent — so "how much does removing activity hurt" depends heavily on whether temporal is masking it. Measured both ways in one run (`bench_temporal_mask.py`): removing the whole activity-bump machinery costs **+18 with temporal on, but +81 with temporal off** (full beats no-activity 94–13, every seed). So **activity's true contribution is ~+81; temporal (and the MRV fallback) mask most of it, which is why the marginal ablation in the full system compresses to +21.** "Redundant ensemble" applies only to the activity-bump *sources* being mutually substitutable — **activity-based selection itself is the descent workhorse, not a sideshow.** (If any wording here read otherwise, that was a mistake.) It's the same masking the rest of the article keeps running into — a strong primary criterion hides the value of the layer beneath it — just one level larger.
 
-This is the flip side of Section 2: because the NoGood reaches variable selection mainly via activity, the Bloom tiebreak — trying to deliver the same signal through a thinner pipe — never gets a turn. And by the same logic, refinements layered on the activity/value-selection that activity already dominates (Section 4, Section 7) tend to be hard to improve. **What's effective is the foundation that grows activity (NoGood, mix_p); cleverness piled on top of live activity tends not to pay.** That's the biggest picture this article's measurements draw.
+This is the flip side of Section 2: because the NoGood reaches variable selection mainly via activity, the Bloom tiebreak — trying to deliver the same signal through a thinner pipe — never gets a turn. And by the same logic, refinements layered on the activity/value-selection that activity already dominates (Section 4, Section 7) tend to be hard to improve. **What's effective is the foundation that grows activity (NoGood, mix_p); cleverness piled on top of live activity tends not to pay.** That is the overall picture this article's measurements draw.
 
 ---
 
