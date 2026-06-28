@@ -298,14 +298,16 @@ Now the container itself: toggle `run_improvement_probe` as a whole (env `SABORI
 
 By the same **config-vs-config head-to-head (objective)** used throughout this article, the probe loses: 36 optimization problems × 5 seeds give net **−23** (probe_off wins 47–24, ahead in 4 of 5 seeds, probe_on never winning). On a different year set (2016+2025) it's net −13 — the direction ("off gives better objectives") reproduces.
 
-But here, **the metric you pick flips the verdict.** The actual Challenge goal isn't "which of two configs has the better objective" — it's "**how many problems do you win against the field (CP-SAT)?**" Counting **Sabori vs CP-SAT** wins on the same 2016+2025, with the probe on vs off:
+But here, **the metric you pick flips the verdict.** The actual Challenge goal isn't "which of two configs has the better objective" — it's "**how many problems do you win against the field (CP-SAT)?**" Counting **Sabori vs CP-SAT** wins on the **same primary set 2023+2024** as the −23 head-to-head, with the probe on vs off:
 
 | Config | Sabori wins | CP-SAT wins | ties |
 |---|---|---|---|
-| **probe on (default)** | **15** | 17 | 6 |
-| **probe off** | **12** | 17 | 9 |
+| **probe on (default)** | **14** | 13 | 9 |
+| **probe off** | 12 | 14 | 10 |
 
-**The probe-on config wins more against CP-SAT in both years** (15 vs 12 combined; CP-SAT wins unchanged at 17). The probe converts ties into Sabori wins without losing a single extra one to CP-SAT. The reason: the probe **slightly worsens the objective on many problems** (hence the head-to-head loss) but **pushes a few across CP-SAT's threshold into wins** (hence the vs-field gain).
+**The probe-on config wins more (14 vs 12) and loses one fewer to CP-SAT (13 vs 14)** — the config that loses head-to-head wins on *both* axes of the field metric. A different year set (2016+2025) points the same way (probe on 15 vs off 12; CP-SAT wins tied at 17). The reason: the probe **slightly worsens the objective on many problems** (hence the head-to-head loss) but **pushes a few across CP-SAT's threshold into wins** (hence the vs-field gain).
+
+To be honest, the margin is thin: on 2023+2024 only a couple of 2023 problems moved (2024 ties at the aggregate), and the vs-CP-SAT verdict is single-seed, so it wobbles run-to-run. Still, **two independent year sets (2016+2025 and 2023+2024) both point to "probe on ≥ off,"** so I take the direction as solid.
 
 > **Methodological note (applies to the whole article).** This article's ablations are mostly **config-vs-config head-to-head by objective** — "which is better on average." The Challenge goal is "beat the field," where a few threshold-crossing problems decide it. The two metrics are usually close but not identical. **The other "doesn't help / surplus" conclusions here (Bloom in §2, structural blame in §4, the gradient above) are all head-to-head too** — and the probe is the *only* one I checked against the field, where it flipped. The rest look consistent by informal observation, but I haven't verified them vs the field, so read those negative conclusions as "head-to-head, at least." On the head-to-head −23 alone the probe looks droppable; against CP-SAT it wins more, so **keeping it is the right call** — a concrete case where the metric you pick changes the verdict.
 
@@ -356,7 +358,7 @@ No world-first algorithm appears here. The value is in measuring each deviation 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
-- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
+- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (14 vs 12 on the same primary set 2023+2024, with one fewer CP-SAT win; 15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency
 
