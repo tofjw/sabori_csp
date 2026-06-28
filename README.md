@@ -24,7 +24,7 @@ The consistent lesson: the conflict-directed selection foundation works; the cle
 Full write-up, every layer measured against CDCL / LCG / MiniZinc-family solvers:
 **[the short version (EN, start here)](articles/search-algorithm-en-short.md)** · **[full write-up (EN)](articles/search-algorithm-explained-en.md)** · **[日本語 短縮](articles/search-algorithm-short.md)** · **[日本語 全文](articles/search-algorithm-explained.md)**
 
-The honest pitch: *no novel algorithm here* — a standard backtracking + propagation + restart + activity + NoGood-learning skeleton with a thin self-tuning layer on top, built (and measured) to see how far cheap tendency-control gets you without the heavy LCG apparatus.
+The honest pitch: *no novel algorithm here* — a standard backtracking + propagation + restart + activity + NoGood-learning skeleton with a thin self-tuning layer on top, built (and measured) to see how far cheap tendency-control gets you without the heavy LCG apparatus. (Not a claim that deduction is redundant: sabori carries only the weakest learning by design, so on classes where strong learning is decisive, tendency alone won't reach — that's outside what's measured here.)
 
 ## Features
 
