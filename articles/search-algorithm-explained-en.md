@@ -99,6 +99,8 @@ Fixing vs adapting `mix_p` (env `SABORI_FIX_MIXP`), judged by objective value:
 
 The value isn't "beats every fixed heuristic" — it's **robustly avoiding the worst fixed choice per problem, and tracking best-of-fixed**. Read it as insurance for when you can't pick the right heuristic up front, not as a speedup.
 
+> Speculation about its dynamic nature (unmeasured): re-drawing mix_p every restart could adapt not just across problems but to the *time evolution within a run*. Early on, activity has accumulated little information and MRV (domain size) is the more reliable signal; as conflicts pile up, activity becomes more trustworthy and the activity-leaning arms start paying off — a shift over time the bandit may be tracking. But this is a mechanism-level guess; I haven't measured how mix_p actually drifts over the course of a search.
+
 ---
 
 ## 2. NoGood-Bloom overlap: a tiebreak by "entanglement" with learned constraints
