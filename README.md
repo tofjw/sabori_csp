@@ -8,7 +8,7 @@ A constraint solver (CSP / optimization) written from scratch in C++, FlatZinc-c
 
 ## What makes it interesting
 
-This is a hobby solver, not a Chuffed/OR-Tools competitor. What's distinctive is *how* it cuts wasted search, easiest to state by contrast with LCG (lazy clause generation, à la Chuffed):
+This is a hobby solver, not a Chuffed/OR-Tools competitor. What's distinctive is *how* it cuts wasted search, easiest to state by contrast with the mainstream LCG/CDCL line (lazy clause generation, à la Chuffed) — which turns conflicts into sound logical constraints and prunes deductively:
 
 > **LCG stops wasted search with *logic* — sound learned clauses prune deductively. sabori_csp stops it with *tendency* — it feeds the same conflict info into the variable-selection heuristic, a conflict-directed lean toward recently-conflicted variables.**
 

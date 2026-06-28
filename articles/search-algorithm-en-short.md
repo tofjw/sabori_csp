@@ -2,7 +2,7 @@
 
 *Short intro to sabori_csp, a hobby FlatZinc/CP solver I wrote in C++. Full write-up with all the numbers and code links at the bottom.*
 
-sabori_csp is a constraint solver with a standard skeleton — backtracking + propagation + restarts + activity-based variable selection + NoGood learning. What's distinctive is *how* it cuts wasted search, and it's easiest to state by contrast with LCG (lazy clause generation, à la Chuffed):
+sabori_csp is a constraint solver with a standard skeleton — backtracking + propagation + restarts + activity-based variable selection + NoGood learning. What's distinctive is *how* it cuts wasted search, and it's easiest to state by contrast with the mainstream LCG/CDCL line (lazy clause generation, à la Chuffed) — which turns conflicts into sound logical constraints and prunes deductively:
 
 > **LCG stops wasted search with *logic*: it learns sound clauses from conflicts and deductively prunes regions it provably never revisits. sabori_csp stops it with *tendency*: it feeds the same conflict information into the variable-selection heuristic — a conflict-directed lean toward recently-conflicted variables — steering away from bad regions.**
 

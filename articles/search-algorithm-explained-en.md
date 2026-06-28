@@ -4,6 +4,8 @@
 
 ## TL;DR
 
+The mainstream of modern CP / SAT solvers sits on the **CDCL (SAT) and LCG (lazy clause generation, à la Chuffed) line** — taking what's learned from conflicts and using it as *sound logical constraints* that prune deductively. sabori_csp deliberately doesn't follow that line: it's a **lightweight CP solver with no explanation generation**, choosing to reflect the same conflict information not as *logic* but as a *search tendency*. This article lays out that difference through comparison with established techniques and A/B testing.
+
 sabori_csp is a FlatZinc-compatible constraint solver written in C++. Its skeleton is completely standard:
 
 > backtracking search + constraint propagation + restarts + activity-based variable selection + NoGood learning
