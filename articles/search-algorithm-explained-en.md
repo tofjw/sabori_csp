@@ -339,23 +339,30 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 
 ## Summary: standard skeleton + a thin adaptive layer, measured
 
+> **Grading the numbers, up front.** The setup is **n=38 problems × 5 seeds, 30s wall-clock, judged by objective order**. At that resolution, **any net below ±10 is inside the variance band** — absolute levels wobble run-to-run. Only two things are robust: **monotonicity within one run** and **same sign across all seeds**. But even all-seeds-same-sign is only a *directional* hint when the margin is small (5/5 same sign is binomial p≈0.06). So the central thesis — **"what moves the search is tendency, not deduction (temporal + activity)" — is carried by *magnitude* on only two results**, the ones with a large margin:
+>
+> - **[Primary evidence ①] activity is the descent workhorse:** with temporal off, ablating the whole activity machinery costs **+81 (94–13, one run, every seed positive)** — a jump from +18 with temporal on, far outside the variance band.
+> - **[Primary evidence ②] tendency control itself works:** turning off all conflict-driven activity bumps costs **+21 (every seed positive, monotonically worse as you remove more sources)**.
+>
+> Everything else — the temporal marginal +25, NoGood +18/+17, mix_p, one-hot +6 — claims **only sign consistency (the direction), not magnitude**. Read them as "the direction is solid, but how many problems' worth wobbles run-to-run." Bloom (93% no-op), structural blame, gradient, and the probe head-to-head are "doesn't help / problem-dependent" directionals. **Of the bold nets in the table below, only ① +81 and ② +21 are load-bearing for the thesis** — the rest are corroborating direction, and no weak net is treated as if it were central proof.
+
 | Axis | Prior art | sabori_csp |
 |---|---|---|
-| Variable selection (restart override) | Last Conflict / conflict-history | **`temporal_activity`** (LC family, conflict recency) — picks the post-backtrack pick; largest marginal ablation (net +25) |
-| Variable selection (descent driver) | fixed/static mix of VSIDS / MRV / dom-wdeg | activity (drives most descent picks; masked by temporal to marginal +21, but +81 with temporal off = the real workhorse) + **bandit-learned mix** (mix_p) |
+| Variable selection (restart override) | Last Conflict / conflict-history | **`temporal_activity`** (LC family, conflict recency) — picks the post-backtrack pick; largest marginal ablation (net +25, directional) |
+| Variable selection (descent driver) | fixed/static mix of VSIDS / MRV / dom-wdeg | activity (drives most descent picks; tendency-control all-off +21 **[primary ②]**, +81 with temporal off **[primary ①]** = the real workhorse; the marginal +21 is temporal-masked) + **bandit-learned mix** (mix_p, directional) |
 | Variable-selection context | folded into activity | **NoGood-Bloom overlap** tiebreak — 93% no-op; another use or remove |
-| Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds |
+| Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds (net +17, directional — magnitude not claimed) |
 | Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
 | Propagation | 2-watched literal | same |
 | Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (fires only inside the probe below; problem-dependent; portfolio-only) |
 | Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (contains the gradient hint; loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
-| Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop |
+| Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop (net +6, directional) |
 | Structure analysis | (none) | community analysis (**diagnostics only**) |
 
 No world-first algorithm appears here. The value is in measuring each deviation and reporting both the wins and the losses:
 
-- **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
+- **Effective (foundation + model transform):** variable selection is two labor-sharing axes. The **two load-bearing results** (carried by magnitude) are: **activity is the descent workhorse** — with temporal off, ablating it costs **+81 (primary ①, 94–13, every seed)** — and **tendency control itself works** — all conflict-driven bumps off costs **+21 (primary ②, every seed, monotone)**. `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds) — but treated as **directional**, magnitude not claimed. The weak decision-trail NoGood (Section 3, +17), one-hot aggregation (Section 8, +6), and the mix_p bandit (Section 1) are likewise **all same-sign across seeds — the direction is solid, but the magnitude isn't claimed** (variance band).
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 - **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (14 vs 12 on the same primary set 2023+2024, with one fewer CP-SAT win; 15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
