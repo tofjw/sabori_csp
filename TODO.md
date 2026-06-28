@@ -106,7 +106,7 @@
 #### B-2. ヘッダ宣言+cpp 定義の組で呼び出しゼロ (13 件)
 
 - [ ] `src/core/nogood_manager.cpp:194` `NoGoodManager::add_unit_nogood`
-- [ ] `src/core/constraints/global/int_lin_eq.cpp:312` `IntLinEqConstraint::check_feasibility`
+- [x] `IntLinEqConstraint::check_feasibility` — 削除済み（2026-06-28 監査で確認、コードベースに残存なし）
 - [ ] `src/core/community_analysis.cpp:392` `CommunityAnalysis::top_communities`
 - [ ] `src/core/community_analysis.cpp:396` `CommunityAnalysis::community_vars`
 - [ ] `src/core/model.cpp:541` `Model::constraint_trail_size`
