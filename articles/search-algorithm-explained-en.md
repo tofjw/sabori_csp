@@ -252,21 +252,26 @@ Motivation is close to Glucose's LBD-dynamic restarts (detect stagnation and rea
 
 ## 6. Value selection and branching: enumerate / bisect hybrid
 
-- **Hybrid branching**: domains ≤ a threshold (default 8) enumerate values; larger ones bisect (`src/core/solver_frame.cpp`). Which side first (`right_first`) is decided by hints/gradient.
+- **Hybrid branching**: domains ≤ a threshold (default 8) enumerate values; larger ones bisect (`src/core/solver_frame.cpp`). Which side first (`right_first`) is decided by hints.
 - **Solution-guided value order**: bring the value from the best assignment so far to the front (`order_values`) — the CP analogue of phase saving.
-- Under optimization, the pseudo-gradient hint below stacks on top.
+- Under optimization, the pseudo-gradient hint below stacks on top of this value order — but **only inside Section 7's improvement-probe sub-search, never in the main branch-and-bound** (details in Section 7).
 
 ---
 
-## 7. Optimization: grafting a pseudo-gradient onto branch-and-bound
+## 7. Optimization: an improvement probe, with a pseudo-gradient inside it
 
 ### What sabori does
 
-On top of branch-and-bound, sabori estimates a per-variable "improving direction" from the difference between consecutive improving solutions (`include/sabori_csp/gradient_strategy.hpp`): compare the last two improving solutions, set the gradient sign per variable, pick one low-activity variable as a "gradient hint," and bias its value ordering toward the gradient direction (also feeding a lightweight "improvement probe"). Note this is a **value-selection** heuristic — a different axis from the variable-selection / activity discussion in Sections 2 and 4.
+On top of branch-and-bound, every time sabori finds an improving solution it runs one lightweight sub-search — the **improvement probe**. That probe is the container of this chapter, and the pseudo-gradient hint is a value-ordering option used *inside* that container. They are not two independent mechanisms: the gradient is **nested inside the probe**. The code works that way too — the gradient hint is set only when a new best is found (`gradient_strategy_.compute`) and is always disabled right after the probe's sub-search returns (`disable_hint`); **the main branch-and-bound only ever runs with the hint disabled**.
 
-#### Measured: also no gain on average
+- **Improvement probe** (`run_improvement_probe`, `probe_fail_limit_`): on each improving solution, run one fail-bounded sub-search aiming at a "~5% of the objective range" improvement from the best-objective side. A hit jumps the objective; a miss is cut off after few failures.
+- **Pseudo-gradient hint** (`include/sabori_csp/gradient_strategy.hpp`): the value-ordering bias *for that probe sub-search*. From the difference between consecutive improving solutions it estimates each variable's improving direction (went up / down), picks one low-activity (= barely-conflicted = high-freedom) variable, and biases its value ordering toward the gradient direction inside the probe.
 
-Toggling the gradient hint on/off (env `SABORI_GRADIENT`; off falls back to solution-guided value order). The gradient only fires on problems with an objective, so this is the 36 optimization problems × 5 seeds = 180 points:
+Note this is a **value-selection** heuristic — a different axis from the variable-selection / activity discussion in Sections 2 and 4.
+
+#### Measured: the gradient inside the probe, also no gain on average
+
+First the option inside the container. Toggling the gradient hint on/off (env `SABORI_GRADIENT`; off falls back to solution-guided value order in the probe sub-search). **The gradient only ever fires inside the probe**, so this measures the **marginal effect of the gradient option assuming the probe is on** (its default) — turn the probe off and the gradient does nothing. The gradient only fires on problems with an objective, so this is the 36 optimization problems × 5 seeds = 180 points:
 
 | Comparison | on win | off win | tie | net |
 |---|---|---|---|---|
@@ -289,7 +294,7 @@ But "negative on average" is half the story. I first hypothesized "tight problem
 
 #### Measured: the probe — where "head-to-head" and "vs CP-SAT" disagree
 
-This chapter has a second, independent mechanism — `run_improvement_probe`: a lightweight sub-search aimed at a ~5%-improvement sub-goal from the best objective side. It's distinct from the gradient hint (the gradient biases value ordering; the probe is a search device of its own). Toggled separately (env `SABORI_PROBE`, `benchmarks/minizinc_challenge/bench_probe.py`).
+Now the container itself: toggle `run_improvement_probe` as a whole (env `SABORI_PROBE`, `benchmarks/minizinc_challenge/bench_probe.py`). Since the gradient is a value-ordering option *inside* the probe, turning the probe off removes the gradient's effect too — so this measures the **probe+gradient bundle** versus **neither**.
 
 By the same **config-vs-config head-to-head (objective)** used throughout this article, the probe loses: 36 optimization problems × 5 seeds give net **−23** (probe_off wins 47–24, ahead in 4 of 5 seeds, probe_on never winning). On a different year set (2016+2025) it's net −13 — the direction ("off gives better objectives") reproduces.
 
@@ -341,8 +346,8 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
 | Propagation | 2-watched literal | same |
 | Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
-| Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (problem-dependent; portfolio-only) |
-| Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
+| Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (fires only inside the probe below; problem-dependent; portfolio-only) |
+| Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (contains the gradient hint; loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop |
 | Structure analysis | (none) | community analysis (**diagnostics only**) |
 
@@ -350,8 +355,8 @@ No world-first algorithm appears here. The value is in measuring each deviation 
 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes — `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds), and **activity drives the descent** (masked by temporal to a marginal +21, but +81 with temporal off = the real workhorse). The weak decision-trail NoGood (Section 3, +17) feeds that activity; one-hot aggregation (Section 8, +6) shrinks the model. The mix_p bandit (Section 1) tunes the activity blend and shows "avoid-the-worst-fixed" robustness.
 - **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
-- **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
-- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
+- **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
+- **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 
 ### LCG stops wasted search with logic; sabori stops it with tendency
 
@@ -361,7 +366,7 @@ The opening question — "what's different from LCG" — now has a one-line answ
 
 Same goal (cut wasted search), different principle: **logic (deductive pruning)** vs **tendency (heuristic control)**. And this isn't speculation — Section 3's split shows it directly: sabori's NoGood does prune deductively too (pure pruning +9), but what's actually working is mostly the part that fattens activity to shift the tendency (+18). **sabori has logic, but the main reason it cuts waste is on the tendency side.**
 
-Seen this way, the results line up. The "tendency" that decides search has two pillars that **divide labor by search phase**: **`temporal_activity` (Last-Conflict family) overrides the restart point after each backtrack, and VSIDS-style activity (fed by NoGood) drives the bulk of the descent.** Both are heuristic "lean toward what recently conflicted," not logic. If these two pillars decide search, then **the foundations that feed them (temporal_activity, NoGood, mix_p) work, and the layers that try to micro-adjust the same tendency through a different route (Bloom tiebreak, structural blame, gradient) go unrewarded because the thick pillars decide first.** One-hot aggregation is the exception only because its route is different — it shrinks the model rather than the tendency, so it helps independently.
+Seen this way, the results line up. The "tendency" that decides search has two pillars that **divide labor by search phase**: **`temporal_activity` (Last-Conflict family) overrides the restart point after each backtrack, and VSIDS-style activity (fed by NoGood) drives the bulk of the descent.** Both are heuristic "lean toward what recently conflicted," not logic. If these two pillars decide search, then **the foundations that feed them (temporal_activity, NoGood, mix_p) work, and the layers that try to micro-adjust the same tendency through a different route (Bloom tiebreak, structural blame) go unrewarded because the thick pillars decide first.** One-hot aggregation is the exception only because its route is different — it shrinks the model rather than the tendency, so it helps independently. The gradient hint (Section 7) isn't on this axis (variable-selection tendency) at all — it's a value-ordering bias inside the probe, and it fails for a different reason (direction estimation depends on problem structure) — a separate mechanism.
 
 #### A side effect: replicating a SAT lesson in CP
 
