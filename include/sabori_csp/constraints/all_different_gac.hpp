@@ -33,6 +33,8 @@ namespace sabori_csp {
  * GAC フィルタリングを追加したバージョン。
  */
 class AllDifferentGACConstraint : public AllDifferentConstraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentGACConstraint)
 public:
     explicit AllDifferentGACConstraint(std::vector<VariablePtr> vars);
 

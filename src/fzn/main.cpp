@@ -1,5 +1,6 @@
 #include "sabori_csp/fzn/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include "sabori_csp/parallel_solver.hpp"
 #include "sabori_csp/model_simplifier.hpp"
 #include "sabori_csp/constraints/global.hpp"
 #include "fzn_parser.hpp"
@@ -13,21 +14,28 @@
 #include <algorithm>
 #include <iomanip>
 #include <numeric>
+#include <vector>
 
 std::atomic<bool> g_timeout_flag{false};
 sabori_csp::Solver* g_current_solver = nullptr;
+sabori_csp::ParallelSolver* g_parallel_solver = nullptr;
 int g_timeout_sec = 0;
 
 void timeout_handler(int) {
     g_timeout_flag = true;
-    if (g_current_solver) {
+    // マルチスレッド時は ParallelSolver 経由で全ワーカーを停止。
+    // ハンドラ内は atomic store のみ（async-signal-safe）。
+    if (g_parallel_solver) {
+        g_parallel_solver->stop();
+    } else if (g_current_solver) {
         g_current_solver->stop();
     }
 }
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] <file.fzn>\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] [-j N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
+    std::cerr << "  -j N    Number of portfolio threads (default: 1). N>1 runs parallel search.\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
     std::cerr << "  -c      Community analysis [diagnostic only — does not speed up search]\n";
@@ -43,6 +51,8 @@ bool g_print_stats = false;
 bool g_verbose = false;
 bool g_no_nogood = false;
 bool g_no_elimination = false;
+int g_bisection_threshold = 8;
+int g_probe_fail_limit = 5;
 // 診断専用フラグ。ベンチマーク結果上、探索性能は改善しないため
 // デフォルト off。`-c` で明示的に有効化したときだけ VIG/コミュニティ/
 // 局所性統計を出力する。
@@ -162,6 +172,52 @@ void print_stats(const sabori_csp::Solver& solver, const sabori_csp::Model* mode
     }
 }
 
+// マルチスレッド時の簡易統計（勝者ワーカーの SolverStats のみ。制約別詳細は省略）。
+void print_stats_brief(const sabori_csp::SolverStats& s) {
+    if (!g_print_stats) return;
+    std::cerr << "% Stats: fails=" << s.fail_count
+              << " restarts=" << s.restart_count
+              << " max_depth=" << s.max_depth
+              << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
+              << " nogoods=" << s.nogoods_size
+              << " unit_nogoods=" << s.unit_nogoods_size
+              << " ng_prune=" << s.nogood_prune_count
+              << " bisect=" << s.bisect_count
+              << " enumerate=" << s.enumerate_count
+              << "\n";
+}
+
+int g_num_threads = 1;
+
+// ポートフォリオの多様化テーブルを構築する。
+// worker0 = デフォルト構成（seed 12345678, 全機能ON）で「単一スレッドより悪くならない」軸を確保。
+// worker1.. = シードをずらし、探索時 ablation を決定的にローテーションして多様化する。
+std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n) {
+    std::vector<sabori_csp::WorkerConfig> cfgs;
+    cfgs.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        sabori_csp::WorkerConfig c;
+        c.bisection_threshold = static_cast<size_t>(g_bisection_threshold);
+        c.probe_fail_limit = g_probe_fail_limit;
+        if (g_no_nogood) c.nogood_learning = false;
+        if (i == 0) {
+            cfgs.push_back(c);  // worker0 = 既定
+            continue;
+        }
+        c.seed = static_cast<uint32_t>(12345678u + i * 2654435761u);
+        switch (i % 6) {
+            case 1: c.restart_enabled = false; break;
+            case 2: c.activity_first_pin = true; break;
+            case 3: c.nogood_learning = false; break;
+            case 4: c.gradient_enabled = false; break;
+            case 5: c.probe_enabled = false; break;
+            default: break;  // case 0: シードのみ変える
+        }
+        cfgs.push_back(c);
+    }
+    return cfgs;
+}
+
 void print_value(int64_t value, bool is_bool) {
     if (is_bool) {
         std::cout << (value ? "true" : "false");
@@ -247,10 +303,29 @@ sabori_csp::ModelSimplifier simplify_model(
 /**
  * @brief 充足可能性問題を解く
  */
-int g_bisection_threshold = 8;
-int g_probe_fail_limit = 5;
-
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
+    // マルチスレッド・ポートフォリオ（-j N, N>1）。find_all は portfolio で重複列挙に
+    // なるため単一スレッド経路にフォールバックする。
+    if (g_num_threads > 1 && !find_all) {
+        auto model = fzn_model.to_model(g_verbose, g_use_gac);
+        if (!g_no_elimination) simplify_model(*model, fzn_model);
+        sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
+                                      build_worker_configs(g_num_threads));
+        g_parallel_solver = &ps;
+        if (g_timeout_sec > 0) alarm(g_timeout_sec);
+        auto r = ps.solve(*model);
+        g_parallel_solver = nullptr;
+        print_stats_brief(r.winner_stats);
+        if (r.status == sabori_csp::SearchResult::SAT && r.solution) {
+            print_solution(*r.solution, fzn_model);
+        } else if (r.status == sabori_csp::SearchResult::UNSAT) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+        } else {
+            std::cout << "=====UNKNOWN=====\n";
+        }
+        return;
+    }
+
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) simplify_model(*model, fzn_model);
     sabori_csp::Solver solver;
@@ -297,6 +372,41 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
  */
 void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minimize) {
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
+
+    // マルチスレッド・ポートフォリオ（-j N, N>1）+ bound 共有。
+    if (g_num_threads > 1) {
+        auto model = fzn_model.to_model(g_verbose, g_use_gac);
+        if (!g_no_elimination) simplify_model(*model, fzn_model);
+        size_t obj_var_idx = model->find_variable_index(objective_var_name);
+        if (obj_var_idx == SIZE_MAX) {
+            std::cerr << "Error: objective variable '" << objective_var_name << "' not found\n";
+            std::cout << "=====UNKNOWN=====\n";
+            return;
+        }
+        sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
+                                      build_worker_configs(g_num_threads));
+        g_parallel_solver = &ps;
+        if (g_timeout_sec > 0) alarm(g_timeout_sec);
+
+        // 改善 incumbent は publish 時に（result_mtx 下で同期して）呼ばれる。
+        // -a なら都度出力（出力は result_mtx 下で直列化され単調）。
+        auto r = ps.solve_optimize(*model, obj_var_idx, minimize,
+            [&](const sabori_csp::Solution& sol, sabori_csp::Domain::value_type) {
+                if (find_all) print_solution(sol, fzn_model);
+            });
+        g_parallel_solver = nullptr;
+        print_stats_brief(r.winner_stats);
+
+        if (r.status == sabori_csp::SearchResult::SAT && r.solution) {
+            if (!find_all) print_solution(*r.solution, fzn_model);
+            std::cout << (r.proved_optimal ? "==========\n" : "=====TIMEOUT=====\n");
+        } else if (r.status == sabori_csp::SearchResult::UNSAT) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+        } else {
+            std::cout << "=====UNKNOWN=====\n";
+        }
+        return;
+    }
 
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) simplify_model(*model, fzn_model);
@@ -371,6 +481,9 @@ int main(int argc, char* argv[]) {
             bisection_threshold = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             g_probe_fail_limit = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-j") == 0 && i + 1 < argc) {
+            g_num_threads = std::atoi(argv[++i]);
+            if (g_num_threads < 1) g_num_threads = 1;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-G") == 0) {

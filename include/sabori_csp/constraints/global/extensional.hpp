@@ -17,6 +17,8 @@ namespace sabori_csp {
  * ビットセットで有効タプルを管理し、ドメインフィルタリングを行う。
  */
 class TableConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(TableConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -190,6 +192,8 @@ private:
  * Forward/backward reachability による GAC フィルタリングを実装。
  */
 class RegularConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(RegularConstraint)
 public:
     /**
      * @brief コンストラクタ

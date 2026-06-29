@@ -321,12 +321,31 @@ public:
     virtual void init_activity(const Model& model, double* activity) const;
 
     /**
+     * @brief 制約のポリモーフィックなディープコピーを生成する
+     *
+     * マルチスレッド・ポートフォリオ探索で presolve 済みモデルを
+     * スレッドごとに clone する際に使用する。
+     *
+     * 各具象サブクラスは SABORI_CSP_CLONE_IMPL マクロで
+     * `std::make_shared<Derived>(*this)` を返すよう実装する。
+     * コピーコンストラクタは var_ids_/id_ 等の値型メンバを複製し、
+     * static な next_id_ には触れない（clone 後も id は安定）。
+     *
+     * 純粋仮想なので、未実装の具象サブクラスはコンパイルエラーになり
+     * 取りこぼしを防げる。
+     */
+    virtual std::shared_ptr<Constraint> clone() const = 0;
+
+    /**
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,
                                       double inc, bool& need_rescale,
                                       std::mt19937& rng) {
-        static std::uniform_real_distribution<double> jitter(0.9, 1.0);
+        // thread_local: マルチスレッド・ポートフォリオで各ワーカーが独立に
+        // 自分の rng_ から引くため。static だと operator() の内部状態が
+        // スレッド間で共有されデータ競合になる。
+        thread_local std::uniform_real_distribution<double> jitter(0.9, 1.0);
         activity[vid] += inc * jitter(rng);
         if (activity[vid] > 10000.0) {
             need_rescale = true;
@@ -381,6 +400,25 @@ private:
 };
 
 using ConstraintPtr = std::shared_ptr<Constraint>;
+
+/**
+ * @brief 具象制約クラスに clone() を実装するヘルパマクロ
+ *
+ * コピーコンストラクタ経由でディープコピーを生成する。
+ * 値型メンバ（var_ids_, coeffs_, trail 等）はすべて複製され、
+ * static next_id_ には触れないため id は安定する。
+ *
+ * 使用例（クラス public セクション内）:
+ *   SABORI_CSP_CLONE_IMPL(IntTimesConstraint)
+ *
+ * 注意: コピー不可メンバ（std::unique_ptr 等）を持つクラスでは
+ * 暗黙コピーコンストラクタが削除されるため、このマクロは使えず
+ * clone() を手書きする必要がある（例: CumulativeConstraint）。
+ */
+#define SABORI_CSP_CLONE_IMPL(Derived)                                  \
+    std::shared_ptr<::sabori_csp::Constraint> clone() const override {  \
+        return std::make_shared<Derived>(*this);                       \
+    }
 
 } // namespace sabori_csp
 

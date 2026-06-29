@@ -18,6 +18,8 @@ namespace sabori_csp {
  * 鳩の巣原理による枝刈りを実行。
  */
 class AllDifferentConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -157,6 +159,8 @@ private:
  * 非0値の一意性をSparse Setプールで管理。
  */
 class AllDifferentExcept0Constraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentExcept0Constraint)
 public:
     explicit AllDifferentExcept0Constraint(std::vector<VariablePtr> vars);
 

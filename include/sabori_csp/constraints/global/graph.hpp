@@ -31,6 +31,8 @@ namespace sabori_csp {
  * - パス結合後 size < n なら tail から head へ戻る値を除去（事前枝刈り）
  */
 class CircuitConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(CircuitConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -172,6 +174,8 @@ private:
  * var_ids_ レイアウト: [f[0], ..., f[n-1], invf[0], ..., invf[n-1]]
  */
 class InverseConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(InverseConstraint)
 public:
     /**
      * @param f       配列 f

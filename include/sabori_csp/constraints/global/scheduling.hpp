@@ -18,6 +18,8 @@ namespace sabori_csp {
  * strict=false の場合、d[i]=0 のタスクは他タスクと重複可能。
  */
 class DisjunctiveConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(DisjunctiveConstraint)
 public:
     DisjunctiveConstraint(std::vector<VariablePtr> starts,
                           std::vector<VariablePtr> durations,
@@ -118,6 +120,8 @@ private:
  * strict=false の場合、サイズ 0 の矩形は他と重複可能。
  */
 class DiffnConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(DiffnConstraint)
 public:
     DiffnConstraint(std::vector<VariablePtr> x, std::vector<VariablePtr> y,
                     std::vector<VariablePtr> dx, std::vector<VariablePtr> dy,
@@ -299,6 +303,16 @@ public:
                          std::vector<VariablePtr> requirements,
                          VariablePtr capacity);
 
+    /**
+     * @brief ディープコピー（手書き）
+     *
+     * engines_ が std::unique_ptr を持ち暗黙コピーコンストラクタが
+     * 削除されるため、SABORI_CSP_CLONE_IMPL マクロは使えない。
+     * 基底状態と n_/engine_stats_ をコピーし、engines_ は作り直す
+     * （エンジンのスクラッチ状態は各伝播で再構築されるため）。
+     */
+    std::shared_ptr<Constraint> clone() const override;
+
     std::string name() const override;
 
     PresolveResult presolve(Model& model) override;
@@ -333,6 +347,9 @@ public:
     std::vector<std::string> engine_names() const;
 
 private:
+    /** @brief clone() 用のコピーコンストラクタ（engines_ は作り直す） */
+    CumulativeConstraint(const CumulativeConstraint& other);
+
     size_t n_;  // タスク数
 
     // Propagator エンジン

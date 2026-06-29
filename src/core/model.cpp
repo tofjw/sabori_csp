@@ -7,6 +7,58 @@
 
 namespace sabori_csp {
 
+std::unique_ptr<Model> Model::clone() const {
+    auto m = std::make_unique<Model>();
+
+    // --- 変数: ディープコピー + 戻りポインタ再設定 ---
+    m->variables_.reserve(variables_.size());
+    for (const auto& v : variables_) {
+        if (v) {
+            auto nv = std::make_unique<Variable>(*v);  // 暗黙コピー（name_/id_/domain_/model_）
+            nv->set_model(m.get());                    // 戻りポインタを複製先へ
+            m->variables_.push_back(std::move(nv));
+        } else {
+            m->variables_.push_back(nullptr);
+        }
+    }
+
+    // --- 制約: Constraint::clone() で複製（null は保持）---
+    m->constraints_.reserve(constraints_.size());
+    for (const auto& c : constraints_) {
+        m->constraints_.push_back(c ? c->clone() : nullptr);
+    }
+    // raw ポインタ配列を複製先の制約から作り直す
+    m->constraint_ptrs_.reserve(constraints_.size());
+    for (const auto& c : m->constraints_) {
+        m->constraint_ptrs_.push_back(c.get());
+    }
+
+    // --- 値型メタデータ: そのままコピー ---
+    m->name_to_id_ = name_to_id_;
+    m->variable_aliases_ = variable_aliases_;
+    m->next_var_id_ = next_var_id_;
+    m->eliminated_ = eliminated_;
+    m->var_data_ = var_data_;
+    m->instantiated_count_ = instantiated_count_;
+    m->presolve_phase_ = presolve_phase_;
+    m->presolve_min_ = presolve_min_;
+    m->presolve_max_ = presolve_max_;
+    m->var_ng_bloom_ = var_ng_bloom_;
+
+    // ウォッチリストはインデックスのみで安定なのでコピー（master と bit-identical）
+    m->var_to_constraint_indices_ = var_to_constraint_indices_;
+    // バッチスケジューリングの登録フラグ（サイズは制約数。中身は fork 時点で全ゼロ）
+    m->constraint_scheduled_ = constraint_scheduled_;
+
+    // --- 探索時のみ使う state は空のまま（fork 時点で空、防御的に未設定）---
+    // var_trail_ / constraint_trail_ / dirty_constraint_trail_ : 空
+    // pending_updates_ / pending_read_idx_ : 空 / 0
+    // scheduled_queue_ / scheduled_head_ : 空 / 0
+    // （いずれもデフォルト構築済み）
+
+    return m;
+}
+
 Variable* Model::create_variable(std::string name, Domain domain) {
     auto var = std::make_unique<Variable>(std::move(name), std::move(domain));
     Variable* ptr = var.get();

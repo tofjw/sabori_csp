@@ -601,6 +601,21 @@ CumulativeConstraint::CumulativeConstraint(
     engine_stats_.resize(engines_.size());
 }
 
+CumulativeConstraint::CumulativeConstraint(const CumulativeConstraint& other)
+    : Constraint(other)        // 基底状態（var_ids_, id_, watches, label_ 等）を複製
+    , n_(other.n_)
+    , engine_stats_(other.engine_stats_)
+{
+    // engines_ は unique_ptr を持つためコピーできない。
+    // コンストラクタと同じ構成で作り直す（スクラッチ状態は各伝播で再構築される）。
+    engines_.push_back(std::make_unique<TimeTablingPropagator>());
+    engines_.push_back(std::make_unique<TTEFPropagator>());
+}
+
+std::shared_ptr<Constraint> CumulativeConstraint::clone() const {
+    return std::shared_ptr<CumulativeConstraint>(new CumulativeConstraint(*this));
+}
+
 std::string CumulativeConstraint::name() const {
     return "fzn_cumulative";
 }

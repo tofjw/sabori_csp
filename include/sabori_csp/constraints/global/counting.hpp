@@ -21,6 +21,8 @@ namespace sabori_csp {
  * - possible_count_: 未確定かつ target が domain に含まれる x[i] の数
  */
 class CountEqConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(CountEqConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -105,6 +107,8 @@ private:
  * 変数配置: vars_[0..n-1] = x[], vars_[n] = y, vars_[n+1] = c
  */
 class CountEqVarTargetConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(CountEqVarTargetConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -195,6 +199,8 @@ private:
  * 各値の support count をビットマップで追跡し、差分更新で伝播。
  */
 class NValueConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(NValueConstraint)
 public:
     /**
      * @brief コンストラクタ

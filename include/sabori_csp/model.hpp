@@ -103,6 +103,22 @@ class Model {
 public:
     Model() = default;
 
+    /**
+     * @brief presolve 済みモデルのディープコピーを生成する
+     *
+     * マルチスレッド・ポートフォリオ探索で、presolve を 1 度だけ実行した
+     * master モデルをワーカースレッドごとに複製するために使う。
+     *
+     * 変数・制約・SoA データ・名前マップ・ウォッチリスト・presolve スナップショットを
+     * ディープコピーする。各変数の Variable::model_ 戻りポインタは複製先 Model を指すよう
+     * 再設定し、各制約は Constraint::clone() で複製、constraint_ptrs_ を作り直す。
+     * 探索時のみ使う trail / pending キュー / scheduled キューは（fork 時点では空なので）
+     * クリアした状態で生成する。
+     *
+     * @return 独立に探索可能な複製モデル
+     */
+    std::unique_ptr<Model> clone() const;
+
     // ===== 変数・制約管理 =====
 
     /**

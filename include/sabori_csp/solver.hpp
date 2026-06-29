@@ -18,6 +18,8 @@
 #include <random>
 #include <atomic>
 #include <limits>
+#include <optional>
+#include <cstdint>
 
 namespace sabori_csp {
 
@@ -39,6 +41,28 @@ enum class SearchResult {
     SAT,      // 解が見つかった
     UNSAT,    // 解が存在しない
     UNKNOWN   // 不明（リスタートなど）
+};
+
+/**
+ * @brief ワーカースレッドごとの探索構成（マルチスレッド・ポートフォリオ用）
+ *
+ * ポートフォリオの効果はワーカー間の探索の違いから生まれる。各ワーカーに
+ * 異なる RNG シードと探索時 ablation 構成を割り当てて多様化する。
+ *
+ * 注意: presolve 専用の ablation（one-hot 集約など）は master で 1 度だけ
+ * 実行されるため、ここには含めない（多様化は探索時の軸に限定）。
+ */
+struct WorkerConfig {
+    uint32_t seed = 12345678;          ///< RNG シード
+    bool restart_enabled = true;        ///< リスタート有無
+    bool nogood_learning = true;        ///< NoGood 学習有無
+    bool activity_first_pin = false;    ///< true で activity 優先に固定（mode 適応を無効化）
+    std::optional<size_t> fixed_mixp;   ///< 指定時 mix_p をこのグリッド値に固定
+    bool gradient_enabled = true;       ///< 擬似勾配ヒント有無
+    bool probe_enabled = true;          ///< improvement probe 有無（最適化）
+    bool temporal_enabled = true;       ///< temporal_activity（Last Conflict）有無
+    size_t bisection_threshold = 8;     ///< 二分割の閾値
+    int probe_fail_limit = 5;           ///< improvement probe の fail 上限
 };
 
 /**
@@ -181,6 +205,37 @@ public:
         Model& model, size_t obj_var_idx, bool minimize,
         SolutionCallback on_improve = nullptr);
 
+    // ===== マルチスレッド・ポートフォリオ用 prepared API =====
+
+    /**
+     * @brief master モデルに presolve を適用する（探索はしない）
+     *
+     * init_search（build_constraint_watch_list → presolve →
+     * prepare_propagation → post）を実行し、master モデルを presolve 済み・
+     * prepare 済みの状態にする。この後 Model::clone() でワーカーへ複製する。
+     * この Solver インスタンスの探索状態は使い捨て。
+     * @return presolve 成功なら true、矛盾検出なら false（即 UNSAT）
+     */
+    bool prepare(Model& master);
+
+    /**
+     * @brief presolve 済みモデル（master の clone）で最初の解を探索
+     * @note 呼ぶ前に apply_worker_config でシード・構成を設定すること
+     */
+    std::optional<Solution> solve_prepared(Model& model);
+
+    /**
+     * @brief presolve 済みモデルで最適化探索
+     */
+    std::optional<Solution> solve_optimize_prepared(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve = nullptr);
+
+    /**
+     * @brief presolve 済みモデルで全解探索
+     */
+    size_t solve_all_prepared(Model& model, SolutionCallback callback);
+
     /**
      * @brief 統計情報を取得
      */
@@ -274,6 +329,20 @@ public:
     bool is_stopped() const { return stopped_; }
 
     /**
+     * @brief 大域 incumbent（他スレッドの最良目的値）を返すフックを設定する
+     *
+     * マルチスレッド・ポートフォリオの最適化で、各ワーカーが共有の best objective を
+     * 参照して目的変数を締めるために使う。フックは「最良目的値（解が存在する値）」を
+     * 返すか、まだ無ければ std::nullopt を返す。スレッドセーフであること（atomic 読み）。
+     *
+     * 締め方は「incumbent より厳密に良い値」のみを許す方向で、enqueue_set_max/min が
+     * 単調にしか作用しない（緩めない）ため健全。
+     */
+    void set_external_bound_hook(std::function<std::optional<Domain::value_type>()> hook) {
+        external_bound_hook_ = std::move(hook);
+    }
+
+    /**
      * @brief 制約タイプ別統計を取得
      */
     const std::unordered_map<std::string, ConstraintStats>& constraint_stats() const { return constraint_stats_; }
@@ -308,11 +377,54 @@ public:
      */
     void set_probe_fail_limit(int limit) { probe_fail_limit_ = limit; }
 
+    /**
+     * @brief RNG シードを設定（ポートフォリオの多様化用）
+     * @note init_search* の前に呼ぶこと（var_selector の順序構築が rng_ を使う）
+     */
+    void set_seed(uint32_t seed) { rng_.seed(seed); }
+
+    /** @brief 擬似勾配ヒントの有無を設定（ablation/多様化用） */
+    void set_gradient_enabled(bool enabled) { gradient_enabled_ = enabled; }
+
+    /** @brief temporal_activity（Last Conflict）の有無を設定（ablation/多様化用） */
+    void set_temporal_enabled(bool enabled) { temporal_enabled_ = enabled; }
+
+    /** @brief improvement probe の有無を設定（ablation/多様化用） */
+    void set_probe_enabled(bool enabled) { probe_enabled_ = enabled; }
+
+    /** @brief mix_p を指定グリッド値に固定（mode 適応を無効化） */
+    void set_fixed_mixp(size_t idx) { mode_policy_.pin(idx); }
+
+    /**
+     * @brief ワーカー構成を一括適用（マルチスレッド・ポートフォリオ用）
+     *
+     * RNG シードと探索時 ablation を設定する。init_search_no_presolve の前に呼ぶ。
+     */
+    void apply_worker_config(const WorkerConfig& cfg) {
+        set_seed(cfg.seed);
+        set_restart_enabled(cfg.restart_enabled);
+        set_nogood_learning(cfg.nogood_learning);
+        if (cfg.fixed_mixp) {
+            set_fixed_mixp(*cfg.fixed_mixp);
+        } else if (cfg.activity_first_pin) {
+            set_activity_first(true);
+        }
+        set_gradient_enabled(cfg.gradient_enabled);
+        set_temporal_enabled(cfg.temporal_enabled);
+        set_probe_enabled(cfg.probe_enabled);
+        set_bisection_threshold(cfg.bisection_threshold);
+        set_probe_fail_limit(cfg.probe_fail_limit);
+    }
+
 private:
     void log_presolve_start(const Model& model) const;
 
     std::atomic<bool> stopped_{false};
     bool verbose_ = false;
+
+    // マルチスレッド・ポートフォリオ: 大域 incumbent を返すフック（未設定なら nullptr）。
+    std::function<std::optional<Domain::value_type>()> external_bound_hook_;
+
     // ===== 探索 =====
 
     /**
@@ -411,6 +523,23 @@ private:
     ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
 
     /**
+     * @brief apply_external_bound の戻り値
+     *
+     * None: フック未設定 or 締めても矛盾なし → 通常探索を続行。
+     * Stopped: process_queue が timeout で中断 → inner ループを break。
+     * Optimal: 大域 incumbent で目的変数が空になった → best_solution_ を返して終了。
+     */
+    enum class ExternalBoundAction { None, Stopped, Optimal };
+
+    /**
+     * @brief 大域 incumbent（external_bound_hook_）で目的変数を締める（optimize 専用）
+     *
+     * 内側 restart ループの先頭（モデルが root 状態）で呼ぶ。incumbent より厳密に
+     * 良い値だけを許すよう enqueue_set_max/min（単調・緩めない）して process_queue する。
+     */
+    ExternalBoundAction apply_external_bound(Model& model);
+
+    /**
      * @brief handle_find_all_solution の戻り値
      *
      * ContinueLoop: 解を NoGood 登録し探索継続（inner restart ループを continue）。
@@ -465,6 +594,33 @@ private:
      * @return presolve 成功なら true、矛盾検出なら false
      */
     bool init_search(Model& model);
+
+    // 初期化後の探索本体（solve* と *_prepared が共有する）。
+    std::optional<Solution> run_solve(Model& model);
+    std::optional<Solution> run_solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize, SolutionCallback on_improve);
+    size_t run_solve_all(Model& model, SolutionCallback callback);
+
+    /**
+     * @brief presolve をスキップした探索初期化
+     *
+     * すでに presolve / prepare_propagation 済みのモデル（master モデルの
+     * clone）に対してワーカースレッドが呼ぶ。state → post_presolve を実行する。
+     * @return 常に true（presolve しないので失敗しない）
+     */
+    bool init_search_no_presolve(Model& model);
+
+    /**
+     * @brief 探索状態の確保（presolve 前）。activity / var_selector 順序 /
+     * nogood / stats などを初期化する。presolve には依存しない。
+     */
+    void init_search_state(Model& model);
+
+    /**
+     * @brief presolve 後の初期化。gradient / 制約固有 activity / community /
+     * var_selector tracking を構築する。presolve 済みのモデルに対して呼ぶ。
+     */
+    void init_search_post_presolve(Model& model);
 
     /**
      * @brief presolve（探索前の初期伝播）

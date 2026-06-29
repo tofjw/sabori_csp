@@ -101,7 +101,9 @@ Literal Literal::negate() const {
     return *this;
 }
 
-bool Solver::init_search(Model& model) {
+// presolve 前の探索状態の確保（activity / var_selector 順序 / nogood / stats 等）。
+// presolve には依存しない部分。マルチスレッドのワーカー初期化でも共有する。
+void Solver::init_search_state(Model& model) {
     model.build_constraint_watch_list();
 
     const auto& variables = model.variables();
@@ -119,13 +121,11 @@ bool Solver::init_search(Model& model) {
     model.resize_var_ng_bloom(variables.size());
     ng_usage_bloom_ = Bloom512{};
     restart_ctrl_.reset();
+}
 
-    if (verbose_) log_presolve_start(model);
-    if (!presolve(model)) {
-        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
-        return false;
-    }
-
+// presolve 後の初期化（gradient / 制約固有 activity / community / var_selector tracking）。
+// presolve 済み・prepare_propagation 済みのモデルに対して呼ぶ。
+void Solver::init_search_post_presolve(Model& model) {
     // 勾配に関わる変数インデックスを収集（勾配候補の高速列挙用）
     gradient_strategy_.rebuild_eligible(model);
 
@@ -185,12 +185,32 @@ bool Solver::init_search(Model& model) {
                   << "\n";
     }
     unassigned_trail_.clear();
+}
+
+// 通常の探索初期化（挙動は従来と完全に同一）: state → presolve → post。
+bool Solver::init_search(Model& model) {
+    init_search_state(model);
+
+    if (verbose_) log_presolve_start(model);
+    if (!presolve(model)) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
+        return false;
+    }
+
+    init_search_post_presolve(model);
     return true;
 }
 
-std::optional<Solution> Solver::solve(Model& model) {
-    if (!init_search(model)) return std::nullopt;
+// presolve をスキップした探索初期化。すでに presolve / prepare_propagation 済みの
+// clone モデル（master からの複製）に対してワーカースレッドが呼ぶ。
+bool Solver::init_search_no_presolve(Model& model) {
+    init_search_state(model);
+    init_search_post_presolve(model);
+    return true;
+}
 
+// 初期化後の探索本体（solve / solve_prepared 共通）。
+std::optional<Solution> Solver::run_solve(Model& model) {
     if (restart_enabled_) {
         return search_with_restart(model, nullptr, false);
     }
@@ -205,28 +225,20 @@ std::optional<Solution> Solver::solve(Model& model) {
     return result;
 }
 
-std::optional<Solution> Solver::solve_optimize(
+// 初期化後の最適化探索本体（solve_optimize / solve_optimize_prepared 共通）。
+std::optional<Solution> Solver::run_solve_optimize(
         Model& model, size_t obj_var_idx, bool minimize,
         SolutionCallback on_improve) {
     optimizing_ = true;
     obj_var_idx_ = obj_var_idx;
     minimize_ = minimize;
-    best_solution_ = std::nullopt;
-    best_objective_ = std::nullopt;
-
-    if (!init_search(model)) {
-        optimizing_ = false;
-        return std::nullopt;
-    }
-
     auto result = search_with_restart_optimize(model, on_improve);
     optimizing_ = false;
     return result;
 }
 
-size_t Solver::solve_all(Model& model, SolutionCallback callback) {
-    if (!init_search(model)) return 0;
-
+// 初期化後の全解探索本体（solve_all / solve_all_prepared 共通）。
+size_t Solver::run_solve_all(Model& model, SolutionCallback callback) {
     size_t count = 0;
 
     if (restart_enabled_) {
@@ -244,6 +256,51 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     }
 
     return count;
+}
+
+std::optional<Solution> Solver::solve(Model& model) {
+    if (!init_search(model)) return std::nullopt;
+    return run_solve(model);
+}
+
+std::optional<Solution> Solver::solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+    if (!init_search(model)) return std::nullopt;
+    return run_solve_optimize(model, obj_var_idx, minimize, on_improve);
+}
+
+size_t Solver::solve_all(Model& model, SolutionCallback callback) {
+    if (!init_search(model)) return 0;
+    return run_solve_all(model, callback);
+}
+
+// ===== presolve 済みモデル（master の clone）向けの prepared 版 =====
+// ワーカースレッドが使う。init_search_no_presolve で初期化してから探索する。
+
+bool Solver::prepare(Model& master) {
+    return init_search(master);
+}
+
+std::optional<Solution> Solver::solve_prepared(Model& model) {
+    init_search_no_presolve(model);
+    return run_solve(model);
+}
+
+std::optional<Solution> Solver::solve_optimize_prepared(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+    init_search_no_presolve(model);
+    return run_solve_optimize(model, obj_var_idx, minimize, on_improve);
+}
+
+size_t Solver::solve_all_prepared(Model& model, SolutionCallback callback) {
+    init_search_no_presolve(model);
+    return run_solve_all(model, callback);
 }
 
 void Solver::log_presolve_start(const Model& model) const {

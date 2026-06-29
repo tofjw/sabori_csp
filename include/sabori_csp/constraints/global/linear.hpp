@@ -63,6 +63,8 @@ protected:
  * O(1) の差分更新で bounds consistency を維持。
  */
 class IntLinEqConstraint : public LinearConstraintBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinEqConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -188,6 +190,8 @@ private:
  * @brief int_lin_le制約: Σ(coeffs[i] * vars[i]) <= bound
  */
 class IntLinLeConstraint : public LinearConstraintBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeConstraint)
 public:
     IntLinLeConstraint(std::vector<int64_t> coeffs,
                        std::vector<VariablePtr> vars,
@@ -276,6 +280,8 @@ private:
  * 残り1変数の場合、禁止値を除外する。
  */
 class IntLinNeConstraint : public LinearConstraintBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinNeConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -436,6 +442,8 @@ private:
  * @brief int_lin_eq_reif制約: (Σ(coeffs[i] * vars[i]) == target) <-> b
  */
 class IntLinEqReifConstraint : public IntLinEqNeReifBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinEqReifConstraint)
 public:
     IntLinEqReifConstraint(std::vector<int64_t> coeffs,
                            std::vector<VariablePtr> vars,
@@ -452,6 +460,8 @@ public:
  * @brief int_lin_ne_reif制約: (Σ(coeffs[i] * vars[i]) != target) <-> b
  */
 class IntLinNeReifConstraint : public IntLinEqNeReifBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinNeReifConstraint)
 public:
     IntLinNeReifConstraint(std::vector<int64_t> coeffs,
                            std::vector<VariablePtr> vars,
@@ -473,6 +483,8 @@ public:
  * 線形変数の bounds から b を推論可能。
  */
 class IntLinLeReifConstraint : public LinearConstraintBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeReifConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -574,6 +586,8 @@ private:
  * - _imp: b -> P （単方向、b から P への含意のみ）
  */
 class IntLinLeImpConstraint : public LinearConstraintBase {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeImpConstraint)
 public:
     /**
      * @brief コンストラクタ

@@ -24,6 +24,8 @@ namespace sabori_csp {
  * このクラスを直接 add_constraint する直接利用も可。
  */
 class IntOneHotChannelConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntOneHotChannelConstraint)
 public:
     IntOneHotChannelConstraint(VariablePtr x,
                                std::vector<Domain::value_type> values,
@@ -103,6 +105,8 @@ private:
  * （dynamic activity を上書きしないごく小さな数）。
  */
 class IncreasingConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IncreasingConstraint)
 public:
     IncreasingConstraint(std::vector<VariablePtr> vars, bool strict);
 

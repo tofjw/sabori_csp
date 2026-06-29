@@ -20,6 +20,8 @@ namespace sabori_csp {
  * 状態を持たないため、rewind_to は空実装。
  */
 class IntElementConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntElementConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -131,6 +133,8 @@ private:
  * - result bounds 変更 → index bounds = lower_bound/upper_bound (O(log n))
  */
 class IntElementMonotonicConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntElementMonotonicConstraint)
 public:
     enum class Monotonicity { NON_DECREASING, NON_INCREASING };
 
@@ -193,6 +197,8 @@ private:
  * - m 確定時: 少なくとも1つの x[i] が m に等しくなれる必要がある
  */
 class ArrayIntMaximumConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayIntMaximumConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -237,6 +243,8 @@ private:
  * 変数 m は配列 x の最小値と等しい。
  */
 class ArrayIntMinimumConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayIntMinimumConstraint)
 public:
     ArrayIntMinimumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
 
@@ -282,6 +290,8 @@ private:
  * - サポートが失われたら bounds を再計算
  */
 class ArrayVarIntElementConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayVarIntElementConstraint)
 public:
     /**
      * @brief コンストラクタ

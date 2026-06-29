@@ -19,6 +19,8 @@ namespace sabori_csp {
  * - 1つでも bi = 0 のとき: r = 0
  */
 class ArrayBoolAndConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolAndConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -84,6 +86,8 @@ private:
  * 2-watched literal を使用して効率的に伝播を行う。
  */
 class ArrayBoolOrConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolOrConstraint)
 public:
     ArrayBoolOrConstraint(std::vector<VariablePtr> vars, VariablePtr r);
 
@@ -130,6 +134,8 @@ private:
  * - 全ての pos = 0 かつ 全ての neg = 1 で矛盾
  */
 class BoolClauseConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(BoolClauseConstraint)
 public:
     /**
      * @brief コンストラクタ
@@ -217,6 +223,8 @@ private:
  * - b = 1 → a = 0
  */
 class BoolNotConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(BoolNotConstraint)
 public:
     BoolNotConstraint(VariablePtr a, VariablePtr b);
 
@@ -241,6 +249,8 @@ private:
  * 結果変数を持たない（FlatZinc仕様: array_bool_xor(array[int] of var bool)）。
  */
 class ArrayBoolXorConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolXorConstraint)
 public:
     ArrayBoolXorConstraint(std::vector<VariablePtr> vars);
 
@@ -269,6 +279,8 @@ private:
  * - b, c 確定 → a = (b XOR c)
  */
 class BoolXorConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(BoolXorConstraint)
 public:
     BoolXorConstraint(VariablePtr a, VariablePtr b, VariablePtr c);
 

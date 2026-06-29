@@ -13,6 +13,8 @@ namespace sabori_csp {
  * @brief int_eq制約: x == y
  */
 class IntEqConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntEqConstraint)
 public:
     IntEqConstraint(VariablePtr x, VariablePtr y);
 
@@ -41,6 +43,8 @@ private:
  * @brief int_eq_reif制約: (x == y) <-> b
  */
 class IntEqReifConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntEqReifConstraint)
 public:
     IntEqReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
@@ -89,6 +93,8 @@ private:
  * 半具象化（含意）版の等価制約。b=1 なら x==y を強制、b=0 なら無制約。
  */
 class IntEqImpConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntEqImpConstraint)
 public:
     IntEqImpConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
@@ -121,6 +127,8 @@ private:
  * @brief int_ne制約: x != y
  */
 class IntNeConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntNeConstraint)
 public:
     IntNeConstraint(VariablePtr x, VariablePtr y);
 
@@ -141,6 +149,8 @@ private:
  * @brief int_ne_reif制約: (x != y) <-> b
  */
 class IntNeReifConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntNeReifConstraint)
 public:
     IntNeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
@@ -173,6 +183,8 @@ private:
  * @brief int_lt制約: x < y
  */
 class IntLtConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLtConstraint)
 public:
     IntLtConstraint(VariablePtr x, VariablePtr y);
 
@@ -201,6 +213,8 @@ private:
  * @brief int_le制約: x <= y
  */
 class IntLeConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLeConstraint)
 public:
     IntLeConstraint(VariablePtr x, VariablePtr y);
 
@@ -229,6 +243,8 @@ private:
  * @brief int_le_reif制約: (x <= y) <-> b
  */
 class IntLeReifConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntLeReifConstraint)
 public:
     IntLeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
@@ -259,6 +275,8 @@ private:
  * 2変数の最大値制約。m は x と y の最大値に等しい。
  */
 class IntMaxConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntMaxConstraint)
 public:
     IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
@@ -289,6 +307,8 @@ private:
  * 2変数の最小値制約。m は x と y の最小値に等しい。
  */
 class IntMinConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntMinConstraint)
 public:
     IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 

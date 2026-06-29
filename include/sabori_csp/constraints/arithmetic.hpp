@@ -13,6 +13,8 @@ namespace sabori_csp {
  * @brief int_times制約: x * y = z
  */
 class IntTimesConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntTimesConstraint)
 public:
     IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
@@ -46,6 +48,8 @@ private:
  * @brief int_abs制約: |x| = y
  */
 class IntAbsConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntAbsConstraint)
 public:
     IntAbsConstraint(VariablePtr x, VariablePtr y);
 
@@ -76,6 +80,8 @@ private:
  * @brief int_div制約: x div y = z (truncated division)
  */
 class IntDivConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntDivConstraint)
 public:
     IntDivConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
@@ -114,6 +120,8 @@ private:
  * @brief int_mod制約: x mod y = z (truncated division)
  */
 class IntModConstraint : public Constraint {
+ public:
+    SABORI_CSP_CLONE_IMPL(IntModConstraint)
 public:
     IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 

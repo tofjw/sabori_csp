@@ -7,6 +7,7 @@ add_library(sabori_csp_core
   solver_search.cpp
   solver_frame.cpp
   solver_propagate.cpp
+  parallel_solver.cpp
   nogood_manager.cpp
   variable_selector.cpp
   model.cpp
@@ -50,6 +51,10 @@ add_library(sabori_csp_core
 target_include_directories(sabori_csp_core PUBLIC
   ${CMAKE_SOURCE_DIR}/include
 )
+
+# マルチスレッド・ポートフォリオ用（std::thread）
+find_package(Threads REQUIRED)
+target_link_libraries(sabori_csp_core PUBLIC Threads::Threads)
 
 # Enable PIC when building Python bindings (shared library requires it)
 if(BUILD_PYTHON_BINDINGS)

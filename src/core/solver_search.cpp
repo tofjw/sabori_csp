@@ -382,6 +382,34 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
     return std::nullopt;
 }
 
+Solver::ExternalBoundAction Solver::apply_external_bound(Model& model) {
+    auto gb = external_bound_hook_();
+    if (!gb) return ExternalBoundAction::None;
+
+    // incumbent より厳密に良い値のみ許す（minimize: obj <= gb-1, maximize: obj >= gb+1）。
+    // enqueue_set_max/min は単調（緩めない）ので、自分のローカル境界と矛盾しても安全。
+    if (minimize_) {
+        model.enqueue_set_max(obj_var_idx_, *gb - 1);
+    } else {
+        model.enqueue_set_min(obj_var_idx_, *gb + 1);
+    }
+
+    auto pr = process_queue(model);
+    if (pr == PropagationResult::Stopped) {
+        return ExternalBoundAction::Stopped;
+    }
+    if (pr == PropagationResult::Conflict) {
+        // 大域 incumbent より良い解は存在しない → incumbent が最適。
+        model.clear_pending_updates();
+        sync_nogood_stats();
+        if (verbose_) {
+            std::cerr << "% [verbose] optimal (external bound proved no improvement)\n";
+        }
+        return ExternalBoundAction::Optimal;
+    }
+    return ExternalBoundAction::None;
+}
+
 std::optional<Solution> Solver::search_with_restart_optimize(
         Model& model, SolutionCallback callback) {
     int root_point = current_decision_;
@@ -402,6 +430,15 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
         while (restart_ctrl_.inner_within_outer() && !stopped_) {
             int conflict_limit = restart_ctrl_.conflict_limit();
+
+            // マルチスレッド bound 共有: 大域 incumbent で目的変数を締める。
+            // モデルは root 状態なので、ここで締めた境界は root レベルで永続する。
+            if (external_bound_hook_) {
+                ExternalBoundAction ba = apply_external_bound(model);
+                if (ba == ExternalBoundAction::Optimal) return best_solution_;
+                if (ba == ExternalBoundAction::Stopped) break;
+            }
+
             std::optional<Solution> found_solution;
 
             auto res = run_search(model, conflict_limit, 0,

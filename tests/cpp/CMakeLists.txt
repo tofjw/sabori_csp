@@ -19,6 +19,7 @@ add_executable(test_sabori_csp
   test_cumulative_brute.cpp
   test_find_all_consistency.cpp
   test_one_hot_channel.cpp
+  test_parallel_clone.cpp
 )
 
 target_link_libraries(test_sabori_csp
