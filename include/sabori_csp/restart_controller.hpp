@@ -28,8 +28,8 @@ public:
      * @brief 新しい探索を開始する際に呼ぶ
      */
     void reset() {
-        outer_ = initial_outer_ceiling_;
-        inner_ = initial_conflict_limit_;
+        outer_ = initial_outer_ceiling_ * initial_scale_;
+        inner_ = initial_conflict_limit_ * initial_scale_;
     }
 
     // ===== Cycle 管理 =====
@@ -38,7 +38,7 @@ public:
      * @brief 新しいサイクルを開始（inner をリセット）
      */
     void begin_cycle() {
-        inner_ = initial_conflict_limit_;
+        inner_ = initial_conflict_limit_ * initial_scale_;
     }
 
     /**
@@ -79,13 +79,25 @@ public:
      * @brief outer を初期値にリセット（最適化で改善解が見つかったとき）
      */
     void reset_outer() {
-        outer_ = initial_outer_ceiling_;
+        outer_ = initial_outer_ceiling_ * initial_scale_;
     }
 
     // ===== アクセサ =====
 
     double outer() const { return outer_; }
     double activity_decay() const { return activity_decay_; }
+
+    /**
+     * @brief inner/outer の初期 conflict 予算を一律にスケールする（多様化用）
+     *
+     * 完全に restart を切るのではなく、初期予算を大きく取ってリスタート頻度を
+     * 下げる安全な多様化。inner/outer 双方を同じ係数で拡大するため
+     * inner<=outer の関係（内側ループの継続条件）は保たれる。
+     * 既定 1.0 = 従来動作。reset() の前に呼ぶこと。
+     */
+    void set_initial_scale(double scale) {
+        initial_scale_ = (scale > 0.0) ? scale : 1.0;
+    }
 
 private:
     // パラメータ
@@ -97,6 +109,7 @@ private:
     double outer_grow_factor_ = 1.2;
     double outer_shrink_factor_ = 0.99;
     double activity_decay_ = 0.99;
+    double initial_scale_ = 1.0;  ///< 初期 conflict 予算のスケール（多様化用、1.0=従来）
 
     // 状態
     double inner_ = 2.0;

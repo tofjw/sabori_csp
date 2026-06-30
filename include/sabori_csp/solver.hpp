@@ -54,7 +54,8 @@ enum class SearchResult {
  */
 struct WorkerConfig {
     uint32_t seed = 12345678;          ///< RNG シード
-    bool restart_enabled = true;        ///< リスタート有無
+    bool restart_enabled = true;        ///< リスタート有無（SAT のみに効く）
+    double restart_scale = 1.0;         ///< 初期 conflict 予算のスケール（>1 でリスタート頻度を下げる。最適化にも効く）
     bool nogood_learning = true;        ///< NoGood 学習有無
     bool activity_first_pin = false;    ///< true で activity 優先に固定（mode 適応を無効化）
     std::optional<size_t> fixed_mixp;   ///< 指定時 mix_p をこのグリッド値に固定
@@ -403,6 +404,7 @@ public:
     void apply_worker_config(const WorkerConfig& cfg) {
         set_seed(cfg.seed);
         set_restart_enabled(cfg.restart_enabled);
+        restart_ctrl_.set_initial_scale(cfg.restart_scale);
         set_nogood_learning(cfg.nogood_learning);
         if (cfg.fixed_mixp) {
             set_fixed_mixp(*cfg.fixed_mixp);

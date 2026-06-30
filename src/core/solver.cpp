@@ -72,6 +72,16 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_PROBE")) {
         probe_enabled_ = (std::atoi(env) != 0);
     }
+    // 計測用/多様化用: SABORI_RESTART=0 でリスタートを無効化（既定有効）。
+    // ポートフォリオの構成評価を単一スレッドで決定論的に行うために使う。
+    if (const char* env = std::getenv("SABORI_RESTART")) {
+        restart_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用/多様化用: SABORI_RESTART_SCALE で inner/outer の初期 conflict 予算を
+    // スケールする（>1 でリスタート頻度を下げる。完全オフより安全な多様化）。
+    if (const char* env = std::getenv("SABORI_RESTART_SCALE")) {
+        restart_ctrl_.set_initial_scale(std::atof(env));
+    }
 }
 
 bool Literal::is_satisfied(const Model& model) const {

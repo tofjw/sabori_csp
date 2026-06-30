@@ -107,8 +107,10 @@ TEST_CASE("clone: worker-vs-worker は完全決定論的", "[parallel][clone]") 
     auto m1 = m_master->clone();
     auto m2 = m_master->clone();
 
-    Solver w1; w1.apply_worker_config(WorkerConfig{42, true, true, false, std::nullopt, true, true, true, 8, 5});
-    Solver w2; w2.apply_worker_config(WorkerConfig{42, true, true, false, std::nullopt, true, true, true, 8, 5});
+    // 位置指定初期化は WorkerConfig のフィールド変更に脆いので明示代入で seed のみ変える。
+    WorkerConfig cfg; cfg.seed = 42;
+    Solver w1; w1.apply_worker_config(cfg);
+    Solver w2; w2.apply_worker_config(cfg);
 
     auto s1 = w1.solve_prepared(*m1);
     auto s2 = w2.solve_prepared(*m2);

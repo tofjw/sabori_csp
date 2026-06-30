@@ -36,6 +36,7 @@ void print_usage(const char* program) {
     std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] [-j N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -j N    Number of portfolio threads (default: 1). N>1 runs parallel search.\n";
+    std::cerr << "          (also settable via SABORI_THREADS env; -j overrides env)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
     std::cerr << "  -c      Community analysis [diagnostic only — does not speed up search]\n";
@@ -190,9 +191,24 @@ void print_stats_brief(const sabori_csp::SolverStats& s) {
 int g_num_threads = 1;
 
 // ポートフォリオの多様化テーブルを構築する。
-// worker0 = デフォルト構成（seed 12345678, 全機能ON）で「単一スレッドより悪くならない」軸を確保。
-// worker1.. = シードをずらし、探索時 ablation を決定的にローテーションして多様化する。
-std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n) {
+// worker0 = デフォルト構成（seed 12345678, adaptive mix_p, 全機能ON）で
+//           「単一スレッドより悪くならない」軸を確保。
+// worker1.. = シードをずらしつつ、探索時 ablation を「多様化の効果が高い順」に適用する。
+//
+// 順序の根拠: benchmarks/minizinc_challenge/bench_portfolio_diversity.py の
+// VBS（virtual best）貪欲分析（2026-06-29, MZC 16問・決定論評価）。
+//   - MRV優先固定(fixed_mixp=0) と nogood無効が最良の多様化メンバー
+//     （単体は平凡だが、他構成が解けない問題を解く）。
+//   - activity優先固定は不採用: 最弱で、solbat/elitserien など他が解ける問題を
+//     解けず、adaptive mix_p（mode_reward の EMA 強化学習）にも劣る。
+//   - 新 top-4 {base, mrv, no_nogood, no_restart} が全構成 VBS 上限に到達。
+// restart スロットは問題タイプで挙動が逆なので is_optimize で分岐する
+// （bench_portfolio_diversity.py / bench_restart_sat.py, 2026-06-29）:
+//   - SAT: 完全オフ(restart_enabled=false)は最悪、moderate scale(=8)が最良
+//     （リスタート緩和が SAT を速く解く。costas/we で実証）。
+//   - 最適化: scale>1 は目的値を悪化させ（アグレッシブな既定 restart が有益）、
+//     restart_enabled=false は no-op（restart 常時オン）で無害なシード変種。
+std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_optimize) {
     std::vector<sabori_csp::WorkerConfig> cfgs;
     cfgs.reserve(n);
     for (size_t i = 0; i < n; ++i) {
@@ -205,13 +221,16 @@ std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n) {
             continue;
         }
         c.seed = static_cast<uint32_t>(12345678u + i * 2654435761u);
-        switch (i % 6) {
-            case 1: c.restart_enabled = false; break;
-            case 2: c.activity_first_pin = true; break;
-            case 3: c.nogood_learning = false; break;
-            case 4: c.gradient_enabled = false; break;
-            case 5: c.probe_enabled = false; break;
-            default: break;  // case 0: シードのみ変える
+        switch ((i - 1) % 6) {
+            case 0: c.fixed_mixp = 0; break;            // MRV優先（最良の多様化）
+            case 1: c.nogood_learning = false; break;   // nogood無効
+            case 2:                                      // restart スロット（タイプ別）
+                if (is_optimize) c.restart_enabled = false;  // no-op/無害なシード変種
+                else             c.restart_scale = 8.0;      // SAT: リスタート緩和が最良
+                break;
+            case 3: c.gradient_enabled = false; break;
+            case 4: c.probe_enabled = false; break;
+            case 5: c.temporal_enabled = false; break;
         }
         cfgs.push_back(c);
     }
@@ -310,7 +329,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
         auto model = fzn_model.to_model(g_verbose, g_use_gac);
         if (!g_no_elimination) simplify_model(*model, fzn_model);
         sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
-                                      build_worker_configs(g_num_threads));
+                                      build_worker_configs(g_num_threads, /*is_optimize=*/false));
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
         auto r = ps.solve(*model);
@@ -384,7 +403,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
             return;
         }
         sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
-                                      build_worker_configs(g_num_threads));
+                                      build_worker_configs(g_num_threads, /*is_optimize=*/true));
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
@@ -396,6 +415,11 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
             });
         g_parallel_solver = nullptr;
         print_stats_brief(r.winner_stats);
+        // ベンチ用: SABORI_PRINT_OBJ 設定時のみ目的値を stderr に出す
+        // （通常出力・golden には影響しない）。
+        if (std::getenv("SABORI_PRINT_OBJ") && r.objective) {
+            std::cerr << "% objective = " << *r.objective << "\n";
+        }
 
         if (r.status == sabori_csp::SearchResult::SAT && r.solution) {
             if (!find_all) print_solution(*r.solution, fzn_model);
@@ -442,6 +466,11 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
         });
 
     print_stats(solver, model.get());
+    // ベンチ用: SABORI_PRINT_OBJ 設定時のみ目的値を stderr に出す（golden 不変）。
+    if (std::getenv("SABORI_PRINT_OBJ") && result) {
+        auto it = result->find(objective_var_name);
+        if (it != result->end()) std::cerr << "% objective = " << it->second << "\n";
+    }
 
     if (!found_any) {
         if (solver.is_stopped()) {
@@ -466,6 +495,13 @@ int main(int argc, char* argv[]) {
     const char* filename = nullptr;
     int timeout_sec = 0;
     int bisection_threshold = g_bisection_threshold;
+
+    // スレッド数は SABORI_THREADS env でも指定できる（テスト用）。
+    // 優先順位: CLI -j > 環境変数 > default(1)。env を先に読み、-j があれば上書きする。
+    if (const char* e = std::getenv("SABORI_THREADS")) {
+        g_num_threads = std::atoi(e);
+        if (g_num_threads < 1) g_num_threads = 1;
+    }
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
