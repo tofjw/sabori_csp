@@ -81,6 +81,19 @@ public:
      */
     void stop();
 
+    /**
+     * @brief verbose 出力を指定ワーカーに限定して有効化する
+     *
+     * 並列では全ワーカーの verbose を出すと交錯して読めないため、1 ワーカーだけに
+     * 限定する。worker_idx がワーカー数以上なら最後のワーカーにクランプする。
+     * @param enabled verbose を出すか
+     * @param worker_idx verbose を出すワーカー番号（既定 0）
+     */
+    void set_verbose(bool enabled, size_t worker_idx = 0) {
+        verbose_ = enabled;
+        verbose_worker_ = worker_idx;
+    }
+
 private:
     // ワーカー（models_/solvers_）を master から構築する。
     void build_workers(const Model& master);
@@ -98,6 +111,8 @@ private:
 
     size_t num_threads_;
     std::vector<WorkerConfig> configs_;
+    bool verbose_ = false;            ///< verbose 出力を有効にするか
+    size_t verbose_worker_ = 0;       ///< verbose を出すワーカー番号
 
     std::vector<std::unique_ptr<Model>>  models_;
     std::vector<std::unique_ptr<Solver>> solvers_;

@@ -57,6 +57,7 @@ struct WorkerConfig {
     bool restart_enabled = true;        ///< リスタート有無（SAT のみに効く）
     double restart_scale = 1.0;         ///< 初期 conflict 予算のスケール（>1 でリスタート頻度を下げる。最適化にも効く）
     bool nogood_learning = true;        ///< NoGood 学習有無
+    bool conflict_learning = false;     ///< 矛盾制約スコープの conflict 学習（problem依存の諸刃。多様化軸候補）
     bool activity_first_pin = false;    ///< true で activity 優先に固定（mode 適応を無効化）
     std::optional<size_t> fixed_mixp;   ///< 指定時 mix_p をこのグリッド値に固定
     bool gradient_enabled = true;       ///< 擬似勾配ヒント有無
@@ -248,6 +249,16 @@ public:
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
 
     /**
+     * @brief Conflict 学習（矛盾を起こした制約スコープの NoGood 化）を有効/無効にする
+     *
+     * tmp.py の _explain_value（制約違反ケース）に相当。矛盾検出時、違反制約の
+     * スコープ変数が全て確定済みなら、その割当を NoGood として学習する。
+     * 個々の NoGood は定義上 unsat なので健全（偽 UNSAT を生まない）。
+     * 既存の decision-path 学習（nogood_learning_）とは独立に動作する。
+     */
+    void set_conflict_learning(bool enabled) { conflict_learning_ = enabled; }
+
+    /**
      * @brief NoGood の長さ分布を取得（デバッグ用）
      */
     std::map<size_t, size_t> nogood_length_distribution() const {
@@ -406,6 +417,7 @@ public:
         set_restart_enabled(cfg.restart_enabled);
         restart_ctrl_.set_initial_scale(cfg.restart_scale);
         set_nogood_learning(cfg.nogood_learning);
+        set_conflict_learning(cfg.conflict_learning);
         if (cfg.fixed_mixp) {
             set_fixed_mixp(*cfg.fixed_mixp);
         } else if (cfg.activity_first_pin) {
@@ -729,18 +741,30 @@ private:
                 cs.fail_depth_sum += current_decision_;
                 is.fail_count++;
                 is.fail_depth_sum += current_decision_;
+                if (conflict_learning_) capture_conflict_explanation(model, constraint_idx);
                 bump_activity(model, constraint_idx, bump_var_idx);
                 return false;
             }
             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
         } else {
             if (!call()) {
+                if (conflict_learning_) capture_conflict_explanation(model, constraint_idx);
                 bump_activity(model, constraint_idx, bump_var_idx);
                 return false;
             }
         }
         return true;
     }
+
+    /**
+     * @brief 矛盾を起こした制約から conflict 説明（NoGood リテラル列）を収集
+     *
+     * 制約スコープの変数が全て確定済みなら conflict_expl_ に各変数の
+     * Eq リテラルを格納し conflict_expl_ok_ = true。1つでも未確定なら
+     * （= 部分割当での bounds 矛盾など、健全な説明を安価に作れない）bail し
+     * conflict_expl_ok_ = false。conflict_learning_ 有効時のみ呼ばれる。
+     */
+    void capture_conflict_explanation(const Model& model, size_t constraint_idx);
 
     /**
      * @brief Activity を減衰（リスタート時に呼ぶ）
@@ -786,6 +810,7 @@ private:
 
     // 設定
     bool nogood_learning_ = true;
+    bool conflict_learning_ = false;  ///< 矛盾制約スコープの conflict 学習（-C）
     int bump_mode_ = 2;  ///< 計測用 ablation: 制約側 activity 配分 (0=なし/1=基底/2=構造特化, 既定2)
     std::string bump_struct_only_;       ///< 計測用: 指定 name を含む制約だけ構造特化（空=無効）
     std::vector<uint8_t> structural_mask_;  ///< constraint_idx → 構造特化を使うか
@@ -818,6 +843,10 @@ private:
     double activity_inc_ = 1.0;
     std::vector<int> temporal_activity_;  ///< 全値失敗した変数の直近失敗回数
     std::vector<Literal> decision_trail_;
+
+    // Conflict 学習用（conflict_learning_ 有効時のみ使用）
+    std::vector<Literal> conflict_expl_;  ///< 直近の矛盾制約スコープの説明リテラル
+    bool conflict_expl_ok_ = false;       ///< 上記が健全な説明として有効か
 
     // NoGood 管理
     NoGoodManager nogood_mgr_;

@@ -153,6 +153,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
                                      ng_usage_bloom_});
         if (bloom_tiebreak_) ng_usage_bloom_ |= model.var_ng_bloom(frame.var_idx);
 
+        conflict_expl_ok_ = false;
         bool propagate_ok = propagate_instantiate(model, frame.var_idx,
                                                    frame.prev_min, frame.prev_max);
         PropagationResult queue_res = PropagationResult::Conflict;
@@ -173,6 +174,12 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         }
 
         if (!propagate_ok || queue_res != PropagationResult::Ok) {
+            // Conflict 学習: 違反制約スコープが全確定なら NoGood 化（タイムアウト除く）
+            if (conflict_learning_ && conflict_expl_ok_
+                && queue_res != PropagationResult::Stopped) {
+                nogood_mgr_.learn_from_conflict(conflict_expl_, activity_,
+                                                activity_inc_, stats_.restart_count);
+            }
             model.clear_pending_updates();
         }
 
@@ -223,6 +230,7 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
             decision_lit = {frame.var_idx, frame.split_point + 1, Literal::Type::Geq};
         }
 
+        conflict_expl_ok_ = false;
         PropagationResult queue_res = process_queue(model);
         if (queue_res == PropagationResult::Ok) {
             decision_trail_.push_back(decision_lit);
@@ -237,6 +245,12 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
             break;
         }
 
+        // Conflict 学習: 違反制約スコープが全確定なら NoGood 化（タイムアウト除く）
+        if (conflict_learning_ && conflict_expl_ok_
+            && queue_res != PropagationResult::Stopped) {
+            nogood_mgr_.learn_from_conflict(conflict_expl_, activity_,
+                                            activity_inc_, stats_.restart_count);
+        }
         model.clear_pending_updates();
         current_decision_--;
         backtrack(model, frame.save_point);

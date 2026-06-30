@@ -43,6 +43,10 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_NOGOOD")) {
         nogood_learning_ = (std::atoi(env) != 0);
     }
+    // 計測用/多様化用: SABORI_CONFLICT=1 で conflict 学習（矛盾制約スコープの NoGood 化）を有効化（既定無効）。
+    if (const char* env = std::getenv("SABORI_CONFLICT")) {
+        conflict_learning_ = (std::atoi(env) != 0);
+    }
     // 計測用: SABORI_ONEHOT=0 で one-hot チャネル集約 presolve を無効化（既定有効）。
     if (const char* env = std::getenv("SABORI_ONEHOT")) {
         onehot_enabled_ = (std::atoi(env) != 0);
@@ -121,6 +125,8 @@ void Solver::init_search_state(Model& model) {
     temporal_activity_.assign(variables.size(), 0);
     var_selector_.build_order(model, rng_);
     decision_trail_.clear();
+    conflict_expl_.clear();
+    conflict_expl_ok_ = false;
     nogood_mgr_.clear(variables.size());
     best_num_instantiated_ = 0;
     best_assignment_.assign(variables.size(), kNoValue);
@@ -425,6 +431,25 @@ bool Solver::verify_solution(const Model& model) const {
         }
     }
     return true;
+}
+
+void Solver::capture_conflict_explanation(const Model& model, size_t constraint_idx) {
+    conflict_expl_.clear();
+    conflict_expl_ok_ = false;
+    const auto& vids = model.constraints()[constraint_idx]->var_ids_ref();
+    // スコープが小さすぎる（単一変数）制約は decision リテラル相当で情報がないため除外。
+    if (vids.size() < 2) return;
+    conflict_expl_.reserve(vids.size());
+    for (size_t v : vids) {
+        // 1つでも未確定なら部分割当での矛盾（bounds 等）。健全な Eq 説明を
+        // 安価に作れないので bail（decision-path 学習にフォールバック）。
+        if (!model.is_instantiated(v)) {
+            conflict_expl_.clear();
+            return;
+        }
+        conflict_expl_.push_back({v, model.value(v), Literal::Type::Eq});
+    }
+    conflict_expl_ok_ = true;
 }
 
 void Solver::decay_activities() {

@@ -18,10 +18,13 @@ void ParallelSolver::build_workers(const Model& master) {
     // reserve でキャパシティを固定（push_back 後の再確保を防ぎ、stop() の走査を安全にする）。
     models_.reserve(num_threads_);
     solvers_.reserve(num_threads_);
+    // verbose 対象ワーカー（範囲外なら最後のワーカーにクランプ）。
+    size_t vw = (verbose_worker_ < num_threads_) ? verbose_worker_ : num_threads_ - 1;
     for (size_t i = 0; i < num_threads_; ++i) {
         models_.push_back(master.clone());
         auto s = std::make_unique<Solver>();
         s->apply_worker_config(configs_[i]);
+        s->set_verbose(verbose_ && i == vw);  // verbose は 1 ワーカーに限定
         solvers_.push_back(std::move(s));
     }
     workers_ready_.store(true);

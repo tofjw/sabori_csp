@@ -38,19 +38,23 @@ void print_usage(const char* program) {
     std::cerr << "  -j N    Number of portfolio threads (default: 1). N>1 runs parallel search.\n";
     std::cerr << "          (also settable via SABORI_THREADS env; -j overrides env)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
-    std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
+    std::cerr << "  -v      Verbose mode (print presolve/restart progress; worker 0 when -j>1)\n";
+    std::cerr << "  -V N    Verbose mode for worker N (implies -v; default 0)\n";
     std::cerr << "  -c      Community analysis [diagnostic only — does not speed up search]\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -p N    Probe fail limit for improvement probe (default: 10, 0=disable)\n";
     std::cerr << "  -G      Use GAC (Régin's algorithm) for all_different\n";
     std::cerr << "  -N      Disable nogood learning\n";
+    std::cerr << "  -C      Enable conflict learning (violated-constraint scope nogoods)\n";
     std::cerr << "  -E      Disable variable elimination\n";
 }
 
 bool g_print_stats = false;
 bool g_verbose = false;
+int g_verbose_worker = 0;  ///< 並列時に verbose を出すワーカー番号（既定 0）
 bool g_no_nogood = false;
+bool g_conflict_learning = false;
 bool g_no_elimination = false;
 int g_bisection_threshold = 8;
 int g_probe_fail_limit = 5;
@@ -193,21 +197,13 @@ int g_num_threads = 1;
 // ポートフォリオの多様化テーブルを構築する。
 // worker0 = デフォルト構成（seed 12345678, adaptive mix_p, 全機能ON）で
 //           「単一スレッドより悪くならない」軸を確保。
-// worker1.. = シードをずらしつつ、探索時 ablation を「多様化の効果が高い順」に適用する。
-//
-// 順序の根拠: benchmarks/minizinc_challenge/bench_portfolio_diversity.py の
-// VBS（virtual best）貪欲分析（2026-06-29, MZC 16問・決定論評価）。
-//   - MRV優先固定(fixed_mixp=0) と nogood無効が最良の多様化メンバー
-//     （単体は平凡だが、他構成が解けない問題を解く）。
-//   - activity優先固定は不採用: 最弱で、solbat/elitserien など他が解ける問題を
-//     解けず、adaptive mix_p（mode_reward の EMA 強化学習）にも劣る。
-//   - 新 top-4 {base, mrv, no_nogood, no_restart} が全構成 VBS 上限に到達。
-// restart スロットは問題タイプで挙動が逆なので is_optimize で分岐する
-// （bench_portfolio_diversity.py / bench_restart_sat.py, 2026-06-29）:
-//   - SAT: 完全オフ(restart_enabled=false)は最悪、moderate scale(=8)が最良
-//     （リスタート緩和が SAT を速く解く。costas/we で実証）。
-//   - 最適化: scale>1 は目的値を悪化させ（アグレッシブな既定 restart が有益）、
-//     restart_enabled=false は no-op（restart 常時オン）で無害なシード変種。
+// worker1.. = シードをずらしつつ、多様化軸を「VBS 限界インパクトの大きい順」に適用する。
+//             -j を 2,3,4... と増やすほど、影響の小さい軸が後から足される。
+// 影響順・採否の根拠（決定論ベンチ, MZC, 2026-06-29〜30）:
+//   benchmarks/minizinc_challenge/bench_portfolio_diversity.py（最適化中心）と
+//   benchmarks/minizinc_challenge/bench_restart_sat.py（SAT）の VBS 貪欲分析。
+//   - activity優先固定は不採用（最弱・他が解ける問題を解けず・adaptive mix_p に劣る）。
+//   - 影響順は問題タイプで異なるため is_optimize で分岐する（下の switch 参照）。
 std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_optimize) {
     std::vector<sabori_csp::WorkerConfig> cfgs;
     cfgs.reserve(n);
@@ -216,21 +212,41 @@ std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_opt
         c.bisection_threshold = static_cast<size_t>(g_bisection_threshold);
         c.probe_fail_limit = g_probe_fail_limit;
         if (g_no_nogood) c.nogood_learning = false;
+        c.conflict_learning = g_conflict_learning;  // -C を全ワーカーで尊重（既定 off）
         if (i == 0) {
             cfgs.push_back(c);  // worker0 = 既定
             continue;
         }
         c.seed = static_cast<uint32_t>(12345678u + i * 2654435761u);
-        switch ((i - 1) % 6) {
-            case 0: c.fixed_mixp = 0; break;            // MRV優先（最良の多様化）
-            case 1: c.nogood_learning = false; break;   // nogood無効
-            case 2:                                      // restart スロット（タイプ別）
-                if (is_optimize) c.restart_enabled = false;  // no-op/無害なシード変種
-                else             c.restart_scale = 8.0;      // SAT: リスタート緩和が最良
-                break;
-            case 3: c.gradient_enabled = false; break;
-            case 4: c.probe_enabled = false; break;
-            case 5: c.temporal_enabled = false; break;
+        // 多様化軸を VBS 限界インパクトの大きい順に採用する（worker1=k0 が最大）。
+        // スレッドを 2,3,4... と増やすほど影響の小さい軸が足される。
+        // 影響順は問題タイプで異なる（bench_portfolio_diversity / bench_restart_sat, 2026-06-30）:
+        //   最適化: conflict(Δ+0.062,elitser単独勝ち) > mrv(+0.041,tppv) > no_nogood(+0.011,celar16)
+        //           > gradient/probe/temporal(~0) > restart(no-op シード変種)
+        //   SAT:    restart緩和sc8(最良,costas/we) > conf_sc8(併用,VBS2位,costas17 10.2→4.9s)
+        //           > mrv > no_nogood > gradient/probe/temporal
+        size_t k = (i - 1) % 7;  // 0-based 多様化インデックス（-j>8 はシード変えて循環）
+        if (is_optimize) {
+            switch (k) {
+                case 0: c.conflict_learning = !g_conflict_learning; break;
+                case 1: c.fixed_mixp = 0; break;
+                case 2: c.nogood_learning = false; break;
+                case 3: c.gradient_enabled = false; break;
+                case 4: c.probe_enabled = false; break;
+                case 5: c.temporal_enabled = false; break;
+                case 6: c.restart_enabled = false; break;  // no-op/シード変種（最小）
+            }
+        } else {  // SAT
+            switch (k) {
+                case 0: c.restart_scale = 8.0; break;
+                case 1: c.conflict_learning = !g_conflict_learning;
+                        c.restart_scale = 8.0; break;       // conf_sc8（併用）
+                case 2: c.fixed_mixp = 0; break;
+                case 3: c.nogood_learning = false; break;
+                case 4: c.gradient_enabled = false; break;
+                case 5: c.probe_enabled = false; break;
+                case 6: c.temporal_enabled = false; break;
+            }
         }
         cfgs.push_back(c);
     }
@@ -330,6 +346,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
         if (!g_no_elimination) simplify_model(*model, fzn_model);
         sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
                                       build_worker_configs(g_num_threads, /*is_optimize=*/false));
+        ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
         auto r = ps.solve(*model);
@@ -351,6 +368,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_conflict_learning) solver.set_conflict_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -404,6 +422,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
         }
         sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
                                       build_worker_configs(g_num_threads, /*is_optimize=*/true));
+        ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
@@ -439,6 +458,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_conflict_learning) solver.set_conflict_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -511,6 +531,10 @@ int main(int argc, char* argv[]) {
             g_print_stats = true;
         } else if (std::strcmp(argv[i], "-v") == 0) {
             g_verbose = true;
+        } else if (std::strcmp(argv[i], "-V") == 0 && i + 1 < argc) {
+            g_verbose = true;
+            g_verbose_worker = std::atoi(argv[++i]);
+            if (g_verbose_worker < 0) g_verbose_worker = 0;
         } else if (std::strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
@@ -526,6 +550,8 @@ int main(int argc, char* argv[]) {
             g_use_gac = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
+        } else if (std::strcmp(argv[i], "-C") == 0) {
+            g_conflict_learning = true;
         } else if (std::strcmp(argv[i], "-E") == 0) {
             g_no_elimination = true;
         } else if (std::strcmp(argv[i], "-h") == 0 ||
