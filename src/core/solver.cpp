@@ -441,8 +441,16 @@ void Solver::capture_conflict_explanation(const Model& model, size_t constraint_
     if (vids.size() < 2) return;
     conflict_expl_.reserve(vids.size());
     for (size_t v : vids) {
-        // 1つでも未確定なら部分割当での矛盾（bounds 等）。健全な Eq 説明を
-        // 安価に作れないので bail（decision-path 学習にフォールバック）。
+        // 1つでも未確定なら bail（instantiation-only）。
+        //
+        // 【撤回・不健全のため不採用】穴なし変数の境界変化を Geq/Leq literal で
+        // 説明に含める拡張を試みたが、B&B 最適化（obj 境界が締まる）＋並列 bound 共有で
+        // 偽 optimal を生む（2018 elitserien handball1: 真の最適 2 を obj=3 と誤証明）。
+        // 原因: 捕捉する変数境界の多くは obj≤gb-1（B&B の探索仮定）の伝播結果であり、
+        // その仮定を記録しない bound-literal NoGood は「仮定下でのみ妥当な事実」を
+        // 大域 NoGood 化してしまう。最適性証明は obj<gb を仮定して exhaust するため、
+        // 真の最適解（obj≤gb-1 の伝播で同じ境界を満たす）を誤排除する。
+        // 全確定スコープの矛盾は仮定に依らない ground 事実なので健全（＝現行方式）。
         if (!model.is_instantiated(v)) {
             conflict_expl_.clear();
             return;

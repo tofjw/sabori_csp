@@ -810,7 +810,7 @@ private:
 
     // 設定
     bool nogood_learning_ = true;
-    bool conflict_learning_ = false;  ///< 矛盾制約スコープの conflict 学習（-C）
+    bool conflict_learning_ = false;  ///< 矛盾制約スコープの conflict 学習（-C, instantiation-only で健全）
     int bump_mode_ = 2;  ///< 計測用 ablation: 制約側 activity 配分 (0=なし/1=基底/2=構造特化, 既定2)
     std::string bump_struct_only_;       ///< 計測用: 指定 name を含む制約だけ構造特化（空=無効）
     std::vector<uint8_t> structural_mask_;  ///< constraint_idx → 構造特化を使うか
