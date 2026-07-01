@@ -15,6 +15,23 @@ ParallelSolver::ParallelSolver(size_t num_threads, std::vector<WorkerConfig> con
 }
 
 void ParallelSolver::build_workers(const Model& master) {
+    // 再入（同一インスタンスでの複数回 solve）に備え、前回の state を全消去する。
+    // workers_ready_ を false に落としてから配列を作り直すことで、構築中に stop() が
+    // 走っても古い solvers_ を走査しないようにする。
+    workers_ready_.store(false);
+    models_.clear();
+    solvers_.clear();
+    stop_flag_.store(false);
+    have_incumbent_.store(false);
+    unsat_proven_.store(false);
+    optimal_proven_.store(false);
+    {
+        std::lock_guard<std::mutex> lk(result_mtx_);
+        best_solution_.reset();
+        best_objective_.reset();
+        winner_ = SIZE_MAX;
+    }
+
     // reserve でキャパシティを固定（push_back 後の再確保を防ぎ、stop() の走査を安全にする）。
     models_.reserve(num_threads_);
     solvers_.reserve(num_threads_);
