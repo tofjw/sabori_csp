@@ -212,4 +212,50 @@ ParallelSolver::Result ParallelSolver::solve_optimize(
     return r;
 }
 
+std::vector<WorkerConfig> make_portfolio_configs(
+    size_t n, bool is_optimize, const WorkerConfig& base) {
+    std::vector<WorkerConfig> cfgs;
+    cfgs.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        WorkerConfig c = base;  // bisection/probe/nogood/conflict などは base から継承
+        if (i == 0) {
+            cfgs.push_back(c);  // worker0 = base（既定）
+            continue;
+        }
+        // ワーカー1以降のシードは base.seed 起点で導出する（base.seed 既定 12345678
+        // なら従来と完全一致。set_seed でポートフォリオ全体が再現的にずれる）。
+        c.seed = static_cast<uint32_t>(base.seed + i * 2654435761u);
+        // 多様化軸を VBS 限界インパクトの大きい順に採用する（worker1=k0 が最大）。
+        // スレッドを 2,3,4... と増やすほど影響の小さい軸が足される。
+        // 影響順は問題タイプで異なる（bench_portfolio_diversity / bench_restart_sat, 2026-06-30）:
+        //   最適化: conflict > mrv > no_nogood > gradient/probe/temporal > restart
+        //   SAT:    restart緩和sc8 > conf_sc8(併用) > mrv > no_nogood > gradient/probe/temporal
+        size_t k = (i - 1) % 7;  // 0-based 多様化インデックス（n>8 はシード変えて循環）
+        if (is_optimize) {
+            switch (k) {
+                case 0: c.conflict_learning = !base.conflict_learning; break;
+                case 1: c.fixed_mixp = 0; break;
+                case 2: c.nogood_learning = false; break;
+                case 3: c.gradient_enabled = false; break;
+                case 4: c.probe_enabled = false; break;
+                case 5: c.temporal_enabled = false; break;
+                case 6: c.restart_enabled = false; break;  // no-op/シード変種（最小）
+            }
+        } else {  // SAT
+            switch (k) {
+                case 0: c.restart_scale = 8.0; break;
+                case 1: c.conflict_learning = !base.conflict_learning;
+                        c.restart_scale = 8.0; break;       // conf_sc8（併用）
+                case 2: c.fixed_mixp = 0; break;
+                case 3: c.nogood_learning = false; break;
+                case 4: c.gradient_enabled = false; break;
+                case 5: c.probe_enabled = false; break;
+                case 6: c.temporal_enabled = false; break;
+            }
+        }
+        cfgs.push_back(c);
+    }
+    return cfgs;
+}
+
 } // namespace sabori_csp

@@ -6,6 +6,7 @@
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include "sabori_csp/parallel_solver.hpp"
 #include "sabori_csp/constraint.hpp"
 #include "sabori_csp/constraints/arithmetic.hpp"
 #include "sabori_csp/constraints/comparison.hpp"
@@ -157,11 +158,67 @@ PYBIND11_MODULE(_sabori_csp, m) {
         .def("set_activity_selection", &Solver::set_activity_selection, py::arg("enabled"))
         .def("set_activity_first", &Solver::set_activity_first, py::arg("enabled"))
         .def("set_bisection_threshold", &Solver::set_bisection_threshold, py::arg("threshold"))
+        .def("set_seed", &Solver::set_seed, py::arg("seed"))
         .def("set_verbose", &Solver::set_verbose, py::arg("enabled"))
         .def("set_community_analysis", &Solver::set_community_analysis, py::arg("enabled"))
         .def("stop", &Solver::stop)
         .def("reset_stop", &Solver::reset_stop)
         .def("is_stopped", &Solver::is_stopped);
+
+    // ---- SearchResult ----
+    py::enum_<SearchResult>(m, "SearchResult")
+        .value("SAT", SearchResult::SAT)
+        .value("UNSAT", SearchResult::UNSAT)
+        .value("UNKNOWN", SearchResult::UNKNOWN);
+
+    // ---- WorkerConfig (ポートフォリオ・ワーカーごとの探索構成) ----
+    py::class_<WorkerConfig>(m, "WorkerConfig")
+        .def(py::init<>())
+        .def_readwrite("seed", &WorkerConfig::seed)
+        .def_readwrite("restart_enabled", &WorkerConfig::restart_enabled)
+        .def_readwrite("restart_scale", &WorkerConfig::restart_scale)
+        .def_readwrite("nogood_learning", &WorkerConfig::nogood_learning)
+        .def_readwrite("conflict_learning", &WorkerConfig::conflict_learning)
+        .def_readwrite("activity_first_pin", &WorkerConfig::activity_first_pin)
+        .def_readwrite("fixed_mixp", &WorkerConfig::fixed_mixp)
+        .def_readwrite("gradient_enabled", &WorkerConfig::gradient_enabled)
+        .def_readwrite("probe_enabled", &WorkerConfig::probe_enabled)
+        .def_readwrite("temporal_enabled", &WorkerConfig::temporal_enabled)
+        .def_readwrite("bisection_threshold", &WorkerConfig::bisection_threshold)
+        .def_readwrite("probe_fail_limit", &WorkerConfig::probe_fail_limit);
+
+    // ---- make_portfolio_configs (多様化テーブル構築ヘルパ) ----
+    m.def("make_portfolio_configs", &make_portfolio_configs,
+          py::arg("n"), py::arg("is_optimize"), py::arg("base") = WorkerConfig{});
+
+    // ---- ParallelSolver::Result ----
+    py::class_<ParallelSolver::Result>(m, "ParallelResult")
+        .def_readonly("solution", &ParallelSolver::Result::solution)
+        .def_readonly("status", &ParallelSolver::Result::status)
+        .def_readonly("objective", &ParallelSolver::Result::objective)
+        .def_readonly("proved_optimal", &ParallelSolver::Result::proved_optimal)
+        .def_readonly("winner_stats", &ParallelSolver::Result::winner_stats)
+        .def_readonly("winning_thread", &ParallelSolver::Result::winning_thread);
+
+    // ---- ParallelSolver (マルチスレッド・ポートフォリオ) ----
+    py::class_<ParallelSolver>(m, "ParallelSolver")
+        .def(py::init<size_t, std::vector<WorkerConfig>>(),
+             py::arg("num_threads"), py::arg("configs"))
+        // 高レベル用途では callback なしで呼ぶ（callback は GIL 再取得が絡むため未公開）。
+        .def("solve",
+             [](ParallelSolver& self, Model& master) {
+                 return self.solve(master);
+             },
+             py::arg("model"), py::call_guard<py::gil_scoped_release>())
+        .def("solve_optimize",
+             [](ParallelSolver& self, Model& master, size_t obj_var_idx, bool minimize) {
+                 return self.solve_optimize(master, obj_var_idx, minimize);
+             },
+             py::arg("model"), py::arg("obj_var_idx"), py::arg("minimize"),
+             py::call_guard<py::gil_scoped_release>())
+        .def("stop", &ParallelSolver::stop)
+        .def("set_verbose", &ParallelSolver::set_verbose,
+             py::arg("enabled"), py::arg("worker_idx") = 0);
 
     // ---- Constraint base ----
     py::class_<Constraint, std::shared_ptr<Constraint>>(m, "Constraint")

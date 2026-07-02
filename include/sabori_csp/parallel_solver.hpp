@@ -131,6 +131,23 @@ private:
     size_t winner_ = SIZE_MAX;
 };
 
+/**
+ * @brief ポートフォリオの多様化構成テーブルを構築する
+ *
+ * worker0 = base（既定シード 12345678, adaptive mix_p, 全機能 ON）で
+ * 「単一スレッドより悪くならない」軸を確保し、worker1.. はシードをずらしつつ
+ * 多様化軸を VBS 限界インパクトの大きい順に適用する。影響順は問題タイプ
+ * （is_optimize）で異なる。fzn CLI と Python バインディングの双方が共有する。
+ *
+ * @param n ワーカー数（>=1）
+ * @param is_optimize 最適化なら true（多様化軸の順序が変わる）
+ * @param base worker0 に用いる基準構成（bisection_threshold / probe_fail_limit /
+ *             nogood_learning / conflict_learning などを事前に詰めておく）
+ * @return n 個の WorkerConfig
+ */
+std::vector<WorkerConfig> make_portfolio_configs(
+    size_t n, bool is_optimize, const WorkerConfig& base = WorkerConfig{});
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_PARALLEL_SOLVER_HPP

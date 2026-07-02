@@ -205,52 +205,14 @@ int g_num_threads = 1;
 //   - activity優先固定は不採用（最弱・他が解ける問題を解けず・adaptive mix_p に劣る）。
 //   - 影響順は問題タイプで異なるため is_optimize で分岐する（下の switch 参照）。
 std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_optimize) {
-    std::vector<sabori_csp::WorkerConfig> cfgs;
-    cfgs.reserve(n);
-    for (size_t i = 0; i < n; ++i) {
-        sabori_csp::WorkerConfig c;
-        c.bisection_threshold = static_cast<size_t>(g_bisection_threshold);
-        c.probe_fail_limit = g_probe_fail_limit;
-        if (g_no_nogood) c.nogood_learning = false;
-        c.conflict_learning = g_conflict_learning;  // -C を全ワーカーで尊重（既定 off）
-        if (i == 0) {
-            cfgs.push_back(c);  // worker0 = 既定
-            continue;
-        }
-        c.seed = static_cast<uint32_t>(12345678u + i * 2654435761u);
-        // 多様化軸を VBS 限界インパクトの大きい順に採用する（worker1=k0 が最大）。
-        // スレッドを 2,3,4... と増やすほど影響の小さい軸が足される。
-        // 影響順は問題タイプで異なる（bench_portfolio_diversity / bench_restart_sat, 2026-06-30）:
-        //   最適化: conflict(Δ+0.062,elitser単独勝ち) > mrv(+0.041,tppv) > no_nogood(+0.011,celar16)
-        //           > gradient/probe/temporal(~0) > restart(no-op シード変種)
-        //   SAT:    restart緩和sc8(最良,costas/we) > conf_sc8(併用,VBS2位,costas17 10.2→4.9s)
-        //           > mrv > no_nogood > gradient/probe/temporal
-        size_t k = (i - 1) % 7;  // 0-based 多様化インデックス（-j>8 はシード変えて循環）
-        if (is_optimize) {
-            switch (k) {
-                case 0: c.conflict_learning = !g_conflict_learning; break;
-                case 1: c.fixed_mixp = 0; break;
-                case 2: c.nogood_learning = false; break;
-                case 3: c.gradient_enabled = false; break;
-                case 4: c.probe_enabled = false; break;
-                case 5: c.temporal_enabled = false; break;
-                case 6: c.restart_enabled = false; break;  // no-op/シード変種（最小）
-            }
-        } else {  // SAT
-            switch (k) {
-                case 0: c.restart_scale = 8.0; break;
-                case 1: c.conflict_learning = !g_conflict_learning;
-                        c.restart_scale = 8.0; break;       // conf_sc8（併用）
-                case 2: c.fixed_mixp = 0; break;
-                case 3: c.nogood_learning = false; break;
-                case 4: c.gradient_enabled = false; break;
-                case 5: c.probe_enabled = false; break;
-                case 6: c.temporal_enabled = false; break;
-            }
-        }
-        cfgs.push_back(c);
-    }
-    return cfgs;
+    // 多様化ロジックは core（make_portfolio_configs）に集約。ここでは CLI の
+    // グローバル設定を base に詰めて委譲する（挙動は従来と不変）。
+    sabori_csp::WorkerConfig base;
+    base.bisection_threshold = static_cast<size_t>(g_bisection_threshold);
+    base.probe_fail_limit = g_probe_fail_limit;
+    if (g_no_nogood) base.nogood_learning = false;
+    base.conflict_learning = g_conflict_learning;  // -C を全ワーカーで尊重（既定 off）
+    return sabori_csp::make_portfolio_configs(n, is_optimize, base);
 }
 
 void print_value(int64_t value, bool is_bool) {
