@@ -225,32 +225,37 @@ std::vector<WorkerConfig> make_portfolio_configs(
         // ワーカー1以降のシードは base.seed 起点で導出する（base.seed 既定 12345678
         // なら従来と完全一致。set_seed でポートフォリオ全体が再現的にずれる）。
         c.seed = static_cast<uint32_t>(base.seed + i * 2654435761u);
-        // 多様化軸を VBS 限界インパクトの大きい順に採用する（worker1=k0 が最大）。
-        // スレッドを 2,3,4... と増やすほど影響の小さい軸が足される。
-        // 影響順は問題タイプで異なる（bench_portfolio_diversity / bench_restart_sat, 2026-06-30）:
-        //   最適化: conflict > mrv > no_nogood > gradient/probe/temporal > restart
-        //   SAT:    restart緩和sc8 > conf_sc8(併用) > mrv > no_nogood > gradient/probe/temporal
+        // 多様化ラダー: 「シード優先・軸は疎に」の交互配置。
+        // 根拠 (bench_axis_seed_grid.py, 2026-07-03, 決定性修正後・軸×シード分離計測):
+        //   - 全 ablation 軸は同シード差分で平均マイナス。旧ラダー(2026-06-30)の
+        //     正の Δ はシード運の混入だった（軸ごとに別シードで計測していた）。
+        //   - 最適化: 純シード変種が全軸構成に勝る第一選択(+0.026)。
+        //     軸で限界ゲインは no_nogood(+0.009) のみ。conflict はシード特異的勝ち。
+        //   - SAT: no_probe(+0.030) > sc8(+0.006) > 純シード。no_gradient が唯一平均正。
+        //     mrv(-0.118)/no_temporal(-0.149)/off(-0.096) は SAT ラダーから排除。
+        //   - 偶数スロットの純シードは「軸なし・導出シードのみ」（solbat14 の -j8
+        //     解禁がシード単独で再現した知見を反映）。
         size_t k = (i - 1) % 7;  // 0-based 多様化インデックス（n>8 はシード変えて循環）
         if (is_optimize) {
             switch (k) {
-                case 0: c.conflict_learning = !base.conflict_learning; break;
-                case 1: c.fixed_mixp = 0; break;
-                case 2: c.nogood_learning = false; break;
-                case 3: c.gradient_enabled = false; break;
-                case 4: c.probe_enabled = false; break;
-                case 5: c.temporal_enabled = false; break;
-                case 6: c.restart_enabled = false; break;  // no-op/シード変種（最小）
+                case 0: break;                              // 純シード（第一選択）
+                case 1: c.nogood_learning = false; break;
+                case 2: break;                              // 純シード
+                case 3: c.conflict_learning = !base.conflict_learning; break;
+                case 4: break;                              // 純シード
+                case 5: c.fixed_mixp = 0; break;            // mrv（旧2位ヘッジ）
+                case 6: break;                              // 純シード
             }
         } else {  // SAT
             switch (k) {
-                case 0: c.restart_scale = 8.0; break;
-                case 1: c.conflict_learning = !base.conflict_learning;
-                        c.restart_scale = 8.0; break;       // conf_sc8（併用）
-                case 2: c.fixed_mixp = 0; break;
-                case 3: c.nogood_learning = false; break;
+                case 0: c.probe_enabled = false; break;
+                case 1: break;                              // 純シード
+                case 2: c.restart_scale = 8.0; break;
+                case 3: break;                              // 純シード
                 case 4: c.gradient_enabled = false; break;
-                case 5: c.probe_enabled = false; break;
-                case 6: c.temporal_enabled = false; break;
+                case 5: break;                              // 純シード
+                case 6: c.conflict_learning = !base.conflict_learning;
+                        c.restart_scale = 8.0; break;       // conf_sc8（ヘッジ）
             }
         }
         cfgs.push_back(c);
