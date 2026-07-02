@@ -12,17 +12,27 @@ namespace sabori_csp {
 std::vector<VariablePtr> LinearConstraintBase::aggregate_terms(
         const std::vector<int64_t>& coeffs,
         const std::vector<VariablePtr>& vars) {
-    // 同一変数の係数を集約
+    // 同一変数の係数を集約する。
+    // 注意: 再構築順を「初出順（入力 vars の最初の出現順）」に固定する。
+    // ポインタキーの unordered_map を反復すると順序が Variable のアドレス依存に
+    // なり、ヒープ配置（過去の solve・文字列確保・ASLR 下位ビット等）で
+    // 項の並びが変わって探索結果が非決定になる。初出順なら入力にのみ依存し決定的。
     std::unordered_map<Variable*, int64_t> aggregated;
+    std::vector<VariablePtr> order;  // 初出順を保持
+    order.reserve(vars.size());
     for (size_t i = 0; i < vars.size(); ++i) {
-        aggregated[vars[i]] += coeffs[i];
+        auto [it, inserted] = aggregated.try_emplace(vars[i], 0);
+        if (inserted) order.push_back(vars[i]);
+        it->second += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを再構築（係数0の項を除外）
+    // 一意な変数リストと係数リストを初出順で再構築（係数0の項を除外）
     std::vector<VariablePtr> unique_vars;
-    for (const auto& [var_ptr, coeff] : aggregated) {
+    unique_vars.reserve(order.size());
+    for (const auto& var : order) {
+        int64_t coeff = aggregated[var];
         if (coeff == 0) continue;
-        unique_vars.push_back(var_ptr);
+        unique_vars.push_back(var);
         coeffs_.push_back(coeff);
     }
     return unique_vars;

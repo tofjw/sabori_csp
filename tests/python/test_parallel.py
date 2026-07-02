@@ -187,8 +187,7 @@ class TestHandleSigint:
 class TestSeed:
     def test_set_seed_accepted_and_solves(self):
         # set_seed must be accepted on both single and parallel paths and still
-        # produce a valid solution. (Note: the solver is not fully reproducible
-        # run-to-run even with a fixed seed, so we do not assert equality here.)
+        # produce a valid solution.
         for workers in (1, 4):
             m, xs = _queens(8)
             s = CpSolver()
@@ -196,6 +195,28 @@ class TestSeed:
             status = s.solve(m, num_workers=workers)
             assert status == SolveStatus.FEASIBLE
             assert _is_valid_queens([s.value(x) for x in xs])
+
+    def test_single_thread_reproducible_with_fixed_seed(self):
+        # Regression: repeated in-process single-threaded solves with the same
+        # seed must produce identical search paths. Previously the term order of
+        # linear constraints depended on Variable pointer addresses (heap
+        # layout), so successive in-process solves drifted. Uses an optimization
+        # model (has linear constraints) and compares the fail counts.
+        def run():
+            m = CpModel()
+            n = 10
+            xs = [m.int_var(0, n - 1, f"q{i}") for i in range(n)]
+            m.add(all_different(xs))
+            m.add(all_different([xs[i] + i for i in range(n)]))
+            m.add(all_different([xs[i] - i for i in range(n)]))
+            m.maximize(sum(xs[i] * i for i in range(n)))
+            s = CpSolver()
+            s.set_seed(42)
+            s.solve(m, num_workers=1)
+            return s.stats.fail_count
+
+        counts = [run() for _ in range(4)]
+        assert len(set(counts)) == 1, f"non-reproducible fail counts: {counts}"
 
     def test_worker_seeds_derive_from_base_seed(self):
         base = core.WorkerConfig()
