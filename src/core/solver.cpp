@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <iostream>
 #include <cstdlib>
+#include <string>
 
 namespace sabori_csp {
 
@@ -71,6 +72,55 @@ Solver::Solver()
     // 計測用: SABORI_PROBE=0 で improvement probe（最適化の軽量サブ探索）を無効化。
     if (const char* env = std::getenv("SABORI_PROBE")) {
         probe_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_RESTART_POLICY で outer 調整の決定則を差し替える。
+    // adaptive 系アブレーション（パラメータ包絡は現行と同一、信号との結合だけを変える）:
+    //   adaptive / inverted / prune_only / depth_only / always_tighten / always_widen /
+    //   scrambled[:p]（p=tighten確率、既定0.5）
+    // fixed 系（inner/outer 機構をバイパスし文献標準のリスタート列を生成）:
+    //   luby:<base> / geometric:<ratio>[:<base>] / constant:<limit>
+    //
+    // 注意: 未設定時は出荷挙動（stale stats により prune_delta 恒等 0 → 事実上
+    // always-widen）をそのまま保存する。設定時はライブ信号 (restart_signal_live_)
+    // を使うため、"adaptive" 指定は未設定と同じではない（tighten が実際に発火する）。
+    if (const char* env = std::getenv("SABORI_RESTART_POLICY")) {
+        restart_signal_live_ = true;
+        std::string spec(env);
+        auto param_at = [&spec](size_t nth) -> double {
+            size_t pos = 0;
+            for (size_t i = 0; i < nth; ++i) {
+                pos = spec.find(':', pos);
+                if (pos == std::string::npos) return 0.0;
+                ++pos;
+            }
+            return std::atof(spec.c_str() + pos);
+        };
+        std::string name = spec.substr(0, spec.find(':'));
+        using Policy = RestartController::Policy;
+        if (name == "adaptive") {
+            restart_ctrl_.set_policy(Policy::Adaptive);
+        } else if (name == "scrambled") {
+            restart_ctrl_.set_policy(Policy::Scrambled, param_at(1));
+        } else if (name == "inverted") {
+            restart_ctrl_.set_policy(Policy::Inverted);
+        } else if (name == "prune_only") {
+            restart_ctrl_.set_policy(Policy::PruneOnly);
+        } else if (name == "depth_only") {
+            restart_ctrl_.set_policy(Policy::DepthOnly);
+        } else if (name == "always_tighten") {
+            restart_ctrl_.set_policy(Policy::AlwaysTighten);
+        } else if (name == "always_widen") {
+            restart_ctrl_.set_policy(Policy::AlwaysWiden);
+        } else if (name == "luby") {
+            restart_ctrl_.set_policy(Policy::Luby, param_at(1));
+        } else if (name == "geometric") {
+            restart_ctrl_.set_policy(Policy::Geometric, param_at(1), param_at(2));
+        } else if (name == "constant") {
+            restart_ctrl_.set_policy(Policy::Constant, param_at(1));
+        } else {
+            std::cerr << "% WARNING: unknown SABORI_RESTART_POLICY '" << spec
+                      << "' (using adaptive)\n";
+        }
     }
 }
 

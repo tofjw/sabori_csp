@@ -372,17 +372,18 @@ MiniZinc Challenge 2023+2024 の 38 問・各 30 秒・**5 シード**・目的�
 
 ---
 
-## 5. リスタート：Luby でも幾何でもなく、Inner/Outer の適応制御
+## 5. リスタート：Inner/Outer の二重ループ——「適応」は死んでいたが、包絡は有効だった
 
 ### 既存技法
 
 - **幾何リスタート**：制限を一定倍率で増やす。
 - **Luby 列**：1,1,2,1,1,2,4,... の万能列。理論保証がある。
+- **PicoSAT の nested restart**（Biere, 2008）：**inner/outer の二重ループ**。コンフリクト制限 `inner` を ×1.1 で増やし、`outer` に達したら `inner` を初期値 100 にリセットして `outer` を ×1.1 する。Luby に着想を得た簡略版で、RSAT / TiniSAT も類似。
 - **Glucose の LBD 動的リスタート**：学習節の質（LBD）の移動平均が悪化したら即リスタート。
 
-### sabori_csp の振り方：二重ループの適応
+### sabori_csp の振り方：二重ループ + 適応シグナル（設計）
 
-sabori_csp は **内側（inner）と外側（outer）の二重構造**を持ちます（`include/sabori_csp/restart_controller.hpp`）。
+sabori_csp の骨格は **PicoSAT の nested restart そのもの**です——内側（inner）と外側（outer）の二重構造で、定数だけ違います（inner ×1.01・outer ×1.2、初期値 2/4。`include/sabori_csp/restart_controller.hpp`）。独自に足したのは 2 つ：**改善解が出たら outer を初期値にリセットする**ことと、**outer の伸縮を探索の手応えに応じて切り替える適応シグナル**です。
 
 - **内側ループ**：コンフリクト制限 `inner` を比 `1.01` ずつ増やしながらリスタートを繰り返す（ほぼ等差に近いゆるやかな幾何増加）。
 - **外側ループ**：1 サイクル終了時に、外側上限 `outer` を**そのサイクルの状況に応じて伸縮**させる。
@@ -396,11 +397,57 @@ void end_cycle(size_t prune_delta, bool depth_grew) {
 }
 ```
 
-「**NoGood による枝刈りが進み（`prune_delta > 0`）かつ探索が深く潜れている**ときは、こまめにリスタートして多様化。逆に手応えがないときは制限を広げて粘る」という適応です。Glucose の LBD 動的リスタートと動機（探索の停滞を検知して制御）は近いですが、シグナルが「学習節の質」ではなく「**NoGood 伝播・枝刈りの進み具合 × 深さの伸び**」という独自の組み合わせです。
+「**NoGood による枝刈りが進み（`prune_delta > 0`）かつ探索が深く潜れている**ときは、こまめにリスタートして多様化。逆に手応えがないときは制限を広げて粘る」という設計意図です。リスタート直後には activity 減衰、NoGood の GC、Bloom 再構築、restart pivot の選び直し（`select_restart_pivot`）も走ります。
 
-なお `prune_delta` の中身は探索モードで少し異なります。通常探索では `nogood_prune_count` の増分、最適化探索では `nogood_prune_count + nogood_domain_count`（NoGood による値削除も含む）の増分を使います（`src/core/solver_search.cpp` の `end_cycle` 呼び出し）。
+**ただし、このうち縮小側は 2026-02 末のリファクタ以降、一度も発火していませんでした。** counter が NoGoodManager に移った際、`stats_.nogood_prune_count` は探索終了時にしか同期されなくなり、サイクル中の `prune_delta` は恒等 0（計測前の挙動チェックで発見。ライブの counter 自体は動いています）。つまり出荷されていた実挙動は「**outer を毎サイクル ×1.2 で広げ、改善解が出たらリセットする**」という feedback-free のスケジュールです。そこで本章は、信号をライブ counter から読むモード（`SABORI_RESTART_POLICY` 環境変数。既定動作は不変）を実装した上で、2 つの問いを検証します——**(a) 設計通りに動いていたら良かったのか**、**(b) 生き残っていた「拡大＋リセット」の包絡は文献の固定値に比べて有効なのか**。条件は本記事の他の計測と同じ 38 問 × 5 シード × 30 秒・目的値判定です。
 
-リスタート直後には activity 減衰、NoGood の GC、Bloom 再構築、そして MRV + activity 重み付きで「起点変数（restart pivot）」を選び直す処理（`select_restart_pivot`）も走ります。
+### 検証①：設計通りに動いていたら、どうだったか
+
+「adaptive vs Luby」を素朴にやるとスケール係数のチューニング勝負になるため、問いを「**フィードバック信号は情報を持っているか**」に絞ります。全アームでパラメータ包絡（0.99 / 1.2 / min / max / inner 1.01）は完全に同一、動かすのは「決定が信号と相関しているか」だけ——3 章の ng_nobump と同じ、機構を保ったまま疑っている成分だけを切る型です（`bench_restart_policy.py`）。
+
+| adaptive（蘇生した信号）vs | 何を変えるか | net | 読み |
+|---|---|---|---|
+| scrambled:0.065 | 信号との結合だけ切る（同レートのコイントス） | +6 | **同着＝信号は飾り** |
+| always_widen | 縮小そのものを切る（＝出荷挙動） | +7 | **同着＝死んでいても損なし** |
+| depth_only | prune 条件を無視 | +6（引分 178/190） | 実質同一の機構 |
+| prune_only | depth 条件を無視 | **+29** | 全シード同符号で有害 |
+| always_tighten | 両条件を無視して常に縮小 | **+31** | 同上 |
+| inverted | 信号を反転 | **+25** | 有害（下記のとおり率の効果） |
+
+読み取りは 3 点で尽きます。第一に、**信号は情報を持っていません**——レート合わせのコイントス（scrambled）と同着なので、決定が信号と相関すること自体の寄与は分散帯以下です。第二に、**AND は実質 `depth_grew` 単独**です。prune 成分（prune+domain）は 100% のサイクルで正（NoGood による値削除は毎サイクル起きる）なので条件として飽和しており、depth_only と 190 点中 178 引分。第三に、**唯一まともに効く軸は縮小の頻度で、高頻度側が一様に有害**です。縮小率が 93〜100% になる 3 アーム（prune_only / always_tighten / inverted）は、揃って同程度の大差（net +25〜+31）で adaptive に負けています。inverted の負けも「符号が逆」ではなく、反転で縮小率が 6.5%→93.5% に変わる率の効果として説明が付きます。
+
+### 検証②：「outer の拡大＋リセット」は文献の固定値に比べて有効か
+
+fixed 側は**チューニングせず文献標準値をそのまま並べ**、「vs 各 fixed」「vs per-problem best-of-fixed（oracle）」「vs worst-of-fixed」の 3 軸で見ます（mix_p §1 と同じ「保険」の型。なお sabori の `conflict_limit` はノード毎の値予算で実コンフリクト数と非線形なため、fixed 系は文献に合わせグローバル fail 数でカットする経路を実装しています）。
+
+| adaptive vs | net | 読み |
+|---|---|---|
+| luby:100 | +14 | 帯域端（シード 1 本だけ負け） |
+| constant:100 | +12 | 帯域端・符号混在ぎみ |
+| luby:512 | +28 | 全シード同符号で勝ち |
+| geometric:1.1 | +30 | 同上 |
+| constant:1000 | +33 | 同上 |
+| geometric:1.5 | +38 | 同上 |
+| **best-of-fixed（oracle）** | **−37** | **全シード同符号で負け** |
+| **worst-of-fixed** | **+81** | **全シード同符号で勝ち** |
+
+**未チューニングの fixed には全勝**（接近されるのは短周期系の luby:100 / constant:100）、**最悪選択の回避は +81** と本記事でも最大級の margin です。一方 **per-problem oracle には全シード同符号で −37**——「best-of-fixed への追随」はできておらず、問題ごとに選べば取れる幅がまだある、という定量化です。
+
+### 結論：設計通りではダメだった——ただし幸運な形で
+
+- **縮小が死んでいたのは、結果として損になっていませんでした。** 蘇生させても scrambled・出荷挙動と同着（+6 / +7）で、信号の寄与は分散帯以下。むしろ縮小を多用する側に設計が倒れていたら明確に悪化していました（高縮小率の 3 アームは対 adaptive で 25〜31 点の負け越し）。
+- **生き残っていた「outer の拡大＋改善時リセット」の包絡は有効です。** 未チューニングの文献標準 fixed に全勝し、worst-of-fixed を +81 で回避する堅実な保険でした。皮肉なことに、退行後の実挙動は**定数違いの PicoSAT nested restart（＋改善時リセット）そのもの**——独自に足した「適応」が死に、文献どおりの部分だけが残って、それで十分だった、という構図です。
+
+「賢い適応が効いている」という物語は計測が否定し、残った実像は「凡庸だが頑健な成長スケジュール＋改善時リセット」です。4 章と同じく、その事実の方を報告します。
+
+### 今後の方向性
+
+2 つあります。
+
+- **拡大タイミングの適応化**。縮小の方向は分が悪い（高縮小率アームは一様に 25〜31 点の負け越し）と分かったので、適応を試すなら残っているのは拡大側です——outer をどれだけ速く伸ばすか、改善時リセットをいつ・どこまで戻すか。今回の scrambled 対照の型（包絡を固定して信号との結合だけ切る）はそのまま使い回せます。
+- **ポートフォリオ化**。oracle ギャップ −37 は「per-problem に fixed を選べば取れる幅」の定量化なので、fixed アームを並列ポートフォリオの多様化スロットに足して回収する（7 章の路線。候補は adaptive に最接近した短周期系 luby:100 / constant:100）。
+
+既定挙動は変更しません（縮小が発火しない現状が、測った範囲では最善のため）。
 
 ---
 
@@ -536,7 +583,7 @@ sabori_csp には `-c` フラグで有効化できる**コミュニティ分析*
 | 矛盾の学習 | 1UIP 節学習 / LCG | **決定トレイルの連言**（軽量・汎用。LCG より弱いが A/B で 5 シード全部プラス＝効いている。net+17、方向性＝大きさは主張しない） |
 | 矛盾の責任配分（activity） | dom/wdeg（制約単位）/ LCG explanation（健全・精密） | **poor man's explanation**（動いた変数を安く近似的に配分）。A/B では構造特化も generic も none を超えず＝activity 供給の冗長な代替の一員で機構ごと余剰 |
 | 伝播 | 2-watched literal | 同じ（2-watched literal） |
-| リスタート | Luby / 幾何 / LBD 動的 | **inner/outer 二重適応**（prune×深さ） |
+| リスタート | Luby / 幾何 / PicoSAT nested / LBD 動的 | PicoSAT 型 **inner/outer** ＋独自の適応信号（prune×深さ）→ A/B で**信号は飾り**（退行で死んでいた上、蘇生させても scrambled と同着）。実効は「outer ×1.2 成長＋改善時リセット」＝ほぼ文献どおりの nested restart。ただし未チューニング fixed 全勝・worst-of-fixed +81 の保険（oracle −37 はポートフォリオの伸び代） |
 | 値選択 | phase saving / solution-guided | solution-guided + **擬似勾配ヒント**（下記 probe の中だけで発火。平均では負けだが問題依存・ポートフォリオ向き） |
 | 最適化 | branch-and-bound / LNS | branch-and-bound + **improvement probe**（勾配ヒントを内包。直接対決では net−23 だが、対 CP-SAT では勝ちを増やす＝残すのが正解） |
 | presolve | 一般的な制約融合 | **one-hot チャネル集約**（A/B で net+6＝効いている。探索量は大幅減。net+6、方向性） |
@@ -549,7 +596,7 @@ sabori_csp に「世界初のアルゴリズム」は登場しません。価値
 という設計思想にあります。本記事を貫く軸は **「固定ヒューリスティクスを、軽量な学習・適応でどこまで補えるか」**——その問いに対して、各機能を A/B 計測にかけ、効いたものと効かなかったものの両方を並べました。
 
 - **効いた（土台とモデル変換）**：変数選択は2軸が分担する。本論を *大きさ* で担う**主証拠は2つ**——**activity（降下の駆動役）は temporal を外すと全停止の悪化が +81（主証拠①、94–13・全シード正）＝真の主役**、**傾向制御そのもの（conflict 由来 bump 全停止）が +21（主証拠②、全シード正・単調）**。第1基準 `temporal_activity`（1 章、Last Conflict 系）はバックトラック直後の1手を決め、フル構成からの差分的な悪化 net+25・全シード正——ただし大きさは主張せず**方向性**として扱う。これを供給する **decision-trail NoGood（3 章 +17、LCG より弱いのに全シード正）**、モデルを軽くする **one-hot チャネル集約（8 章 +6）**、mix_p のバンディット適応（1 章）も、いずれも**全シード同符号＝向きは確かだが、net の大きさは主張しない**（分散帯）。
-- **効かなかった（土台の上の精緻化）**：その NoGood に乗せた Bloom タイブレーク（2 章）は 93% の局面で no-op（タイブレーク以外の用途を探すか撤去）、制約側の責任配分（4 章）は構造特化どころか generic(base) すら none を超えず、機構ごと余剰だった。**興味深いのは、効く土台（NG・activity）の上に賢さを足そうとした層が、ことごとく報われない**点です。activity の供給はすでに冗長で（3 章）、その上のタイブレークや配分の精緻化は出番が来ない、という見立てと整合します。
+- **効かなかった（土台の上の精緻化）**：その NoGood に乗せた Bloom タイブレーク（2 章）は 93% の局面で no-op（タイブレーク以外の用途を探すか撤去）、制約側の責任配分（4 章）は構造特化どころか generic(base) すら none を超えず、機構ごと余剰だった。リスタートの適応信号（5 章）は退行で死んでいた上、蘇生させても scrambled コイントスと同着——包絡（成長スケジュール＋改善時リセット）は未チューニング fixed 全勝の良い保険だが、「適応」部分は飾りだった。**興味深いのは、効く土台（NG・activity）の上に賢さを足そうとした層が、ことごとく報われない**点です。activity の供給はすでに冗長で（3 章）、その上のタイブレークや配分の精緻化は出番が来ない、という見立てと整合します。
 - **問題依存（ポートフォリオ向き）**：擬似勾配ヒント（7 章）は下記 probe のサブ探索の中だけで発火する値順序オプション。probe 前提で平均では負けだが問題で割れ、資源結合スケジューリングで裏目・設計/割当系で当たり。単体では外すべきだが、並列アンサンブルの一本としては多様性の価値がある。
 - **指標で結論が割れた**：improvement probe（7 章、~5%改善の軽量サブ探索。上記の勾配ヒントを内包）は probe_on vs probe_off の直接対決（目的値）では net−23 と負けるが、**対 CP-SAT の勝敗では probe ON が優位**（直接対決と同じ主セット 2023+2024 で 14 vs 12・CP-SAT 勝は 1 少、2016+2025 でも 15 vs 12）。直接対決の数字だけでは「外すべき」に見えるが、対 CP-SAT では勝ちを増やすので残すのが妥当。ablation の指標（直接対決）と Challenge のゴール（フィールドに勝つ）は概ね一致するが、ここは乖離した例。
 - **効かなかった（その他）**：コミュニティ分析（コラム）は探索高速化に寄与せず（診断専用）。
@@ -578,6 +625,7 @@ sabori_csp に「世界初のアルゴリズム」は登場しません。価値
 
 - Moskewicz, Madigan, Zhao, Zhang, Malik, "Chaff: Engineering an Efficient SAT Solver", DAC, 2001. — VSIDS の初出（本文で繰り返し参照する VSIDS の原典）。
 - Boussemart, Hemery, Lecoutre, Saïs, "Boosting Systematic Search by Weighting Constraints", ECAI, 2004. — dom/wdeg（制約単位の重み付け、4 章）。
+- Biere, "PicoSAT Essentials", JSAT 4, 2008, §3.2 Restart Schedule. — **inner/outer の nested restart**（inner ×1.1、outer 到達で inner リセット＋outer ×1.1）。sabori のリスタート骨格はこれと同型で定数違い（5 章）。類似: Huang, "The effect of restarts on the efficiency of clause learning", IJCAI, 2007（TiniSAT）／ Pipatsrisawat, Darwiche, "RSat 2.0: SAT solver description", 2007。
 - Lecoutre, Saïs, Tabary, Vidal, "Recording and Minimizing Nogoods from Restarts", JSAT, 2007. — リスタート時に決定列から NoGood を記録する軽量手法（3 章）。
 - Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict（矛盾に関与した変数を解消まで優先）。sabori の第1基準 `temporal_activity` はこれに着想を得た拡張（カウンタ化・減衰・複数変数）（1 章）。
 - Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS 減衰の EMA 定式化、activity が bridge variable / グラフ中心性を暗黙に捉えること（1・2 章とコラム）。

@@ -23,7 +23,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
             // === 降下: 新レベルに入る ===
             size_t current_depth = depth + stack.size();
 
-            if (stopped_) {
+            if (stopped_ || stats_.fail_count >= restart_fail_cutoff_) {
                 result = SearchResult::UNKNOWN;
                 ascending = true;
                 continue;

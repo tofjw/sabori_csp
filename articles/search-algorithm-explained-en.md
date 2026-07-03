@@ -241,20 +241,82 @@ This doesn't mean localization is wrong in principle — the design split (cheap
 
 ---
 
-## 5. Restarts: not Luby or geometric, but inner/outer adaptive
+## 5. Restarts: the inner/outer double loop — the "adaptive" part was dead, but the envelope works
 
-sabori has a doubled inner/outer structure (`include/sabori_csp/restart_controller.hpp`). The inner loop grows the conflict limit by ~1.01 per restart; the outer loop stretches or shrinks the outer bound at the end of each cycle based on whether NoGood pruning advanced *and* the search went deeper:
+### Prior art
+
+- **Geometric restarts**: grow the limit by a constant factor.
+- **Luby sequence**: 1,1,2,1,1,2,4,... — the universal sequence, with theoretical guarantees.
+- **PicoSAT's nested restarts** (Biere, 2008): an **inner/outer double loop**. Grow the conflict limit `inner` by ×1.1; when it reaches `outer`, reset `inner` to its initial 100 and grow `outer` by ×1.1. A simplification inspired by Luby; RSAT and TiniSAT use similar schemes.
+- **Glucose's LBD-dynamic restarts**: restart immediately when the moving average of learned-clause quality (LBD) degrades.
+
+### What sabori does: double loop + adaptive signal (the design)
+
+sabori's skeleton **is PicoSAT's nested restart scheme** — an inner/outer double loop, differing only in constants (inner ×1.01, outer ×1.2, initial values 2/4; `include/sabori_csp/restart_controller.hpp`). It adds two things of its own: **resetting outer to its initial value when an improving solution is found**, and **an adaptive signal that switches outer between growing and shrinking based on search traction**.
+
+- **Inner loop**: grow the conflict limit `inner` by ×1.01 per restart (a gentle, near-arithmetic geometric growth).
+- **Outer loop**: at the end of each cycle, stretch or shrink the outer bound `outer` **according to how that cycle went**.
 
 ```cpp
 void end_cycle(size_t prune_delta, bool depth_grew) {
-    if (prune_delta > 0 && depth_grew)
-        outer_ = std::max(outer_ * 0.99, outer_min_);  // tighten (diversify)
+    if (prune_delta > 0 && depth_grew)                  // NoGood pruning advanced AND search went deeper
+        outer_ = std::max(outer_ * 0.99, outer_min_);   // → shrink the bound (shorter cycles, diversify)
     else
-        outer_ = std::min(outer_ * 1.2, outer_max_);    // widen (persist)
+        outer_ = std::min(outer_ * 1.2, outer_max_);    // → widen the bound (persist)
 }
 ```
 
-Motivation is close to Glucose's LBD-dynamic restarts (detect stagnation and react), but the signal is "NoGood pruning progress × depth growth" rather than learned-clause quality. This is flavoring; I didn't ablate it.
+The design intent: "when **NoGood pruning advances (`prune_delta > 0`) and the search digs deeper**, restart frequently to diversify; when there's no traction, widen the limit and persist." Right after each restart, activity decay, NoGood GC, Bloom rebuild, and restart-pivot reselection (`select_restart_pivot`) also run.
+
+**The shrink side, however, had never fired since a refactor at the end of February 2026.** When the counters moved into NoGoodManager, `stats_.nogood_prune_count` became synced only at the end of search, so `prune_delta` is identically 0 during a cycle (found by a pre-measurement behavior check; the live counters themselves are fine). The shipped behavior was therefore a feedback-free schedule: "**grow outer ×1.2 every cycle, reset on an improving solution**." So this section implements a mode that reads the signal from the live counters (the `SABORI_RESTART_POLICY` env var; default behavior unchanged) and tests two questions — **(a) would it have been good if it had worked as designed**, and **(b) is the surviving "grow + reset" envelope effective compared to fixed policies from the literature?** Conditions are the same as the rest of the article: 38 problems × 5 seeds × 30 s, judged by objective.
+
+### Test (a): what if it had worked as designed?
+
+A naive "adaptive vs Luby" turns into a tuning contest over scale factors, so the question is narrowed to "**does the feedback signal carry information?**" Every arm shares the identical parameter envelope (0.99 / 1.2 / min / max / inner 1.01); the only thing that varies is whether the decision correlates with the signal — the same pattern as ng_nobump in Section 3: keep the mechanism, cut only the suspected ingredient (`bench_restart_policy.py`).
+
+| adaptive (revived signal) vs | what changes | net | reading |
+|---|---|---|---|
+| scrambled:0.065 | cut only the signal coupling (rate-matched coin toss) | +6 | **tie = the signal is decorative** |
+| always_widen | cut shrinking entirely (= shipped behavior) | +7 | **tie = nothing was lost while it was dead** |
+| depth_only | ignore the prune condition | +6 (178/190 ties) | effectively the same mechanism |
+| prune_only | ignore the depth condition | **+29** | same sign across all seeds — harmful |
+| always_tighten | ignore both, always shrink | **+31** | ditto |
+| inverted | flip the signal | **+25** | harmful (a rate effect — see below) |
+
+Three observations cover it. First, **the signal carries no information** — it ties with the rate-matched coin toss (scrambled), so the contribution of the decision *correlating with the signal* is below the variance band. Second, **the AND reduces to `depth_grew` alone**: the prune component (prune+domain) is positive in 100% of cycles (NoGood value deletions happen every cycle), so it is saturated as a condition — 178 ties out of 190 against depth_only. Third, **the only axis that matters is the shrink frequency, and the high-frequency side is uniformly harmful**: the three arms whose shrink rate is 93–100% (prune_only / always_tighten / inverted) all lose to adaptive by similar large margins (net +25 to +31). Even inverted's loss is not "the sign was wrong": flipping the signal also flips the shrink rate from 6.5% to 93.5%, and the rate effect explains it.
+
+### Test (b): does "grow outer + reset" beat the literature's fixed policies?
+
+The fixed side is deliberately **untuned — literature-standard values as-is** — compared on three axes: vs each fixed arm, vs the per-problem best-of-fixed (oracle), and vs worst-of-fixed (the same "insurance" framing as mix_p in Section 1). (Note: sabori's `conflict_limit` is a per-node value budget, nonlinear in actual conflict counts, so the fixed policies are implemented with a global fail-count cutoff to match the literature's units.)
+
+| adaptive vs | net | reading |
+|---|---|---|
+| luby:100 | +14 | band edge (loses on one seed) |
+| constant:100 | +12 | band edge, mixed signs |
+| luby:512 | +28 | same-sign win across seeds |
+| geometric:1.1 | +30 | ditto |
+| constant:1000 | +33 | ditto |
+| geometric:1.5 | +38 | ditto |
+| **best-of-fixed (oracle)** | **−37** | **same-sign loss across all seeds** |
+| **worst-of-fixed** | **+81** | **same-sign win across all seeds** |
+
+**It beats every untuned fixed arm** (the close ones are the short-period luby:100 / constant:100), and **avoiding the worst pick is worth +81** — among the largest margins in this article. But it **loses to the per-problem oracle at −37, same sign on every seed**: it does not track best-of-fixed, which quantifies how much is still on the table if you could pick a fixed policy per problem.
+
+### Conclusion: the design didn't work — but it failed in a lucky way
+
+- **The dead shrink cost nothing.** Reviving it ties with scrambled and with the shipped behavior (+6 / +7); the signal's contribution is below the variance band. Had the design leaned toward frequent shrinking instead, it would have clearly hurt (the high-shrink-rate arms lose to adaptive by 25–31 points).
+- **The surviving "grow outer + reset on improvement" envelope is effective.** It beats every untuned literature-standard fixed policy and avoids worst-of-fixed at +81 — solid insurance. The irony: the post-regression behavior **is PicoSAT's nested restart with different constants (plus the improvement reset)** — the home-grown "adaptive" part died, the by-the-book part survived, and that was enough.
+
+Measurement rejected the "clever adaptation is working" story; what remains is "a plain but robust growth schedule + reset on improvement." As in Section 4, that fact is what this article reports.
+
+### Where to go next
+
+Two directions.
+
+- **Adapting the *growth* timing.** Shrinking is a losing direction (the high-shrink-rate arms uniformly lose by 25–31 points), so if adaptation is worth another try, what's left is the growth side — how fast to grow outer, and when/how far to reset it on improvement. The scrambled-control pattern used here (fix the envelope, cut only the signal coupling) can be reused as-is.
+- **Portfolio.** The oracle gap of −37 quantifies "what per-problem fixed selection could capture," so recover it by adding fixed arms as diversification slots in the parallel portfolio (the Section 7 direction; candidates: the short-period luby:100 / constant:100, which come closest to adaptive).
+
+The default behavior stays unchanged (the current state — shrink never firing — is the best measured so far).
 
 ---
 
@@ -362,7 +424,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds (net +17, directional — magnitude not claimed) |
 | Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
 | Propagation | 2-watched literal | same |
-| Restarts | Luby / geometric / LBD | **inner/outer adaptive** (prune × depth) |
+| Restarts | Luby / geometric / PicoSAT nested / LBD | PicoSAT-style **inner/outer** + a home-grown adaptive signal (prune × depth) → A/B: **the signal is decorative** (dead since a regression; reviving it ties with scrambled). Effective behavior = "outer ×1.2 growth + reset on improvement" ≈ the literature's nested restart. Still beats every untuned fixed arm and avoids worst-of-fixed at +81 (oracle −37 = portfolio headroom) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (fires only inside the probe below; problem-dependent; portfolio-only) |
 | Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (contains the gradient hint; loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop (net +6, directional) |
@@ -371,7 +433,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 No world-first algorithm appears here. The value is in measuring each deviation and reporting both the wins and the losses:
 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes. The **two load-bearing results** (carried by magnitude) are: **activity is the descent workhorse** — with temporal off, ablating it costs **+81 (primary ①, 94–13, every seed)** — and **tendency control itself works** — all conflict-driven bumps off costs **+21 (primary ②, every seed, monotone)**. `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds) — but treated as **directional**, magnitude not claimed. The weak decision-trail NoGood (Section 3, +17), one-hot aggregation (Section 8, +6), and the mix_p bandit (Section 1) are likewise **all same-sign across seeds — the direction is solid, but the magnitude isn't claimed** (variance band).
-- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
+- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The restart adaptive signal (Section 5) had been dead since a regression, and reviving it ties with a rate-matched coin toss — the envelope (growth schedule + improvement reset) is good insurance that beats every untuned fixed policy, but the "adaptive" part is decorative. The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 - **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (14 vs 12 on the same primary set 2023+2024, with one fewer CP-SAT win; 15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 
@@ -413,6 +475,7 @@ All toggles default to current behavior; benchmark scripts are self-contained.
 
 - Moskewicz, Madigan, Zhao, Zhang, Malik, "Chaff: Engineering an Efficient SAT Solver", DAC, 2001. — origin of VSIDS (the branching heuristic referenced throughout).
 - Boussemart, Hemery, Lecoutre, Saïs, "Boosting Systematic Search by Weighting Constraints", ECAI, 2004. — dom/wdeg (per-constraint weighting, Section 4).
+- Biere, "PicoSAT Essentials", JSAT 4, 2008, §3.2 Restart Schedule. — the **inner/outer nested restart** (grow inner ×1.1; on reaching outer, reset inner and grow outer ×1.1). sabori's restart skeleton is the same scheme with different constants (Section 5). Similar: Huang, "The effect of restarts on the efficiency of clause learning", IJCAI, 2007 (TiniSAT) / Pipatsrisawat, Darwiche, "RSat 2.0: SAT solver description", 2007.
 - Lecoutre, Saïs, Tabary, Vidal, "Recording and Minimizing Nogoods from Restarts", JSAT, 2007. — recording NoGoods from the decision sequence at restart (Section 3).
 - Lecoutre, Saïs, Tabary, Vidal, "Reasoning from last conflict(s) in constraint programming", Artificial Intelligence 173(18), 2009. — Last Conflict (prefer the conflict-involved variable until resolved); sabori's primary criterion `temporal_activity` is inspired by it, extended to a decaying multi-variable counter (Section 1).
 - Liang, Ganesh, Zulkoski, Zaman, Czarnecki, "Understanding VSIDS Branching Heuristics in Conflict-Driven Clause-Learning SAT Solvers", [arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015. — VSIDS decay as an EMA; activity implicitly captures bridge variables / graph centrality (Sections 1, 2, and the community column).

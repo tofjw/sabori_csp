@@ -680,6 +680,19 @@ private:
     // リスタート（Adaptive Restart）
     RestartController restart_ctrl_;
 
+    // fixed 系リスタートポリシー用: stats_.fail_count がこの値に達したら
+    // run_search を UNKNOWN で打ち切る（SIZE_MAX = 無効）。
+    // 文献標準の Luby/Geometric は「コンフリクト数」単位なので、per-node 予算の
+    // conflict_limit ではなくグローバル fail 数でカットする。
+    size_t restart_fail_cutoff_ = std::numeric_limits<size_t>::max();
+
+    // outer 調整の信号 (prune_delta / domain_delta) をライブの nogood_mgr_ カウンタ
+    // から取るか。歴史的経緯: 信号導入時は stats_ がライブ更新されていたが、
+    // NoGoodManager 分離後 stats_ は探索終了時にしか同期されず、cycle 中は stale で
+    // prune_delta が恒等 0 → tighten が構造的に発火しない（= 事実上 always-widen）。
+    // 既定 false は その出荷挙動を保存するため。SABORI_RESTART_POLICY 指定時のみ true。
+    bool restart_signal_live_ = false;
+
     // 統計
     SolverStats stats_;
     std::unordered_map<std::string, ConstraintStats> constraint_stats_;

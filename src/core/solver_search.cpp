@@ -305,7 +305,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
     while (!stopped_) {
         // ===== cycle 開始 =====
-        size_t prune_at_cycle_start = stats_.nogood_prune_count;
+        // restart_signal_live_: stats_ は探索終了時にしか同期されないため、
+        // ライブ信号モードでは nogood_mgr_ のカウンタを直接読む（solver.hpp 参照）。
+        size_t prune_at_cycle_start = restart_signal_live_
+            ? nogood_mgr_.prune_count() : stats_.nogood_prune_count;
         size_t max_depth_at_cycle_start = stats_.max_depth;
         restart_ctrl_.begin_cycle();
 
@@ -313,11 +316,19 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             int conflict_limit = restart_ctrl_.conflict_limit();
             std::optional<Solution> result;
 
-            auto res = run_search(model, conflict_limit, 0,
+            // fixed 系ポリシー: per-node 予算ではなくグローバル fail 数でカット
+            int search_cl = conflict_limit;
+            if (restart_ctrl_.is_fixed()) {
+                restart_fail_cutoff_ = stats_.fail_count + static_cast<size_t>(conflict_limit);
+                search_cl = std::numeric_limits<int>::max();
+            }
+
+            auto res = run_search(model, search_cl, 0,
                                   [&result](const Solution& sol) {
                                       result = sol;
                                       return false;
                                   }, false);
+            restart_fail_cutoff_ = std::numeric_limits<size_t>::max();
 
             if (res == SearchResult::SAT) {
                 if (find_all) {
@@ -367,13 +378,16 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         }
 
         // ===== cycle 終了: outer を調整 =====
-        size_t prune_delta = stats_.nogood_prune_count - prune_at_cycle_start;
+        size_t prune_now = restart_signal_live_
+            ? nogood_mgr_.prune_count() : stats_.nogood_prune_count;
+        size_t prune_delta = prune_now - prune_at_cycle_start;
         bool depth_grew = stats_.max_depth > max_depth_at_cycle_start;
-        restart_ctrl_.end_cycle(prune_delta, depth_grew);
+        bool tightened = restart_ctrl_.end_cycle(prune_delta, depth_grew, rng_);
 
         if (verbose_) {
             std::cerr << "% [verbose] cycle end: prune_delta=" << prune_delta
                       << " depth_grew=" << depth_grew
+                      << " decision=" << (tightened ? "tighten" : "widen")
                       << " new_outer=" << restart_ctrl_.outer() << "\n";
         }
     }
@@ -394,8 +408,12 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
     while (!stopped_) {
         // ===== cycle 開始 =====
-        size_t prune_at_cycle_start = stats_.nogood_prune_count;
-        size_t domain_at_cycle_start = stats_.nogood_domain_count;
+        // restart_signal_live_: stats_ は探索終了時にしか同期されないため、
+        // ライブ信号モードでは nogood_mgr_ のカウンタを直接読む（solver.hpp 参照）。
+        size_t prune_at_cycle_start = restart_signal_live_
+            ? nogood_mgr_.prune_count() : stats_.nogood_prune_count;
+        size_t domain_at_cycle_start = restart_signal_live_
+            ? nogood_mgr_.domain_count() : stats_.nogood_domain_count;
         size_t max_depth_at_cycle_start = stats_.max_depth;
         bool cycle_interrupted = false;
         restart_ctrl_.begin_cycle();
@@ -404,11 +422,19 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             int conflict_limit = restart_ctrl_.conflict_limit();
             std::optional<Solution> found_solution;
 
-            auto res = run_search(model, conflict_limit, 0,
+            // fixed 系ポリシー: per-node 予算ではなくグローバル fail 数でカット
+            int search_cl = conflict_limit;
+            if (restart_ctrl_.is_fixed()) {
+                restart_fail_cutoff_ = stats_.fail_count + static_cast<size_t>(conflict_limit);
+                search_cl = std::numeric_limits<int>::max();
+            }
+
+            auto res = run_search(model, search_cl, 0,
                                   [&found_solution](const Solution& sol) {
                                       found_solution = sol;
                                       return false;  // 最初の解で停止
                                   }, false);
+            restart_fail_cutoff_ = std::numeric_limits<size_t>::max();
 
             if (res == SearchResult::SAT) {
                 auto obj_val = model.value(obj_var_idx_);
@@ -548,14 +574,20 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
         // ===== cycle 終了: outer を調整（改善時中断でなければ） =====
         if (!cycle_interrupted) {
-            size_t prune_delta = stats_.nogood_prune_count - prune_at_cycle_start;
-            size_t domain_delta = stats_.nogood_domain_count - domain_at_cycle_start;
+            size_t prune_now = restart_signal_live_
+                ? nogood_mgr_.prune_count() : stats_.nogood_prune_count;
+            size_t domain_now = restart_signal_live_
+                ? nogood_mgr_.domain_count() : stats_.nogood_domain_count;
+            size_t prune_delta = prune_now - prune_at_cycle_start;
+            size_t domain_delta = domain_now - domain_at_cycle_start;
             bool depth_grew = stats_.max_depth > max_depth_at_cycle_start;
-            restart_ctrl_.end_cycle(prune_delta + domain_delta, depth_grew);
+            bool tightened = restart_ctrl_.end_cycle(prune_delta + domain_delta, depth_grew, rng_);
 
             if (verbose_) {
                 std::cerr << "% [verbose] cycle end: prune_delta=" << prune_delta
+                          << " domain_delta=" << domain_delta
                           << " depth_grew=" << depth_grew
+                          << " decision=" << (tightened ? "tighten" : "widen")
                           << " new_outer=" << restart_ctrl_.outer() << "\n";
             }
         }
