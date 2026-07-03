@@ -4,32 +4,15 @@
 
 ## TL;DR
 
-The mainstream of modern CP / SAT solvers sits on the **CDCL (SAT) and LCG (lazy clause generation, à la Chuffed) line** — taking what's learned from conflicts and using it as *sound logical constraints* that prune deductively. sabori_csp deliberately doesn't follow that line: it's a **lightweight CP solver with no explanation generation**, choosing to reflect the same conflict information not as *logic* but as a *search tendency*. This article lays out that difference through comparison with established techniques and A/B testing.
+sabori_csp is a FlatZinc-compatible constraint solver written in C++. Its skeleton — backtracking search + propagation + restarts + activity-based variable selection + NoGood learning — is standard for modern CP / SAT; there is no newly-invented search algorithm here. What's distinctive is that, while staying a lightweight solver with no explanation generation, it lays a thin self-tuning "adaptation / learning layer" on top of the standard parts.
 
-sabori_csp is a FlatZinc-compatible constraint solver written in C++. Its skeleton is completely standard:
+In one sentence: **LCG stops wasted search with *logic* — sound learned clauses prune deductively — while sabori_csp stops it with *tendency*, feeding the same conflict information into a conflict-directed heuristic (a lean toward recently-conflicted variables) to steer away from bad regions.** This is not a claim that deductive pruning is generally unnecessary: sabori deliberately carries only the weakest learning (a conjunction of decision literals), so what it measures is "how far tendency alone carries you once logic is minimized." On classes where strong learning (1-UIP / LCG) is decisive, that's outside scope.
 
-> backtracking search + constraint propagation + restarts + activity-based variable selection + NoGood learning
-
-There is no newly-invented "search algorithm" here. What makes it interesting is a thin self-tuning layer on top of that skeleton — and, more importantly, the fact that **every one of those additions was A/B-measured rather than asserted.** This article reports what worked and what didn't.
-
-If I had to compress the whole article into one sentence answering its title:
-
-> **LCG stops wasted search with *logic* — sound learned clauses prune deductively. sabori_csp stops it with *tendency* — the same conflict information is fed mainly into activity, steering variable selection away from bad regions.**
-
-That claim isn't rhetorical; it falls out of an ablation that splits the NoGood's contribution into "pruning" and "activity bump" (Section 3). **This is not a claim that deductive pruning is generally unnecessary** — sabori deliberately carries only the weakest learning (a conjunction of decision literals), so what this article measures is "how far tendency alone carries you once logic is minimized." On problem classes where strong learning (1-UIP / LCG) is decisive, tendency alone won't reach — that's outside this article's scope. As a side effect, this write-up doubles as a small check of whether branching insights established for SAT/CDCL (activity implicitly capturing structure, etc.) reproduce in a CP solver.
-
-On top of the standard skeleton, the four **adaptation layers** the solver adds are below (the strongest foundation is the primary criterion described later; these four sit on top of it). The headline result: **the thing that was effective was the *foundation*, not the clever refinements layered on top.** Variable selection is driven by two things sharing the labor: the primary criterion `temporal_activity` (Section 1, a Last-Conflict-style mechanism) picks the restart point after a backtrack, and **activity drives the bulk of the descent**. Removing temporal costs the most at the margin (net +25), but activity's true weight is masked by it: remove temporal and activity's ablation jumps to **+81** — it's the descent workhorse. The weak decision-trail NoGood (Section 3) feeds that activity. Of the four "smart adaptations" below, only the first (mix_p, which tunes the activity blend) clearly paid off; the rest didn't.
-
-1. **Variable-selection mix ratio, tuned per-restart by a bandit** (→ measured robustness = works)
-2. **A Bloom-fingerprint NoGood-overlap tiebreak for variable selection** (→ 93% no-op in A/B = doesn't help)
-3. **explanation-free per-constraint conflict blame** (→ no gain over a generic version = doesn't help)
-4. **a pseudo-gradient graft onto branch-and-bound** (→ negative on average, but problem-dependent = portfolio-only)
-
-Setup for all measurements: same binary, toggled via environment variables (each defaults to current behavior), MiniZinc Challenge 2023+2024, 38 problems, 30s each, **5 seeds**, judged by objective value (not wall-clock time, which flips marginal ties). Each data point is one (problem × seed) pair. Scripts under `benchmarks/minizinc_challenge/`.
+Splitting each component out by A/B test, the conclusion is that **what was effective is the *foundation*.** What moves the search is two things: `temporal_activity` (Last-Conflict family), which picks the restart point after a backtrack, and activity, which drives the descent — both fed by the NoGood learning and the mix_p bandit, which also help. Conversely, the "clever refinements" layered on top — the Bloom tiebreak, per-constraint blame, the pseudo-gradient — mostly don't pay off on their own. Below, I walk each component, contrasting it with established techniques and measuring by A/B.
 
 ---
 
-## 0. Background: the standard parts
+## 0. Background: the standard parts and how the numbers are read
 
 For context, here are the components modern solvers share:
 
@@ -41,7 +24,17 @@ For context, here are the components modern solvers share:
 | Restarts | Luby / geometric / LBD-dynamic | same | Glucose |
 | Fast propagation | 2-watched literal | domain propagation + watches | various |
 
-sabori_csp implements the obvious ones straight: 2-watched-literal NoGood propagation, VSIDS-style activity (with decay/rescale), MRV (smallest domain first), restarts, branch-and-bound. So far, textbook. One twist matters, though: **the primary variable-selection criterion is not VSIDS or MRV but a different signal (`temporal_activity`), and that is what actually moves the search most** — it pays off later, so Section 1 covers it in detail. The rest of this article walks each axis and contrasts "standard" with "what sabori does."
+sabori_csp implements the obvious ones straight: 2-watched-literal NoGood propagation, VSIDS-style activity (with decay/rescale), MRV (smallest domain first), restarts, branch-and-bound. So far, textbook. One twist matters, though: **the primary variable-selection criterion is not VSIDS or MRV but a different signal (`temporal_activity`), and that is what actually moves the search most** — it pays off later, so Section 1 covers it in detail.
+
+### How to read the numbers (measurement conventions)
+
+Every A/B measurement below runs MiniZinc Challenge 2023+2024 at 30 s wall-clock each, over multiple seeds, judged by **the objective value of the solution** (not wall-clock time, which flips on clock jitter; ties broken by whether optimality was proved). Problem and seed counts are stated per measurement, but the standard is 38 problems × 5 seeds (190 data points), and the `net` in the tables is "wins − losses." A few measurements (mix_p, the vs-CP-SAT counts) are single-seed, noted where they occur. Three conventions for reading the numbers:
+
+- **Variance band and robustness.** Any net below ±10 is inside the variance band; absolute levels wobble run-to-run. Only two things are robust: monotonicity within one run (worse as you remove more sources) and the same sign across all seeds. Even all-seeds-same-sign is only a *directional* hint when the margin is small (5/5 same sign is binomial p≈0.06). So from here on, a small net claims only the direction, not the magnitude.
+- **Marginal vs isolated value.** Most ablations measure "the cost of removing *just* that mechanism from the full system" — a **marginal** value. Marginals are conditional: a higher-priority criterion masks a lower one. When the strong primary `temporal_activity` decides the post-backtrack pick, removing the activity that drives the descent beneath it looks cheap. To gauge a mechanism's true weight we also report the **isolated** value (the higher criterion removed) — the worked example is activity in Section 3 (marginal +21 / isolated +81). From here on, "marginal / isolated" refers to this.
+- **Head-to-head vs field metric.** The objective judging above is a **config-vs-config head-to-head** — "which config gives the better objective." The Challenge's real goal is "**how many problems do you win against the field (CP-SAT)?**", where a few threshold-crossing problems decide it. The two metrics are usually close but not identical. This article's "doesn't help / surplus" conclusions (Bloom in §2, structural blame in §4, the gradient in §7) are all head-to-head; the only one checked against the field is §7's probe, where it flipped. Read the other negatives as "head-to-head, at least."
+
+The rest of this article walks each axis and contrasts "standard" with "what sabori does."
 
 ---
 
@@ -75,9 +68,7 @@ net +25, **positive across all 5 seeds** (+5/+5/+4/+2/+9). That's the *marginal*
 
 But **the primary criterion being the biggest lever does *not* make activity a sideshow** — worth emphasizing. `temporal_activity` mostly decides the *first* pick right after a backtrack (the last-conflict variable); as search then descends normally, `temporal_activity` is ~0 for nearly all variables, and **the bulk of those descent selections are driven by activity (and MRV)** (instrumentation confirms: hot unassigned variables are only a few percent of selections on most problems). So **temporal picks the restart point and activity drives the descent** — they divide labor by search phase.
 
-> **Methodology box: in-configuration marginal vs isolated value.** Most ablations here measure "the cost of removing *just* that mechanism from the full system" — a **marginal** value. Marginals are **conditional**: in particular, **a higher-priority criterion masks a lower one** — when the strong primary `temporal_activity` decides the post-backtrack pick, removing the activity that drives the descent beneath it looks cheap. So to gauge a mechanism's **true weight** we also report the **isolated** value (the higher criterion removed). The worked example is activity itself: **marginal +21 (temporal on) / isolated +81 (temporal off, full 94–13, measured in Section 3)**. From here on, "marginal / isolated" refers to this "a higher criterion masks it, so we report both" — not re-explained each time.
-
-Activity's true weight is the isolated +81 — the descent workhorse, not a tiebreak; the mix_p below tunes *its* blend.
+Activity's true weight shows up in the isolated value — the higher-priority temporal removed (see §0's conventions); that's +81 in Section 3. It's the descent workhorse, not a tiebreak, and the mix_p below tunes *its* blend.
 
 ### What sabori does, part 2: a bandit over the tiebreak mix ratio
 
@@ -89,7 +80,7 @@ sabori differs only in the details: (a) the arms are not distinct heuristics but
 
 #### Measured: adaptive buys robustness, not raw speed
 
-Fixing vs adapting `mix_p` (env `SABORI_FIX_MIXP`), judged by objective value:
+Fixing vs adapting `mix_p` (env `SABORI_FIX_MIXP`), 38 problems, single seed, judged by objective value:
 
 | Comparison | adaptive win | fixed win | tie |
 |---|---|---|---|
@@ -101,13 +92,15 @@ The value isn't "beats every fixed heuristic" — it's **robustly avoiding the w
 
 > Speculation about its dynamic nature (unmeasured): re-drawing mix_p every restart could adapt not just across problems but to the *time evolution within a run*. Early on, activity has accumulated little information and MRV (domain size) is the more reliable signal; as conflicts pile up, activity becomes more trustworthy and the activity-leaning arms start paying off — a shift over time the bandit may be tracking. But this is a mechanism-level guess; I haven't measured how mix_p actually drifts over the course of a search.
 
+> Note: this is a limited measurement — single machine, single seed, 30 s, 38 problems. Changing the seed or time limit can shuffle a few problems in the tie band (SOL vs SOL).
+
 ---
 
 ## 2. NoGood-Bloom overlap: a tiebreak by "entanglement" with learned constraints
 
 ### What sabori does
 
-sabori approximates, in constant time, "how much does this unassigned variable appear in the learned NoGoods that the variables I've chosen on this path appear in" (`src/core/variable_selector.cpp`). Each NoGood gets a `Bloom512` fingerprint; each variable carries the OR of the fingerprints of NoGoods it appears in (`var_ng_bloom`); as the path descends, the chosen variables' fingerprints accumulate into `ng_usage_bloom_`. At the *bottom* of the selection hierarchy — when the primary `temporal_activity` (Section 1), then activity/MRV, all tie — it prefers the candidate whose fingerprint overlaps most (AND + popcount). It's an idea I liked: context-dependent, approximate, constant-time. Note it's the deepest *tiebreak*, not the primary criterion — which is exactly why it rarely gets a turn (93% no-op, below).
+sabori approximates, in constant time, "how much does this unassigned variable appear in the learned NoGoods that the variables I've chosen on this path appear in" (`src/core/variable_selector.cpp`). Each NoGood gets a `Bloom512` fingerprint; each variable carries the OR of the fingerprints of NoGoods it appears in (`var_ng_bloom`); as the path descends, the chosen variables' fingerprints accumulate into `ng_usage_bloom_`. At the *bottom* of the selection hierarchy — when the primary `temporal_activity` (Section 1), then activity/MRV, all tie — it prefers the candidate whose fingerprint overlaps most (AND + popcount). It's a context-dependent, approximate, constant-time combination. Note it's the deepest *tiebreak*, not the primary criterion — which is exactly why it rarely gets a turn (93% no-op, below).
 
 #### Measured: it barely ever fires, and doesn't help
 
@@ -143,11 +136,11 @@ Despite "weaker than LCG," the weak NoGood does help. Toggling learning + propag
 
 | Comparison | on win | off win | tie | net |
 |---|---|---|---|---|
-| ng_on vs ng_off | 54 | 36 | 100 | **+17** |
+| ng_on vs ng_off | 54 | 36 | 100 | **+18** |
 
-net +17 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign flip). Together with mix_p, this is one of the few consistently-positive results — in contrast to Bloom (Section 2), structural blame (Section 4), and gradient (Section 7), which all flipped sign across seeds.
+net +18 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign flip). Together with mix_p, this is one of the few consistently-positive results — in contrast to Bloom (Section 2), structural blame (Section 4), and gradient (Section 7), which all flipped sign across seeds.
 
-#### Splitting the +17: pruning vs activity
+#### Splitting it: pruning vs activity
 
 `SABORI_NOGOOD=0` turns off the *whole* mechanism — both the clause pruning and the activity bumps NoGoods produce. To separate them, a third mode (`SABORI_NG_NOBUMP=1`) keeps learning + propagation (pruning) but drops only the NoGood-driven activity bumps:
 
@@ -181,15 +174,15 @@ Every prediction was wrong. By magnitude the smallest path — the 0.01 learn bu
 
 #### Isolated cross-check: removing activity really costs +81
 
-That "+21 for all-off" is the **marginal** value, measured with temporal on (marginal vs isolated: see the methodology box in Section 1). Measuring the **isolated** value with `bench_temporal_mask.py` — temporal off — the whole activity-bump machinery costs **+81** (full beats no-activity 94–13, every seed). The marginal +21 is temporal-masked compression; **activity's true weight is +81 — the descent workhorse.** Here "redundant ensemble" applies only to the activity-bump *sources* being mutually substitutable — **activity-based selection itself is not a sideshow.**
+That "+21 for all-off" is the **marginal** value, measured with temporal on (marginal vs isolated: see §0's conventions). Measuring the **isolated** value with `bench_temporal_mask.py` — temporal off — the whole activity-bump machinery costs **+81** (full beats no-activity 94–13, every seed). The marginal +21 is temporal-masked compression; **activity's true weight is +81 — the descent workhorse.** Here "redundant ensemble" applies only to the activity-bump *sources* being mutually substitutable — **activity-based selection itself is not a sideshow.**
 
-This is the flip side of Section 2: because the NoGood reaches variable selection mainly via activity, the Bloom tiebreak — trying to deliver the same signal through a thinner pipe — never gets a turn. And by the same logic, refinements layered on the activity/value-selection that activity already dominates (Section 4, Section 7) tend to be hard to improve. **What's effective is the foundation that grows activity (NoGood, mix_p); cleverness piled on top of live activity tends not to pay.** That is the overall picture this article's measurements draw.
+The project does have an experimental LCG branch, but the mainline (`main`) search is the decision-trail scheme above.
 
 ---
 
 ## 4. How does an explanation-free solver find the "real culprit" of a conflict? — per-constraint structural blame
 
-This is the chapter where I describe a design I built to raise activity quality, then report — honestly — that A/B measurement showed no benefit. Appealing idea, unrewarded for now.
+This is the chapter where I describe a design I built to raise activity quality, then report — through A/B — that it showed no benefit.
 
 ### Prior art: who do you blame on a conflict?
 
@@ -207,7 +200,7 @@ This is the chapter where I describe a design I built to raise activity quality,
 - **AllDifferent**: when a fixed value `val` causes the wipeout, distribute only among variables still able to take `val` (its conflict set).
 - **Circuit**: the `occupier_` array finds the colliding partner in O(1); split blame 50/50 between trigger and partner.
 
-The framing I liked: a **"poor man's explanation"** — explanation-quality, variable-level blame, but heuristic-only, so it's allowed to be cheap and unsound (it's not reused for learning).
+In short, a **"poor man's explanation"** — explanation-quality, variable-level blame, but heuristic-only, so it's allowed to be cheap and unsound (it's not reused for learning).
 
 | Method | Blame granularity | Soundness required? |
 |---|---|---|
@@ -215,6 +208,8 @@ The framing I liked: a **"poor man's explanation"** — explanation-quality, var
 | VSIDS / ABS | learned-clause vars / shrunk vars | (learning side handles it) |
 | LCG explanation | per-variable, precise | **yes** (reused for learning) |
 | sabori | **per-variable, constraint-specific** | **no** (heuristic-only) |
+
+An explanation-free solver pointing at the culprit cheaply from each constraint's own structure (`occupier_` / value pool / coefficients / bound deltas) — the question is whether it actually speeds up search.
 
 #### Measured: the structural specialization didn't help
 
@@ -237,7 +232,7 @@ A single seed first had me convinced structural was actively *worse* (base 9–6
 
 The measurement says two things. First, structural doesn't beat generic (the per-constraint cleverness is wasted). Second, the generic doesn't beat none either — the constraint-side blame is surplus *as a mechanism*. So the original bet, "poor man's explanation is a reasonable baseline," isn't supported here: the constraint bump is one more member of the redundant activity-supply ensemble (Section 3), and with the decision-variable and NoGood bumps already in place, it adds nothing.
 
-This doesn't mean localization is wrong in principle — the design split (cheap heuristic blame vs sound learning) is still sensible, and the all-off measurement shows the constraint bump *does* help once everything else is removed. What's refuted is the bet that piling blame (generic or structural) on top of the existing activity supply makes search faster. And the current default of `structural` (the weakest of the three) is worth revisiting (though this is a head-to-head result — like the §7 probe, it could differ vs CP-SAT; that's unchecked here. See §7's methodological note). The pretty story I started writing — "smart blame compensates for weak learning" — was denied by measurement, and that denial is the most valuable thing in this chapter.
+This doesn't mean localization is wrong in principle — the design split (cheap heuristic blame vs sound learning) is still sensible, and the all-off measurement shows the constraint bump *does* help once everything else is removed. What's refuted is the bet that piling blame (generic or structural) on top of the existing activity supply makes search faster. And the current default of `structural` (the weakest of the three) is worth revisiting (though this is a head-to-head result — like the §7 probe, it could differ vs CP-SAT; that's unchecked here. See §0's conventions). So the feature stays on by default but is filed as future work; the bet that "smart blame compensates for weak learning" was denied by measurement.
 
 ---
 
@@ -307,7 +302,7 @@ The fixed side is deliberately **untuned — literature-standard values as-is** 
 - **The dead shrink cost nothing.** Reviving it ties with scrambled and with the shipped behavior (+6 / +7); the signal's contribution is below the variance band. Had the design leaned toward frequent shrinking instead, it would have clearly hurt (the high-shrink-rate arms lose to adaptive by 25–31 points).
 - **The surviving "grow outer + reset on improvement" envelope is effective.** It beats every untuned literature-standard fixed policy and avoids worst-of-fixed at +81 — solid insurance. The irony: the post-regression behavior **is PicoSAT's nested restart with different constants (plus the improvement reset)** — the home-grown "adaptive" part died, the by-the-book part survived, and that was enough.
 
-Measurement rejected the "clever adaptation is working" story; what remains is "a plain but robust growth schedule + reset on improvement." As in Section 4, that fact is what this article reports.
+Measurement rejected the "clever adaptation is working" story; what remains is "a plain but robust growth schedule + reset on improvement."
 
 ### Where to go next
 
@@ -379,7 +374,7 @@ But here, **the metric you pick flips the verdict.** The actual Challenge goal i
 
 To be honest, the margin is thin: on 2023+2024 only a couple of 2023 problems moved (2024 ties at the aggregate), and the vs-CP-SAT verdict is single-seed, so it wobbles run-to-run. Still, **two independent year sets (2016+2025 and 2023+2024) both point to "probe on ≥ off,"** so I take the direction as solid.
 
-> **Methodological note (applies to the whole article).** This article's ablations are mostly **config-vs-config head-to-head by objective** — "which is better on average." The Challenge goal is "beat the field," where a few threshold-crossing problems decide it. The two metrics are usually close but not identical. **The other "doesn't help / surplus" conclusions here (Bloom in §2, structural blame in §4, the gradient above) are all head-to-head too** — and the probe is the *only* one I checked against the field, where it flipped. The rest look consistent by informal observation, but I haven't verified them vs the field, so read those negative conclusions as "head-to-head, at least." On the head-to-head −23 alone the probe looks droppable; against CP-SAT it wins more, so **keeping it is the right call** — a concrete case where the metric you pick changes the verdict.
+> **This probe is the concrete case where the metric flips the verdict** (the head-to-head vs field-metric distinction is in §0's conventions; per §0, the probe is the only "doesn't help / surplus" conclusion I checked against the field). Losing on average objective but adding field wins is worth it: on the −23 head-to-head alone the probe looks droppable, but since it wins more vs CP-SAT, keeping it is the right call.
 
 ---
 
@@ -395,13 +390,13 @@ Toggling aggregation on/off (env `SABORI_ONEHOT`). On problems where no aggregat
 |---|---|---|---|---|
 | onehot_on vs onehot_off | 25 | 19 | 36 | **+6** |
 
-net +6, on ahead (non-negative in 4 of 5 seeds). Not the consistent blowout of the NoGood (Section 3), but positive — and clearly on the *other* side from the search-heuristic refinements (Sections 2/4/7). And +6 *understates* it: `code-generator` runs at `fails=3218` with aggregation on vs `10867` off — search effort drops ~70%. The aggregate stays modest because at 30s judged by objective, "fewer fails but the same objective in time" registers as a tie (most of those 36 ties). The effect is "reach the same solution with less search," which a time-to-solution metric or a tighter budget would show more strongly. As a model-reduction presolve, it straightforwardly works — fitting the larger picture: **what's effective is the variable-selection foundation (the temporal_activity primary criterion, plus the NoGood and mix_p that feed activity) and the model transform (one-hot), not the clever refinements piled on top.**
+net +6, on ahead (non-negative in 4 of 5 seeds). Not the consistent blowout of the NoGood (Section 3), but positive — and clearly on the *other* side from the search-heuristic refinements (Sections 2/4/7). And +6 *understates* it: `code-generator` runs at `fails=3218` with aggregation on vs `10867` off — search effort drops ~70%. The aggregate stays modest because at 30s judged by objective, "fewer fails but the same objective in time" registers as a tie (most of those 36 ties). The effect is "reach the same solution with less search," which a time-to-solution metric or a tighter budget would show more strongly. As a model-reduction presolve, it straightforwardly works.
 
 ---
 
 ## Column: community analysis is not "search speedup"
 
-sabori has a `-c` community-analysis feature (`include/sabori_csp/community_analysis.hpp`): build a Variable Interaction Graph (VIG), detect communities by label propagation, compute modularity Q, and measure how locally search stays within communities. It looks appealing, but as the header states, it's **diagnostics only** — no benchmark showed a search speedup, because activity heuristics implicitly learn the same locality. The correct framing is "structure visualization / sticking diagnosis," and that negative result ("tried explicit community structure; activity already learns it implicitly") is itself the useful knowledge.
+sabori has a `-c` community-analysis feature (`include/sabori_csp/community_analysis.hpp`): build a Variable Interaction Graph (VIG), detect communities by label propagation, compute modularity Q, and measure how locally search stays within communities. It looks appealing, but as the header states, it's **diagnostics only** — no benchmark showed a search speedup, because activity heuristics implicitly learn the same locality. The correct framing is "structure visualization / sticking diagnosis"; "this speeds up search" is wrong. The reality is that it tried explicit community structure, but activity already learns the same thing implicitly, so it didn't help.
 
 This isn't a new observation — it lines up with prior work. Liang & Ganesh et al., "Understanding VSIDS Branching Heuristics" ([arXiv:1506.08905](https://arxiv.org/abs/1506.08905), 2015), show that **VSIDS overwhelmingly picks the "bridge variables" connecting communities without any explicit community detection** (~80% of picked variables are bridges), and that activity ranks correlate strongly with temporal graph centrality (Spearman 0.79–0.82). Because activity already captures structural centrality, decomposing the VIG explicitly adds nothing — this column's result is a re-confirmation of that, not a discovery.
 
@@ -409,7 +404,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 
 ## Summary: standard skeleton + a thin adaptive layer, measured
 
-> **Grading the numbers, up front.** The setup is **n=38 problems × 5 seeds, 30s wall-clock, judged by objective order**. At that resolution, **any net below ±10 is inside the variance band** — absolute levels wobble run-to-run. Only two things are robust: **monotonicity within one run** and **same sign across all seeds**. But even all-seeds-same-sign is only a *directional* hint when the margin is small (5/5 same sign is binomial p≈0.06). So the central thesis — **"what moves the search is tendency, not deduction (temporal + activity)" — is carried by *magnitude* on only two results**, the ones with a large margin:
+> **What carries the thesis, up front.** Per §0's conventions, a small net claims only the direction, not the magnitude. So the central thesis — **"what moves the search is tendency, not deduction (temporal + activity)" — is carried by *magnitude* on only two results**, the ones with a large margin:
 >
 > - **[Primary evidence ①] activity is the descent workhorse:** with temporal off, ablating the whole activity machinery costs **+81 (94–13, one run, every seed positive)** — a jump from +18 with temporal on, far outside the variance band.
 > - **[Primary evidence ②] tendency control itself works:** turning off all conflict-driven activity bumps costs **+21 (every seed positive, monotonically worse as you remove more sources)**.
@@ -430,10 +425,10 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop (net +6, directional) |
 | Structure analysis | (none) | community analysis (**diagnostics only**) |
 
-No world-first algorithm appears here. The value is in measuring each deviation and reporting both the wins and the losses:
+No world-first algorithm appears here. What it does is measure each deviation and report both the wins and the losses:
 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes. The **two load-bearing results** (carried by magnitude) are: **activity is the descent workhorse** — with temporal off, ablating it costs **+81 (primary ①, 94–13, every seed)** — and **tendency control itself works** — all conflict-driven bumps off costs **+21 (primary ②, every seed, monotone)**. `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds) — but treated as **directional**, magnitude not claimed. The weak decision-trail NoGood (Section 3, +17), one-hot aggregation (Section 8, +6), and the mix_p bandit (Section 1) are likewise **all same-sign across seeds — the direction is solid, but the magnitude isn't claimed** (variance band).
-- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The restart adaptive signal (Section 5) had been dead since a regression, and reviving it ties with a rate-matched coin toss — the envelope (growth schedule + improvement reset) is good insurance that beats every untuned fixed policy, but the "adaptive" part is decorative. The interesting part is that the layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — and the activity supply itself turns out to be a redundant ensemble (Section 3), so an extra blame channel is just surplus."
+- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The restart adaptive signal (Section 5) had been dead since a regression, and reviving it ties with a rate-matched coin toss — the envelope (growth schedule + improvement reset) is good insurance that beats every untuned fixed policy, but the "adaptive" part is decorative. The layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — the activity supply itself is a redundant ensemble (Section 3), so an extra blame channel is just surplus.
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 - **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (14 vs 12 on the same primary set 2023+2024, with one fewer CP-SAT win; 15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 
@@ -451,9 +446,7 @@ Seen this way, the results line up. The "tendency" that decides search has two p
 
 #### A side effect: replicating a SAT lesson in CP
 
-This write-up also doubles as a small cross-domain check: do branching insights established for SAT/CDCL hold in a CP solver? Liang & Ganesh (2015), cited above, is a **SAT** result — "activity captures structural centrality (bridge variables) without explicit detection, so activity is a strong structural signal." This article's negative results (explicit community analysis adds nothing; the Bloom tiebreak is redundant) are **that SAT lesson re-confirmed in CP**. And the "tendency" framing itself is, at bottom, a measurement of **how far the SAT lesson "activity is the dominant structural signal" carries into CP**. No world-first — but cross-domain reproducibility is a different kind of value, and it's the one this article actually delivers.
-
-The stance toward CDCL / LCG / MiniZinc-family solvers isn't "win with a clever trick" — it's "a lightweight solver that stops waste with tendency rather than logic, and measures what works and what doesn't, in the open."
+This write-up also doubles as a small cross-domain check: do branching insights established for SAT/CDCL hold in a CP solver? Liang & Ganesh (2015), cited above, is a **SAT** result — "activity captures structural centrality (bridge variables) without explicit detection, so activity is a strong structural signal." This article's negative results (explicit community analysis adds nothing; the Bloom tiebreak is redundant) are **that SAT lesson re-confirmed in CP**. And the "tendency" framing itself is, at bottom, a measurement of **how far the SAT lesson "activity is the dominant structural signal" carries into CP**.
 
 ---
 
