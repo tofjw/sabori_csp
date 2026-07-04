@@ -275,6 +275,8 @@ private:
                      const std::vector<size_t>& var_ids);
     void build_profile();
     int64_t profile_integral(int64_t lo, int64_t hi) const;
+    /// usage を (-inf, x) で積分した値。prefix_energy_ + 二分探索で O(log P)。
+    int64_t energy_up_to(int64_t x) const;
 
     bool forward_pass(Model& model, const std::vector<size_t>& var_ids,
                       int64_t cap_max, bool direct, bool& changed);

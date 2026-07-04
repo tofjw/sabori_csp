@@ -302,30 +302,31 @@ void TTEFPropagator::build_profile()
     }
 }
 
+int64_t TTEFPropagator::energy_up_to(int64_t x) const
+{
+    // usage を step 関数として (-inf, x) で積分。profile_ 前は usage=0、
+    // 末尾エントリの区間は幅ゼロ扱い（旧 profile_integral と同一セマンティクス）。
+    if (profile_.empty() || x <= profile_[0].time) return 0;
+
+    // 最初に time > x となる位置を二分探索 → その直前が x を含む区間 k
+    size_t idx = static_cast<size_t>(
+        std::upper_bound(profile_.begin(), profile_.end(), x,
+                         [](int64_t v, const ProfileEntry& e) { return v < e.time; })
+        - profile_.begin());
+    size_t k = idx - 1;  // profile_[k].time <= x となる最大の k
+
+    if (k >= profile_.size() - 1) {
+        // x が末尾区間以降: 末尾は幅ゼロ扱いなので総エネルギー（prefix の最終値）
+        return prefix_energy_.back();
+    }
+    return prefix_energy_[k] + profile_[k].usage * (x - profile_[k].time);
+}
+
 int64_t TTEFPropagator::profile_integral(int64_t lo, int64_t hi) const
 {
     if (lo >= hi || profile_.empty()) return 0;
-
-    // Find first profile entry with time > lo
-    // We use profile_ as a step function: profile_[k].usage is active from profile_[k].time to profile_[k+1].time
-    // Before profile_[0].time, usage is 0; after last entry, usage is profile_.back().usage (should be 0 for valid profiles)
-
-    int64_t integral = 0;
-
-    for (size_t k = 0; k < profile_.size(); ++k) {
-        int64_t seg_start = profile_[k].time;
-        int64_t seg_end = (k + 1 < profile_.size()) ? profile_[k + 1].time : seg_start;
-        int64_t usage = profile_[k].usage;
-
-        // Clip to [lo, hi)
-        int64_t a = std::max(seg_start, lo);
-        int64_t b = std::min(seg_end, hi);
-        if (a < b) {
-            integral += usage * (b - a);
-        }
-    }
-
-    return integral;
+    // [lo, hi) の積分 = E(hi) - E(lo)（線形スキャン O(P) → 二分探索 O(log P)）
+    return energy_up_to(hi) - energy_up_to(lo);
 }
 
 bool TTEFPropagator::forward_pass(
