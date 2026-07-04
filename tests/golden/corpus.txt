@@ -35,6 +35,9 @@ tests/fzn/constraints/array_var_int_element/propagation.fzn
 tests/fzn/constraints/array_var_int_element/result_fixed.fzn
 tests/fzn/constraints/array_var_int_element/simple.fzn
 tests/fzn/constraints/array_var_int_element/unsat.fzn
+tests/fzn/constraints/bin_packing_load/all_solutions.fzn
+tests/fzn/constraints/bin_packing_load/propagation.fzn
+tests/fzn/constraints/bin_packing_load/simple.fzn
 tests/fzn/constraints/bool2int/basic.fzn
 tests/fzn/constraints/bool2int/false_case.fzn
 tests/fzn/constraints/bool2int/reverse.fzn
