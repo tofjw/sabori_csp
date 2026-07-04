@@ -387,6 +387,14 @@ PYBIND11_MODULE(_sabori_csp, m) {
         .def(py::init<VariablePtr, std::vector<VariablePtr>>(),
              py::arg("n_var"), py::arg("x_vars"));
 
+    py::class_<BinPackingLoadConstraint, Constraint,
+               std::shared_ptr<BinPackingLoadConstraint>>(
+            m, "BinPackingLoadConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>,
+                      std::vector<int64_t>, int64_t>(),
+             py::arg("loads"), py::arg("bins"), py::arg("weights"),
+             py::arg("index_offset") = 0);
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")

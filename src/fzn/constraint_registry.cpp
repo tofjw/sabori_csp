@@ -392,6 +392,22 @@ static std::optional<ConstraintPtr> make_cumulative(const ConstraintDecl& decl, 
         std::move(requirements), std::move(capacity));
 }
 
+static std::optional<ConstraintPtr> make_bin_packing_load(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_bin_packing_load requires 3 arguments (load, bin, w)");
+    auto loads = resolve_vars(decl.args[0], ctx);
+    auto bins  = resolve_vars(decl.args[1], ctx);
+    auto w_raw = ctx.resolve_int_array(decl.args[2]);
+    if (w_raw.size() != bins.size())
+        throw std::runtime_error("sabori_bin_packing_load: bin と w の長さが一致しません");
+    std::vector<int64_t> weights;
+    weights.reserve(w_raw.size());
+    for (auto v : w_raw) weights.push_back(static_cast<int64_t>(v));
+    // FlatZinc 1-indexed convention: bin[i] ∈ [1, length(load)].
+    return std::make_shared<BinPackingLoadConstraint>(
+        std::move(loads), std::move(bins), std::move(weights), /*index_offset=*/1);
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1011,6 +1027,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
 
     // Pattern I: NValue
     registry.register_constraint("fzn_nvalue", make_nvalue);
+
+    // Pattern J: Bin packing
+    registry.register_constraint("sabori_bin_packing_load", make_bin_packing_load);
 }
 
 } // namespace fzn

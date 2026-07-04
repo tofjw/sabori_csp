@@ -189,6 +189,78 @@ private:
 
 
 /**
+ * @brief bin_packing_load 制約: 各ビンの積載重量を load 変数に結びつける
+ *
+ * item i は重み w[i]（定数）を持ち、bin[i]（変数）で示されるビンに入る。
+ * 各ビン b について load[b] = sum(i : bin[i]==b) w[i] を保証する。
+ *
+ * インデックス規約: bin[i] の値 v は load 内部インデックス v - index_offset に対応。
+ * InverseConstraint と同じく index_offset は既定 0（C++/Python から使う際の 0-based）。
+ * FlatZinc 1-indexed 規約で使うときは index_offset=1 を渡す（bin[i] ∈ [1, B]）。
+ * 有効なビン値は [index_offset, index_offset + B - 1]。
+ *
+ * ステートレスな全再計算 propagator（cumulative と同方式）。
+ * イベント発生時は schedule_constraint_batch でバッチに集約し、
+ * propagate_batch で bounds consistency を1回計算する。
+ *
+ * var_ids_ レイアウト: [load[0..B-1], bin[0..M-1]]
+ */
+class BinPackingLoadConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param loads        各ビンの積載量変数（B 個）
+     * @param bins         各 item のビン割当変数（M 個）
+     * @param weights      各 item の重み（定数, M 個）
+     * @param index_offset ビン値のオフセット（既定 0=0-based, FlatZinc は 1 を渡す）
+     */
+    BinPackingLoadConstraint(std::vector<VariablePtr> loads,
+                             std::vector<VariablePtr> bins,
+                             std::vector<int64_t> weights,
+                             int64_t index_offset = 0);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    size_t n_load_;  // ビン数 B
+    size_t n_bin_;   // item 数 M
+    std::vector<int64_t> w_;  // item ごとの重み（定数）
+    int64_t index_offset_;    // ビン値のオフセット（bin 値 v → load index v - offset）
+
+    /**
+     * @brief 全再計算 bounds propagation の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed);
+};
+
+
+/**
  * @brief nvalue制約: 配列中の異なる値の数を制約する
  *
  * n = |{x[i] : i ∈ index_set(x)}|

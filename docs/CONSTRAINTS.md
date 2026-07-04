@@ -242,6 +242,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `fzn_inverse` | `InverseConstraint` | f[i]=j <-> invf[j]=i（逆関数制約） |
 | `fzn_regular` / `sabori_regular` | `RegularConstraint` | DFA による正規言語制約 |
 | `fzn_nvalue` | `NValueConstraint` | n = \|{x[i] : i ∈ index_set(x)}\| (異なる値の数) |
+| `sabori_bin_packing_load` | `BinPackingLoadConstraint` | load[b] = sum(i : bin[i]==b) w[i]（ビン積載量。FlatZinc は 1-indexed、C++/Python は index_offset 既定 0） |
 | `increasing` / `fzn_increasing_int` / `fzn_increasing_bool` | `IncreasingConstraint` | x[0] <= x[1] <= ... <= x[n-1] |
 | `strictly_increasing` / `fzn_strictly_increasing_int` / `fzn_strictly_increasing_bool` | `IncreasingConstraint(strict=true)` | x[0] < x[1] < ... < x[n-1] |
 

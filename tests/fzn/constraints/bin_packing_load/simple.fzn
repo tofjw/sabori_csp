@@ -1,0 +1,11 @@
+var 0..10: L1 :: output_var;
+var 0..10: L2 :: output_var;
+var 0..10: L3 :: output_var;
+array [1..3] of var int: load = [L1, L2, L3];
+var 1..1: b1 :: output_var;
+var 2..2: b2 :: output_var;
+var 1..1: b3 :: output_var;
+array [1..3] of var int: bin = [b1, b2, b3];
+array [1..3] of int: w = [2, 3, 5];
+constraint sabori_bin_packing_load(load, bin, w);
+solve satisfy;
