@@ -342,6 +342,15 @@ bool TTEFPropagator::forward_pass(
 
     if (order.empty()) return true;
 
+    // lst/ect/req を order 順に連続パック（theta_cp 内側ループの O(n^2) ギャザリング
+    // を連続アクセス化）。resize は容量維持なので 2 回目以降は再確保なし。
+    const size_t n_ord = order.size();
+    lst_o_.resize(n_ord); ect_o_.resize(n_ord); req_o_.resize(n_ord);
+    for (size_t i = 0; i < n_ord; ++i) {
+        const auto& t = tasks_[order[i]];
+        lst_o_[i] = t.lst; ect_o_[i] = t.ect; req_o_[i] = t.req;
+    }
+
     // For each prefix Theta = {order[0..k]}, check energy bounds.
     // order はパス内で固定なので L(=min est) と energy_theta は prefix を進める
     // だけの running 累積にできる（旧来の内側 O(n) 再計算＝全体 O(n^2) を排除）。
@@ -359,15 +368,15 @@ bool TTEFPropagator::forward_pass(
         int64_t capacity_area = (R - L) * cap_max;
         int64_t free = capacity_area - tt_energy;
 
-        // Compute theta_cp: mandatory energy of Theta tasks within [L, R)
+        // theta_cp: Theta タスクの [L,R) 内 mandatory energy。
+        // 旧 `if(lst<ect)` ガードは clip と冗長（lst>=ect なら b<=a で寄与0）なので
+        // 分岐レス `req * max(0, min(ect,R)-max(lst,L))` に等価変換し連続配列で reduce。
         int64_t theta_cp = 0;
         for (size_t i = 0; i <= k; ++i) {
-            const auto& t = tasks_[order[i]];
-            if (t.lst < t.ect) {
-                int64_t a = std::max(t.lst, L);
-                int64_t b = std::min(t.ect, R);
-                if (a < b) theta_cp += t.req * (b - a);
-            }
+            int64_t a = std::max(lst_o_[i], L);
+            int64_t b = std::min(ect_o_[i], R);
+            int64_t w = b - a;
+            if (w > 0) theta_cp += req_o_[i] * w;
         }
 
         int64_t extra_theta = energy_theta - theta_cp;
@@ -440,6 +449,14 @@ bool TTEFPropagator::backward_pass(
 
     if (order.empty()) return true;
 
+    // theta_cp 用に lst/ect/req を order 順パック（前方パスと同様）
+    const size_t n_ord = order.size();
+    lst_o_.resize(n_ord); ect_o_.resize(n_ord); req_o_.resize(n_ord);
+    for (size_t i = 0; i < n_ord; ++i) {
+        const auto& t = tasks_[order[i]];
+        lst_o_[i] = t.lst; ect_o_[i] = t.ect; req_o_[i] = t.req;
+    }
+
     // R(=max lct) と energy_theta を running 累積化（前方パスと同様に O(n^2)→O(n)）
     int64_t R = tasks_[order[0]].lct;
     int64_t energy_theta = 0;
@@ -455,14 +472,13 @@ bool TTEFPropagator::backward_pass(
         int64_t capacity_area = (R - L) * cap_max;
         int64_t free = capacity_area - tt_energy;
 
+        // theta_cp: 分岐レス連続 reduce（前方パスと同一の等価変換）
         int64_t theta_cp = 0;
         for (size_t i = 0; i <= k; ++i) {
-            const auto& t = tasks_[order[i]];
-            if (t.lst < t.ect) {
-                int64_t a = std::max(t.lst, L);
-                int64_t b = std::min(t.ect, R);
-                if (a < b) theta_cp += t.req * (b - a);
-            }
+            int64_t a = std::max(lst_o_[i], L);
+            int64_t b = std::min(ect_o_[i], R);
+            int64_t w = b - a;
+            if (w > 0) theta_cp += req_o_[i] * w;
         }
 
         int64_t extra_theta = energy_theta - theta_cp;

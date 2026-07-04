@@ -267,6 +267,10 @@ private:
     std::vector<ProfileEntry> profile_;
     std::vector<int64_t> prefix_energy_;  // prefix sum for profile integral
 
+    // TTEF パス用 order 順パック済みスクラッチ（theta_cp 内側ループの連続化用、
+    // 呼び出し毎に resize=容量維持で再確保なし）。lst/ect/req を order 順に並べる。
+    std::vector<int64_t> lst_o_, ect_o_, req_o_;
+
     bool propagate_impl(Model& model, size_t n,
                         const std::vector<size_t>& var_ids,
                         bool direct, bool& changed);
