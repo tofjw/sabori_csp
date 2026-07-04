@@ -157,6 +157,9 @@ private:
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
+    /// 全係数が ±1（単位係数）か。true なら伝播の候補境界計算で整数除算を回避できる。
+    bool all_unit_ = false;
+
     // Trail: (save_point, (fixed_sum, min_pot, max_pot))
     struct TrailEntry {
         int64_t fixed_sum;

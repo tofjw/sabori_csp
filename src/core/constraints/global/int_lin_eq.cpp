@@ -31,6 +31,12 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     // 変数IDキャッシュを構築
     var_ids_ = extract_var_ids(unique_vars);
 
+    // 単位係数（全 |c|==1）判定: 伝播で整数除算を回避する fast path 用
+    all_unit_ = true;
+    for (int64_t c : coeffs_) {
+        if (c != 1 && c != -1) { all_unit_ = false; break; }
+    }
+
     // 注意: 内部状態（current_fixed_sum_ 等）は presolve() で初期化
     // コンストラクタでは変数の状態を参照しない
 }
@@ -328,6 +334,26 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
         return true;
     }
 
+    // 単位係数 fast path: c=±1 では除算 (num/|c|) が num そのものになり idiv を回避できる。
+    // c=+1:  new_min = target - total_max + cur_max
+    // c=-1:  new_max = total_max + cur_min - target
+    if (all_unit_) {
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
+            size_t var_id = var_ids_[j];
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            if (coeffs_[j] > 0) {
+                int64_t new_min = target_sum_ - total_max + cur_max;
+                if (new_min > cur_min) model.enqueue_set_min(var_id, new_min);
+            } else {
+                int64_t new_max = total_max + cur_min - target_sum_;
+                if (new_max < cur_max) model.enqueue_set_max(var_id, new_max);
+            }
+        }
+        return true;
+    }
+
     for (size_t j = 0; j < var_ids_.size(); ++j) {
         if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
 
@@ -397,6 +423,26 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
                 if (new_min > cur_min) {
                     model.enqueue_set_min(var_id, new_min);
                 }
+            }
+        }
+        return true;
+    }
+
+    // 単位係数 fast path（idiv 回避）
+    // c=+1:  new_max = target - total_min + cur_min
+    // c=-1:  new_min = total_min + cur_max - target
+    if (all_unit_) {
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
+            size_t var_id = var_ids_[j];
+            auto cur_min = model.var_min(var_id);
+            auto cur_max = model.var_max(var_id);
+            if (coeffs_[j] > 0) {
+                int64_t new_max = target_sum_ - total_min + cur_min;
+                if (new_max < cur_max) model.enqueue_set_max(var_id, new_max);
+            } else {
+                int64_t new_min = total_min + cur_max - target_sum_;
+                if (new_min > cur_min) model.enqueue_set_min(var_id, new_min);
             }
         }
         return true;
