@@ -340,18 +340,18 @@ bool TTEFPropagator::forward_pass(
         return tasks_[a].lct < tasks_[b].lct;
     });
 
-    // For each prefix Theta = {order[0..k]}, check energy bounds
-    for (size_t k = 0; k < order.size(); ++k) {
-        // Compute Theta = {order[0..k]}
-        int64_t R = tasks_[order[k]].lct;
-        int64_t L = tasks_[order[0]].est;
-        int64_t energy_theta = 0;
+    if (order.empty()) return true;
 
-        for (size_t i = 0; i <= k; ++i) {
-            const auto& t = tasks_[order[i]];
-            if (t.est < L) L = t.est;
-            energy_theta += t.energy;
-        }
+    // For each prefix Theta = {order[0..k]}, check energy bounds.
+    // order はパス内で固定なので L(=min est) と energy_theta は prefix を進める
+    // だけの running 累積にできる（旧来の内側 O(n) 再計算＝全体 O(n^2) を排除）。
+    int64_t L = tasks_[order[0]].est;
+    int64_t energy_theta = 0;
+    for (size_t k = 0; k < order.size(); ++k) {
+        const auto& tk = tasks_[order[k]];
+        if (tk.est < L) L = tk.est;
+        energy_theta += tk.energy;
+        int64_t R = tk.lct;
 
         if (R <= L) continue;
 
@@ -438,16 +438,16 @@ bool TTEFPropagator::backward_pass(
         return tasks_[a].est > tasks_[b].est;
     });
 
-    for (size_t k = 0; k < order.size(); ++k) {
-        int64_t L = tasks_[order[k]].est;
-        int64_t R = tasks_[order[0]].lct;
-        int64_t energy_theta = 0;
+    if (order.empty()) return true;
 
-        for (size_t i = 0; i <= k; ++i) {
-            const auto& t = tasks_[order[i]];
-            if (t.lct > R) R = t.lct;
-            energy_theta += t.energy;
-        }
+    // R(=max lct) と energy_theta を running 累積化（前方パスと同様に O(n^2)→O(n)）
+    int64_t R = tasks_[order[0]].lct;
+    int64_t energy_theta = 0;
+    for (size_t k = 0; k < order.size(); ++k) {
+        const auto& tk = tasks_[order[k]];
+        if (tk.lct > R) R = tk.lct;
+        energy_theta += tk.energy;
+        int64_t L = tk.est;
 
         if (R <= L) continue;
 
