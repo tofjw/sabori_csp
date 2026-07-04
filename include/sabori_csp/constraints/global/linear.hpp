@@ -160,6 +160,11 @@ private:
     /// 全係数が ±1（単位係数）か。true なら伝播の候補境界計算で整数除算を回避できる。
     bool all_unit_ = false;
 
+    /// 根での max_j |c_j|*(width_j) 静的上界。探索中 width は縮むだけなので、
+    /// slack (total_max-target / target-total_min) がこれ以上なら伝播不要（枝刈り不能）。
+    /// トレイル不要で常に安全な no-op スキップに使う。
+    int64_t max_static_ub_ = 0;
+
     // Trail: (save_point, (fixed_sum, min_pot, max_pot))
     struct TrailEntry {
         int64_t fixed_sum;

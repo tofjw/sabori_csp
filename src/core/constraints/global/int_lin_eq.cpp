@@ -300,6 +300,9 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
 
+    // no-op スキップ: どの変数も |c|*width <= max_static_ub_ <= slack なら枝刈り不能
+    if (total_max - target_sum_ >= max_static_ub_) return true;
+
     if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!model.is_instantiated(var_ids_[j])) {
@@ -393,6 +396,9 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     int64_t total_max = current_fixed_sum_ + max_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
+
+    // no-op スキップ: どの変数も |c|*width <= max_static_ub_ <= slack なら枝刈り不能
+    if (target_sum_ - total_min >= max_static_ub_) return true;
 
     if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
@@ -493,6 +499,7 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
     max_rem_potential_ = 0;
+    max_static_ub_ = 0;
 
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -513,6 +520,11 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
                 min_rem_potential_ += c * max_val;
                 max_rem_potential_ += c * min_val;
             }
+
+            // 根での |c|*width（探索中はこれ以下に縮む → 静的上界）
+            int64_t abs_c = c >= 0 ? c : -c;
+            int64_t contrib = abs_c * (max_val - min_val);
+            if (contrib > max_static_ub_) max_static_ub_ = contrib;
         }
     }
 
