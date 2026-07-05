@@ -117,13 +117,15 @@ Literal Literal::negate() const {
 
 // presolve 前の探索状態の確保（activity / var_selector 順序 / nogood / stats 等）。
 // presolve には依存しない部分。マルチスレッドのワーカー初期化でも共有する。
-void Solver::init_search_state(Model& model) {
+void Solver::init_search_state(Model& model, bool run_build_order) {
     model.build_constraint_watch_list();
 
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
     temporal_activity_.assign(variables.size(), 0);
-    var_selector_.build_order(model, rng_);
+    if (run_build_order) {
+        var_selector_.build_order(model, rng_);
+    }
     decision_trail_.clear();
     conflict_expl_.clear();
     conflict_expl_ok_ = false;
@@ -203,9 +205,20 @@ void Solver::init_search_post_presolve(Model& model) {
     unassigned_trail_.clear();
 }
 
-// 通常の探索初期化（挙動は従来と完全に同一）: state → presolve → post。
+// 探索初期化: state → presolve → build_order → post。
+// build_order（初期変数順）は presolve 後に構築するのが既定。並列 worker は
+// presolve 済み master の clone 上で順序を作る（prepared 経路）ため、single-thread も
+// これに揃えることで両者が同一の変数順になり、-j1 と -j2 worker0 の挙動一致・
+// main.cpp の「worker0 = 単一スレッドより悪くならない軸」の前提が実際に成立する。
+// presolve は rng を消費しないので、build_order は fresh seed で最初の rng 消費となり、
+// 同一 seed なら single-thread と並列 worker0 が完全一致する。
+// 根拠: bench_buildorder_ab.py（3 seed 集計で post-presolve が net 有利、問題依存）。
+// ablation: SABORI_BUILDORDER_PREPRESOLVE=1 で旧挙動（presolve 前構築）に戻す。
 bool Solver::init_search(Model& model) {
-    init_search_state(model);
+    static const bool pre_presolve_order =
+        std::getenv("SABORI_BUILDORDER_PREPRESOLVE") != nullptr;
+
+    init_search_state(model, /*run_build_order=*/pre_presolve_order);
 
     if (verbose_) log_presolve_start(model);
     if (!presolve(model)) {
@@ -213,6 +226,9 @@ bool Solver::init_search(Model& model) {
         return false;
     }
 
+    if (!pre_presolve_order) {
+        var_selector_.build_order(model, rng_);
+    }
     init_search_post_presolve(model);
     return true;
 }

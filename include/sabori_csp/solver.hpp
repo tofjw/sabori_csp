@@ -627,8 +627,10 @@ private:
     /**
      * @brief 探索状態の確保（presolve 前）。activity / var_selector 順序 /
      * nogood / stats などを初期化する。presolve には依存しない。
+     * @param run_build_order false の場合 var_selector_.build_order() を呼ばない
+     *        （A/B 用: presolve 後に呼び直すため）。既定 true で従来動作。
      */
-    void init_search_state(Model& model);
+    void init_search_state(Model& model, bool run_build_order = true);
 
     /**
      * @brief presolve 後の初期化。gradient / 制約固有 activity / community /
