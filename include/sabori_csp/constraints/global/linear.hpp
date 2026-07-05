@@ -165,6 +165,12 @@ private:
     /// トレイル不要で常に安全な no-op スキップに使う。
     int64_t max_static_ub_ = 0;
 
+    /// 動的上界: フルスキャン時に厳密な max_j|c_j|*width_j へ締め直し、
+    /// rewind_to で max_static_ub_ へリセット。max_static_ub_ より締まるため
+    /// slack がタイトな問題でも no-op スキップが発火する。常に有効上界を保つ
+    /// （width は縮むだけ / backtrack 時は境界変化 → dirty → rewind_to でリセット）。
+    int64_t max_contribution_ = 0;
+
     // Trail: (save_point, (fixed_sum, min_pot, max_pot))
     struct TrailEntry {
         int64_t fixed_sum;
