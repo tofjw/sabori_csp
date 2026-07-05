@@ -268,6 +268,13 @@ private:
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
 
+    /// no-op スキップ用のスラック上界（int_lin_eq と同型）。
+    /// 根での max_j|c_j|*width_j（静的・常に有効）と、フルスキャン時に厳密値へ
+    /// 締め直す動的上界（rewind_to で静的へリセット、トレイル不要）。
+    /// slack S=bound-total_min が上界以上なら枝刈り不能（エンテイルメントの上位集合）。
+    int64_t max_static_ub_ = 0;
+    int64_t max_contribution_ = 0;
+
     struct TrailEntry {
         int64_t fixed_sum;
         int64_t min_pot;
@@ -654,6 +661,10 @@ private:
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
+
+    /// no-op スキップ用スラック上界（int_lin_le と同型）
+    int64_t max_static_ub_ = 0;
+    int64_t max_contribution_ = 0;
 
     struct TrailEntry {
         int64_t fixed_sum;

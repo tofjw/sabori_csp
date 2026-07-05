@@ -145,6 +145,8 @@ void IntLinLeConstraint::rewind_to(int save_point) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
     });
+    // 動的上界を常に有効な静的上界へリセット（backtrack で width が広がるため）
+    max_contribution_ = max_static_ub_;
 }
 
 bool IntLinLeConstraint::prepare_propagation(Model& model) {
@@ -156,6 +158,7 @@ bool IntLinLeConstraint::prepare_propagation(Model& model) {
     // 変数の現在状態に基づいて内部状態を初期化
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
+    max_static_ub_ = 0;
 
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -172,8 +175,14 @@ bool IntLinLeConstraint::prepare_propagation(Model& model) {
             } else {
                 min_rem_potential_ += c * max_val;
             }
+
+            // 根での |c|*width（探索中はこれ以下に縮む → 静的上界）
+            int64_t abs_c = c >= 0 ? c : -c;
+            int64_t contrib = abs_c * (max_val - min_val);
+            if (contrib > max_static_ub_) max_static_ub_ = contrib;
         }
     }
+    max_contribution_ = max_static_ub_;  // 動的上界の初期値
 
     // 2WL を初期化
     init_watches();
@@ -261,23 +270,22 @@ bool IntLinLeConstraint::on_remove_value(Model& /*model*/, int /*save_point*/,
 }
 
 bool IntLinLeConstraint::propagate_bounds(Model& model, size_t skip_idx) {
-    int64_t slack = bound_ - current_fixed_sum_;
-    // slack >= min_rem_potential_ is guaranteed (checked before calling)
+    // no-op スキップ: S = bound - total_min。どの変数も |c|*width <= max_contribution_
+    // <= S なら枝刈り不能（かつ従来のエンテイルメント条件 total_max<=bound の上位集合）。
+    // 従来の O(n) エンテイルメントループを O(1) 判定 + フルスキャン時リフレッシュに置換。
+    int64_t S = bound_ - current_fixed_sum_ - min_rem_potential_;
+    if (S >= max_contribution_) return true;
 
-    // Entailment check: if max possible remaining sum <= slack, constraint is
-    // satisfied regardless of future assignments — skip propagation entirely.
-    {
-        int64_t max_rem = 0;
-        for (size_t j = 0; j < var_ids_.size(); ++j) {
-            size_t vid = var_ids_[j];
-            if (model.is_instantiated(vid)) continue;
-            int64_t c = coeffs_[j];
-            max_rem += (c >= 0) ? c * model.var_max(vid) : c * model.var_min(vid);
-            if (max_rem > slack) goto not_entailed;
-        }
-        return true;  // Entailed
+    // フルスキャン（枝刈りの可能性あり）: 厳密な max_j|c_j|*width_j へ動的上界を締め直す
+    int64_t mc = 0;
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
+        size_t vid = var_ids_[j];
+        if (model.is_instantiated(vid)) continue;
+        int64_t ac = coeffs_[j] >= 0 ? coeffs_[j] : -coeffs_[j];
+        int64_t contrib = ac * (model.var_max(vid) - model.var_min(vid));
+        if (contrib > mc) mc = contrib;
     }
-not_entailed:
+    max_contribution_ = mc;
 
     // 刈り込み本体は int_lin_le / le_reif / le_imp 共通のカーネルへ委譲。
     prune_sum_le(model, bound_, current_fixed_sum_, min_rem_potential_, skip_idx);
