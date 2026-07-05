@@ -265,11 +265,19 @@ bool AllDifferentConstraint::run_bounds_filter(size_t n, bool& changed) {
         bz_d_.resize(2 * n + 2);
     }
 
-    // ソート順は呼び出し間でほぼ保存されるので、前回の順列を初期値に使う
-    std::sort(bz_minsorted_.begin(), bz_minsorted_.end(),
-              [this](size_t a, size_t b) { return bz_min_[a] < bz_min_[b]; });
-    std::sort(bz_maxsorted_.begin(), bz_maxsorted_.end(),
-              [this](size_t a, size_t b) { return bz_max_[a] < bz_max_[b]; });
+    // ソート順は呼び出し間でほぼ保存される（探索1手で動くのはトリガ変数の境界のみ）。
+    // std::sort(introsort) は presortedness に非適応で毎回 n log n を払うため、
+    // 保存済み順列を初期値とする挿入ソートに置換（ソート済みで O(n)、d ずれで O(n·d)）。
+    auto insertion_sort_by = [](std::vector<size_t>& perm, auto&& less) {
+        for (size_t i = 1; i < perm.size(); ++i) {
+            size_t key = perm[i];
+            size_t j = i;
+            while (j > 0 && less(key, perm[j - 1])) { perm[j] = perm[j - 1]; --j; }
+            perm[j] = key;
+        }
+    };
+    insertion_sort_by(bz_minsorted_, [this](size_t a, size_t b) { return bz_min_[a] < bz_min_[b]; });
+    insertion_sort_by(bz_maxsorted_, [this](size_t a, size_t b) { return bz_max_[a] < bz_max_[b]; });
 
     // 全区間の端点 {min_i, max_i+1} をマージして臨界値列 bounds[1..nb] を構築
     Domain::value_type minv = bz_min_[bz_minsorted_[0]];
