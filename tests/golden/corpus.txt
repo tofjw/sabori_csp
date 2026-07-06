@@ -104,6 +104,10 @@ tests/fzn/constraints/disjunctive_strict/zero_dur_at_start.fzn
 tests/fzn/constraints/disjunctive_strict/zero_dur_inside.fzn
 tests/fzn/constraints/disjunctive_strict/zero_dur_minimize.fzn
 tests/fzn/constraints/disjunctive_strict/zero_dur_nonstrict_unaffected.fzn
+tests/fzn/constraints/global_cardinality/all_solutions.fzn
+tests/fzn/constraints/global_cardinality/open.fzn
+tests/fzn/constraints/global_cardinality/propagation.fzn
+tests/fzn/constraints/global_cardinality/simple.fzn
 tests/fzn/constraints/increasing/simple.fzn
 tests/fzn/constraints/int_abs/abs_known.fzn
 tests/fzn/constraints/int_abs/negative.fzn

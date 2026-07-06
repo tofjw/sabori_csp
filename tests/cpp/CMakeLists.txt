@@ -18,6 +18,7 @@ add_executable(test_sabori_csp
   test_disjunctive_brute.cpp
   test_cumulative_brute.cpp
   test_bin_packing_brute.cpp
+  test_gcc_brute.cpp
   test_find_all_consistency.cpp
   test_one_hot_channel.cpp
 )

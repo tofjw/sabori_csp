@@ -1,0 +1,9 @@
+% open 意味論: x は cover 外の値 (3) も取れる
+var 1..3: x1 :: output_var;
+var 0..1: c1 :: output_var;
+var 0..1: c2 :: output_var;
+array [1..1] of var int: x = [x1];
+array [1..2] of var int: counts = [c1, c2];
+array [1..2] of int: cover = [1, 2];
+constraint sabori_global_cardinality(x, cover, counts);
+solve satisfy;

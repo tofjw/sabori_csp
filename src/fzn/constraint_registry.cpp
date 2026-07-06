@@ -408,6 +408,21 @@ static std::optional<ConstraintPtr> make_bin_packing_load(const ConstraintDecl& 
         std::move(loads), std::move(bins), std::move(weights), /*index_offset=*/1);
 }
 
+static std::optional<ConstraintPtr> make_global_cardinality(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_global_cardinality requires 3 arguments (x, cover, counts)");
+    auto xs        = resolve_vars(decl.args[0], ctx);
+    auto cover_raw = ctx.resolve_int_array(decl.args[1]);
+    auto counts    = resolve_vars(decl.args[2], ctx);
+    if (cover_raw.size() != counts.size())
+        throw std::runtime_error("sabori_global_cardinality: cover と counts の長さが一致しません");
+    std::vector<int64_t> cover;
+    cover.reserve(cover_raw.size());
+    for (auto v : cover_raw) cover.push_back(static_cast<int64_t>(v));
+    return std::make_shared<GlobalCardinalityConstraint>(
+        std::move(xs), std::move(cover), std::move(counts));
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1030,6 +1045,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
 
     // Pattern J: Bin packing
     registry.register_constraint("sabori_bin_packing_load", make_bin_packing_load);
+
+    // Pattern K: Global cardinality
+    registry.register_constraint("sabori_global_cardinality", make_global_cardinality);
 }
 
 } // namespace fzn

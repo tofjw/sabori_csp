@@ -1,0 +1,16 @@
+c1 = 1;
+c2 = 0;
+x1 = 1;
+----------
+c1 = 0;
+c2 = 0;
+x1 = 3;
+----------
+c1 = 0;
+c2 = 1;
+x1 = 2;
+----------
+==========
+--- stats ---
+% Stats: fails=1 restarts=0 max_depth=2 avg_depth=0 nogoods=3 unit_nogoods=1 ng_check=11 ng_domain=4 ng_prune=2 ng_noop=5 bisect=0 enumerate=6
+% NG length distribution: 1:1 3:3
