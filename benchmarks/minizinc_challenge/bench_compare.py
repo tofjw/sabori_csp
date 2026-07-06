@@ -19,8 +19,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 BASE_DIR = Path(__file__).resolve().parent
 MINIZINC = "/snap/bin/minizinc"
 SABORI_MSC = str(Path(__file__).resolve().parent.parent.parent / "build" / "share" / "minizinc" / "solvers" / "sabori_csp.msc")
-TIMEOUT = 30  # seconds
+TIMEOUT = int(os.environ.get("BENCH_TIMEOUT", "30"))  # seconds
 MAX_WORKERS = 4
+# CP-SAT にだけ渡す追加 minizinc フラグ（例: "-p 1" でシングルスレッド強制。
+# fzn-cp-sat の --threads は default 0 = 全コア使用なので、スレッド数を
+# 揃えた比較には明示指定が必要）
+CPSAT_FLAGS = os.environ.get("BENCH_CPSAT_FLAGS", "").split()
+# インスタンス選択: "first"（既定・名前順先頭）/ "median"（名前順中央）
+INSTANCE_PICK = os.environ.get("BENCH_INSTANCE_PICK", "first")
 
 def natural_sort_key(s):
     return [int(t) if t.isdigit() else t.lower() for t in re.split('([0-9]+)', str(s))]
@@ -105,15 +111,20 @@ def find_instances(prob_dir):
     if not mzn_files:
         return []
 
+    def pick(files):
+        if INSTANCE_PICK == "median":
+            return files[len(files) // 2]
+        return files[0]
+
     if len(mzn_files) > 1 and not data_files:
-        # 複数mzn、データなし → 各mznがインスタンス（最小1つ）
-        mzn = mzn_files[0]
+        # 複数mzn、データなし → 各mznがインスタンス（1つ選択）
+        mzn = pick(mzn_files)
         return [(str(mzn), None, mzn.stem)]
 
-    # 通常パターン: 1つのmzn + 最小データファイル
+    # 通常パターン: 1つのmzn + データファイル1つ選択
     mzn = mzn_files[0]
     if data_files:
-        inst = data_files[0]
+        inst = pick(data_files)
         return [(str(mzn), str(inst), inst.stem)]
     else:
         return [(str(mzn), None, mzn.stem)]
@@ -382,6 +393,8 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
     # 残ったまま落ち、最後に出力された obj/解が捕捉できない（バッファ消失）。
     # minizinc 自前のタイムアウトは graceful 終了でバッファを保全する。
     cmd = [MINIZINC, "--solver", solver_id, "-t", str(TIMEOUT * 1000)]
+    if solver_name == "CP-SAT" and CPSAT_FLAGS:
+        cmd.extend(CPSAT_FLAGS)
     if prob_type != "SAT":
         cmd.append("-a")
     cmd.extend(["--output-objective", "--output-mode", "dzn", mzn_arg])
