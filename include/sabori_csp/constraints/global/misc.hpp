@@ -20,7 +20,14 @@ namespace sabori_csp {
  *   （bools のうち厳密に 1 個だけ true）として伝播
  * - 部分被覆の場合は at-most-one ベース（true は高々 1 個）
  *
- * 集約は presolve 後の core 側で OneHotChannelAggregator が自動的に行う。
+ * エントリごとに half-reified (imp) フラグを持てる。imp エントリの意味論は
+ * bools[i] -> (x == values[i]) の片方向のみで、許される推論は
+ *   b=1 ⇒ x:=v / v ∉ dom(x) ⇒ b:=0（対偶）/ at-most-one
+ * に限られる。x==v ⇒ b:=1 と b=0 ⇒ remove v は使えず、exactly-one 推論
+ * （残り1個のbを1に）は imp エントリが 1 つでもあると無効になる。
+ *
+ * 集約は presolve 後の core 側で OneHotChannelAggregator が自動的に行う
+ * （int_eq_reif / int_eq_imp の両方を消費する）。
  * このクラスを直接 add_constraint する直接利用も可。
  */
 class IntOneHotChannelConstraint : public Constraint {
@@ -28,6 +35,16 @@ public:
     IntOneHotChannelConstraint(VariablePtr x,
                                std::vector<Domain::value_type> values,
                                std::vector<VariablePtr> bools);
+
+    /**
+     * @brief imp フラグ付きコンストラクタ
+     * @param imp imp[i]!=0 なら bools[i] -> (x==values[i]) の片方向
+     *            （空なら全エントリ reif）
+     */
+    IntOneHotChannelConstraint(VariablePtr x,
+                               std::vector<Domain::value_type> values,
+                               std::vector<VariablePtr> bools,
+                               std::vector<uint8_t> imp);
 
     std::string name() const override;
     std::optional<bool> is_satisfied(const Model& model) const override;
@@ -63,6 +80,7 @@ public:
     size_t x_id() const { return x_id_; }
     const std::vector<Domain::value_type>& values() const { return values_; }
     const std::vector<size_t>& b_ids() const { return b_ids_; }
+    const std::vector<uint8_t>& imp_flags() const { return imp_; }
     /// x の初期ドメインに含まれるが values_ にない値の個数。
     /// 0 のとき exhaustive（exactly-one として伝播可能）、
     /// >0 のときは partial coverage（at-most-one として伝播）。
@@ -80,6 +98,8 @@ private:
     size_t x_id_;
     std::vector<Domain::value_type> values_;  ///< 昇順ソート、重複なし
     std::vector<size_t> b_ids_;               ///< values_ と添え字対応
+    std::vector<uint8_t> imp_;                ///< values_ と添え字対応。!=0 で half-reified
+    bool all_reif_;                           ///< imp エントリなし（exactly-one 推論の前提）
     Domain::value_type offset_;  ///< values_.front() (空なら 0)
     bool contiguous_;            ///< values_ が連続整数（v[i+1] == v[i]+1）か
     /// x の初期ドメインのうち values_ にない値の個数（"穴"）。

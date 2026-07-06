@@ -18,6 +18,7 @@ struct ReifCandidate {
     size_t x_id;       // 非定数側の整数変数 ID
     size_t b_id;       // ブール側の変数 ID
     Domain::value_type value;  // 定数側の値
+    bool imp;          // true なら int_eq_imp 由来（b -> (x==v) の片方向）
     std::string label; // 元の制約のラベル（FZN 行番号など）
 };
 
@@ -31,17 +32,30 @@ bool is_constant(const Model& model, size_t var_id) {
 bool OneHotChannelAggregator::aggregate(Model& model, bool verbose) {
     const auto& constraints = model.constraints();
 
-    // 1. IntEqReifConstraint で「片側が定数」のものを候補化し、x_id でグループ化
+    // 1. IntEqReifConstraint / IntEqImpConstraint で「片側が定数」のものを
+    //    候補化し、x_id でグループ化
     std::unordered_map<size_t, std::vector<ReifCandidate>> groups;
 
     for (size_t ci = 0; ci < constraints.size(); ++ci) {
         if (!constraints[ci]) continue;
-        auto* eq_reif = dynamic_cast<IntEqReifConstraint*>(constraints[ci].get());
-        if (!eq_reif) continue;
-
-        size_t xid = eq_reif->x_id();
-        size_t yid = eq_reif->y_id();
-        size_t bid = eq_reif->b_id();
+        size_t xid, yid, bid;
+        bool imp;
+        std::string label;
+        if (auto* eq_reif = dynamic_cast<IntEqReifConstraint*>(constraints[ci].get())) {
+            xid = eq_reif->x_id();
+            yid = eq_reif->y_id();
+            bid = eq_reif->b_id();
+            imp = false;
+            label = eq_reif->label();
+        } else if (auto* eq_imp = dynamic_cast<IntEqImpConstraint*>(constraints[ci].get())) {
+            xid = eq_imp->x_id();
+            yid = eq_imp->y_id();
+            bid = eq_imp->b_id();
+            imp = true;
+            label = eq_imp->label();
+        } else {
+            continue;
+        }
 
         bool x_const = is_constant(model, xid);
         bool y_const = is_constant(model, yid);
@@ -53,7 +67,8 @@ bool OneHotChannelAggregator::aggregate(Model& model, bool verbose) {
         ReifCandidate cand;
         cand.constraint_idx = ci;
         cand.b_id = bid;
-        cand.label = eq_reif->label();
+        cand.imp = imp;
+        cand.label = std::move(label);
         if (y_const) {
             cand.x_id = xid;
             cand.value = model.variable(yid)->min();
@@ -67,12 +82,16 @@ bool OneHotChannelAggregator::aggregate(Model& model, bool verbose) {
     // 2. min_group_size 以上のグループのみ処理。values 重複チェック。
     size_t aggregated_groups = 0;
     size_t aggregated_reifs = 0;
+    size_t aggregated_imps = 0;
     std::string first_sample_label;
 
     for (auto& [xid, cands] : groups) {
         if (cands.size() < min_group_size_) continue;
 
-        // value 重複と b 重複を除く
+        // value 重複と b 重複を除く。reif を imp より優先（同 value で衝突した
+        // とき強い方を採用する。スキップされた候補は元制約のまま残るので健全）。
+        std::stable_partition(cands.begin(), cands.end(),
+                              [](const ReifCandidate& c) { return !c.imp; });
         std::unordered_set<Domain::value_type> seen_values;
         std::unordered_set<size_t> seen_bs;
         std::vector<ReifCandidate> uniq;
@@ -97,15 +116,18 @@ bool OneHotChannelAggregator::aggregate(Model& model, bool verbose) {
         // 3. IntOneHotChannelConstraint を構築
         std::vector<Domain::value_type> values;
         std::vector<VariablePtr> bools;
+        std::vector<uint8_t> imps;
         values.reserve(uniq.size());
         bools.reserve(uniq.size());
+        imps.reserve(uniq.size());
         for (const auto& c : uniq) {
             values.push_back(c.value);
             bools.push_back(model.variable(c.b_id));
+            imps.push_back(c.imp ? 1 : 0);
         }
         auto x_var = model.variable(xid);
         auto new_cst = std::make_shared<IntOneHotChannelConstraint>(
-            x_var, std::move(values), std::move(bools));
+            x_var, std::move(values), std::move(bools), std::move(imps));
 
         // 元の reif 群のラベルをカンマ連結して集約後制約に引き継ぐ
         // 例: "int_eq_reif:L9000,int_eq_reif:L9001,..."。ラベル未設定の元
@@ -131,13 +153,17 @@ bool OneHotChannelAggregator::aggregate(Model& model, bool verbose) {
 
         ++aggregated_groups;
         aggregated_reifs += uniq.size();
+        for (const auto& c : uniq) {
+            if (c.imp) ++aggregated_imps;
+        }
     }
 
     if (aggregated_groups > 0) {
         model.compact_constraints();
         if (verbose) {
             std::cerr << "% [verbose] OneHotChannelAggregator: "
-                      << aggregated_reifs << " int_eq_reif -> "
+                      << aggregated_reifs << " int_eq_reif/imp (imp "
+                      << aggregated_imps << ") -> "
                       << aggregated_groups << " IntOneHotChannel\n";
             if (!first_sample_label.empty()) {
                 std::cerr << "% [verbose]   sample label: "

@@ -22,27 +22,46 @@ IntOneHotChannelConstraint::IntOneHotChannelConstraint(
     VariablePtr x,
     std::vector<Domain::value_type> values,
     std::vector<VariablePtr> bools)
+    : IntOneHotChannelConstraint(std::move(x), std::move(values),
+                                 std::move(bools), {}) {}
+
+IntOneHotChannelConstraint::IntOneHotChannelConstraint(
+    VariablePtr x,
+    std::vector<Domain::value_type> values,
+    std::vector<VariablePtr> bools,
+    std::vector<uint8_t> imp)
     : Constraint(build_var_ids(x, bools))
     , x_id_(x->id())
     , offset_(0)
     , contiguous_(false)
     , holes_(0)
 {
-    // values と bools をペアにして value 昇順にソート。aggregator から渡される
-    // 場合は既にソート済みだが、直接インスタンス化するユーザにも安全に動作させる。
-    std::vector<std::pair<Domain::value_type, size_t>> pairs;
-    pairs.reserve(values.size());
+    // values と bools (と imp フラグ) を組にして value 昇順にソート。aggregator
+    // から渡される場合は既にソート済みだが、直接インスタンス化するユーザにも
+    // 安全に動作させる。imp が空なら全エントリ reif。
+    struct Entry {
+        Domain::value_type v;
+        size_t bid;
+        uint8_t imp;
+    };
+    std::vector<Entry> entries;
+    entries.reserve(values.size());
     for (size_t i = 0; i < values.size(); ++i) {
-        pairs.emplace_back(values[i], bools[i]->id());
+        entries.push_back({values[i], bools[i]->id(),
+                           i < imp.size() ? imp[i] : uint8_t{0}});
     }
-    std::sort(pairs.begin(), pairs.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry& a, const Entry& b) { return a.v < b.v; });
 
-    values_.reserve(pairs.size());
-    b_ids_.reserve(pairs.size());
-    for (const auto& [v, bid] : pairs) {
-        values_.push_back(v);
-        b_ids_.push_back(bid);
+    values_.reserve(entries.size());
+    b_ids_.reserve(entries.size());
+    imp_.reserve(entries.size());
+    all_reif_ = true;
+    for (const auto& e : entries) {
+        values_.push_back(e.v);
+        b_ids_.push_back(e.bid);
+        imp_.push_back(e.imp);
+        if (e.imp) all_reif_ = false;
     }
 
     // 連続値判定: v[0], v[0]+1, ..., v[0]+(N-1) なら添字 = v - offset_ で O(1)
@@ -104,7 +123,12 @@ std::optional<bool> IntOneHotChannelConstraint::is_satisfied(const Model& model)
     for (size_t i = 0; i < b_ids_.size(); ++i) {
         bool expected = (static_cast<int>(i) == matched);
         bool actual = (model.value(b_ids_[i]) == 1);
-        if (expected != actual) return false;
+        if (imp_[i]) {
+            // imp: b=1 なのに x != v のときだけ違反（b=0 は常に許容）
+            if (actual && !expected) return false;
+        } else if (expected != actual) {
+            return false;
+        }
     }
     if (holes_ == 0 && matched == -1) return false;
     return true;
@@ -147,7 +171,9 @@ PresolveResult IntOneHotChannelConstraint::presolve(Model& model) {
     }
 
     // 2) b_i = 0 が固定されている → x のドメインから values[i] を除去
+    //    (imp: b=0 は x を拘束しないのでスキップ)
     for (size_t i = 0; i < b_ids_.size(); ++i) {
+        if (imp_[i]) continue;
         auto* bv = model.variable(b_ids_[i]);
         if (bv->is_assigned() && bv->assigned_value().value() == 0) {
             auto v = values_[i];
@@ -174,12 +200,15 @@ PresolveResult IntOneHotChannelConstraint::presolve(Model& model) {
     }
 
     // 4) x が確定 → 該当 b_i を 1、他を 0
+    //    (imp: x==v_i でも b_i=1 は強制できないので該当エントリをスキップ。
+    //     非該当エントリの b_j=0 は対偶なので imp でも有効)
     if (x_var->is_assigned()) {
         auto xv = x_var->assigned_value().value();
         int matched = find_value_index(xv);
         for (size_t i = 0; i < b_ids_.size(); ++i) {
             auto* bv = model.variable(b_ids_[i]);
             int target = (static_cast<int>(i) == matched) ? 1 : 0;
+            if (imp_[i] && target == 1) continue;
             if (matched < 0 && holes_ == 0) return PresolveResult::Contradiction;
             if (bv->is_assigned()) {
                 if (bv->assigned_value().value() != target) {
@@ -194,10 +223,11 @@ PresolveResult IntOneHotChannelConstraint::presolve(Model& model) {
         }
     }
 
-    // 5) holes_ == 0 (exhaustive) のみ: 残り未確定 b が 1 個で、他がすべて 0
-    //    → 残り 1 個を 1 に。partial coverage では x が values_ 外を取りうるので
-    //    この推論は使えない。
-    if (holes_ == 0 && fixed_true < 0) {
+    // 5) holes_ == 0 (exhaustive) かつ全エントリ reif のみ: 残り未確定 b が
+    //    1 個で、他がすべて 0 → 残り 1 個を 1 に。partial coverage では x が
+    //    values_ 外を取りうるのでこの推論は使えない。imp が混ざる場合も
+    //    「b=0 ⇒ x≠v」が成り立たないため使えない。
+    if (holes_ == 0 && all_reif_ && fixed_true < 0) {
         int unassigned_idx = -1;
         size_t unassigned_count = 0;
         for (size_t i = 0; i < b_ids_.size(); ++i) {
@@ -241,7 +271,9 @@ bool IntOneHotChannelConstraint::prepare_propagation(Model& model) {
                 fixed_true = static_cast<int>(i);
             }
         }
-        if (!model.is_defined_var(b_ids_[i]))
+        // reif の b は minizinc の defines_var で機能的従属になる前提。
+        // imp の b は片方向で機能的従属ではないためチェック対象外。
+        if (!imp_[i] && !model.is_defined_var(b_ids_[i]))
             assert(0);
     }
     if (model.is_defined_var(x_id_))
@@ -267,10 +299,12 @@ bool IntOneHotChannelConstraint::on_instantiate(Model& model, int save_point,
 
     if (var_idx == x_id_) {
         // x 確定 → 該当 b を 1、他を 0
+        // (imp: x==v_i でも b_i=1 は強制できない。b_j=0 側は対偶で有効)
         int matched = find_value_index(value);
         if (matched < 0 && holes_ == 0) return false;
         for (size_t i = 0; i < b_ids_.size(); ++i) {
             int target = (static_cast<int>(i) == matched) ? 1 : 0;
+            if (imp_[i] && target == 1) continue;
             if (model.is_instantiated(b_ids_[i])) {
                 if (model.value(b_ids_[i]) != target) return false;
             } else {
@@ -302,15 +336,16 @@ bool IntOneHotChannelConstraint::on_instantiate(Model& model, int save_point,
         }
     } else {
         // b_i = 0 → x のドメインから values[i] を除去
+        // (imp: b=0 は x を拘束しないのでスキップ)
         auto v = values_[bi];
-        if (model.contains(x_id_, v)) {
+        if (!imp_[bi] && model.contains(x_id_, v)) {
             model.enqueue_remove_value(x_id_, v);
         }
-        // holes_ == 0 (exhaustive) のときだけ: 全 b が 0 で確定したら矛盾、
-        // 未確定が 1 個でかつ他がすべて 0 のときその 1 個を 1 にする。
-        // partial coverage (holes_ > 0) では x が values_ 外の値を取り得るので
-        // この推論は使えない。
-        if (holes_ == 0) {
+        // holes_ == 0 (exhaustive) かつ全エントリ reif のときだけ: 全 b が 0 で
+        // 確定したら矛盾、未確定が 1 個でかつ他がすべて 0 のときその 1 個を 1 に
+        // する。partial coverage (holes_ > 0) では x が values_ 外の値を取り得る
+        // ので、imp 混在では「b=0 ⇒ x≠v」が立たないので、いずれも使えない。
+        if (holes_ == 0 && all_reif_) {
             int last_unassigned = -1;
             size_t unassigned_count = 0;
             bool any_true = false;
