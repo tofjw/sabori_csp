@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -98,11 +99,34 @@ std::unique_ptr<sabori_csp::Model> Model::to_model(bool verbose, bool use_gac) c
         }
     }
 
+    // 固定値 var_decl の eager 生成スキップ判定に使う: 出力対象の配列の
+    // 要素は解出力が sol を名前引きするので必ず実体化する。
+    std::set<std::string> output_elems;
+    for (const auto& [aname, arr_decl] : array_decls_) {
+        if (!arr_decl.is_output) continue;
+        for (const auto& elem : arr_decl.elements) {
+            output_elems.insert(elem);
+        }
+    }
+
     // Create variables
+    //
+    // 固定値 (par) の var_decl はここでは生成せず、制約から名前参照された
+    // ときに FznBuildContext::get_var_by_name が遅延実体化する。
+    // par 配列（テーブルデータや線形係数）は要素ごとに固定値 var_decl として
+    // パースされるため、eager 生成すると定数セル数ぶんの Variable が
+    // モデルに積まれる（mznc2025 groupsplitter で 483万個 → presolve/探索
+    // 基盤全体が定数スケールで死ぬ）。定数は resolve_int_array 経由で
+    // 消費されるのが大半で、Variable 実体が要るのは名前参照時のみ。
+    // 例外として出力対象（is_output / 出力配列の要素）と目的変数は実体化する。
     for (const auto& [name, decl] : var_decls_) {
         // エイリアス対象の変数はスキップ
         if (alias_map.count(name) || decl.alias_target) {
             continue;
+        }
+        if (decl.fixed_value && !decl.is_output && !output_elems.count(name) &&
+            name != solve_decl_.objective_var) {
+            continue;  // 遅延実体化に委ねる
         }
         VariablePtr var;
         if (decl.fixed_value) {
