@@ -395,6 +395,13 @@ PYBIND11_MODULE(_sabori_csp, m) {
              py::arg("loads"), py::arg("bins"), py::arg("weights"),
              py::arg("index_offset") = 0);
 
+    py::class_<GlobalCardinalityConstraint, Constraint,
+               std::shared_ptr<GlobalCardinalityConstraint>>(
+            m, "GlobalCardinalityConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<int64_t>,
+                      std::vector<VariablePtr>>(),
+             py::arg("xs"), py::arg("cover"), py::arg("counts"));
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")
