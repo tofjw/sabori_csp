@@ -423,6 +423,18 @@ static std::optional<ConstraintPtr> make_global_cardinality(const ConstraintDecl
         std::move(xs), std::move(cover), std::move(counts));
 }
 
+static std::optional<ConstraintPtr> make_value_precede(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_value_precede requires 3 arguments (s, t, x)");
+    if (!std::holds_alternative<Domain::value_type>(decl.args[0]) ||
+        !std::holds_alternative<Domain::value_type>(decl.args[1]))
+        throw std::runtime_error("sabori_value_precede: s, t must be integers");
+    auto s = std::get<Domain::value_type>(decl.args[0]);
+    auto t = std::get<Domain::value_type>(decl.args[1]);
+    auto xs = resolve_vars(decl.args[2], ctx);
+    return std::make_shared<ValuePrecedeConstraint>(s, t, std::move(xs));
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1048,6 +1060,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
 
     // Pattern K: Global cardinality
     registry.register_constraint("sabori_global_cardinality", make_global_cardinality);
+
+    // Pattern L: Value precedence (symmetry breaking)
+    registry.register_constraint("sabori_value_precede", make_value_precede);
 }
 
 } // namespace fzn

@@ -402,6 +402,13 @@ PYBIND11_MODULE(_sabori_csp, m) {
                       std::vector<VariablePtr>>(),
              py::arg("xs"), py::arg("cover"), py::arg("counts"));
 
+    py::class_<ValuePrecedeConstraint, Constraint,
+               std::shared_ptr<ValuePrecedeConstraint>>(
+            m, "ValuePrecedeConstraint")
+        .def(py::init<Domain::value_type, Domain::value_type,
+                      std::vector<VariablePtr>>(),
+             py::arg("s"), py::arg("t"), py::arg("xs"));
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")

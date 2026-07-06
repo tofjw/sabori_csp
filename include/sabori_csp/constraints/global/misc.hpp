@@ -157,6 +157,75 @@ private:
     bool strict_;
 };
 
+
+/**
+ * @brief value_precede 制約: x[j]==t なら ∃i<j x[i]==s
+ *
+ * 値 t の出現より前に値 s が出現することを要求する（対称性破壊の定番）。
+ * fzn_value_precede_int / fzn_value_precede_chain_int / fzn_seq_precede_chain_int
+ * を mznlib でこの propagator（chain は連続ペアの連言）に経路付けする。
+ * std 分解（H[i]=max(X[i],H[i-1]) チェーン + マッピング変数）の
+ * int_max/element/reif 網を回避する。
+ *
+ * 伝播 (Law & Lee 2004 の α/β/γ 規則の全再計算版):
+ * - α = s を取り得る最小 index。i ≤ α の全変数から t を除去
+ *   （s が i より前に来られないため。α が無ければ全域から t を除去）
+ * - γ = t に確定した最小 index。γ が存在するとき:
+ *   α ≥ γ なら矛盾。γ より前の s サポートが α のみなら x[α] := s
+ * - s == t の縮退: s は一切出現できない（全域から除去）
+ *
+ * ステートレスな全再計算 batch propagator（bin_packing_load と同方式）。
+ */
+class ValuePrecedeConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param s  先行しなければならない値（定数）
+     * @param t  後続の値（定数）
+     * @param xs 対象変数列
+     */
+    ValuePrecedeConstraint(Domain::value_type s, Domain::value_type t,
+                           std::vector<VariablePtr> xs);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    Domain::value_type s_;
+    Domain::value_type t_;
+    size_t n_;
+
+    /**
+     * @brief 全再計算伝播の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_MISC_HPP
