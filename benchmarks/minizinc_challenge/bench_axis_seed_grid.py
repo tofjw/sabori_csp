@@ -53,6 +53,7 @@ AXES = {
     "no_probe":    {"SABORI_PROBE": "0"},
     "no_temporal": {"SABORI_TEMPORAL": "0"},
     "off":         {"SABORI_RESTART": "0"},
+    "promote":     {"SABORI_PROMOTE_DEF_BOOL": "1"},  # defined bool を decision tier へ
 }
 
 SETS = {
@@ -66,7 +67,8 @@ SETS = {
         ],
         "time_limit": 12,
         "sat_time_score": False,   # satisfy は解けた/解けないの2値
-        "axes": [a for a in AXES if a != "off"],
+        # opt ラダー候補軸 + promote に絞る（2026-07-06 再チューニング）。
+        "axes": ["base", "no_nogood", "conflict", "mrv", "promote"],
         "json": OUT / "results.json",
         # 現行 make_portfolio_configs (optimize) の k<=4 相当
         "old_ladder": [("base", 0), ("conflict", 1), ("mrv", 2), ("no_nogood", 3)],

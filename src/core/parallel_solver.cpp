@@ -248,7 +248,14 @@ std::vector<WorkerConfig> make_portfolio_configs(
         //     mrv(-0.118)/no_temporal(-0.149)/off(-0.096) は SAT ラダーから排除。
         //   - 偶数スロットの純シードは「軸なし・導出シードのみ」（solbat14 の -j8
         //     解禁がシード単独で再現した知見を反映）。
-        size_t k = (i - 1) % 7;  // 0-based 多様化インデックス（n>8 はシード変えて循環）
+        // defined-bool 昇格(promote)アームは実並列 -j4/-j8 A/B(bench_ladder_parallel.py, best-of
+        // 反復)で既定ラダー配線を正当化できず不採用。単スレ greedy VBS では worker1 に大寄与
+        // (Δ=+0.125)だったが、それは bound 共有カップリングを無視した過大評価で fillomino14 依存。
+        // 実並列は -j4 で 12-8、-j8 で 11-13 と wash〜微負、大勝も thread/rep で反転、
+        // arithmetic-target 等で promote が base の軌道を悪化させる実 regression あり。
+        // → 既定ラダーは従来のまま。promote は opt-in(SABORI_PROMOTE_DEF_BOOL /
+        //    WorkerConfig.promote_def_bool)のみ温存。[[reif-promote-central-band]] と同じ判断。
+        size_t k = (i - 1) % 7;
         if (is_optimize) {
             switch (k) {
                 case 0: break;                              // 純シード（第一選択）
@@ -259,7 +266,7 @@ std::vector<WorkerConfig> make_portfolio_configs(
                 case 5: c.fixed_mixp = 0; break;            // mrv（旧2位ヘッジ）
                 case 6: break;                              // 純シード
             }
-        } else {  // SAT
+        } else {  // SAT（promote は入れない: 中立〜有害）
             switch (k) {
                 case 0: c.probe_enabled = false; break;
                 case 1: break;                              // 純シード

@@ -11,6 +11,13 @@ namespace sabori_csp {
 void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
     const auto& variables = model.variables();
 
+    // 【ポートフォリオ arm】defined だが未確定の bool 変数(domain [0,1])を defined tier でなく
+    // decision tier に置く。従属変数の activity は通常 select の厳格優先で死ぬが、bool は失敗
+    // 理由として浅く分岐したい（VSIDS 的発想）。最適化(scheduling/routing)で VBS 貢献、SAT は
+    // 中立〜有害なので optimize ラダー限定で配線。config(set_promote_def_bool) か env で有効化。
+    static const bool env_promote = std::getenv("SABORI_PROMOTE_DEF_BOOL") != nullptr;
+    const bool promote_def_bool = promote_def_bool_ || env_promote;
+
     var_order_.clear();
     var_order_.reserve(variables.size());
     std::vector<size_t> defined_vars;
@@ -23,7 +30,12 @@ void VariableSelector::build_order(const Model& model, std::mt19937& rng) {
         if (model.constraints_for_var(i).empty()) {
             unconstrained_vars.push_back(i);
         } else if (model.is_defined_var(i) || model.is_instantiated(i)) {
-            defined_vars.push_back(i);
+            if (promote_def_bool && model.is_defined_var(i) && !model.is_instantiated(i)
+                && model.var_min(i) == 0 && model.var_max(i) == 1) {
+                var_order_.push_back(i);       // defined bool を decision tier へ昇格
+            } else {
+                defined_vars.push_back(i);
+            }
         } else {
             var_order_.push_back(i);
         }

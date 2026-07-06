@@ -65,6 +65,7 @@ struct WorkerConfig {
     bool temporal_enabled = true;       ///< temporal_activity（Last Conflict）有無
     size_t bisection_threshold = 8;     ///< 二分割の閾値
     int probe_fail_limit = 5;           ///< improvement probe の fail 上限
+    bool promote_def_bool = false;      ///< defined bool を decision tier に昇格（最適化ラダー用 arm）
 };
 
 /**
@@ -428,6 +429,7 @@ public:
         set_probe_enabled(cfg.probe_enabled);
         set_bisection_threshold(cfg.bisection_threshold);
         set_probe_fail_limit(cfg.probe_fail_limit);
+        var_selector_.set_promote_def_bool(cfg.promote_def_bool);
     }
 
 private:

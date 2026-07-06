@@ -33,6 +33,9 @@ public:
      */
     void build_order(const Model& model, std::mt19937& rng);
 
+    /// defined bool を decision tier に昇格するか（ポートフォリオ arm 用, 既定 false）。
+    void set_promote_def_bool(bool b) { promote_def_bool_ = b; }
+
     /**
      * @brief var_position_ を再構築し、割当済み変数を後方へ移す
      *
@@ -112,6 +115,8 @@ public:
     void set_community_first_var(size_t v) { community_first_var_ = v; }
 
 private:
+    bool promote_def_bool_ = false;  ///< defined bool を decision tier へ（config 由来, arm 用）
+
     // 変数スキャン順序（decision vars | defined vars | unconstrained vars）
     // unconstrained vars はどの制約にも参照されない自由変数。探索に影響しないため
     // 必ず最後に回す（FlatZinc の output_array で生成されるダミー変数等）。
