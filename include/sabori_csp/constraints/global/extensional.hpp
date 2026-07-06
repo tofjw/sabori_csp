@@ -72,6 +72,15 @@ public:
      */
     void rewind_to(int save_point);
 
+    /**
+     * @brief バッチ伝播: 蓄積された current_table_ 変更に対して filter を1回実行
+     *
+     * イベントハンドラは word 更新のみ行い schedule_constraint_batch で
+     * 登録する。イベント連鎖ごとの full filter を防ぐ（イベント数×O(range×scan)
+     * の二次爆発対策）。
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
 protected:
 
 
