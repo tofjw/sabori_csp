@@ -226,6 +226,76 @@ private:
     bool propagate_impl(Model& model, bool direct, bool& changed);
 };
 
+
+/**
+ * @brief lex_less / lex_lesseq 制約: x が y より辞書順で小さい（か等しい）
+ *
+ * fzn_lex_less_int / fzn_lex_lesseq_int（と bool 変種）を mznlib でこの
+ * propagator に経路付けする。lex_chain_* は std が連続ペアの lex_lesseq に
+ * 分解するので自動的に native 化される。std の bool チェーン分解
+ * （位置ごとの reified 比較）を回避する。
+ *
+ * 伝播（全再計算・確定等値 prefix 走査）:
+ * - 先頭から両者確定かつ等値の間だけ進み、最初の非強制等値位置 i で
+ *   x[i] ≤ y[i] の bounds を強制（prefix が等値強制なら x[i] > y[i] は違反）
+ * - x[i] < y[i] が保証されたら constraint は充足済み（それ以降は無拘束）
+ * - 最終比較位置では strict（または len(x) > len(y)）なら x[i] < y[i] を強制
+ * - 配列長は異なってよい（等値 prefix で短い方が辞書順で先）
+ *
+ * ステートレスな全再計算 batch propagator（bin_packing_load と同方式）。
+ * var_ids_ レイアウト: [x[0..nx-1], y[0..ny-1]]
+ */
+class LexLessEqConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param xs     左辺の変数列
+     * @param ys     右辺の変数列
+     * @param strict true なら lex_less（厳密）、false なら lex_lesseq
+     */
+    LexLessEqConstraint(std::vector<VariablePtr> xs,
+                        std::vector<VariablePtr> ys,
+                        bool strict);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    size_t nx_;
+    size_t ny_;
+    bool strict_;
+
+    /**
+     * @brief 全再計算伝播の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_MISC_HPP

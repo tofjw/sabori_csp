@@ -46,6 +46,7 @@ add_library(sabori_csp_core
   constraints/global/bin_packing_load.cpp
   constraints/global/global_cardinality.cpp
   constraints/global/value_precede.cpp
+  constraints/global/lex_lesseq.cpp
   constraints/global/int_one_hot_channel.cpp
   constraints/global/increasing.cpp
 )

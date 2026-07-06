@@ -409,6 +409,12 @@ PYBIND11_MODULE(_sabori_csp, m) {
                       std::vector<VariablePtr>>(),
              py::arg("s"), py::arg("t"), py::arg("xs"));
 
+    py::class_<LexLessEqConstraint, Constraint,
+               std::shared_ptr<LexLessEqConstraint>>(
+            m, "LexLessEqConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>, bool>(),
+             py::arg("xs"), py::arg("ys"), py::arg("strict"));
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")

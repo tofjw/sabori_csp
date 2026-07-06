@@ -245,6 +245,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `sabori_bin_packing_load` | `BinPackingLoadConstraint` | load[b] = sum(i : bin[i]==b) w[i]（ビン積載量。FlatZinc は 1-indexed、C++/Python は index_offset 既定 0） |
 | `sabori_global_cardinality` | `GlobalCardinalityConstraint` | counts[j] = \|{i : x[i]==cover[j]}\|（open 意味論。fzn_global_cardinality / fzn_global_cardinality_low_up を mznlib で経路付け） |
 | `sabori_value_precede` | `ValuePrecedeConstraint` | 値 t の出現前に値 s の出現を要求（対称性破壊。fzn_value_precede_int / fzn_value_precede_chain_int / fzn_seq_precede_chain_int を mznlib で経路付け） |
+| `sabori_lex_less` / `sabori_lex_lesseq` (+ `_bool`) | `LexLessEqConstraint` | x が y より辞書順で小さい（か等しい）。fzn_lex_less_int / fzn_lex_lesseq_int（+bool）を経路付け。lex_chain_* は std が連続ペアに分解するので自動 native 化 |
 | `increasing` / `fzn_increasing_int` / `fzn_increasing_bool` | `IncreasingConstraint` | x[0] <= x[1] <= ... <= x[n-1] |
 | `strictly_increasing` / `fzn_strictly_increasing_int` / `fzn_strictly_increasing_bool` | `IncreasingConstraint(strict=true)` | x[0] < x[1] < ... < x[n-1] |
 

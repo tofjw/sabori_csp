@@ -217,6 +217,10 @@ tests/fzn/constraints/inverse/three.fzn
 tests/fzn/constraints/inverse_offsets/one_based.fzn
 tests/fzn/constraints/inverse_offsets/unsat.fzn
 tests/fzn/constraints/inverse_offsets/zero_based.fzn
+tests/fzn/constraints/lex/less_all.fzn
+tests/fzn/constraints/lex/lesseq_all.fzn
+tests/fzn/constraints/lex/propagation.fzn
+tests/fzn/constraints/lex/unsat.fzn
 tests/fzn/constraints/maximize/all_improving.fzn
 tests/fzn/constraints/maximize/simple.fzn
 tests/fzn/constraints/maximize/unsat.fzn

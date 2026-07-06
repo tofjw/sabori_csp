@@ -435,6 +435,22 @@ static std::optional<ConstraintPtr> make_value_precede(const ConstraintDecl& dec
     return std::make_shared<ValuePrecedeConstraint>(s, t, std::move(xs));
 }
 
+static std::optional<ConstraintPtr> make_lex(const ConstraintDecl& decl, FznBuildContext& ctx, bool strict) {
+    if (decl.args.size() != 2)
+        throw std::runtime_error("sabori_lex_less(eq) requires 2 arguments (x, y)");
+    auto xs = resolve_vars(decl.args[0], ctx);
+    auto ys = resolve_vars(decl.args[1], ctx);
+    return std::make_shared<LexLessEqConstraint>(std::move(xs), std::move(ys), strict);
+}
+
+static std::optional<ConstraintPtr> make_lex_less(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    return make_lex(decl, ctx, /*strict=*/true);
+}
+
+static std::optional<ConstraintPtr> make_lex_lesseq(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    return make_lex(decl, ctx, /*strict=*/false);
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1063,6 +1079,12 @@ void register_all_constraints(ConstraintRegistry& registry) {
 
     // Pattern L: Value precedence (symmetry breaking)
     registry.register_constraint("sabori_value_precede", make_value_precede);
+
+    // Pattern M: Lexicographic ordering (symmetry breaking)
+    registry.register_constraint("sabori_lex_less", make_lex_less);
+    registry.register_constraint("sabori_lex_lesseq", make_lex_lesseq);
+    registry.register_constraint("sabori_lex_less_bool", make_lex_less);
+    registry.register_constraint("sabori_lex_lesseq_bool", make_lex_lesseq);
 }
 
 } // namespace fzn
