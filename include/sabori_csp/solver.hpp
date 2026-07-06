@@ -768,6 +768,9 @@ private:
      */
     void capture_conflict_explanation(const Model& model, size_t constraint_idx);
 
+    /// 【計装】SABORI_NG_AUDIT: 直近の説明が参照解を排除する不健全 NG か判定・出力。
+    void audit_nogood_against_reference(const Model& model, size_t constraint_idx) const;
+
     /**
      * @brief Activity を減衰（リスタート時に呼ぶ）
      */

@@ -512,6 +512,32 @@ public:
      */
     void enqueue_remove_value(size_t var_idx, Domain::value_type value) {
         pending_updates_.push_back({PendingUpdate::Type::RemoveValue, var_idx, value});
+        // スティッキー: この変数に一度でも値除去(neq)を発行したら記録（backtrack でも消えない）。
+        if (var_idx >= ever_removed_value_.size()) ever_removed_value_.resize(var_idx + 1, 0);
+        ever_removed_value_[var_idx] = 1;
+    }
+
+    /// この変数のドメインが穴を持ち得るか（bound-NG 健全性ガード用）。true なら bound-NG 不可。
+    /// 立つ契機: (1) 探索中に remove_value(neq) を発行、(2) presolve 後に穴が存在
+    ///          （mark_domain_holes_bound_unsafe で一括マーク）。いずれもスティッキー。
+    bool ever_removed_value(size_t var_idx) const {
+        return var_idx < ever_removed_value_.size() && ever_removed_value_[var_idx] != 0;
+    }
+
+    /// 探索開始時(presolve 後)に、実ドメインが穴を持つ変数を bound-NG 不可としてマークする。
+    /// presolve が作った内部穴（例: all_different の値除去）を neq 未発行のまま許すと、
+    /// SoA が stale 連続化した際に幻の穴で不健全 NG を生むため、ここで先回りして塞ぐ。
+    void mark_domain_holes_bound_unsafe() {
+        const size_t n = variables_.size();
+        if (ever_removed_value_.size() < n) ever_removed_value_.resize(n, 0);
+        for (size_t i = 0; i < n; ++i) {
+            const Domain& d = variables_[i]->domain();
+            auto lo = d.min(), hi = d.max();
+            if (lo && hi) {
+                size_t span = static_cast<size_t>(*hi - *lo + 1);
+                if (d.size() < span) ever_removed_value_[i] = 1;  // 穴あり
+            }
+        }
     }
 
     /**
@@ -577,6 +603,7 @@ private:
 
     // 変数データ（AoS: 同一変数の min/max/size が同一キャッシュラインに乗る）
     std::vector<VarData> var_data_;
+    std::vector<uint8_t> ever_removed_value_;  ///< var_idx→穴を持ち得るか(neq発行 or presolve穴, スティッキー)
 
     // 集中 Trail
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;

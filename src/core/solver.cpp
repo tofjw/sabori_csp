@@ -6,6 +6,9 @@
 #include <numeric>
 #include <iomanip>
 #include <iostream>
+#include <fstream>
+#include <unordered_map>
+#include <string>
 #include <cstdlib>
 
 namespace sabori_csp {
@@ -144,6 +147,10 @@ void Solver::init_search_state(Model& model, bool run_build_order) {
 // presolve 後の初期化（gradient / 制約固有 activity / community / var_selector tracking）。
 // presolve 済み・prepare_propagation 済みのモデルに対して呼ぶ。
 void Solver::init_search_post_presolve(Model& model) {
+    // bound-NG 健全性ガード(SABORI_BOUND_EXPL=3)用: presolve が作った穴を持つ変数を
+    // 先回りで bound-NG 不可にマーク（探索中の neq はスティッキーに追加される）。
+    model.mark_domain_holes_bound_unsafe();
+
     // 勾配に関わる変数インデックスを収集（勾配候補の高速列挙用）
     gradient_strategy_.rebuild_eligible(model);
 
@@ -457,23 +464,106 @@ void Solver::capture_conflict_explanation(const Model& model, size_t constraint_
     if (vids.size() < 2) return;
     conflict_expl_.reserve(vids.size());
     for (size_t v : vids) {
-        // 1つでも未確定なら bail（instantiation-only）。
+        // 未確定変数が1つでもあれば bail（instantiation-only）= 現行の健全な既定。
         //
-        // 【撤回・不健全のため不採用】穴なし変数の境界変化を Geq/Leq literal で
-        // 説明に含める拡張を試みたが、B&B 最適化（obj 境界が締まる）＋並列 bound 共有で
-        // 偽 optimal を生む（2018 elitserien handball1: 真の最適 2 を obj=3 と誤証明）。
-        // 原因: 捕捉する変数境界の多くは obj≤gb-1（B&B の探索仮定）の伝播結果であり、
-        // その仮定を記録しない bound-literal NoGood は「仮定下でのみ妥当な事実」を
-        // 大域 NoGood 化してしまう。最適性証明は obj<gb を仮定して exhaust するため、
-        // 真の最適解（obj≤gb-1 の伝播で同じ境界を満たす）を誤排除する。
-        // 全確定スコープの矛盾は仮定に依らない ground 事実なので健全（＝現行方式）。
+        // 【271c6b5 は正しい。bound-literal 説明は不健全。根本原因は SoA↔Domain ラグの幻の穴】
+        // (2026-07-06 に一度「健全」と誤訂正したが撤回。再現・実物特定済み。)
+        // 再現: SABORI_BUILDORDER_PREPRESOLVE=1 + SABORI_BOUND_EXPL=1 + -C（単スレッドで可）
+        //   → 2018 elitserien handball1 を obj=3 と誤証明（真の最適=2, 3/3 再現）。
+        //   同軌道の ground-only(Eq のみ)は誤証明しない＝bound-literal が犯人。
+        // 実物(SABORI_NG_AUDIT で特定): int_lin_eq の NG ¬(A==a ∧ B==b ∧ C∈[lo,hi]) が
+        //   真の解(A=a,B=b,C=v, lo≤v≤hi)を排除。C は A,B 固定で v に確定するのに box が v を排除。
+        // 根本原因(実測): 矛盾時、C の【実 Domain は真値 v を含まない】(=v は穴)ので propagator は
+        //   正しく矛盾した。だが capture が読む【SoA(var_min/max/size)は stale で「連続・穴なし」と
+        //   誤報】(soa_contiguous=1 なのに domain.contains(v)=0)。穴ガード(var_size==span)も SoA を
+        //   読むため騙され、v を含む box を記録 → ¬box が valid 解を排除 → 偽 UNSAT → 偽 optimal。
+        //   SoA ラグは伝播履歴依存なので軌道・スレッド数で発現が変わる。
+        // 教訓: SoA ベースの穴ガードでは防げない。健全な bounds 説明には propagator が矛盾を
+        //   検出したその一貫した実ドメイン像が要る＝LCG 相当。ground(Eq)限定が正しい。
+        //
+        // SABORI_BOUND_EXPL（既定 off, 出荷・既定化しないこと）:
+        //   =1 完全 box(Geq min+Leq max) … 不健全(上記)。=2 Geq のみ … 不健全。
+        //   =3 完全 box + 穴ガード（穴を持ち得る変数を除外）… 実測で健全化。ただし性能は net±0。
         if (!model.is_instantiated(v)) {
+            static const char* be = std::getenv("SABORI_BOUND_EXPL");
+            static const int bound_expl = be ? std::atoi(be) : 0;
+            // =3: 健全化ガード。穴を持ち得る変数（探索中に neq を発行 or presolve 後に穴あり、
+            //     model.ever_removed_value)は bound-NG を打ち切る。穴なしと分かる変数だけ完全 box
+            //     を記録＝SoA stale の幻の穴を回避。実測で mode1 の不健全を解消(bench_bound_expl.py)。
+            bool guard_ok = (bound_expl != 3) || !model.ever_removed_value(v);
+            if (bound_expl && guard_ok &&
+                model.var_size(v) == static_cast<size_t>(model.var_max(v) - model.var_min(v) + 1)) {
+                conflict_expl_.push_back({v, model.var_min(v), Literal::Type::Geq});
+                if (bound_expl != 2) {  // 2 = Geq のみ(不完全 box ablation)
+                    conflict_expl_.push_back({v, model.var_max(v), Literal::Type::Leq});
+                }
+                continue;
+            }
             conflict_expl_.clear();
             return;
         }
         conflict_expl_.push_back({v, model.value(v), Literal::Type::Eq});
     }
     conflict_expl_ok_ = true;
+
+    // 【計装】SABORI_NG_AUDIT=<file>: 参照解(name value 行)を読み、この説明の全リテラルが
+    // 参照解で成立するか判定。成立＝valid 解を排除する不健全 NG の実物 → 出力。
+    audit_nogood_against_reference(model, constraint_idx);
+}
+
+void Solver::audit_nogood_against_reference(const Model& model, size_t constraint_idx) const {
+    static const char* audit_path = std::getenv("SABORI_NG_AUDIT");
+    if (!audit_path) return;
+    // 参照解を一度だけロード（name -> value）。
+    static std::unordered_map<std::string, Domain::value_type> ref = [&] {
+        std::unordered_map<std::string, Domain::value_type> m;
+        std::ifstream in(audit_path);
+        std::string name; long long val;
+        while (in >> name >> val) m[name] = static_cast<Domain::value_type>(val);
+        std::cerr << "% [ng-audit] loaded " << m.size() << " reference vars\n";
+        return m;
+    }();
+    const auto& vars = model.variables();
+    bool all_present = true, all_hold = true;
+    for (const Literal& L : conflict_expl_) {
+        auto it = ref.find(vars[L.var_idx]->name());
+        if (it == ref.end()) { all_present = false; break; }
+        Domain::value_type rv = it->second;
+        bool hold = (L.type == Literal::Type::Eq)  ? (rv == L.value)
+                  : (L.type == Literal::Type::Leq) ? (rv <= L.value)
+                                                   : (rv >= L.value);
+        if (!hold) { all_hold = false; break; }
+    }
+    if (all_present && all_hold) {
+        std::cerr << "% [ng-audit] UNSOUND NG excludes reference solution! constraint="
+                  << model.constraints()[constraint_idx]->name() << " lits:";
+        for (const Literal& L : conflict_expl_) {
+            const char* t = (L.type == Literal::Type::Eq) ? "==" :
+                            (L.type == Literal::Type::Leq) ? "<=" : ">=";
+            std::cerr << " " << vars[L.var_idx]->name() << t << L.value
+                      << "(ref=" << ref[vars[L.var_idx]->name()] << ")";
+        }
+        std::cerr << "\n";
+        // box 変数(Geq)について SoA と実ドメインの整合を診断: 真値が実ドメインにあるか。
+        for (const Literal& L : conflict_expl_) {
+            if (L.type != Literal::Type::Geq) continue;
+            size_t idx = L.var_idx;
+            Domain::value_type rv = ref[vars[idx]->name()];
+            size_t span = static_cast<size_t>(model.var_max(idx) - model.var_min(idx) + 1);
+            const Domain& dom = vars[idx]->domain();
+            std::cerr << "%   [box-var " << vars[idx]->name()
+                      << "] SoA=[" << model.var_min(idx) << "," << model.var_max(idx)
+                      << "] soa_size=" << model.var_size(idx) << " span=" << span
+                      << " soa_contiguous=" << (model.var_size(idx) == span)
+                      << " | domain=[" << (dom.min() ? *dom.min() : -999) << ","
+                      << (dom.max() ? *dom.max() : -999) << "] domain.size=" << dom.size()
+                      << " dom_contiguous=" << (dom.size() == (dom.min() && dom.max()
+                             ? static_cast<size_t>(*dom.max() - *dom.min() + 1) : 0))
+                      << " removed_count=" << dom.removed_count()
+                      << " domain.contains(ref=" << rv << ")=" << model.contains(idx, rv)
+                      << "\n";
+        }
+    }
 }
 
 void Solver::decay_activities() {

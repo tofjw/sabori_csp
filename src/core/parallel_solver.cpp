@@ -116,7 +116,15 @@ void ParallelSolver::worker_optimize(size_t i, size_t obj_idx, bool minimize,
         return true;  // 探索継続
     };
 
-    solvers_[i]->solve_optimize_prepared(*models_[i], obj_idx, minimize, wrapped);
+    // 【診断】SABORI_WORKER_FULLSOLVE=1: prepared をやめ各ワーカーが非 presolve clone を
+    // full solve_optimize（自前 init_search で presolve+build_order を実行→
+    // SABORI_BUILDORDER_PREPRESOLVE を尊重）。並列 × pre-presolve 軌道の健全性ストレステスト用。
+    static const bool full = std::getenv("SABORI_WORKER_FULLSOLVE") != nullptr;
+    if (full) {
+        solvers_[i]->solve_optimize(*models_[i], obj_idx, minimize, wrapped);
+    } else {
+        solvers_[i]->solve_optimize_prepared(*models_[i], obj_idx, minimize, wrapped);
+    }
 
     if (!solvers_[i]->is_stopped()) {
         // 自然終了 = この完全探索が大域 incumbent の最適性を証明した。
@@ -166,10 +174,15 @@ ParallelSolver::Result ParallelSolver::solve_optimize(
         Model& master, size_t obj_var_idx, bool minimize, ImproveCallback on_improve) {
     Result r;
 
-    Solver prep;
-    if (!prep.prepare(master)) {
-        r.status = SearchResult::UNSAT;
-        return r;
+    // SABORI_WORKER_FULLSOLVE=1 のときは各ワーカーが自前 presolve するので prep をスキップ
+    // （非 presolve clone を配る）。診断専用。既定は従来どおり presolve-once + prepared。
+    static const bool full = std::getenv("SABORI_WORKER_FULLSOLVE") != nullptr;
+    if (!full) {
+        Solver prep;
+        if (!prep.prepare(master)) {
+            r.status = SearchResult::UNSAT;
+            return r;
+        }
     }
 
     // 目的変数名（clone でも同一）。Solution からの目的値取得に使う。

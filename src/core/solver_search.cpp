@@ -462,6 +462,17 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                         std::cerr << "% [verbose] new best objective: " << obj_val << "\n";
                     }
 
+                    // 【計装】SABORI_DUMP_SOL: 改善解の内部割当を全ダンプ（NG 監査の参照解取得用）。
+                    if (std::getenv("SABORI_DUMP_SOL")) {
+                        const auto& dvars = model.variables();
+                        for (size_t di = 0; di < dvars.size(); ++di) {
+                            if (model.is_instantiated(di)) {
+                                std::cerr << "SOLVAR obj=" << obj_val << " "
+                                          << dvars[di]->name() << " " << model.value(di) << "\n";
+                            }
+                        }
+                    }
+
                     // 途中解を報告
                     if (callback) {
                         callback(*found_solution);
