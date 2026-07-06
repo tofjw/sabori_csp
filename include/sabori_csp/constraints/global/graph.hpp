@@ -216,6 +216,76 @@ private:
     int64_t invf_offset_;  ///< invf の値域の最小値 (= min(index_set(f)))
 };
 
+
+/**
+ * @brief subcircuit 制約: 非自己ループのノードがちょうど1つの閉路を形成する
+ *
+ * x[i] = i（自己ループ）は「ノード i は閉路に入らない」を意味し、
+ * x[i] != i のノード全体がちょうど1つの閉路を形成する（空でもよい）。
+ *
+ * alldifferent は含意されるが、この propagator は閉路構造の推論に専念する
+ * （registry が circuit と同じ流儀で AllDifferentConstraint を併設する）。
+ *
+ * 伝播（全再計算・確定エッジの chain 走査）:
+ * - R1（早期閉路禁止）: 確定した非自己エッジの極大パス s→…→e に対し、
+ *   パス外に「閉路に入らざるを得ないノード」（i ∉ dom(x_i)）があれば
+ *   x[e] から s を除去（閉じるとそのノードが入れなくなる）
+ * - R2（閉路確定）: 確定エッジで閉路ができたら、外側の全ノードを自己ループに強制
+ *
+ * ステートレスな全再計算 batch propagator。std の order 変数分解
+ * （aux 変数 n 個 + ノードごとの var element/reif 網 + 分岐対象の増加）を回避する。
+ *
+ * FlatZinc 1-indexed 規約で使うときは index_offset=1 を渡す
+ * （bin_packing_load / InverseConstraint と同流儀。既定 0 = 0-based）。
+ */
+class SubcircuitConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param vars         後続ノード変数（x[i] = j でノード i の次が j）
+     * @param index_offset ノード値のオフセット（既定 0、FlatZinc は 1）
+     */
+    explicit SubcircuitConstraint(std::vector<VariablePtr> vars,
+                                  int64_t index_offset = 0);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    size_t n_;
+    int64_t index_offset_;  ///< ノード値 v → 内部 index v - index_offset_
+
+    /**
+     * @brief 全再計算伝播の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed);
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_GRAPH_HPP

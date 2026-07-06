@@ -243,6 +243,9 @@ tests/fzn/constraints/set_in_reif/set_literal.fzn
 tests/fzn/constraints/set_in_reif/unsat.fzn
 tests/fzn/constraints/strictly_increasing/simple.fzn
 tests/fzn/constraints/strictly_increasing/unsat.fzn
+tests/fzn/constraints/subcircuit/all_solutions.fzn
+tests/fzn/constraints/subcircuit/propagation.fzn
+tests/fzn/constraints/subcircuit/unsat.fzn
 tests/fzn/constraints/table_int/allsol.fzn
 tests/fzn/constraints/table_int/simple.fzn
 tests/fzn/constraints/table_int/three_vars.fzn

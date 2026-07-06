@@ -451,6 +451,19 @@ static std::optional<ConstraintPtr> make_lex_lesseq(const ConstraintDecl& decl, 
     return make_lex(decl, ctx, /*strict=*/false);
 }
 
+static std::optional<ConstraintPtr> make_subcircuit(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 1)
+        throw std::runtime_error("sabori_subcircuit requires 1 argument (array)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    // subcircuit は alldifferent を含意する。circuit と同じ流儀で明示的に併設し、
+    // SubcircuitConstraint 自体は閉路構造の伝播に専念する。
+    if (vars.size() >= 2) {
+        ctx.model->add_constraint(std::make_shared<AllDifferentConstraint>(vars));
+    }
+    // FlatZinc 1-indexed convention: x[i] ∈ [1, n]
+    return std::make_shared<SubcircuitConstraint>(std::move(vars), /*index_offset=*/1);
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1085,6 +1098,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("sabori_lex_lesseq", make_lex_lesseq);
     registry.register_constraint("sabori_lex_less_bool", make_lex_less);
     registry.register_constraint("sabori_lex_lesseq_bool", make_lex_lesseq);
+
+    // Pattern N: Subcircuit
+    registry.register_constraint("sabori_subcircuit", make_subcircuit);
 }
 
 } // namespace fzn
