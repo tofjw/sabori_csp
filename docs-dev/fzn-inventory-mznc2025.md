@@ -64,8 +64,14 @@ grep -oP '^constraint \K\w+' out.fzn | sort | uniq -c | sort -rn
 
 1. **`fzn_global_cardinality` native 実装** — 小粒で確実。counting 系
    (bin_packing_load と同型)。mondoku の FZN が半減、count_eq×408 の reified 網が
-   propagator×48 に置換。→ **本日着手**
-2. **`int_eq_imp` 再有効化の再計測** — 実装済み。宣言 1 行 + A/B ベンチ。
+   propagator×48 に置換。→ **実装済み (71fe3aa)**。mondoku fzn 直接で解0→1、
+   work-task-variation obj 3625→3202、tower 不変
+2. **`int_eq_imp` 再有効化の再計測** — **計測済み (2026-07-07)、既定は据え置き**。
+   Round 1 net±0 → OneHotChannelAggregator が imp を集約しない交絡を発見・修正
+   → Round 2 net+6 (38勝/32敗/100分, 符号検定 p≈0.55 で非有意)。
+   宣言はコメントアウト維持、aggregator の imp 対応は独立の資産としてコミット。
+   arithmetic-target/gfd-schedule の一貫大勝は opt-in arm 候補として温存。
+   詳細: work-log/2026-07-07.md, bench_int_eq_imp.py
 3. **set 変数対応は「やらない」を明示** — 大工事かつ CP-SAT/Gecode の土俵。
    頻出 `fzn_set_*` サブセットだけ効率的 bool 分解に差し替える中間案のみ残す。
 4. **`fzn_diffn_nonstrict_k` は見送り** — CP-SAT も同分解で同じく TIMEOUT。
