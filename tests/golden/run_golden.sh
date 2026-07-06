@@ -51,10 +51,14 @@ audit_corpus() {
 }
 
 run_one() {  # $1=fzn  -> 解出力 + 統計 (決定論的部分のみ)
-    local f="$1" out err
-    out="$(timeout "$TIMEOUT" "$BIN" -a -s "$f" 2>/tmp/golden_err.$$)"
-    err="$(grep -E '^% (Stats:|NG length)' /tmp/golden_err.$$)"
-    rm -f /tmp/golden_err.$$
+    local f="$1" out err tmp
+    # 固定名 ($$) だと check の diff が早期 exit したとき、プロセス置換内で
+    # まだ走っている前エントリの rm -f が次エントリの stderr を消し、直後の
+    # エントリが偽 FAIL する (stats 欠落)。mktemp で呼び出しごとに分離する。
+    tmp="$(mktemp)"
+    out="$(timeout "$TIMEOUT" "$BIN" -a -s "$f" 2>"$tmp")"
+    err="$(grep -E '^% (Stats:|NG length)' "$tmp")"
+    rm -f "$tmp"
     printf '%s\n--- stats ---\n%s\n' "$out" "$err"
 }
 
