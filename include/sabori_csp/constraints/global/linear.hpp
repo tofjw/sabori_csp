@@ -157,6 +157,20 @@ private:
     // 未確定変数カウント（差分更新用）
     size_t unfixed_count_;
 
+    /// 全係数が ±1（単位係数）か。true なら伝播の候補境界計算で整数除算を回避できる。
+    bool all_unit_ = false;
+
+    /// 根での max_j |c_j|*(width_j) 静的上界。探索中 width は縮むだけなので、
+    /// slack (total_max-target / target-total_min) がこれ以上なら伝播不要（枝刈り不能）。
+    /// トレイル不要で常に安全な no-op スキップに使う。
+    int64_t max_static_ub_ = 0;
+
+    /// 動的上界: フルスキャン時に厳密な max_j|c_j|*width_j へ締め直し、
+    /// rewind_to で max_static_ub_ へリセット。max_static_ub_ より締まるため
+    /// slack がタイトな問題でも no-op スキップが発火する。常に有効上界を保つ
+    /// （width は縮むだけ / backtrack 時は境界変化 → dirty → rewind_to でリセット）。
+    int64_t max_contribution_ = 0;
+
     // Trail: (save_point, (fixed_sum, min_pot, max_pot))
     struct TrailEntry {
         int64_t fixed_sum;
@@ -253,6 +267,13 @@ private:
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
+
+    /// no-op スキップ用のスラック上界（int_lin_eq と同型）。
+    /// 根での max_j|c_j|*width_j（静的・常に有効）と、フルスキャン時に厳密値へ
+    /// 締め直す動的上界（rewind_to で静的へリセット、トレイル不要）。
+    /// slack S=bound-total_min が上界以上なら枝刈り不能（エンテイルメントの上位集合）。
+    int64_t max_static_ub_ = 0;
+    int64_t max_contribution_ = 0;
 
     struct TrailEntry {
         int64_t fixed_sum;
@@ -640,6 +661,10 @@ private:
     int64_t bound_;
     int64_t current_fixed_sum_;
     int64_t min_rem_potential_;
+
+    /// no-op スキップ用スラック上界（int_lin_le と同型）
+    int64_t max_static_ub_ = 0;
+    int64_t max_contribution_ = 0;
 
     struct TrailEntry {
         int64_t fixed_sum;

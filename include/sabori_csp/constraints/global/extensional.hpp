@@ -119,11 +119,16 @@ private:
     /// sparse モード時の on_instantiate / prepare_propagation 用 scratch (num_words_ サイズ)
     std::vector<uint64_t> scratch_mask_;
 
-    struct TrailEntry {
-        std::vector<std::pair<size_t, uint64_t>> word_diffs;  ///< (word_idx, old_value)
+    /// フラット diff ログ + マーカースタック。セーブポイント毎の per-node ヒープ確保
+    /// （旧 TrailEntry::word_diffs の malloc/free churn）を排除し、探索全体で容量を維持する。
+    /// diff は (word_idx, old_value) の追記のみ。rewind は resize（解放なし）で巻き戻す。
+    std::vector<std::pair<uint32_t, uint64_t>> trail_diffs_;
+    struct TrailMarker {
+        int save_point;
+        uint32_t diff_start;      ///< このセーブポイント開始時の trail_diffs_ 長
         size_t old_last_nz_word;
     };
-    std::vector<std::pair<int, TrailEntry>> trail_;
+    std::vector<TrailMarker> trail_markers_;
 
     /// Save-on-write generation counter（同一レベルでの重複 word 保存を防止）
     int trail_generation_ = 0;
@@ -145,7 +150,7 @@ private:
     inline void save_word(size_t w) {
         if (word_saved_at_[w] != trail_generation_) {
             word_saved_at_[w] = trail_generation_;
-            trail_.back().second.word_diffs.push_back({w, current_table_[w]});
+            trail_diffs_.push_back({static_cast<uint32_t>(w), current_table_[w]});
         }
     }
 

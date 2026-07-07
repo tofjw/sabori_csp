@@ -22,7 +22,6 @@
 #define SABORI_CSP_CONSTRAINTS_ALL_DIFFERENT_GAC_HPP
 
 #include "sabori_csp/constraints/global.hpp"
-#include <unordered_map>
 
 namespace sabori_csp {
 
@@ -71,7 +70,16 @@ private:
     // 安定した値インデックス（構築後不変）
     size_t total_values_ = 0;
     std::vector<Domain::value_type> gac_idx_to_val_;
-    std::unordered_map<Domain::value_type, int> gac_val_to_idx_;
+    /// 値→内部 index。GAC は dense 値域(span小)専用なので unordered_map ではなく
+    /// (val - gac_min_val_) をキーにしたフラット配列（-1 = 不在）で O(1) 索引する。
+    Domain::value_type gac_min_val_ = 0;
+    std::vector<int> gac_val_to_idx_;
+    /// 値→内部 index（不在なら -1）
+    inline int gac_idx_of(Domain::value_type v) const {
+        auto k = v - gac_min_val_;
+        return (k >= 0 && static_cast<size_t>(k) < gac_val_to_idx_.size())
+                   ? gac_val_to_idx_[static_cast<size_t>(k)] : -1;
+    }
 
     // マッチング状態
     std::vector<int> match_var_;

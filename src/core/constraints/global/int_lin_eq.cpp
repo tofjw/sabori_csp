@@ -31,6 +31,12 @@ IntLinEqConstraint::IntLinEqConstraint(std::vector<int64_t> coeffs,
     // 変数IDキャッシュを構築
     var_ids_ = extract_var_ids(unique_vars);
 
+    // 単位係数（全 |c|==1）判定: 伝播で整数除算を回避する fast path 用
+    all_unit_ = true;
+    for (int64_t c : coeffs_) {
+        if (c != 1 && c != -1) { all_unit_ = false; break; }
+    }
+
     // 注意: 内部状態（current_fixed_sum_ 等）は presolve() で初期化
     // コンストラクタでは変数の状態を参照しない
 }
@@ -239,6 +245,9 @@ void IntLinEqConstraint::rewind_to(int save_point) {
         min_rem_potential_ = entry.min_pot;
         max_rem_potential_ = entry.max_pot;
     });
+    // 動的上界を常に有効な静的上界へリセット（backtrack で width が広がるため）。
+    // 境界変化は必ず save_trail_if_needed→dirty 経由なので backtrack 時に必ず呼ばれる。
+    max_contribution_ = max_static_ub_;
 }
 
 void IntLinEqConstraint::save_trail_if_needed(Model& model, int save_point) {
@@ -294,6 +303,11 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
 
+    // no-op スキップ: どの変数も |c|*width <= max_contribution_ <= slack なら枝刈り不能
+    if (total_max - target_sum_ >= max_contribution_) return true;
+
+    // フルスキャン（枝刈りの可能性あり）。走査ついでに厳密な max_j|c_j|*width_j へ
+    // 動的上界を締め直す（下の general/all_unit ループ内で mc を集計）。
     if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
         if (!model.is_instantiated(var_ids_[j])) {
@@ -328,15 +342,45 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
         return true;
     }
 
-    for (size_t j = 0; j < var_ids_.size(); ++j) {
-        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
-
-        size_t var_id = var_ids_[j];
-        int64_t c = coeffs_[j];
-
-        if (c > 0) {
+    // 単位係数 fast path: c=±1 では除算 (num/|c|) が num そのものになり idiv を回避できる。
+    // c=+1:  new_min = target - total_max + cur_max
+    // c=-1:  new_max = total_max + cur_min - target
+    if (all_unit_) {
+        int64_t mc = 0;
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            size_t var_id = var_ids_[j];
+            if (model.is_instantiated(var_id)) continue;
             auto cur_min = model.var_min(var_id);
             auto cur_max = model.var_max(var_id);
+            int64_t w = cur_max - cur_min;   // |c|=1
+            if (w > mc) mc = w;
+            if (j == skip_idx) continue;
+            if (coeffs_[j] > 0) {
+                int64_t new_min = target_sum_ - total_max + cur_max;
+                if (new_min > cur_min) model.enqueue_set_min(var_id, new_min);
+            } else {
+                int64_t new_max = total_max + cur_min - target_sum_;
+                if (new_max < cur_max) model.enqueue_set_max(var_id, new_max);
+            }
+        }
+        max_contribution_ = mc;
+        return true;
+    }
+
+    int64_t mc = 0;
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
+        size_t var_id = var_ids_[j];
+        if (model.is_instantiated(var_id)) continue;
+
+        int64_t c = coeffs_[j];
+        auto cur_min = model.var_min(var_id);
+        auto cur_max = model.var_max(var_id);
+        int64_t abs_c = c >= 0 ? c : -c;
+        int64_t contrib = abs_c * (cur_max - cur_min);
+        if (contrib > mc) mc = contrib;
+        if (j == skip_idx) continue;
+
+        if (c > 0) {
             int64_t rest_max = total_max - c * cur_max;
             int64_t num_min = target_sum_ - rest_max;
             int64_t new_min = (num_min >= 0) ? (num_min + c - 1) / c : -((-num_min) / c);
@@ -344,11 +388,8 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
                 model.enqueue_set_min(var_id, new_min);
             }
         } else {
-            auto cur_min = model.var_min(var_id);
-            auto cur_max = model.var_max(var_id);
             int64_t rest_max = total_max - c * cur_min;
             int64_t num_min = target_sum_ - rest_max;
-            int64_t abs_c = -c;
             int64_t new_max;
             if (num_min >= 0) {
                 new_max = -((num_min + abs_c - 1) / abs_c);
@@ -360,6 +401,7 @@ bool IntLinEqConstraint::propagate_lower_bounds(Model& model, size_t skip_idx) {
             }
         }
     }
+    max_contribution_ = mc;
     return true;
 }
 
@@ -367,6 +409,9 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
     int64_t total_min = current_fixed_sum_ + min_rem_potential_;
     int64_t total_max = current_fixed_sum_ + max_rem_potential_;
     if (total_min > target_sum_ || total_max < target_sum_) return false;
+
+    // no-op スキップ: どの変数も |c|*width <= max_contribution_ <= slack なら枝刈り不能
+    if (target_sum_ - total_min >= max_contribution_) return true;
 
     if (var_ids_.size() == 2) {
         size_t j = 1 - skip_idx;
@@ -402,15 +447,45 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
         return true;
     }
 
-    for (size_t j = 0; j < var_ids_.size(); ++j) {
-        if (j == skip_idx || model.is_instantiated(var_ids_[j])) continue;
-
-        size_t var_id = var_ids_[j];
-        int64_t c = coeffs_[j];
-
-        if (c > 0) {
+    // 単位係数 fast path（idiv 回避）
+    // c=+1:  new_max = target - total_min + cur_min
+    // c=-1:  new_min = total_min + cur_max - target
+    if (all_unit_) {
+        int64_t mc = 0;
+        for (size_t j = 0; j < var_ids_.size(); ++j) {
+            size_t var_id = var_ids_[j];
+            if (model.is_instantiated(var_id)) continue;
             auto cur_min = model.var_min(var_id);
             auto cur_max = model.var_max(var_id);
+            int64_t w = cur_max - cur_min;   // |c|=1
+            if (w > mc) mc = w;
+            if (j == skip_idx) continue;
+            if (coeffs_[j] > 0) {
+                int64_t new_max = target_sum_ - total_min + cur_min;
+                if (new_max < cur_max) model.enqueue_set_max(var_id, new_max);
+            } else {
+                int64_t new_min = total_min + cur_max - target_sum_;
+                if (new_min > cur_min) model.enqueue_set_min(var_id, new_min);
+            }
+        }
+        max_contribution_ = mc;
+        return true;
+    }
+
+    int64_t mc = 0;
+    for (size_t j = 0; j < var_ids_.size(); ++j) {
+        size_t var_id = var_ids_[j];
+        if (model.is_instantiated(var_id)) continue;
+
+        int64_t c = coeffs_[j];
+        auto cur_min = model.var_min(var_id);
+        auto cur_max = model.var_max(var_id);
+        int64_t abs_c = c >= 0 ? c : -c;
+        int64_t contrib = abs_c * (cur_max - cur_min);
+        if (contrib > mc) mc = contrib;
+        if (j == skip_idx) continue;
+
+        if (c > 0) {
             int64_t rest_min = total_min - c * cur_min;
             int64_t num_max = target_sum_ - rest_min;
             int64_t new_max = (num_max >= 0) ? num_max / c : -(((-num_max) + c - 1) / c);
@@ -418,11 +493,8 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
                 model.enqueue_set_max(var_id, new_max);
             }
         } else {
-            auto cur_min = model.var_min(var_id);
-            auto cur_max = model.var_max(var_id);
             int64_t rest_min = total_min - c * cur_max;
             int64_t num_max = target_sum_ - rest_min;
-            int64_t abs_c = -c;
             int64_t new_min;
             if (num_max >= 0) {
                 new_min = -(num_max / abs_c);
@@ -434,6 +506,7 @@ bool IntLinEqConstraint::propagate_upper_bounds(Model& model, size_t skip_idx) {
             }
         }
     }
+    max_contribution_ = mc;
     return true;
 }
 
@@ -447,6 +520,7 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
     max_rem_potential_ = 0;
+    max_static_ub_ = 0;
 
     for (size_t i = 0; i < var_ids_.size(); ++i) {
         int64_t c = coeffs_[i];
@@ -467,8 +541,14 @@ bool IntLinEqConstraint::prepare_propagation(Model& model) {
                 min_rem_potential_ += c * max_val;
                 max_rem_potential_ += c * min_val;
             }
+
+            // 根での |c|*width（探索中はこれ以下に縮む → 静的上界）
+            int64_t abs_c = c >= 0 ? c : -c;
+            int64_t contrib = abs_c * (max_val - min_val);
+            if (contrib > max_static_ub_) max_static_ub_ = contrib;
         }
     }
+    max_contribution_ = max_static_ub_;  // 動的上界の初期値（根では静的＝厳密）
 
     // 2WL を初期化
     init_watches();
