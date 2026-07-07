@@ -260,6 +260,17 @@ def _verify_fzn(mzn, data, solution, timeout):
             alias_map = {}
             ozn_text = base_ozn.read_text() if base_ozn.exists() else ''
             ident = re.compile(r'^\w+$')
+
+            # gecode の flatten で定数化された出力変数は FZN に現れず、.ozn に
+            #   `int: nMdl_1__X = 4;` / `bool: b = true;`
+            # の literal として残る（connect では出力 2525 個中 2243 個）。
+            # これらは制約を張る代わりに Python 側で直接比較する。
+            # 不一致ならその場で不整合確定。一致はカバレッジに数える。
+            literal_map = {}
+            for m in re.finditer(
+                    r'^(?:int|bool)\s*:\s*(\w+)\s*=\s*(-?\d+|true|false)\s*;',
+                    ozn_text, re.MULTILINE):
+                literal_map[m.group(1)] = m.group(2)
             for m in re.finditer(
                 r'array\s*\[[^\]]+\]\s*of\s+(?:var\s+)?[^:]+:\s*(\w+)\s*=\s*'
                 r'array\d+d?\((.*?)\)\s*;', ozn_text, re.DOTALL):
@@ -287,6 +298,12 @@ def _verify_fzn(mzn, data, solution, timeout):
             extra = []
             n_fixed_vars = 0
             for varname, value in solution.items():
+                # flatten で定数化済みの出力変数は Python 比較で決着させる
+                if varname not in declared and varname in literal_map:
+                    if value.strip() != literal_map[varname]:
+                        return "CHECK_FAIL"
+                    n_fixed_vars += 1
+                    continue
                 # FZN に存在しない MZN 名は .ozn 経由で X_INTRODUCED_ などの
                 # 別名に飛ばす（`inFlow → X_INTRODUCED_57_` 等）。
                 fzn_name = varname if varname in declared else alias_map.get(varname)
