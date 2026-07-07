@@ -427,6 +427,32 @@ public:
      */
     void rewind_dirty_constraints(int save_point);
 
+    // ===== 制約の entailment（充足済み）フラグ =====
+    // 制約が「現在のサブツリー内で以後どのイベントでも no-op」と判定したとき
+    // セットする。イベント dispatch 側が仮想呼び出し前にフラット配列を inline
+    // 読みしてスキップする（証明ネック問題の array_bool_and で呼び出しの 52% が
+    // 充足済みへの無駄打ちだった実測に基づく）。バックトラックで自動解除。
+    //
+    // opt-in 制約の要件: フラグセット以降のあらゆる on_*/propagate_batch が
+    // 「true を返すだけで副作用なし」であること（スキップ＝完全な no-op）。
+
+    /**
+     * @brief 制約を充足済みとしてマーク（バックトラックで自動解除）
+     */
+    void set_constraint_entailed(size_t c_idx, int save_point) {
+        if (c_idx < constraint_entailed_.size() && !constraint_entailed_[c_idx]) {
+            constraint_entailed_[c_idx] = 1;
+            entailed_trail_.push_back({save_point, static_cast<uint32_t>(c_idx)});
+        }
+    }
+
+    /**
+     * @brief 制約が充足済みか（dispatch 側の inline スキップ判定）
+     */
+    bool is_constraint_entailed(size_t c_idx) const {
+        return constraint_entailed_[c_idx] != 0;
+    }
+
     /**
      * @brief 変数 Trail のサイズを取得
      */
@@ -566,6 +592,8 @@ private:
     std::vector<std::pair<int, VarTrailEntry>> var_trail_;
     std::vector<std::pair<int, ConstraintTrailEntry>> constraint_trail_;
     std::vector<std::pair<int, size_t>> dirty_constraint_trail_;  // (save_point, constraint_idx)
+    std::vector<uint8_t> constraint_entailed_;  // 制約ごとの充足済みフラグ
+    std::vector<std::pair<int, uint32_t>> entailed_trail_;  // (save_point, constraint_idx)
 
     // instantiated 変数カウンタ（O(1) 参照用）
     size_t instantiated_count_ = 0;

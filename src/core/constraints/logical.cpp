@@ -198,6 +198,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                     return false;  // 既に 0 が確定している bi がある
                 }
             }
+            // r=1 で全 bi を 1 に強制済み → 以後このサブツリーでは常に充足
+            model.set_constraint_entailed(model_index(), save_point);
             return true;
         }
         // r = 0: 0 になりうる bi をスキャンし、watch を再初期化
@@ -215,7 +217,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                 if (first_candidate == SIZE_MAX) first_candidate = i;
                 else if (second_candidate == SIZE_MAX) second_candidate = i;
             } else if (model.value(var_ids_[i]) == 0) {
-                // 既に 0 の bi がある → r = 0 は既に充足
+                // 既に 0 の bi がある → r = 0 は既に充足（以後 no-op）
+                model.set_constraint_entailed(model_index(), save_point);
                 return true;
             }
         }
@@ -226,8 +229,10 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         }
 
         if (unassigned_count == 1) {
-            // 未確定が1つだけ → それを 0 に強制
+            // 未確定が1つだけ → それを 0 に強制 → 以後常に充足
             model.enqueue_instantiate(var_ids_[last_unassigned], 0);
+            model.set_constraint_entailed(model_index(), save_point);
+            return true;
         }
 
         // watch を有効な候補に更新
@@ -244,6 +249,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         } else if (model.value(r_id_) != 0) {
             return false;  // r = 1 だが bi = 0
         }
+        model.set_constraint_entailed(model_index(), save_point);
         return true;
     }
 
@@ -265,6 +271,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         } else if (model.value(r_id_) != 1) {
             return false;  // 全 bi=1 だが r=0 → 矛盾
         }
+        // 全 bi=1 かつ r=1 強制済み → 以後常に充足
+        model.set_constraint_entailed(model_index(), save_point);
     }
 
     // r = 0 で bi = 1 が確定した場合: 2WL 処理
