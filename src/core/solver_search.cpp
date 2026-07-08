@@ -342,6 +342,7 @@ Solver::ProbeAction Solver::run_bottomup_probe(
     std::optional<Solution> probe_solution;
     SearchResult res2 = SearchResult::UNKNOWN;
     bool probe_propagation_ok = false;
+    const size_t fails_before_step = stats_.fail_count;
 
     if (process_queue(model) == PropagationResult::Ok) {
         probe_propagation_ok = true;
@@ -415,7 +416,8 @@ Solver::ProbeAction Solver::run_bottomup_probe(
         bottomup_unknown_streak_ = 0;
         bottomup_delta_ = bottomup_delta_ * 2 + 1;  // 階段を加速
         if (verbose_) {
-            std::cerr << "% [verbose] bottomup probe UNSAT: lb past target=" << target << "\n";
+            std::cerr << "% [verbose] bottomup probe UNSAT: lb past target=" << target
+                      << " step_fails=" << (stats_.fail_count - fails_before_step) << "\n";
         }
         nogood_mgr_.enqueue_unit_nogoods(model);
         if (minimize_) {
@@ -436,7 +438,25 @@ Solver::ProbeAction Solver::run_bottomup_probe(
             }
             return ProbeAction::ReturnOptimal;
         }
-        continue;  // 証明成功 → 次の階段を直ちに登る
+        // 相転移カットオフ: 証明は成功したがコストが急増している場合、
+        // SAT/UNSAT 境界に接近している（次段はブローアウトの公算大）。
+        // 実測 (zephyrus, opt=12): step_fails は 0 → 2.5k → 4.7k → 壁(>20k)
+        // と超線形に上昇する。予算の 1/8 を超えたら階段を止め、lb 進捗を
+        // 保持したまま撤退して残り予算を本探索（+ 蓄積した lb の伝播）に回す。
+        {
+            const size_t step_cost = stats_.fail_count - fails_before_step;
+            if (step_cost * 8 > static_cast<size_t>(bottomup_fail_limit_)) {
+                if (verbose_) {
+                    std::cerr << "% [verbose] bottomup phase-transition cutoff: "
+                              << "step_fails=" << step_cost << " lb="
+                              << model.var_min(obj_var_idx_) << "\n";
+                }
+                ++bottomup_unknown_streak_;
+                bottomup_skip_ = 64 << std::min(bottomup_unknown_streak_, 6);
+                return ProbeAction::Continue;
+            }
+        }
+        continue;  // 証明成功 (低コスト) → 次の階段を直ちに登る
     } else {
         // UNKNOWN: この tightness では予算内で決着せず → δ 半減 + 長期撤退
         // （投機は「生産的な間だけ」。決着しない問題では本探索に道を譲る）
