@@ -730,7 +730,20 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
             // --- bottom-up optimistic probe (opt-in: SABORI_BOTTOMUP) ---
             {
+                // SABORI_BOTTOMUP_ISOLATE: probe 中の conflict による
+                // activity/temporal の bump を隔離（本探索の誘導を汚染しない）。
+                // NoGood・lb 引き上げ・best 更新は残す（健全な成果物）。
+                const bool isolate = bottomup_isolate_ && bottomup_fail_limit_ > 0
+                                     && bottomup_skip_ == 0;
+                if (isolate) {
+                    bottomup_saved_activity_ = activity_;
+                    bottomup_saved_temporal_ = temporal_activity_;
+                }
                 ProbeAction pa = run_bottomup_probe(model, callback, root_point);
+                if (isolate) {
+                    activity_ = bottomup_saved_activity_;
+                    temporal_activity_ = bottomup_saved_temporal_;
+                }
                 if (pa == ProbeAction::ReturnOptimal) return best_solution_;
                 if (pa == ProbeAction::BreakInnerLoop) break;  // timeout → cycle 終端へ
             }

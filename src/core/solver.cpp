@@ -19,6 +19,9 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_BOTTOMUP")) {
         bottomup_fail_limit_ = std::atoi(env);
     }
+    if (const char* env = std::getenv("SABORI_BOTTOMUP_ISOLATE")) {
+        bottomup_isolate_ = std::atoi(env) != 0;
+    }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
     }
