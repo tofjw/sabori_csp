@@ -307,6 +307,7 @@ public:
      * @param limit fail上限（0=probe無効）
      */
     void set_probe_fail_limit(int limit) { probe_fail_limit_ = limit; }
+    void set_bottomup_fail_limit(int limit) { bottomup_fail_limit_ = limit; }
 
 private:
     void log_presolve_start(const Model& model) const;
@@ -409,6 +410,17 @@ private:
      * probe_fail_limit_==0 や target が無効なら何もせず Continue を返す。
      */
     ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
+
+    /**
+     * @brief bottom-up optimistic probe（G1 ペナルティ和対策、SABORI_BOTTOMUP で opt-in）
+     *
+     * リスタート時に lb 側から obj ≤ lb+δ を投機的に試す。ペナルティ和型では
+     * tight bound 自体が伝播ガイドになる（Σ ≤ K が大半のペナルティを 0 に強制）。
+     * SAT → 準最適解へジャンプ / 証明付き UNSAT → root で lb 引き上げ（健全）/
+     * UNKNOWN → δ 半減 + 指数バックオフ。投機中に学習される NoGood は仮定を
+     * decision literal として含む条件付き連言なので大域健全（improvement probe と同機構）。
+     */
+    ProbeAction run_bottomup_probe(Model& model, SolutionCallback& callback, int root_point);
 
     /**
      * @brief handle_find_all_solution の戻り値
@@ -646,6 +658,10 @@ private:
     ModeRewardPolicy mode_policy_;
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
+    int bottomup_fail_limit_ = 0;   // bottom-up probe の fail 予算（0=無効, SABORI_BOTTOMUP）
+    Domain::value_type bottomup_delta_ = 0;  // 楽観幅 δ（UNSAT で倍増+1 / UNKNOWN で半減）
+    int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
+    int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
 
     // 最適化状態
     bool optimizing_ = false;

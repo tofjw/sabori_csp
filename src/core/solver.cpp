@@ -15,6 +15,10 @@ Solver::Solver()
     : rng_(12345678) {
     // 計測用: SABORI_SEED が設定されていれば RNG シードを差し替える（多シード検証用）。
     // 未設定なら従来どおり固定シード（デフォルト動作は不変）。
+    // 計測用: SABORI_BOTTOMUP=<fail予算> で bottom-up optimistic probe を有効化。
+    if (const char* env = std::getenv("SABORI_BOTTOMUP")) {
+        bottomup_fail_limit_ = std::atoi(env);
+    }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
     }
