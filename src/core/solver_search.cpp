@@ -443,9 +443,10 @@ Solver::ProbeAction Solver::run_bottomup_probe(
         // 実測 (zephyrus, opt=12): step_fails は 0 → 2.5k → 4.7k → 壁(>20k)
         // と超線形に上昇する。予算の 1/8 を超えたら階段を止め、lb 進捗を
         // 保持したまま撤退して残り予算を本探索（+ 蓄積した lb の伝播）に回す。
-        {
+        if (bottomup_cutoff_denom_ > 0) {
             const size_t step_cost = stats_.fail_count - fails_before_step;
-            if (step_cost * 8 > static_cast<size_t>(bottomup_fail_limit_)) {
+            if (step_cost * static_cast<size_t>(bottomup_cutoff_denom_)
+                    > static_cast<size_t>(bottomup_fail_limit_)) {
                 if (verbose_) {
                     std::cerr << "% [verbose] bottomup phase-transition cutoff: "
                               << "step_fails=" << step_cost << " lb="

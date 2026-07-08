@@ -662,6 +662,7 @@ private:
     Domain::value_type bottomup_delta_ = 0;  // 楽観幅 δ（UNSAT で倍増+1 / UNKNOWN で半減）
     int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
     int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
+    int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
     bool bottomup_isolate_ = false;          // probe の activity 汚染を隔離 (SABORI_BOTTOMUP_ISOLATE)
     std::vector<double> bottomup_saved_activity_;        // 隔離用スナップショット
     std::vector<int> bottomup_saved_temporal_;

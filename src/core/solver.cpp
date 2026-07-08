@@ -18,9 +18,16 @@ Solver::Solver()
     // 計測用: SABORI_BOTTOMUP=<fail予算> で bottom-up optimistic probe を有効化。
     if (const char* env = std::getenv("SABORI_BOTTOMUP")) {
         bottomup_fail_limit_ = std::atoi(env);
+        // SABORI_BOTTOMUP=1 は「既定構成で有効化」の糖衣
+        // (グリッド計測 bench_bottomup.py 2026-07-09: budget=2000,
+        //  cutoff=/8, isolate=off が G1 net +5 / 対照への害なしで最良)
+        if (bottomup_fail_limit_ == 1) bottomup_fail_limit_ = 2000;
     }
     if (const char* env = std::getenv("SABORI_BOTTOMUP_ISOLATE")) {
         bottomup_isolate_ = std::atoi(env) != 0;
+    }
+    if (const char* env = std::getenv("SABORI_BOTTOMUP_CUTOFF")) {
+        bottomup_cutoff_denom_ = std::atoi(env);
     }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
