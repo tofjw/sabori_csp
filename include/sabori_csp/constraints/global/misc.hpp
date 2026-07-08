@@ -221,9 +221,10 @@ private:
      * @brief 全再計算伝播の本体
      * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
      * @param changed 何か変更したら true
+     * @param save_point 探索モード時の entailment フラグ設定に使用
      * @return 矛盾なら false
      */
-    bool propagate_impl(Model& model, bool direct, bool& changed);
+    bool propagate_impl(Model& model, bool direct, bool& changed, int save_point = -1);
 };
 
 
@@ -291,9 +292,10 @@ private:
      * @brief 全再計算伝播の本体
      * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
      * @param changed 何か変更したら true
+     * @param save_point 探索モード時の entailment フラグ設定に使用
      * @return 矛盾なら false
      */
-    bool propagate_impl(Model& model, bool direct, bool& changed);
+    bool propagate_impl(Model& model, bool direct, bool& changed, int save_point = -1);
 };
 
 } // namespace sabori_csp

@@ -42,7 +42,8 @@ std::string LexLessEqConstraint::name() const {
     return strict_ ? "sabori_lex_less" : "sabori_lex_lesseq";
 }
 
-bool LexLessEqConstraint::propagate_impl(Model& model, bool direct, bool& changed) {
+bool LexLessEqConstraint::propagate_impl(Model& model, bool direct, bool& changed,
+                                         int save_point) {
     // direct(presolve) は Variable を直接操作、search は enqueue を使う
     auto vmin = [&](size_t id) -> Domain::value_type {
         return direct ? model.variable(id)->min() : model.var_min(id);
@@ -73,7 +74,11 @@ bool LexLessEqConstraint::propagate_impl(Model& model, bool direct, bool& change
     while (true) {
         if (i == nmin) {
             // 比較位置を使い切った = prefix 全域が等値強制
-            if (nx_ < ny_) return true;   // x が真の prefix → 厳密に小さい
+            if (nx_ < ny_) {
+                // x が真の prefix → 厳密に小さい（suffix は無拘束）→ 以後常に充足
+                if (!direct) model.set_constraint_entailed(model_index(), save_point);
+                return true;
+            }
             if (nx_ > ny_) return false;  // x が長い → 辞書順で後
             return !strict_;              // 同一列: lesseq は真、less は偽
         }
@@ -99,7 +104,12 @@ bool LexLessEqConstraint::propagate_impl(Model& model, bool direct, bool& change
         }
 
         // x[i] < y[i] が保証された → constraint は充足済み（suffix 無拘束）
-        if (x_max < y_min) return true;
+        // → 以後このサブツリーでは常に充足（generalized-peacable で scheduling
+        //   呼び出し 2.4億回/20s の 33.7% がこの状態への着弾だった実測に基づく）
+        if (x_max < y_min) {
+            if (!direct) model.set_constraint_entailed(model_index(), save_point);
+            return true;
+        }
 
         // 両者確定かつ等値なら次の位置へ（等値 prefix の延長）
         if (x_min == x_max && y_min == y_max && x_min == y_min) {
@@ -163,9 +173,9 @@ bool LexLessEqConstraint::on_remove_value(
     return true;
 }
 
-bool LexLessEqConstraint::propagate_batch(Model& model, int /*save_point*/) {
+bool LexLessEqConstraint::propagate_batch(Model& model, int save_point) {
     bool changed = false;
-    return propagate_impl(model, /*direct=*/false, changed);
+    return propagate_impl(model, /*direct=*/false, changed, save_point);
 }
 
 bool LexLessEqConstraint::on_final_instantiate(const Model& model) {

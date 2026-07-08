@@ -29,7 +29,8 @@ std::string ValuePrecedeConstraint::name() const {
     return "sabori_value_precede";
 }
 
-bool ValuePrecedeConstraint::propagate_impl(Model& model, bool direct, bool& changed) {
+bool ValuePrecedeConstraint::propagate_impl(Model& model, bool direct, bool& changed,
+                                            int save_point) {
     if (n_ == 0) return true;
 
     // direct(presolve) は Variable を直接操作、search は enqueue を使う
@@ -64,6 +65,9 @@ bool ValuePrecedeConstraint::propagate_impl(Model& model, bool direct, bool& cha
                 changed = true;
             }
         }
+        // s の除去を全域に enqueue 済み → 以後常に充足
+        // （矛盾する代入はドメイン層で検出される）
+        if (!direct) model.set_constraint_entailed(model_index(), save_point);
         return true;
     }
 
@@ -86,14 +90,32 @@ bool ValuePrecedeConstraint::propagate_impl(Model& model, bool direct, bool& cha
         }
     }
 
-    // --- Step 2: γ = t に確定した最小 index ---
+    // --- Entailment (a): x[α] が s に確定していれば、[0..α] から t は除去済み
+    // なので「最初に t が来得る位置より前に s が確定」= 以後常に充足
+    // （community-detection で scheduling 呼び出しの 99.8% がこの状態への着弾）
+    if (!direct && alpha < n_) {
+        size_t aid = var_ids_[alpha];
+        if (vassigned(aid) && vvalue(aid) == s_) {
+            model.set_constraint_entailed(model_index(), save_point);
+            return true;
+        }
+    }
+
+    // --- Step 2: γ = t に確定した最小 index（t_any: t が残存するか）---
     size_t gamma = n_;
+    bool t_any = false;
     for (size_t i = 0; i < n_; ++i) {
         size_t id = var_ids_[i];
+        if (vcontains(id, t_)) t_any = true;
         if (vassigned(id) && vvalue(id) == t_) {
             gamma = i;
             break;
         }
+    }
+    // Entailment (b): t がどのドメインにも無い → 以後常に充足
+    if (!direct && !t_any && gamma == n_) {
+        model.set_constraint_entailed(model_index(), save_point);
+        return true;
     }
     if (gamma < n_) {
         // s は γ より厳密に前に必要
@@ -167,9 +189,9 @@ bool ValuePrecedeConstraint::on_remove_value(
     return true;
 }
 
-bool ValuePrecedeConstraint::propagate_batch(Model& model, int /*save_point*/) {
+bool ValuePrecedeConstraint::propagate_batch(Model& model, int save_point) {
     bool changed = false;
-    return propagate_impl(model, /*direct=*/false, changed);
+    return propagate_impl(model, /*direct=*/false, changed, save_point);
 }
 
 bool ValuePrecedeConstraint::on_final_instantiate(const Model& model) {
