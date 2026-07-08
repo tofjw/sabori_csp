@@ -311,6 +311,10 @@ bool IntOneHotChannelConstraint::on_instantiate(Model& model, int save_point,
                 model.enqueue_instantiate(b_ids_[i], target);
             }
         }
+        // x 確定で全エントリを強制済み（matched が imp の場合その b はどちらの
+        // 値でも充足）→ 以後このサブツリーでは常に充足。強制と矛盾する代入は
+        // ドメイン層で検出される（skill-allocation で着弾の 84% がこの後追い）
+        model.set_constraint_entailed(model_index(), save_point);
         return true;
     }
 
@@ -334,6 +338,8 @@ bool IntOneHotChannelConstraint::on_instantiate(Model& model, int save_point,
                 model.enqueue_instantiate(b_ids_[j], 0);
             }
         }
+        // b_i=1 で x:=v_i と他 b_j:=0 を全強制済み → 以後常に充足
+        model.set_constraint_entailed(model_index(), save_point);
     } else {
         // b_i = 0 → x のドメインから values[i] を除去
         // (imp: b=0 は x を拘束しないのでスキップ)
