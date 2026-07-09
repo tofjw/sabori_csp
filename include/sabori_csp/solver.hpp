@@ -423,6 +423,17 @@ private:
     ProbeAction run_bottomup_probe(Model& model, SolutionCallback& callback, int root_point);
 
     /**
+     * @brief root probing / failed literal 検出（SABORI_PROBE_ROOT で opt-in）
+     *
+     * 探索開始前に、ドメインサイズ2の未確定変数へ両値を仮置き伝播し、
+     * 片側が矛盾すれば反対値を root で確定する（伝播のみ・探索なしなので安価）。
+     * 確定が連鎖しうるため進捗がある間は限定ラウンドで繰り返す。
+     * 全解探索でも健全（矛盾側の値を持つ解は存在しない）。
+     * @return false = root で矛盾（UNSAT 確定）
+     */
+    bool run_root_probing(Model& model);
+
+    /**
      * @brief handle_find_all_solution の戻り値
      *
      * ContinueLoop: 解を NoGood 登録し探索継続（inner restart ループを continue）。
@@ -663,6 +674,7 @@ private:
     int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
     int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
     int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
+    int root_probe_limit_ = 0;               // root probing の probe 予算 (0=無効, SABORI_PROBE_ROOT)
     bool bottomup_isolate_ = false;          // probe の activity 汚染を隔離 (SABORI_BOTTOMUP_ISOLATE)
     std::vector<double> bottomup_saved_activity_;        // 隔離用スナップショット
     std::vector<int> bottomup_saved_temporal_;

@@ -29,6 +29,12 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_BOTTOMUP_CUTOFF")) {
         bottomup_cutoff_denom_ = std::atoi(env);
     }
+    // 計測用: SABORI_PROBE_ROOT=<probe予算> で root probing を有効化。
+    // =1 は既定予算 2000 の糖衣。伝播のみの failed literal 検出 (G4 対策候補)。
+    if (const char* env = std::getenv("SABORI_PROBE_ROOT")) {
+        root_probe_limit_ = std::atoi(env);
+        if (root_probe_limit_ == 1) root_probe_limit_ = 2000;
+    }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
     }

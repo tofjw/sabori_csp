@@ -108,6 +108,18 @@ public:
     size_t defined_var_end() const { return defined_var_end_; }
     const std::vector<size_t>& var_order() const { return var_order_; }
 
+    /**
+     * @brief var_order_ を差し替えて分割情報を再計算する
+     *
+     * root probing 等の「探索外の伝播」は on_instantiate swap で var_order_ を
+     * 恒久的に並べ替える（backtrack は end しか戻さない）。事前に var_order()
+     * のコピーを取り、ここで戻すことで探索開始状態を bit 再現できる。
+     */
+    void restore_order(std::vector<size_t> order, const Model& model) {
+        var_order_ = std::move(order);
+        init_tracking(model);
+    }
+
     size_t community_first_var() const { return community_first_var_; }
     void set_community_first_var(size_t v) { community_first_var_ = v; }
 

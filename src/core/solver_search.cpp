@@ -488,10 +488,121 @@ Solver::ProbeAction Solver::run_bottomup_probe(
     return ProbeAction::Continue;
 }
 
+bool Solver::run_root_probing(Model& model) {
+    // --- root probing / failed literal 検出 (SABORI_PROBE_ROOT, opt-in) ---
+    // ドメインサイズ2の未確定変数に両値を仮置き伝播し、片側矛盾なら反対値を
+    // root で確定。伝播のみ (探索なし) なので1probe は安価。確定は伝播連鎖で
+    // 他候補を落としうるため、進捗がある間は限定ラウンドで繰り返す。
+    if (root_probe_limit_ <= 0) return true;
+    const int root_point = current_decision_;
+
+    // probe 伝播中の過渡的矛盾は record_constraint_call 経由で bump_activity を
+    // 呼び、activity を汚染し rng_ を消費する (entailment フラグの教訓と同機構)。
+    // probe は無指向の総当たりで bump に情報価値がないため、activity / rng /
+    // activity_inc を snapshot/restore して探索軌道への副作用を消す
+    // (fixed=0 なら無効時と bit 同一の状態で本探索に入る)。
+    const std::vector<double> saved_activity = activity_;
+    const std::vector<int> saved_temporal = temporal_activity_;
+    const std::mt19937 saved_rng = rng_;
+    const double saved_activity_inc = activity_inc_;
+    std::vector<size_t> saved_order = var_selector_.var_order();
+
+    std::vector<size_t> cand;
+    const size_t n = model.variables().size();
+    for (size_t i = 0; i < n; ++i) {
+        if (!model.is_instantiated(i) && model.var_size(i) == 2) {
+            cand.push_back(i);
+        }
+    }
+    // 構造 activity の高い順 = 制約関与の濃い変数から (予算切れに備える)
+    std::sort(cand.begin(), cand.end(), [&](size_t a, size_t b) {
+        return activity_[a] > activity_[b];
+    });
+
+    int budget = root_probe_limit_;
+    size_t probed = 0, fixed = 0;
+    bool interrupted = false;
+
+    // 1 probe: v を仮置きして伝播、矛盾なら true。必ず root へ巻き戻す
+    auto probe_fails = [&](size_t vid, Domain::value_type v) {
+        ++current_decision_;
+        decision_trail_.push_back({vid, v, Literal::Type::Eq});
+        model.enqueue_instantiate(vid, v);
+        auto pr = process_queue(model);
+        decision_trail_.pop_back();
+        model.clear_pending_updates();
+        backtrack(model, root_point);
+        current_decision_ = root_point;
+        if (pr == PropagationResult::Stopped) interrupted = true;
+        return pr == PropagationResult::Conflict;
+    };
+
+    for (int round = 0; round < 3 && !interrupted; ++round) {
+        bool progress = false;
+        for (size_t vid : cand) {
+            if (budget <= 0 || interrupted || stopped_) break;
+            if (model.is_instantiated(vid)) continue;
+            --budget;
+            ++probed;
+            const auto lo = model.var_min(vid);
+            const auto hi = model.var_max(vid);
+
+            Domain::value_type forced = 0;
+            bool has_forced = false;
+            if (probe_fails(vid, lo)) {
+                forced = hi;
+                has_forced = true;
+            } else if (!interrupted && probe_fails(vid, hi)) {
+                forced = lo;
+                has_forced = true;
+            }
+            if (interrupted) break;
+            if (!has_forced) continue;
+
+            // 反対値を root レベルで確定 (全解探索でも健全: 矛盾側の値を
+            // 持つ解は存在しない)
+            model.enqueue_instantiate(vid, forced);
+            auto pr = process_queue(model);
+            if (pr == PropagationResult::Conflict) {
+                return false;  // 両側矛盾 = root UNSAT
+            }
+            if (pr == PropagationResult::Stopped) {
+                interrupted = true;
+                break;
+            }
+            ++fixed;
+            progress = true;
+        }
+        if (!progress || budget <= 0) break;
+    }
+
+    activity_ = saved_activity;
+    temporal_activity_ = saved_temporal;
+    rng_ = saved_rng;
+    activity_inc_ = saved_activity_inc;
+    if (probed > 0) {
+        // probe 伝播の on_instantiate swap は var_order_ を恒久的に並べ替える
+        // (backtrack は end しか戻さない) ため、保存した順序ごと復元する。
+        // fixed=0 なら probe 前と bit 同一、fixed>0 なら確定分だけが後方へ移る。
+        var_selector_.restore_order(std::move(saved_order), model);
+        unassigned_trail_.clear();
+    }
+    if (verbose_) {
+        std::cerr << "% [verbose] root probing: candidates=" << cand.size()
+                  << " probed=" << probed << " fixed=" << fixed
+                  << (interrupted ? " (interrupted)" : "") << "\n";
+    }
+    return true;
+}
+
 std::optional<Solution> Solver::search_with_restart(Model& model,
                                                       SolutionCallback callback,
                                                       bool find_all) {
     int root_point = current_decision_;
+
+    if (!run_root_probing(model)) {
+        return std::nullopt;  // root で矛盾 = UNSAT
+    }
 
     if (verbose_) {
         std::cerr << "% [verbose] search_with_restart start"
@@ -594,6 +705,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 std::optional<Solution> Solver::search_with_restart_optimize(
         Model& model, SolutionCallback callback) {
     int root_point = current_decision_;
+
+    if (!run_root_probing(model)) {
+        return std::nullopt;  // root で矛盾 = UNSAT
+    }
 
     gradient_strategy_.clear();  // prev solution empty = まだ改善解なし
 
