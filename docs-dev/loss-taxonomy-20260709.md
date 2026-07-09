@@ -40,6 +40,9 @@ liner-sf-repositioning14/19, largescheduling15/18 (軽微)
   節ではなく energetic/precedence 系の数値下界。depot は CP-SAT も 30s
 - **処方箋**: TTEF 強化・precedence LB 等の古典 CP 技術。**G2 と混ぜないこと**
   （欠落部品が「節」でなく「数値推論」）
+- **攻略可能性調査済み (2026-07-09、下記セクション)**: G3a (schedule-bound 型)
+  は bottomup prover 構成で攻略可能（rcpsp を 118s で完全証明）、
+  G3b (int_max 集約型) は階段が構造的に不成立で射程外
 
 ## G4: 充足解未達型（4問、フィージビリティ探索）
 
@@ -109,3 +112,42 @@ neighbours21, minimal-decision-sets, java-routing, graph-clear, magc23
 H-A から。理由: (1) G1 の指紋（LB↔最適の数桁乖離）に直結 (2) 実装が既存
 probe の対称形で小さい (3) UNSAT 側が健全な lb 証明として蓄積し証明ギャップ
 にも効く (4) 値選択系は gradient/promote の前例から単体 net±0 リスクが高い
+
+## G3 攻略可能性調査 (2026-07-09)
+
+bottomup probe（G1 用に実装した SABORI_BOTTOMUP）の「prover 構成」
+（budget 10M / cutoff 無効 = 壁の1段を跨ぐまで諦めない）を G3 5問に適用。
+単スレ・FZN 直接実行、objective に output_var 注釈。
+
+### 実測
+
+| 問題 | 目的の型 | 階段の挙動 | 結果 |
+|---|---|---|---|
+| rcpsp13 | makespan (cumulative×4 + precedence×329) | lb 45→60 全段 step_fails=0、67=3k、75=491k、最終段76=1M〜10M fails | **OPTIMAL 完全証明 118s**（CP-SAT 12s の約10倍だが閉じる） |
+| largescheduling15 | 大数値 makespan | lb 20078→151149（incumbent の 63%）まで全段 step_fails=0 | 閉じないが b20k で obj 微改善 (239442→235079) |
+| mapping15 | int_max 集約 | lb 0→511 無料、そこで壁。probe jackpot が最適解 793 は即発見 | 300s でも lb=511/793 から不動 |
+| depot-placement16 | int_max 集約 | lb→8191 登坂（41→544→234k fails と漸増）、そこで壁 | 300s でも lb=8191/13995 |
+| liner-sf19 | 大数値線形 | 毎段 ~20k fails × obj スケール 4M | 階段が構造的に遅い。arm 微負 |
+
+### 判定: G3 は2亜型に割れる
+
+- **G3a（スケジュール bound 型: rcpsp, largescheduling）= 攻略可能**。
+  obj≤K が cumulative/precedence に直結して強く伝播し、lb 階段の大部分が
+  無料（TTEF+precedence が即答）。壁は最終数段のみで有限。
+  **G1 では jackpot（SAT 側）が武器、G3a では UNSAT 側の階段が本体**という対照。
+- **G3b（int_max 集約型: mapping, depot）= この装備では不可**。
+  obj=max(e_i) の「obj>K」証明は全 e_i≤K の一括フィージビリティ反証で
+  漸進化できない。階段は「どれかの e_i の lb が target 超え」の間だけ無料。
+  節学習の領分（depot は CP-SAT ですら 30s）→ 外部ポートフォリオ枠へ。
+
+### 含意
+
+1. **30s 単スレ窓ではスコア不変**: prover 構成は 30s だと解探索を飢えさせる
+   （rcpsp が UNKNOWN 化）。効くのは長時間 or feature/mp で、既定 b2k とは別に
+   **prover ワーカー（budget 10M / cutoff off）を1本**立てる形
+2. probe の enqueue_set_min による root lb はワーカー内限り →
+   **lb 共有（現状 ub=best_obj のみ）が feature/mp 統合ポイント**
+3. budget は壁の1段を跨げるかの閾値そのもの（rcpsp: 1M 不可 / 10M 可）。
+   prover 亜種は「大きいほど良い」でグリッド既定 2000 とは別物
+4. TTEF 強化（energetic reasoning 等）は G3a の壁段を直接削る候補
+   （118s → CP-SAT の 12s に近づける余地）。G3b には効かない
