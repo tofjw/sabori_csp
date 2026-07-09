@@ -227,3 +227,17 @@ gfd pl8-s2 1141→41 の跳ねセル。jp-encoding の悪化は plain でも残�
 証明) は両意味論とも不発。plain は -a で解が重複する (s 非関数的) ため
 既定は min のまま、単解/最適化の実験構成として plain を推奨。
 総合判定は不採用のまま (wash + 局所ジャックポット = mp 多様性部品の棚)。
+
+**1WL 化 (2026-07-10, ユーザ提案)**: witness は 2WL どころか **1WL で足りる**
+— unit propagation は節本体の仕事で複製不要、witness の仕事は
+(a) s 確定 → l_s 真 (b) 不偽 literal 1本の見届け、のみ。非 watch literal の
+イベントは O(1) 即 return、watch 移動スキャンの通過 index は dom(s) から
+償却除去。効果:
+- 証明系オーバーヘッド: project-planning +170%→+10%、routing-flexible
+  +130%→**−34%** (9.98s < off 15.15s)
+- A/B が初の一貫プラス **net pl8 +3 / pl4 +3**。jp-encoding が悪化→改善に
+  反転 (=前回の一貫悪化の正体は batch 全再計算)、**code-generator20
+  (節長1156の本命) が pl4 で NONE→SAT**
+- 14年ベンチ (20260710_clause_witness) は batch 版の結果なので、1WL 版での
+  再計測価値あり。判定は「不採用」から**「mp arm 有力候補 (負け面が消えた)」
+  に格上げ**。既定 ON は広域ゲート次第
