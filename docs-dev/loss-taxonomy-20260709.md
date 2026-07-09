@@ -180,3 +180,40 @@ scipy/HiGHS で LP。緩和 = 制約の線形含意のみなので bound は常�
   arithmetic は element/div/mod。network は全制約可視でも LP=1
   （分数的構造 = 真の節学習領分）
 - LP 計測自体が数秒 → 「効く問題か」は事前判別可能
+
+## G1(b) surrogate 実装トライアル → 不採用 (bottomup が包含) (2026-07-09)
+
+上の LP 上限計測を受けて2経路を実装検証した。
+
+**経路1: LP bound の FZN 注入 (end-to-end 価値の確認)**
+lp_bound_probe.py --emit で obj≥LP値 の制約を注入し、sabori ±bottomup で計測:
+
+| 構成 (60s) | zephyrus (opt12) | code-generator (opt6340) |
+|---|---|---|
+| base | 1772 TO | 11912 TO |
+| prover (10M/nocut) | 66330 TO (飢餓) | **6340 OPT 0.39s** |
+| 注入+base | 41 TO | 8482 TO |
+| 注入+prover | 66330 TO | 6340 OPT 0.39s (同着) |
+| b2k / 注入+b2k | 14 TO / **12** TO | — |
+| **prover 300s (注入なし)** | **12 OPT 完全証明** | — |
+| 注入+prover 300s | 12 TO (軌道差で未完) | — |
+
+**経路2: 有界 FM 消去プロトタイプ (fm_bound_probe.py)**
+presolve 実装の到達可能性を Python で計測 → **死産**。zephyrus は既定 cap
+(pair400/len32) でも緩和 cap (pair5000/len400/rows1M, 120s) でも
+**lb=5=dom lb のまま行が全滅**。reified big-M 網では hub 変数の消去で
+行爆発 → drop 連鎖で導出チェーンが切れる。
+
+**結論: presolve LP surrogate は不採用**
+1. FM 実現は不能 (bound が生きている問題ほど reif 網で崩壊する)
+2. **bottomup prover が同じ bound に動的に到達し、しかも超える**
+   (staircase = 探索による動的 destructive 双対導出。cg は lb 0→6340 全段
+   伝播即答 0.39s、zephyrus は 12 > LP値10 まで登り切って証明完了)
+3. 注入は軌道を変えるだけで staircase を加速しない (zephyrus で逆効果例)
+4. 残る唯一の芽 = optional LP 依存 (選択肢c) も、対象 2/8 問が両方
+   prover で閉じた今、ROI なし
+
+**副産物 (本日の最大成果):** prover 構成 (SABORI_BOTTOMUP=10M, CUTOFF=0) が
+**G1 の zephyrus (×1247 大負け筆頭) と code-generator を単スレ OPTIMAL 証明**。
+G3a rcpsp と合わせ、prover arm の feature/mp 編入価値がさらに強まった。
+lp_bound_probe.py は「LP 可視の結合があるか」の事前判別ツールとして温存。
