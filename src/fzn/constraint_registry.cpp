@@ -337,8 +337,12 @@ static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl,
             auto s = ctx.model->create_variable(
                 "__clause_witness_" + std::to_string(ctx.model->variables().size()),
                 0, static_cast<Domain::value_type>(len) - 1);
-            ctx.model->add_constraint(
-                std::make_shared<ClauseWitnessConstraint>(pos_vars, neg_vars, s));
+            static const bool plain = [] {
+                const char* e = std::getenv("SABORI_CLAUSE_WITNESS_PLAIN");
+                return e && e[0] == '1';
+            }();
+            ctx.model->add_constraint(std::make_shared<ClauseWitnessConstraint>(
+                pos_vars, neg_vars, s, /*min_semantics=*/!plain));
         }
     }
     return std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);

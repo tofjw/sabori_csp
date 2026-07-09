@@ -1307,10 +1307,11 @@ std::vector<VariablePtr> concat_witness_vars(const std::vector<VariablePtr>& pos
 ClauseWitnessConstraint::ClauseWitnessConstraint(
         const std::vector<VariablePtr>& pos,
         const std::vector<VariablePtr>& neg,
-        VariablePtr s)
+        VariablePtr s, bool min_semantics)
     : Constraint(extract_var_ids(concat_witness_vars(pos, neg, s)))
     , n_(pos.size() + neg.size())
-    , npos_(pos.size()) {
+    , npos_(pos.size())
+    , min_(min_semantics) {
 }
 
 std::string ClauseWitnessConstraint::name() const {
@@ -1363,31 +1364,37 @@ bool ClauseWitnessConstraint::propagate_impl(Model& model, bool direct,
         return true;
     };
 
-    // Step 1: 偽 literal を s から除去、最初の確定真で s を頭打ち
+    // Step 1: 偽 literal を s から除去。
+    // min 版のみ: 最初の確定真で s を頭打ち (plain 版は真 literal から
+    // s への情報は流れない — s は「どれか真の位置」を指すだけ)
     size_t first_true = n_;
     for (size_t i = 0; i < n_; ++i) {
         const int st = lit_state(i);
         if (st == 1) {
             first_true = i;
-            break;
+            if (min_) break;
+            continue;
         }
         if (st == 0 && scontains(static_cast<Domain::value_type>(i))) {
             if (!srem(static_cast<Domain::value_type>(i))) return false;
             changed = true;
         }
     }
-    if (first_true < n_ &&
+    if (min_ && first_true < n_ &&
         smax() > static_cast<Domain::value_type>(first_true)) {
         if (!sset_max(static_cast<Domain::value_type>(first_true))) return false;
         changed = true;
     }
 
-    // Step 2: min(dom(s)) より前の literal は偽 (真なら s ≤ index に矛盾)
-    const Domain::value_type mn = smin();
-    for (size_t j = 0; j < n_ && static_cast<Domain::value_type>(j) < mn; ++j) {
-        if (lit_state(j) != 0) {
-            if (!bforce(j, false)) return false;
-            changed = true;
+    // Step 2 (min 版のみ): min(dom(s)) より前の literal は偽
+    // (真なら s ≤ index に矛盾)
+    if (min_) {
+        const Domain::value_type mn = smin();
+        for (size_t j = 0; j < n_ && static_cast<Domain::value_type>(j) < mn; ++j) {
+            if (lit_state(j) != 0) {
+                if (!bforce(j, false)) return false;
+                changed = true;
+            }
         }
     }
 
@@ -1462,6 +1469,12 @@ bool ClauseWitnessConstraint::propagate_batch(Model& model, int save_point) {
 
 bool ClauseWitnessConstraint::on_final_instantiate(const Model& model) {
     const size_t s = static_cast<size_t>(model.value(var_ids_[n_]));
+    if (!min_) {
+        // plain: s 番目の literal が真であればよい
+        if (s >= n_) return false;
+        const bool bv = model.value(var_ids_[s]) == 1;
+        return (s < npos_) == bv;
+    }
     for (size_t i = 0; i < n_; ++i) {
         const bool bv = model.value(var_ids_[i]) == 1;
         if ((i < npos_) == bv) {

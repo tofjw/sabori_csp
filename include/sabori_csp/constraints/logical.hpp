@@ -304,7 +304,7 @@ class ClauseWitnessConstraint : public Constraint {
 public:
     ClauseWitnessConstraint(const std::vector<VariablePtr>& pos,
                             const std::vector<VariablePtr>& neg,
-                            VariablePtr s);
+                            VariablePtr s, bool min_semantics = true);
 
     std::string name() const override;
 
@@ -336,6 +336,8 @@ private:
 
     size_t n_;     ///< literal 数 (var_ids_[0..n_) = literals, var_ids_[n_] = s)
     size_t npos_;  ///< 正リテラル数
+    bool min_;     ///< true=min 意味論 (関数的・-a 安全) / false=plain
+                   ///< (「s 番目が真」のみ。-a では解が重複するので単解モード限定)
 };
 
 } // namespace sabori_csp
