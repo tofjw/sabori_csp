@@ -216,3 +216,14 @@ gfd wit8-s2 の 1141→338 だけが救い (相殺済み)。
 impact 昇格 (defined 死角に実証済みの需要があった) では当たり、witness
 (需要が未実証だった) では外れ — **ハンドル系は「探索が構造的に届かない場所」
 の実証とセットでないと賭けにならない**。
+
+**plain 版追試 (2026-07-10, ユーザ提案)**: min 意味論の prefix 強制
+(s=i → 前方全偽) が過剰コミットとの読みで、当初案どおりの plain 版
+(「s 番目が真」のみ、SABORI_CLAUSE_WITNESS_PLAIN=1) を追加。
+**net pl8 ±0 / pl4 +1 と min 版 (−2/−4) の負けは解消**。
+collaborative が NONE→SAT **obj=9** (当セッション最良、CP-SAT 同値)、
+gfd pl8-s2 1141→41 の跳ねセル。jp-encoding の悪化は plain でも残存
+= witness 変数の維持コスト自体が原因。本命 (code-gen 巨大節 / products
+証明) は両意味論とも不発。plain は -a で解が重複する (s 非関数的) ため
+既定は min のまま、単解/最適化の実験構成として plain を推奨。
+総合判定は不採用のまま (wash + 局所ジャックポット = mp 多様性部品の棚)。
