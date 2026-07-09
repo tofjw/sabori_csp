@@ -338,6 +338,9 @@ private:
     size_t npos_;  ///< 正リテラル数
     bool min_;     ///< true=min 意味論 (関数的・-a 安全) / false=plain
                    ///< (「s 番目が真」のみ。-a では解が重複するので単解モード限定)
+    size_t watch_ = 0;  ///< plain 1WL: 不偽 literal の内部 index。
+                        ///< 同一変数が複数 index に現れる節では stale になりうるが
+                        ///< 健全性は節本体と s 割当時チェックが担保する
 };
 
 } // namespace sabori_csp
