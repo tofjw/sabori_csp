@@ -287,6 +287,57 @@ private:
     size_t c_id_;
 };
 
+/**
+ * @brief 節の witness チャネリング: s = min{ i : literal_i が真 }
+ *
+ * bool_clause (pos ∨ ¬neg) に対し「最初に真になる literal の index」を表す
+ * 補助整数変数 s (0..L-1、decision 層) を導入する。伝播力は節と等価だが、
+ * (1) 探索が「節をどう充足するか」へ直接分岐できる
+ * (2) 節がらみの conflict の activity が s に集約される (節単位の紛争度)
+ * (3) min 意味論で s は関数的 = 全解探索でも解が重複しない
+ * (4) s=i の分岐は「l_0..l_{i-1} 偽 ∧ l_i 真」= witness 対称性を自動破壊。
+ * literal index は pos が先、neg が後 (i < npos は b=1 が真、以降は b=0 が真)。
+ * 既存の BoolClauseConstraint (2WL) は温存し、本制約は純粋に探索ハンドル。
+ * SABORI_CLAUSE_WITNESS=<最小節長> で opt-in (constraint_registry 参照)。
+ */
+class ClauseWitnessConstraint : public Constraint {
+public:
+    ClauseWitnessConstraint(const std::vector<VariablePtr>& pos,
+                            const std::vector<VariablePtr>& neg,
+                            VariablePtr s);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;
+
+private:
+    bool propagate_impl(Model& model, bool direct, bool& changed,
+                        int save_point = -1);
+
+    size_t n_;     ///< literal 数 (var_ids_[0..n_) = literals, var_ids_[n_] = s)
+    size_t npos_;  ///< 正リテラル数
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_LOGICAL_HPP

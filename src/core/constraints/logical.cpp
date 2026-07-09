@@ -1279,4 +1279,200 @@ bool BoolXorConstraint::on_final_instantiate(const Model& model) {
     return model.value(c_id_) == ((model.value(a_id_) != model.value(b_id_)) ? 1 : 0);
 }
 
+
+// ============================================================================
+// ClauseWitnessConstraint
+//
+// s = min{ i : literal_i が真 }。伝播規則 (ステートレス batch 再計算):
+//   Step 1: 先頭から走査し、偽 literal の index を s から除去。
+//           最初に真が確定している index t で s ≤ t。
+//   Step 2: min(dom(s)) より前の literal は witness になれず、かつ
+//           「真なら s ≤ その index」に矛盾するので偽に強制。
+//   Step 3: s が確定したら literal_s を真に強制 → 以後 entailed。
+// ============================================================================
+
+namespace {
+std::vector<VariablePtr> concat_witness_vars(const std::vector<VariablePtr>& pos,
+                                             const std::vector<VariablePtr>& neg,
+                                             const VariablePtr& s) {
+    std::vector<VariablePtr> all;
+    all.reserve(pos.size() + neg.size() + 1);
+    all.insert(all.end(), pos.begin(), pos.end());
+    all.insert(all.end(), neg.begin(), neg.end());
+    all.push_back(s);
+    return all;
+}
+}  // namespace
+
+ClauseWitnessConstraint::ClauseWitnessConstraint(
+        const std::vector<VariablePtr>& pos,
+        const std::vector<VariablePtr>& neg,
+        VariablePtr s)
+    : Constraint(extract_var_ids(concat_witness_vars(pos, neg, s)))
+    , n_(pos.size() + neg.size())
+    , npos_(pos.size()) {
+}
+
+std::string ClauseWitnessConstraint::name() const {
+    return "sabori_clause_witness";
+}
+
+bool ClauseWitnessConstraint::propagate_impl(Model& model, bool direct,
+                                             bool& changed, int save_point) {
+    const size_t sid = var_ids_[n_];
+
+    auto inst = [&](size_t id) {
+        return direct ? model.variable(id)->is_assigned() : model.is_instantiated(id);
+    };
+    auto val = [&](size_t id) {
+        return direct ? model.variable(id)->assigned_value().value() : model.value(id);
+    };
+    // literal 状態: 1=真, 0=偽, -1=未確定
+    auto lit_state = [&](size_t i) -> int {
+        size_t id = var_ids_[i];
+        if (!inst(id)) return -1;
+        const bool bv = val(id) == 1;
+        return ((i < npos_) == bv) ? 1 : 0;
+    };
+    auto scontains = [&](Domain::value_type v) {
+        return direct ? model.variable(sid)->domain().contains(v)
+                      : model.contains(sid, v);
+    };
+    auto srem = [&](Domain::value_type v) -> bool {
+        if (direct) return model.variable(sid)->remove(v);
+        model.enqueue_remove_value(sid, v);
+        return true;
+    };
+    auto smin = [&]() {
+        return direct ? model.variable(sid)->min() : model.var_min(sid);
+    };
+    auto smax = [&]() {
+        return direct ? model.variable(sid)->max() : model.var_max(sid);
+    };
+    auto sset_max = [&](Domain::value_type v) -> bool {
+        if (direct) return model.variable(sid)->remove_above(v);
+        model.enqueue_set_max(sid, v);
+        return true;
+    };
+    // literal i を truth 方向に確定 (truth=true → 充足方向)
+    auto bforce = [&](size_t i, bool truth) -> bool {
+        const Domain::value_type v = ((i < npos_) == truth) ? 1 : 0;
+        size_t id = var_ids_[i];
+        if (direct) return model.variable(id)->assign(v);
+        model.enqueue_instantiate(id, v);
+        return true;
+    };
+
+    // Step 1: 偽 literal を s から除去、最初の確定真で s を頭打ち
+    size_t first_true = n_;
+    for (size_t i = 0; i < n_; ++i) {
+        const int st = lit_state(i);
+        if (st == 1) {
+            first_true = i;
+            break;
+        }
+        if (st == 0 && scontains(static_cast<Domain::value_type>(i))) {
+            if (!srem(static_cast<Domain::value_type>(i))) return false;
+            changed = true;
+        }
+    }
+    if (first_true < n_ &&
+        smax() > static_cast<Domain::value_type>(first_true)) {
+        if (!sset_max(static_cast<Domain::value_type>(first_true))) return false;
+        changed = true;
+    }
+
+    // Step 2: min(dom(s)) より前の literal は偽 (真なら s ≤ index に矛盾)
+    const Domain::value_type mn = smin();
+    for (size_t j = 0; j < n_ && static_cast<Domain::value_type>(j) < mn; ++j) {
+        if (lit_state(j) != 0) {
+            if (!bforce(j, false)) return false;
+            changed = true;
+        }
+    }
+
+    // Step 3: s 確定 → witness を真に。以後このサブツリーで常に充足
+    if (inst(sid)) {
+        const size_t i = static_cast<size_t>(val(sid));
+        if (i >= n_) return false;
+        const int st = lit_state(i);
+        if (st == 0) return false;
+        if (st == -1) {
+            if (!bforce(i, true)) return false;
+            changed = true;
+        }
+        if (!direct) model.set_constraint_entailed(model_index(), save_point);
+    }
+    return true;
+}
+
+PresolveResult ClauseWitnessConstraint::presolve(Model& model) {
+    bool changed = false;
+    if (!propagate_impl(model, /*direct=*/true, changed)) {
+        return PresolveResult::Contradiction;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
+}
+
+bool ClauseWitnessConstraint::prepare_propagation(Model& model) {
+    init_watches();
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_instantiate(
+    Model& model, int save_point,
+    size_t internal_var_idx, Domain::value_type value,
+    Domain::value_type prev_min, Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+    if (!has_uninstantiated(model)) {
+        return on_final_instantiate(model);
+    }
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_set_min(
+    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*new_min*/, Domain::value_type /*old_min*/) {
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_set_max(
+    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*new_max*/, Domain::value_type /*old_max*/) {
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_remove_value(
+    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*removed_value*/) {
+    model.schedule_constraint_batch(model_index());
+    return true;
+}
+
+bool ClauseWitnessConstraint::propagate_batch(Model& model, int save_point) {
+    bool changed = false;
+    return propagate_impl(model, /*direct=*/false, changed, save_point);
+}
+
+bool ClauseWitnessConstraint::on_final_instantiate(const Model& model) {
+    const size_t s = static_cast<size_t>(model.value(var_ids_[n_]));
+    for (size_t i = 0; i < n_; ++i) {
+        const bool bv = model.value(var_ids_[i]) == 1;
+        if ((i < npos_) == bv) {
+            return s == i;  // 最初の真 literal が witness と一致するか
+        }
+    }
+    return false;  // 真 literal なし = 節違反
+}
+
+void ClauseWitnessConstraint::rewind_to(int /*save_point*/) {
+    // ステートレス — 復元不要
+}
+
 } // namespace sabori_csp
