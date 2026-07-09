@@ -675,6 +675,9 @@ private:
     int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
     int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
     int root_probe_limit_ = 0;               // root probing の probe 予算 (0=無効, SABORI_PROBE_ROOT)
+    int promote_impact_k_ = 0;               // impact 上位 K の defined 変数を昇格 (0=無効, SABORI_PROMOTE_IMPACT)
+    int promote_impact_period_ = 8;          // 昇格再実行のリスタート周期 (0=開始時のみ, SABORI_PROMOTE_IMPACT_PERIOD)
+    size_t promote_impact_total_ = 0;        // 累計昇格数 (上限 8*K のガード用)
     bool bottomup_isolate_ = false;          // probe の activity 汚染を隔離 (SABORI_BOTTOMUP_ISOLATE)
     std::vector<double> bottomup_saved_activity_;        // 隔離用スナップショット
     std::vector<int> bottomup_saved_temporal_;

@@ -120,6 +120,37 @@ public:
         init_tracking(model);
     }
 
+    /// vid が現在 decision ゾーンに居るか（impact 昇格の重複除外用）
+    bool is_decision_tier(size_t vid) const {
+        return vid < var_position_.size() && var_position_[vid] != SIZE_MAX &&
+               var_position_[vid] < decision_var_end_;
+    }
+
+    /**
+     * @brief defined ゾーンの変数を decision ゾーンへ昇格する
+     *
+     * impact 昇格アーム (SABORI_PROMOTE_IMPACT) 用。defined ゾーン内の
+     * vid を decision ゾーン末尾へ移し、境界を拡張する。
+     * 呼び出し後は init_tracking で unassigned 分割を再計算すること。
+     * @return 実際に昇格した数
+     */
+    size_t promote_to_decision(const std::vector<size_t>& vids) {
+        size_t promoted = 0;
+        for (size_t vid : vids) {
+            if (vid >= var_position_.size()) continue;
+            size_t pos = var_position_[vid];
+            if (pos == SIZE_MAX) continue;
+            if (pos < decision_var_end_ || pos >= defined_var_end_) continue;
+            size_t front = decision_var_end_;
+            std::swap(var_order_[pos], var_order_[front]);
+            var_position_[var_order_[pos]] = pos;
+            var_position_[var_order_[front]] = front;
+            ++decision_var_end_;
+            ++promoted;
+        }
+        return promoted;
+    }
+
     size_t community_first_var() const { return community_first_var_; }
     void set_community_first_var(size_t v) { community_first_var_ = v; }
 

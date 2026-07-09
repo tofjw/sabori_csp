@@ -533,6 +533,15 @@ bool Solver::run_root_probing(Model& model) {
     uint32_t epoch = 0;
     std::vector<std::tuple<size_t, Domain::value_type, Domain::value_type>> tighten_cand;
 
+    // impact 昇格アーム用: 両側生存 probe の trail 長合計 = 分岐したときの
+    // 伝播影響力の実測値。defined 層は select 厳格優先で activity が死ぬため
+    // 浮上機構が効かない (2026-07-09 実測: G4 の unit fix は 100% defined)。
+    // 高 impact の defined 変数に decision 層への入場券を配る。
+    std::vector<std::pair<size_t, size_t>> impact;  // (trail長合計, vid)
+    const bool collect_impact =
+        promote_impact_k_ > 0 &&
+        promote_impact_total_ < static_cast<size_t>(8 * promote_impact_k_);
+
     // 1 probe: v を仮置きして伝播、矛盾なら true。必ず root へ巻き戻す。
     // 伝播成功時は巻き戻す前に on_ok(trail_from) で分岐内状態を回収できる
     auto probe_fails = [&](size_t vid, Domain::value_type v, auto&& on_ok) {
@@ -564,8 +573,10 @@ bool Solver::run_root_probing(Model& model) {
             bool has_forced = false;
             ++epoch;
             tighten_cand.clear();
+            size_t impact_sum = 0;
             if (probe_fails(vid, lo, [&](size_t from) {
                     // lo 分岐で変化した変数の分岐内 bounds を記録
+                    impact_sum += model.var_trail_size() - from;
                     model.for_each_trailed_var(from, [&](size_t w) {
                         if (mark_lo[w] == epoch) return;
                         mark_lo[w] = epoch;
@@ -577,6 +588,7 @@ bool Solver::run_root_probing(Model& model) {
                 has_forced = true;
             } else if (!interrupted && probe_fails(vid, hi, [&](size_t from) {
                     // hi 分岐でも変化した変数だけが交差候補
+                    impact_sum += model.var_trail_size() - from;
                     model.for_each_trailed_var(from, [&](size_t w) {
                         if (mark_hi[w] == epoch) return;
                         mark_hi[w] = epoch;
@@ -590,6 +602,9 @@ bool Solver::run_root_probing(Model& model) {
                 has_forced = true;
             }
             if (interrupted) break;
+            if (!has_forced && collect_impact && model.is_defined_var(vid)) {
+                impact.push_back({impact_sum, vid});
+            }
 
             if (has_forced) {
                 // 反対値を root レベルで確定 (全解探索でも健全: 矛盾側の値を
@@ -649,12 +664,43 @@ bool Solver::run_root_probing(Model& model) {
         var_selector_.restore_order(std::move(saved_order), model);
         unassigned_trail_.clear();
     }
+
+    // impact 上位 K の defined 変数を decision 層へ昇格 (意図的な軌道変更アーム)
+    size_t promoted = 0;
+    if (collect_impact && !impact.empty()) {
+        std::sort(impact.begin(), impact.end(), std::greater<>());
+        std::vector<size_t> to_promote;
+        const size_t cap = 8 * static_cast<size_t>(promote_impact_k_);
+        size_t quota = std::min(static_cast<size_t>(promote_impact_k_),
+                                cap - promote_impact_total_);
+        for (const auto& [imp, pvid] : impact) {
+            if (to_promote.size() >= quota || imp == 0) break;
+            if (model.is_instantiated(pvid)) continue;
+            if (var_selector_.is_decision_tier(pvid)) continue;  // 昇格済み
+            to_promote.push_back(pvid);
+        }
+        promoted = var_selector_.promote_to_decision(to_promote);
+        if (promoted > 0) {
+            promote_impact_total_ += promoted;
+            // 昇格変数の activity は defined 層で死んでいるので、decision 層で
+            // 即座に競争できる値を与える (無価値なら decay で自然に沈む)
+            double max_act = 0.0;
+            for (double a : activity_) max_act = std::max(max_act, a);
+            for (size_t pvid : to_promote) {
+                activity_[pvid] = std::max(activity_[pvid], max_act);
+            }
+            var_selector_.init_tracking(model);
+            unassigned_trail_.clear();
+        }
+    }
+
     if (verbose_) {
         std::cerr << "% [verbose] root probing: candidates=" << cand.size()
                   << " probed=" << probed << " fixed=" << fixed
                   << " (defined=" << fixed_defined
                   << " decision=" << (fixed - fixed_defined) << ")"
                   << " tightened=" << tightened
+                  << (promoted > 0 ? " promoted=" + std::to_string(promoted) : "")
                   << (interrupted ? " (interrupted)" : "") << "\n";
     }
     return true;
@@ -928,6 +974,22 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             apply_restart_bookkeeping(model);
 
             resample_and_reshuffle(model);
+
+            // --- impact 昇格の周期再実行 (opt-in: SABORI_PROMOTE_IMPACT) ---
+            // root 演繹の蓄積でドメインが縮み impact 地形が変わるため、
+            // リスタート数回に一回、再 probe して追加昇格する (累計 8K で頭打ち)。
+            if (promote_impact_k_ > 0 && promote_impact_period_ > 0 &&
+                stats_.restart_count > 0 &&
+                stats_.restart_count %
+                        static_cast<size_t>(promote_impact_period_) == 0) {
+                if (!run_root_probing(model)) {
+                    // root で矛盾: obj bound 適用済みなので best が最適
+                    // (best が無ければ UNSAT)
+                    model.clear_pending_updates();
+                    sync_nogood_stats();
+                    return best_solution_;
+                }
+            }
 
             // --- bottom-up optimistic probe (opt-in: SABORI_BOTTOMUP) ---
             {

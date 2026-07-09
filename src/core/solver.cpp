@@ -35,6 +35,21 @@ Solver::Solver()
         root_probe_limit_ = std::atoi(env);
         if (root_probe_limit_ == 1) root_probe_limit_ = 2000;
     }
+    // 計測用: SABORI_PROMOTE_IMPACT=<K> で impact 上位 K の defined 変数を
+    // decision 層へ昇格 (=1 は K=32 の糖衣)。probing の副産物 (両分岐の trail 長)
+    // を impact 尺度に使うため、root probing を暗黙に有効化する。
+    // SABORI_PROMOTE_IMPACT_PERIOD=<R> でリスタート R 回ごとに再計測・追加昇格
+    // (0=探索開始時のみ、既定 8)。
+    if (const char* env = std::getenv("SABORI_PROMOTE_IMPACT")) {
+        promote_impact_k_ = std::atoi(env);
+        if (promote_impact_k_ == 1) promote_impact_k_ = 32;
+        if (promote_impact_k_ > 0 && root_probe_limit_ <= 0) {
+            root_probe_limit_ = 2000;
+        }
+    }
+    if (const char* env = std::getenv("SABORI_PROMOTE_IMPACT_PERIOD")) {
+        promote_impact_period_ = std::atoi(env);
+    }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
     }
