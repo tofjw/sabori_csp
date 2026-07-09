@@ -89,3 +89,30 @@ corpus 総計: vars 193万 / cons 783万。
 ため、「MIP presolve の定番」の多くは FZN 入力では物量が残っていない。
 残るのは (a) コンパイラが跨げない重複 (同一条件の reif が別経路で生成される
 ケース) と (b) 探索的手法 (probing) のみ。
+
+## 候補A 実装と効果測定 (2026-07-09, 257427e)
+
+FZN ビルド層 (fzn/model.cpp to_model Phase 0.6) に hash-consing を実装。
+完全重複行の除去 + 同一条件 *_reif の b エイリアス統合 (_imp は片方向で
+b1=b2 が帰結しないため対象外)。SABORI_DEDUP=0 で無効化、既定有効。
+
+**発火量 (probe 予測と一致)**: community-detection 282+282、network 333、
+stripboard 252、harmony 1344行、code-generator20 1862行、bnn 214+185
+
+**効果 A/B (30s×2seed, 8対象+2対照): net −1/20 = wash**
+- community-detection +2 / stripboard22 −2 / 他はほぼ不変
+- **one-hot 解禁ボーナスは実測なし** (対象問題の重複 reif は int_lin_le_reif
+  系で one-hot の対象外だった)
+- 判定: outcome 中立の衛生 (モデル縮小・伝播削減・健全性リスクなし) として
+  既定 ON 採用
+
+**副産物: ポインタ順非決定性の再発見と修正移植 (e64d480)**
+初回 A/B で zephyrus が「dedup 発火ゼロ (モデル同一) なのに on/off で
+再現的に別軌道」という怪現象 → 真犯人は LinearConstraintBase::
+aggregate_terms の `unordered_map<Variable*,...>` 反復 (ヒープレイアウト
+依存)。dedup パスの追加アロケーションがレイアウトをずらして発現した。
+**2026-07-02 の修正 9a06ccd は feature/mp にしか無く、本ブランチ系列には
+未適用だった** → cherry-pick (golden 期待値の更新込み)。移植後は
+zephyrus/gfd で on/off が bit 一致し決定性回復。
+教訓: (1) 決定性修正は全アクティブブランチに配る (2) 「no-op のはずの
+変更で軌道が変わる」はヒープレイアウト感度のシグナル。
