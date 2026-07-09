@@ -173,3 +173,26 @@ collab 789、prize 196、gfd 42、zephyrus 76。
 **未回収のまま残したもの**: 含意収穫 (長さ2 ng、DB 爆発リスクでフィルタ
 設計が本体) / impact 計測による defined 昇格入場券 (promote-def-bool の
 実並列ゲート必須)。
+
+## 候補B 拡張2: impact 計測による defined 昇格アーム (2026-07-10, ユーザ提案)
+
+**発想**: 両側生存 probe の trail 長合計 = 「この変数に分岐したときの伝播
+影響力」の実測値 (impact-based search の probe 版)。defined 死角に
+decision 層への入場券を配る。promote-def-bool (feature/mp, 無差別昇格で
+既定不採用) の選別版。SABORI_PROMOTE_IMPACT=<K> (=1 で K=32)、
+SABORI_PROMOTE_IMPACT_PERIOD=<R> でリスタート R 回ごとに再計測・追加昇格
+(既定8、累計 8K 上限)。昇格変数には decision 層で競争可能な activity を付与
+(死に activity のままでは昇格しても選ばれない)。
+
+**A/B (30s×2seed, 同10問)**: net p2k +4 / imp +2 / imp0 +1
+- **prize-collecting が imp/imp0 の両構成で NONE→SAT (20/31)** — probe
+  単体では flickery だった問題が昇格で安定ヒット。decision 82 / defined
+  2034 の極端ハードカット問題で理論どおり
+- zephyrus s1 が 29153→12=最適 (imp/imp0)
+- **gfd は昇格が逆効果** (p2k 446/341 vs imp 1046/748) — 剪定だけが
+  正解の問題も居る
+- 単スレ総合では p2k > imp。ただし効く問題が非重複 = portfolio 多様性部品
+
+**判定**: opt-in arm 温存。probe 系3アーム (p2k / prover bottomup / imp)
+は feature/mp でワーカー分化させるのが本命。既定 ON 候補は p2k のみ
+(負けセルなし)、要広域ゲート。
