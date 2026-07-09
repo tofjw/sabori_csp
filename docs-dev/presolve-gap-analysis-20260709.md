@@ -145,3 +145,31 @@ collaborative obj=13 (p20k s2)。ヒットは seed/予算依存で不安定だ�
 **判定**: opt-in arm として温存 (bottomup と同格)。既定 ON 昇格は
 広域ゲート (14年 bench) + 複数 seed で別途判断。feature/mp では
 probe 予算違いのワーカー多様性の部品にもなる。
+
+## 候補B 拡張: 両側生存 probe からの共通剪定回収 (2026-07-09)
+
+**背景 (ユーザ指摘の連鎖)**: (1) 「root probing の unit は探索の activity
+浮上機構が遅延発見するものと同じでは」→ 概ね正しいが、(2) 「fixed の
+ほとんどは defined 側では」→ **実測 100% defined** (prize 492/492,
+collab 1426/1426, network 331/331)。defined 層は select 厳格優先で
+深さ0テストを受けられない = 浮上機構の構造的死角で、probing の取り分は
+そこに集中していた。(3) 「probe のオーバーヘッドは払済みなので回収
+できるものは回収」→ 本拡張。
+
+**実装**: 両側生存ペアで、lo/hi 各分岐の var trail 区間から変化変数の
+分岐内 bounds を記録し、**両分岐で成り立つ bound の交差を root へ適用**
+(どの解でも x=lo か x=hi なので無条件に健全 = shaving 相当)。
+Model::for_each_trailed_var 新設。epoch マーク方式で dedupe。
+
+**発火量**: amaze12 は **fixed=0 のまま tightened=119**、network 503、
+collab 789、prize 196、gfd 42、zephyrus 76。
+
+**効果 A/B (同条件)**: net p2k +4 / p20k +3、**負けセル 0 継続**。
+- **amaze12 が NONE→SAT (obj=840)** — G4 筆頭、unit ゼロの問題が
+  交差剪定だけで初解到達
+- gfd-schedule 両シード大幅改善 (731→446, 940→342)
+- collaborative NONE→SAT (obj=12)
+
+**未回収のまま残したもの**: 含意収穫 (長さ2 ng、DB 爆発リスクでフィルタ
+設計が本体) / impact 計測による defined 昇格入場券 (promote-def-bool の
+実並列ゲート必須)。
