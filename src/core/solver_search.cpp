@@ -520,15 +520,28 @@ bool Solver::run_root_probing(Model& model) {
     });
 
     int budget = root_probe_limit_;
-    size_t probed = 0, fixed = 0;
+    size_t probed = 0, fixed = 0, fixed_defined = 0, tightened = 0;
     bool interrupted = false;
 
-    // 1 probe: v を仮置きして伝播、矛盾なら true。必ず root へ巻き戻す
-    auto probe_fails = [&](size_t vid, Domain::value_type v) {
+    // 両側生存ペアの共通剪定回収 (bounds 交差 = shaving 相当) 用の作業領域。
+    // probe のオーバーヘッドは既に払っているので、trail に残った両分岐の
+    // ドメイン縮小を「ついで」に回収する: どの解でも x=lo か x=hi なので、
+    // 両分岐で成り立つ bound は root で無条件に成り立つ。
+    const size_t nv = model.variables().size();
+    std::vector<uint32_t> mark_lo(nv, 0), mark_hi(nv, 0);
+    std::vector<Domain::value_type> lo_min(nv), lo_max(nv);
+    uint32_t epoch = 0;
+    std::vector<std::tuple<size_t, Domain::value_type, Domain::value_type>> tighten_cand;
+
+    // 1 probe: v を仮置きして伝播、矛盾なら true。必ず root へ巻き戻す。
+    // 伝播成功時は巻き戻す前に on_ok(trail_from) で分岐内状態を回収できる
+    auto probe_fails = [&](size_t vid, Domain::value_type v, auto&& on_ok) {
+        const size_t trail_from = model.var_trail_size();
         ++current_decision_;
         decision_trail_.push_back({vid, v, Literal::Type::Eq});
         model.enqueue_instantiate(vid, v);
         auto pr = process_queue(model);
+        if (pr == PropagationResult::Ok) on_ok(trail_from);
         decision_trail_.pop_back();
         model.clear_pending_updates();
         backtrack(model, root_point);
@@ -549,29 +562,78 @@ bool Solver::run_root_probing(Model& model) {
 
             Domain::value_type forced = 0;
             bool has_forced = false;
-            if (probe_fails(vid, lo)) {
+            ++epoch;
+            tighten_cand.clear();
+            if (probe_fails(vid, lo, [&](size_t from) {
+                    // lo 分岐で変化した変数の分岐内 bounds を記録
+                    model.for_each_trailed_var(from, [&](size_t w) {
+                        if (mark_lo[w] == epoch) return;
+                        mark_lo[w] = epoch;
+                        lo_min[w] = model.var_min(w);
+                        lo_max[w] = model.var_max(w);
+                    });
+                })) {
                 forced = hi;
                 has_forced = true;
-            } else if (!interrupted && probe_fails(vid, hi)) {
+            } else if (!interrupted && probe_fails(vid, hi, [&](size_t from) {
+                    // hi 分岐でも変化した変数だけが交差候補
+                    model.for_each_trailed_var(from, [&](size_t w) {
+                        if (mark_hi[w] == epoch) return;
+                        mark_hi[w] = epoch;
+                        if (mark_lo[w] != epoch) return;
+                        tighten_cand.emplace_back(
+                            w, std::min(lo_min[w], model.var_min(w)),
+                            std::max(lo_max[w], model.var_max(w)));
+                    });
+                })) {
                 forced = lo;
                 has_forced = true;
             }
             if (interrupted) break;
-            if (!has_forced) continue;
 
-            // 反対値を root レベルで確定 (全解探索でも健全: 矛盾側の値を
-            // 持つ解は存在しない)
-            model.enqueue_instantiate(vid, forced);
-            auto pr = process_queue(model);
-            if (pr == PropagationResult::Conflict) {
-                return false;  // 両側矛盾 = root UNSAT
+            if (has_forced) {
+                // 反対値を root レベルで確定 (全解探索でも健全: 矛盾側の値を
+                // 持つ解は存在しない)
+                model.enqueue_instantiate(vid, forced);
+                auto pr = process_queue(model);
+                if (pr == PropagationResult::Conflict) {
+                    return false;  // 両側矛盾 = root UNSAT
+                }
+                if (pr == PropagationResult::Stopped) {
+                    interrupted = true;
+                    break;
+                }
+                ++fixed;
+                if (model.is_defined_var(vid)) ++fixed_defined;
+                progress = true;
+                continue;
             }
-            if (pr == PropagationResult::Stopped) {
-                interrupted = true;
-                break;
+
+            // 両側生存: 交差 bound が root より強ければ適用
+            bool any = false;
+            for (const auto& [w, cmin, cmax] : tighten_cand) {
+                if (cmin > model.var_min(w)) {
+                    model.enqueue_set_min(w, cmin);
+                    ++tightened;
+                    any = true;
+                }
+                if (cmax < model.var_max(w)) {
+                    model.enqueue_set_max(w, cmax);
+                    ++tightened;
+                    any = true;
+                }
             }
-            ++fixed;
-            progress = true;
+            if (any) {
+                auto pr = process_queue(model);
+                if (pr == PropagationResult::Conflict) {
+                    return false;  // 交差剪定は健全 → root UNSAT
+                }
+                if (pr == PropagationResult::Stopped) {
+                    interrupted = true;
+                    break;
+                }
+                progress = true;
+            }
         }
         if (!progress || budget <= 0) break;
     }
@@ -590,6 +652,9 @@ bool Solver::run_root_probing(Model& model) {
     if (verbose_) {
         std::cerr << "% [verbose] root probing: candidates=" << cand.size()
                   << " probed=" << probed << " fixed=" << fixed
+                  << " (defined=" << fixed_defined
+                  << " decision=" << (fixed - fixed_defined) << ")"
+                  << " tightened=" << tightened
                   << (interrupted ? " (interrupted)" : "") << "\n";
     }
     return true;

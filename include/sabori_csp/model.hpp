@@ -459,6 +459,19 @@ public:
     size_t var_trail_size() const;
 
     /**
+     * @brief var_trail_ の [from, size) 区間に記録された var_idx を列挙する
+     *
+     * root probing の共通剪定回収（両分岐で変化した変数の bounds 交差）用。
+     * 同一変数が複数回現れうるので呼び出し側で dedupe すること。
+     */
+    template <typename Fn>
+    void for_each_trailed_var(size_t from, Fn&& fn) const {
+        for (size_t i = from; i < var_trail_.size(); ++i) {
+            fn(var_trail_[i].second.var_idx);
+        }
+    }
+
+    /**
      * @brief 制約 Trail のサイズを取得
      */
     size_t constraint_trail_size() const;
