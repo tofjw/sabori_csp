@@ -151,3 +151,32 @@ bottomup probe（G1 用に実装した SABORI_BOTTOMUP）の「prover 構成」
    prover 亜種は「大きいほど良い」でグリッド既定 2000 とは別物
 4. TTEF 強化（energetic reasoning 等）は G3a の壁段を直接削る候補
    （118s → CP-SAT の 12s に近づける余地）。G3b には効かない
+
+## G1(b) LP surrogate bound の上限計測 (2026-07-09, ユーザ提案)
+
+「presolve の変数消去の流れで、有効なペナルティ和 surrogate 制約
+（= LP 双対実行可能解1本の非負結合）を導出して root lb を上げる」案の
+到達上限 = 線形緩和 LP 値なので、実装前に外部 LP で生死判定した。
+計測: benchmarks/minizinc_challenge/lp_bound_probe.py
+（FZN → 線形行 + reif/imp big-M + clause/and/or/xor hull + McCormick を抽出、
+scipy/HiGHS で LP。緩和 = 制約の線形含意のみなので bound は常に健全）
+
+| 問題 | dom bound | LP bound | 最適/best | 不可視制約 | 判定 |
+|---|---|---|---|---|---|
+| code-generator23 | 0 | **6340** | opt 6340 | element/table/cumul | ◎ **LP=最適値** |
+| zephyrus15 | 5 | **10** | opt 12 | なし(全制約可視) | ◎ 83% |
+| roster-shifts23 (max) | ∞ | ub 264593 | best ~17万 | なし(純線形46万行) | △ ub 有限化 |
+| collaborative20 | 0 | 2 | CP-SAT 9 | element ×2940 | △ 微小 |
+| gfd-schedule18/22 | 1 | 1 | — | int_lin_ne ×1823/996 | ✗ |
+| arithmetic-target22 | 1 | 1 | opt 5 | element/div/mod | ✗ |
+| network_50_cstr24 | 0 | 1 | — | なし(全制約可視) | ✗ 分数的構造 |
+| (G3b) mapping/depot | 0 | 0 | — | — | ✗ |
+
+**読み取り**
+- 案は生きているが問題選択的: 明確に効くのは 2/8 + ub 有限化 1/8
+- code-generator が本命: bottomup が解 6340 を既に発見済みなので、
+  root に bound があれば lb=ub で OPTIMAL 即決
+- 死産組の原因は big-M の弱さでなく「結合の所在」: gfd は ≠網、
+  arithmetic は element/div/mod。network は全制約可視でも LP=1
+  （分数的構造 = 真の節学習領分）
+- LP 計測自体が数秒 → 「効く問題か」は事前判別可能
