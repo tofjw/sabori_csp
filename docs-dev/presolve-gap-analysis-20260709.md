@@ -196,3 +196,23 @@ SABORI_PROMOTE_IMPACT_PERIOD=<R> でリスタート R 回ごとに再計測・�
 **判定**: opt-in arm 温存。probe 系3アーム (p2k / prover bottomup / imp)
 は feature/mp でワーカー分化させるのが本命。既定 ON 候補は p2k のみ
 (負けセルなし)、要広域ゲート。
+
+## clause witness チャネリング (2026-07-10, ユーザ提案) → 計測負けで不採用
+
+**発想**: bool_clause に s = min{i: literal_i 真} の補助 decision 変数を導入。
+節への分岐ハンドル + 節単位 activity 集約 + ドメイン大→初期優先度低→必要時に
+浮上、の自己調整狙い。min 意味論で s は関数的 = -a 列挙不変 (解集合一致で検証)。
+
+**物量**: 節長≥8 の実物量は薄い (products-and-shelves 2760本/長さ12、
+code-generator20 max1156×36本、blocks-world 189、jp-encoding 214 程度。
+65/274 問にある節長≥4 は大半が 4〜6 = 2WL 最安帯)。
+
+**A/B (30s×2seed, 物量6問+対照2問)**: **wit8 −2 / wit4 −4、unlock ゼロ**。
+products は全構成 obj=5 (G2 証明は不変)、jp-encoding は一貫悪化、
+gfd wit8-s2 の 1141→338 だけが救い (相殺済み)。
+
+**判定: 不採用**。opt-in (SABORI_CLAUSE_WITNESS) としてコードは温存するが
+再挑戦には新しい根拠が必要。教訓: 「探索ハンドル + activity 集約」の理屈は
+impact 昇格 (defined 死角に実証済みの需要があった) では当たり、witness
+(需要が未実証だった) では外れ — **ハンドル系は「探索が構造的に届かない場所」
+の実証とセットでないと賭けにならない**。
