@@ -116,3 +116,32 @@ aggregate_terms の `unordered_map<Variable*,...>` 反復 (ヒープレイアウ
 zephyrus/gfd で on/off が bit 一致し決定性回復。
 教訓: (1) 決定性修正は全アクティブブランチに配る (2) 「no-op のはずの
 変更で軌道が変わる」はヒープレイアウト感度のシグナル。
+
+## 候補B (root probing) 実装と効果測定 (2026-07-09)
+
+SABORI_PROBE_ROOT=<予算> (opt-in、=1 で既定2000) を実装。探索前に
+ドメインサイズ2の未確定変数へ両値を仮置き伝播し、片側矛盾なら反対値を
+root 確定 (伝播のみ・全解探索でも健全)。activity 順に probe、確定の
+連鎖を拾うため最大3ラウンド。
+
+**発火量**: prize-collecting **492/775 (63%) 確定**、collaborative 1426、
+network_50_cstr 331、gfd 29、amaze/zephyrus 0
+
+**副作用分離の攻防 (本実装の核心)**: fixed=0 でも軌道が変わる問題を
+3段階で潰した。probe 伝播の過渡矛盾が
+(1) record_constraint_call → bump_activity で activity を汚染
+(2) bump の tie-break が **rng_ を消費**
+(3) on_instantiate swap が **var_order_ を恒久並べ替え**
+    (backtrack は end しか復元しない、init_tracking 再構築でも
+     初期配置には戻らない)
+→ activity/temporal/rng/activity_inc/var_order の5点 snapshot/restore で
+**fixed=0 なら off と bit 同一** (zephyrus の解ストリーム prefix 一致で実証)。
+
+**効果 A/B (30s×2seed, G4 8問+対照2問, off/p2k/p20k)**: net p2k +1 / p20k +1、
+**負けセルゼロ**。G4 の「解なし→解あり」×2: prize-collecting obj=21 (p2k s1)、
+collaborative obj=13 (p20k s2)。ヒットは seed/予算依存で不安定だが、
+構造上「fixed=0 なら無害・fixed>0 は健全な演繹」なので下方リスクが薄い。
+
+**判定**: opt-in arm として温存 (bottomup と同格)。既定 ON 昇格は
+広域ゲート (14年 bench) + 複数 seed で別途判断。feature/mp では
+probe 予算違いのワーカー多様性の部品にもなる。
