@@ -241,3 +241,22 @@ gfd pl8-s2 1141→41 の跳ねセル。jp-encoding の悪化は plain でも残�
 - 14年ベンチ (20260710_clause_witness) は batch 版の結果なので、1WL 版での
   再計測価値あり。判定は「不採用」から**「mp arm 有力候補 (負け面が消えた)」
   に格上げ**。既定 ON は広域ゲート次第
+
+**1WL 版の 14年ベンチ (20260710_clause_witness2, ユーザ計測)**: 判定確定。
+- status: base OPT114/SOL136/TO21 → 1WL OPT112/SOL135/TO25 = **net −6**
+  (うち witness 起因の実害は oocsp_racks **UNSAT 28.5s→TIMEOUT** の1件。
+  batch 版は UNSAT 維持 = **1WL の遅延剪定は UNSAT 証明では逆に損**という綾。
+  残り5件は非対象問題の 30s 境界フリップ=再抽選ノイズ)。両SOL obj 11勝11敗
+- 改善の再現: **jp-encoding は3構成中 1WL が最良** (8453→7948, 5688→5615)、
+  code-gen23 15315→12888
+- 証明系コストは半減したが残存: project-planning15 +170%(batch)→+70%(1WL)、
+  routing-flexible +130%→+79%。1WL でコールバックは O(1) 化済みなので、
+  残りは dispatch 呼び出し + **witness 変数の decision 層希釈** (証明=全数
+  探索では s の割当作業が純増、ハンドル案に内在するコスト)
+- 注: ユーザ計測は節長≥8。A/B で code-gen20 NONE→SAT を出した ≥4 とは
+  対象範囲が異なる
+
+**最終判定: 既定 ON 不可 / mp arm 候補として温存**。運用形は「証明系
+ワーカーには載せない」前提の探索系ワーカー用 arm。残り玉 =
+「s を defined 層に置き impact 昇格に選別させる」ハイブリッド (希釈解消)
+だが期待値は逓減局面。
