@@ -118,6 +118,57 @@ class _Regular(_GlobalConstraint):
         self.accepting_states = list(accepting_states)
 
 
+class _Subcircuit(_GlobalConstraint):
+    def __init__(self, vars: Sequence[IntVar]) -> None:
+        self.vars = list(vars)
+
+
+class _Increasing(_GlobalConstraint):
+    def __init__(self, vars: Sequence[IntVar], strict: bool) -> None:
+        self.vars = list(vars)
+        self.strict = strict
+
+
+class _LexLessEq(_GlobalConstraint):
+    def __init__(
+        self, xs: Sequence[IntVar], ys: Sequence[IntVar], strict: bool
+    ) -> None:
+        self.xs = list(xs)
+        self.ys = list(ys)
+        self.strict = strict
+
+
+class _ValuePrecede(_GlobalConstraint):
+    def __init__(self, s: int, t: int, vars: Sequence[IntVar]) -> None:
+        self.s = s
+        self.t = t
+        self.vars = list(vars)
+
+
+class _GlobalCardinality(_GlobalConstraint):
+    def __init__(
+        self,
+        vars: Sequence[IntVar],
+        cover: Sequence[int],
+        counts: Sequence[IntVar],
+    ) -> None:
+        self.vars = list(vars)
+        self.cover = list(cover)
+        self.counts = list(counts)
+
+
+class _BinPackingLoad(_GlobalConstraint):
+    def __init__(
+        self,
+        loads: Sequence[IntVar],
+        bins: Sequence[IntVar],
+        weights: Sequence[int],
+    ) -> None:
+        self.loads = list(loads)
+        self.bins = list(bins)
+        self.weights = list(weights)
+
+
 # --- Expression-like globals (support comparison operators) ---
 
 
@@ -138,7 +189,9 @@ class _MinExpr(_AggregateExpr):
 
 
 class _CountExpr(_AggregateExpr):
-    def __init__(self, vars: Sequence[IntVar], value: int) -> None:
+    def __init__(
+        self, vars: Sequence[IntVar], value: Union[int, IntVar]
+    ) -> None:
         self.vars = list(vars)
         self.value = value
 
@@ -236,6 +289,60 @@ def regular(
     )
 
 
+def subcircuit(vars: Sequence[IntVar]) -> _Subcircuit:
+    """Variables form at most one circuit (successor representation, 0-based).
+
+    x[i] = i means node i is not in the circuit. Nodes in the circuit
+    form a single cycle of length >= 2 (or all nodes are self-loops).
+    """
+    return _Subcircuit(vars)
+
+
+def increasing(vars: Sequence[IntVar], strict: bool = False) -> _Increasing:
+    """Variables are in non-decreasing order (strictly increasing if strict=True)."""
+    return _Increasing(vars, strict)
+
+
+def lex_less(xs: Sequence[IntVar], ys: Sequence[IntVar]) -> _LexLessEq:
+    """xs is lexicographically strictly less than ys."""
+    return _LexLessEq(xs, ys, strict=True)
+
+
+def lex_lesseq(xs: Sequence[IntVar], ys: Sequence[IntVar]) -> _LexLessEq:
+    """xs is lexicographically less than or equal to ys."""
+    return _LexLessEq(xs, ys, strict=False)
+
+
+def value_precede(s: int, t: int, vars: Sequence[IntVar]) -> _ValuePrecede:
+    """If value t appears, value s must appear at an earlier index.
+
+    Standard symmetry-breaking constraint: x[j] == t implies
+    exists i < j with x[i] == s.
+    """
+    return _ValuePrecede(s, t, vars)
+
+
+def global_cardinality(
+    vars: Sequence[IntVar],
+    cover: Sequence[int],
+    counts: Sequence[IntVar],
+) -> _GlobalCardinality:
+    """counts[k] = number of vars taking the value cover[k].
+
+    Values outside cover are unconstrained (non-closed semantics).
+    """
+    return _GlobalCardinality(vars, cover, counts)
+
+
+def bin_packing_load(
+    loads: Sequence[IntVar],
+    bins: Sequence[IntVar],
+    weights: Sequence[int],
+) -> _BinPackingLoad:
+    """loads[b] = sum of weights[i] over items i with bins[i] == b (0-based)."""
+    return _BinPackingLoad(loads, bins, weights)
+
+
 def maximum(vars: Sequence[IntVar]) -> _MaxExpr:
     """Expression representing the maximum of variables.
 
@@ -252,8 +359,10 @@ def minimum(vars: Sequence[IntVar]) -> _MinExpr:
     return _MinExpr(vars)
 
 
-def count(vars: Sequence[IntVar], value: int) -> _CountExpr:
+def count(vars: Sequence[IntVar], value: Union[int, IntVar]) -> _CountExpr:
     """Expression representing the count of a value in variables.
+
+    value may be a constant or a variable.
 
     Usage: model.add(count([x, y, z], 1) == n)
     """

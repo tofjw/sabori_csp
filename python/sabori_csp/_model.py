@@ -22,19 +22,25 @@ from sabori_csp._globals import (
     _AggregateExpr,
     _AllDifferent,
     _AllDifferentExcept0,
+    _BinPackingLoad,
     _Circuit,
     _CountExpr,
     _Cumulative,
     _Diffn,
     _Disjunctive,
     _Element,
+    _GlobalCardinality,
     _GlobalConstraint,
+    _Increasing,
     _Inverse,
+    _LexLessEq,
     _MaxExpr,
     _MinExpr,
     _NValueExpr,
     _Regular,
+    _Subcircuit,
     _Table,
+    _ValuePrecede,
 )
 
 
@@ -444,15 +450,21 @@ class CpModel:
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
                 )
         elif isinstance(agg, _CountExpr):
+            if isinstance(agg.value, IntVar):
+                def make_count(count_var: IntVar) -> object:
+                    return core.CountEqVarTargetConstraint(
+                        raw_vars, agg.value._var, count_var._var
+                    )
+            else:
+                def make_count(count_var: IntVar) -> object:
+                    return core.CountEqConstraint(
+                        raw_vars, agg.value, count_var._var
+                    )
             if op == ComparisonOp.EQ:
-                self._add_constraint(
-                    core.CountEqConstraint(raw_vars, agg.value, rhs_var._var), _label
-                )
+                self._add_constraint(make_count(rhs_var), _label)
             else:
                 aux = self._new_aux_var(0, len(agg.vars))
-                self._add_constraint(
-                    core.CountEqConstraint(raw_vars, agg.value, aux._var), _label
-                )
+                self._add_constraint(make_count(aux), _label)
                 self._post_bounded_expr(
                     BoundedExpr(LinearExpr({aux: 1, rhs_var: -1}), op)
                 )
@@ -549,6 +561,48 @@ class CpModel:
                     ct.initial_state,
                     ct.accepting_states,
                 ),
+                _label,
+            )
+        elif isinstance(ct, _Subcircuit):
+            raw = [v._var for v in ct.vars]
+            self._add_constraint(core.SubcircuitConstraint(raw, 0), _label)
+        elif isinstance(ct, _Increasing):
+            raw = [v._var for v in ct.vars]
+            self._add_constraint(
+                core.IncreasingConstraint(raw, ct.strict), _label
+            )
+        elif isinstance(ct, _LexLessEq):
+            xs = [v._var for v in ct.xs]
+            ys = [v._var for v in ct.ys]
+            self._add_constraint(
+                core.LexLessEqConstraint(xs, ys, ct.strict), _label
+            )
+        elif isinstance(ct, _ValuePrecede):
+            raw = [v._var for v in ct.vars]
+            self._add_constraint(
+                core.ValuePrecedeConstraint(ct.s, ct.t, raw), _label
+            )
+        elif isinstance(ct, _GlobalCardinality):
+            raw = [v._var for v in ct.vars]
+            counts = [v._var for v in ct.counts]
+            if len(ct.cover) != len(counts):
+                raise ValueError(
+                    f"cover length {len(ct.cover)} does not match "
+                    f"counts length {len(counts)}"
+                )
+            self._add_constraint(
+                core.GlobalCardinalityConstraint(raw, ct.cover, counts), _label
+            )
+        elif isinstance(ct, _BinPackingLoad):
+            loads = [v._var for v in ct.loads]
+            bins = [v._var for v in ct.bins]
+            if len(ct.weights) != len(bins):
+                raise ValueError(
+                    f"weights length {len(ct.weights)} does not match "
+                    f"bins length {len(bins)}"
+                )
+            self._add_constraint(
+                core.BinPackingLoadConstraint(loads, bins, ct.weights, 0),
                 _label,
             )
         else:
