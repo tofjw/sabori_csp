@@ -1281,14 +1281,12 @@ bool BoolXorConstraint::on_final_instantiate(const Model& model) {
 
 
 // ============================================================================
-// ClauseWitnessConstraint
+// ClauseWitnessConstraint (plain 意味論)
 //
-// s = min{ i : literal_i が真 }。伝播規則 (ステートレス batch 再計算):
-//   Step 1: 先頭から走査し、偽 literal の index を s から除去。
-//           最初に真が確定している index t で s ≤ t。
-//   Step 2: min(dom(s)) より前の literal は witness になれず、かつ
-//           「真なら s ≤ その index」に矛盾するので偽に強制。
-//   Step 3: s が確定したら literal_s を真に強制 → 以後 entailed。
+// literal_s が真。伝播規則:
+//   Step 1: 偽 literal の index を s から除去。
+//   Step 2: s が確定したら literal_s を真に強制 → 以後 entailed。
+// 探索中は 1WL (on_instantiate)、presolve のみ propagate_impl で全走査。
 // ============================================================================
 
 namespace {
@@ -1307,11 +1305,10 @@ std::vector<VariablePtr> concat_witness_vars(const std::vector<VariablePtr>& pos
 ClauseWitnessConstraint::ClauseWitnessConstraint(
         const std::vector<VariablePtr>& pos,
         const std::vector<VariablePtr>& neg,
-        VariablePtr s, bool min_semantics)
+        VariablePtr s)
     : Constraint(extract_var_ids(concat_witness_vars(pos, neg, s)))
     , n_(pos.size() + neg.size())
-    , npos_(pos.size())
-    , min_(min_semantics) {
+    , npos_(pos.size()) {
 }
 
 std::string ClauseWitnessConstraint::name() const {
@@ -1344,17 +1341,6 @@ bool ClauseWitnessConstraint::propagate_impl(Model& model, bool direct,
         model.enqueue_remove_value(sid, v);
         return true;
     };
-    auto smin = [&]() {
-        return direct ? model.variable(sid)->min() : model.var_min(sid);
-    };
-    auto smax = [&]() {
-        return direct ? model.variable(sid)->max() : model.var_max(sid);
-    };
-    auto sset_max = [&](Domain::value_type v) -> bool {
-        if (direct) return model.variable(sid)->remove_above(v);
-        model.enqueue_set_max(sid, v);
-        return true;
-    };
     // literal i を truth 方向に確定 (truth=true → 充足方向)
     auto bforce = [&](size_t i, bool truth) -> bool {
         const Domain::value_type v = ((i < npos_) == truth) ? 1 : 0;
@@ -1364,41 +1350,16 @@ bool ClauseWitnessConstraint::propagate_impl(Model& model, bool direct,
         return true;
     };
 
-    // Step 1: 偽 literal を s から除去。
-    // min 版のみ: 最初の確定真で s を頭打ち (plain 版は真 literal から
-    // s への情報は流れない — s は「どれか真の位置」を指すだけ)
-    size_t first_true = n_;
+    // Step 1: 偽 literal を s から除去 (真 literal から s への情報は流れない
+    // — s は「どれか真の位置」を指すだけ)
     for (size_t i = 0; i < n_; ++i) {
-        const int st = lit_state(i);
-        if (st == 1) {
-            first_true = i;
-            if (min_) break;
-            continue;
-        }
-        if (st == 0 && scontains(static_cast<Domain::value_type>(i))) {
+        if (lit_state(i) == 0 && scontains(static_cast<Domain::value_type>(i))) {
             if (!srem(static_cast<Domain::value_type>(i))) return false;
             changed = true;
         }
     }
-    if (min_ && first_true < n_ &&
-        smax() > static_cast<Domain::value_type>(first_true)) {
-        if (!sset_max(static_cast<Domain::value_type>(first_true))) return false;
-        changed = true;
-    }
 
-    // Step 2 (min 版のみ): min(dom(s)) より前の literal は偽
-    // (真なら s ≤ index に矛盾)
-    if (min_) {
-        const Domain::value_type mn = smin();
-        for (size_t j = 0; j < n_ && static_cast<Domain::value_type>(j) < mn; ++j) {
-            if (lit_state(j) != 0) {
-                if (!bforce(j, false)) return false;
-                changed = true;
-            }
-        }
-    }
-
-    // Step 3: s 確定 → witness を真に。以後このサブツリーで常に充足
+    // Step 2: s 確定 → witness を真に。以後このサブツリーで常に充足
     if (inst(sid)) {
         const size_t i = static_cast<size_t>(val(sid));
         if (i >= n_) return false;
@@ -1423,22 +1384,19 @@ PresolveResult ClauseWitnessConstraint::presolve(Model& model) {
 
 bool ClauseWitnessConstraint::prepare_propagation(Model& model) {
     init_watches();
-    // plain 1WL: 不偽 literal を1本指す (指し先が偽化したときだけ働く)。
+    // 1WL: 不偽 literal を1本指す (指し先が偽化したときだけ働く)。
     // バックトラックで literal が未定に戻っても「不偽」不変条件は壊れない
     // ので watch の復元は不要。
     watch_ = 0;
-    if (!min_) {
-        for (size_t i = 0; i < n_; ++i) {
-            size_t id = var_ids_[i];
-            if (!model.is_instantiated(id) ||
-                ((i < npos_) == (model.value(id) == 1))) {
-                watch_ = i;
-                return true;
-            }
+    for (size_t i = 0; i < n_; ++i) {
+        size_t id = var_ids_[i];
+        if (!model.is_instantiated(id) ||
+            ((i < npos_) == (model.value(id) == 1))) {
+            watch_ = i;
+            return true;
         }
-        return false;  // 全 literal 偽 = 節違反
     }
-    return true;
+    return false;  // 全 literal 偽 = 節違反
 }
 
 bool ClauseWitnessConstraint::on_instantiate(
@@ -1452,12 +1410,8 @@ bool ClauseWitnessConstraint::on_instantiate(
     if (!has_uninstantiated(model)) {
         return on_final_instantiate(model);
     }
-    if (min_) {
-        model.schedule_constraint_batch(model_index());
-        return true;
-    }
 
-    // ---- plain 1WL ----
+    // ---- 1WL ----
     // unit propagation は節本体 (BoolClause 2WL) の仕事なので複製しない。
     // witness の仕事は (a) s 確定 → l_s を真に (b) 不偽 literal の見届け、のみ。
     if (internal_var_idx == n_) {
@@ -1504,24 +1458,21 @@ bool ClauseWitnessConstraint::on_instantiate(
 }
 
 bool ClauseWitnessConstraint::on_set_min(
-    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
     Domain::value_type /*new_min*/, Domain::value_type /*old_min*/) {
-    // plain: s の bounds は何も強制しない (割当時に一括処理)
-    if (min_) model.schedule_constraint_batch(model_index());
+    // s の bounds は何も強制しない (割当時に一括処理)
     return true;
 }
 
 bool ClauseWitnessConstraint::on_set_max(
-    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
     Domain::value_type /*new_max*/, Domain::value_type /*old_max*/) {
-    if (min_) model.schedule_constraint_batch(model_index());
     return true;
 }
 
 bool ClauseWitnessConstraint::on_remove_value(
-    Model& model, int /*save_point*/, size_t /*internal_var_idx*/,
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
     Domain::value_type /*removed_value*/) {
-    if (min_) model.schedule_constraint_batch(model_index());
     return true;
 }
 
@@ -1531,20 +1482,11 @@ bool ClauseWitnessConstraint::propagate_batch(Model& model, int save_point) {
 }
 
 bool ClauseWitnessConstraint::on_final_instantiate(const Model& model) {
+    // s 番目の literal が真であればよい
     const size_t s = static_cast<size_t>(model.value(var_ids_[n_]));
-    if (!min_) {
-        // plain: s 番目の literal が真であればよい
-        if (s >= n_) return false;
-        const bool bv = model.value(var_ids_[s]) == 1;
-        return (s < npos_) == bv;
-    }
-    for (size_t i = 0; i < n_; ++i) {
-        const bool bv = model.value(var_ids_[i]) == 1;
-        if ((i < npos_) == bv) {
-            return s == i;  // 最初の真 literal が witness と一致するか
-        }
-    }
-    return false;  // 真 literal なし = 節違反
+    if (s >= n_) return false;
+    const bool bv = model.value(var_ids_[s]) == 1;
+    return (s < npos_) == bv;
 }
 
 void ClauseWitnessConstraint::rewind_to(int /*save_point*/) {

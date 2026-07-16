@@ -186,10 +186,7 @@ public:
 
     /// 計測用 ablation: NoGood 由来の activity bump を on/off（既定 on）。
     /// off にすると学習・伝播（枝刈り）はそのまま、activity への寄与だけ止める。
-    /// 学習時 bump（0.01 スケール）と伝播時 bump（フルスケール/n）を別々に制御できる。
     void set_activity_bump(bool enabled) { learn_bump_enabled_ = enabled; prop_bump_enabled_ = enabled; }
-    void set_learn_bump(bool enabled) { learn_bump_enabled_ = enabled; }  ///< 学習時 bump のみ
-    void set_prop_bump(bool enabled) { prop_bump_enabled_ = enabled; }    ///< 伝播時 bump のみ
 
     // ===== Debug =====
 

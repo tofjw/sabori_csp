@@ -86,52 +86,6 @@ TEST_CASE("RestartController reset_outer restores ceiling", "[restart]") {
     REQUIRE(rc.outer() == 4.0);
 }
 
-TEST_CASE("RestartController inverted policy flips the signal", "[restart]") {
-    RestartController rc;
-    rc.set_policy(RestartController::Policy::Inverted);
-    rc.reset();
-    // 信号成立 → widen（adaptive では tighten するケース）
-    REQUIRE_FALSE(rc.end_cycle(5, true, test_rng()));
-    REQUIRE(rc.outer() == 4.8);
-    // 信号不成立 → tighten
-    REQUIRE(rc.end_cycle(0, false, test_rng()));
-}
-
-TEST_CASE("RestartController prune_only / depth_only ignore the other signal", "[restart]") {
-    RestartController prune_rc;
-    prune_rc.set_policy(RestartController::Policy::PruneOnly);
-    prune_rc.reset();
-    REQUIRE(prune_rc.end_cycle(1, false, test_rng()));        // depth 不成立でも tighten
-    REQUIRE_FALSE(prune_rc.end_cycle(0, true, test_rng()));   // prune 不成立なら widen
-
-    RestartController depth_rc;
-    depth_rc.set_policy(RestartController::Policy::DepthOnly);
-    depth_rc.reset();
-    REQUIRE(depth_rc.end_cycle(0, true, test_rng()));         // prune 不成立でも tighten
-    REQUIRE_FALSE(depth_rc.end_cycle(1, false, test_rng()));  // depth 不成立なら widen
-}
-
-TEST_CASE("RestartController always_tighten pins outer to the floor", "[restart]") {
-    RestartController rc;
-    rc.set_policy(RestartController::Policy::AlwaysTighten);
-    rc.reset();
-    for (int i = 0; i < 1000; ++i) {
-        REQUIRE(rc.end_cycle(0, false, test_rng()));
-    }
-    REQUIRE(rc.outer() >= 3.0);
-    REQUIRE(rc.outer() <= 4.0);  // 4.0 から 0.99 倍ずつ縮み floor=3.0 に張り付く
-}
-
-TEST_CASE("RestartController always_widen never tightens", "[restart]") {
-    RestartController rc;
-    rc.set_policy(RestartController::Policy::AlwaysWiden);
-    rc.reset();
-    for (int i = 0; i < 100; ++i) {
-        REQUIRE_FALSE(rc.end_cycle(5, true, test_rng()));  // 信号成立でも widen
-    }
-    REQUIRE(rc.outer() == 10000.0);  // outer_max に到達
-}
-
 TEST_CASE("RestartController scrambled ignores signal and follows p", "[restart]") {
     RestartController rc;
     rc.set_policy(RestartController::Policy::Scrambled, 0.3);
@@ -162,25 +116,4 @@ TEST_CASE("RestartController luby policy generates base-scaled Luby sequence", "
     rc.end_cycle(5, true, test_rng());
     rc.reset_outer();
     REQUIRE(rc.conflict_limit() == cur);
-}
-
-TEST_CASE("RestartController geometric policy grows by ratio", "[restart]") {
-    RestartController rc;
-    rc.set_policy(RestartController::Policy::Geometric, 1.5, 100.0);
-    rc.reset();
-    REQUIRE(rc.conflict_limit() == 100);
-    rc.advance_inner();
-    REQUIRE(rc.conflict_limit() == 150);
-    rc.advance_inner();
-    REQUIRE(rc.conflict_limit() == 225);
-}
-
-TEST_CASE("RestartController constant policy keeps limit fixed", "[restart]") {
-    RestartController rc;
-    rc.set_policy(RestartController::Policy::Constant, 1000.0);
-    rc.reset();
-    for (int i = 0; i < 10; ++i) {
-        REQUIRE(rc.conflict_limit() == 1000);
-        rc.advance_inner();
-    }
 }

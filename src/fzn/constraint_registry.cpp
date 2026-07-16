@@ -312,8 +312,9 @@ static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl,
     auto neg_vars = resolve_vars(decl.args[1], ctx);
 
     // 計測用: SABORI_CLAUSE_WITNESS=<最小節長> (=1 は 8 の糖衣) で、長い節に
-    // witness 変数 s = min{i: literal_i 真} を追加する (decision 層の探索
-    // ハンドル + 節単位 activity 集約)。節本体 (2WL) は温存。
+    // witness 変数 s (literal_s が真、plain 意味論) を追加する (decision 層の
+    // 探索ハンドル + 節単位 activity 集約)。節本体 (2WL) は温存。
+    // 注意: s は非関数的なので -a では解が重複する。単解/最適化専用。
     static const int witness_minlen = [] {
         const char* e = std::getenv("SABORI_CLAUSE_WITNESS");
         if (!e) return 0;
@@ -337,12 +338,8 @@ static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl,
             auto s = ctx.model->create_variable(
                 "__clause_witness_" + std::to_string(ctx.model->variables().size()),
                 0, static_cast<Domain::value_type>(len) - 1);
-            static const bool plain = [] {
-                const char* e = std::getenv("SABORI_CLAUSE_WITNESS_PLAIN");
-                return e && e[0] == '1';
-            }();
             ctx.model->add_constraint(std::make_shared<ClauseWitnessConstraint>(
-                pos_vars, neg_vars, s, /*min_semantics=*/!plain));
+                pos_vars, neg_vars, s));
         }
     }
     return std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
