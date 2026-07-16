@@ -415,6 +415,17 @@ PYBIND11_MODULE(_sabori_csp, m) {
         .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>, bool>(),
              py::arg("xs"), py::arg("ys"), py::arg("strict"));
 
+    py::class_<SubcircuitConstraint, Constraint,
+               std::shared_ptr<SubcircuitConstraint>>(
+            m, "SubcircuitConstraint")
+        .def(py::init<std::vector<VariablePtr>>(), py::arg("vars"));
+
+    py::class_<IncreasingConstraint, Constraint,
+               std::shared_ptr<IncreasingConstraint>>(
+            m, "IncreasingConstraint")
+        .def(py::init<std::vector<VariablePtr>, bool>(),
+             py::arg("vars"), py::arg("strict") = false);
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")
