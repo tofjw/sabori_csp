@@ -80,6 +80,8 @@ sabori_csp はこのうち、
 |---|---|---|---|---|
 | temporal_on vs temporal_off | 55 | 30 | 105 | **+25** |
 
+![temporal_activity（第1基準）ON/OFF](images/temporal_on_off.svg)
+
 net +25 で **5 シードすべてプラス**（+5/+5/+4/+2/+9）。これは「フル構成からこの第1基準だけを抜いたときの悪化（他の機構は残したままの差分的な寄与）」で、その意味では最大の単一レバーです。conflict-directed search が CP で強いという定説どおり、強力な override です。
 
 ただし「第1基準が一番効くから activity は脇役」と読むのは間違いです。`temporal_activity` が効くのはバックトラック直後の最初の1手（last-conflict 変数の選択）が中心で、そこから順調に木を降りていく間は `temporal_activity` がほぼ全変数 0。その降下の大半は activity（と MRV）が駆動しています（計装で確認。未割当の hot 変数は多くの問題で選択の数 % しかない）。
@@ -126,6 +128,8 @@ sabori の振り方が違うのは細部です。①腕が「別個のヒュー�
 | adaptive vs **常に MRV 優先**（p=0） | **10** | 3 | 25 |
 | adaptive vs **常に Activity 優先**（p=1） | 8 | 7 | 23 |
 | adaptive vs **問題ごとの best-of-fixed**（オラクル） | 8 | 8 | 22 |
+
+![mix_p: adaptive vs 固定ヒューリスティクス（勝敗・引分の内訳）](images/mixp_adaptive_vs_fixed.svg)
 
 要点はこうです。
 
@@ -180,6 +184,8 @@ if (tied && use_bloom) {
 |---|---|---|---|---|
 | bloom_on vs bloom_off | 5 | 9 | **176** | **−4** |
 
+![NoGood-Bloom タイブレーク ON/OFF](images/bloom_on_off.svg)
+
 ここで目を引くのは、**引分が 190 中 176（93%）**という事実です。
 
 - このタイブレークは滅多に結果を変えません。Bloom が勝敗を分けたのは 14 ケースだけ。残り 93% は ON でも OFF でも同じ解にたどり着きます。MRV と activity が同点で、かつ Bloom 重なりが決め手になる局面が、そもそも稀ということです。
@@ -232,6 +238,8 @@ void NoGoodManager::learn_from_conflict(const std::vector<Literal>& decision_tra
 |---|---|---|---|---|
 | ng_on vs ng_off | 54 | 36 | 100 | **+18** |
 
+![NoGood 学習＋伝播 ON/OFF（機構まるごと）](images/nogood_on_off.svg)
+
 net +18 自体は控えめですが、**5 シードすべてプラス**（+4 / +3 / +2 / +2 / +7、符号反転なし）。これは mix_p（1 章）と並ぶ、数少ない「一貫して効いている」結果です。後続の Bloom（2 章）や構造特化（4 章）、勾配（7 章）がどれもシードで符号反転したのと対照的に、NoGood だけは全シード同符号。弱い decision-trail 学習でも、枝刈りと activity 寄与で確かに探索を助けている、と読めます。
 
 ただし、この `SABORI_NOGOOD=0` は NoGood 機構を丸ごと止めています。学習・伝播による枝刈りだけでなく、NoGood が関与変数の activity を bump する経路（学習時 `learn_from_conflict`、伝播時 `propagate_*`）も同時に切っている。なので +18 は「純粋な枝刈り効果」ではなく、枝刈りと activity 寄与をまとめた値です。そこで、枝刈りは残したまま activity bump だけ止める第 3 のモード（`SABORI_NG_NOBUMP=1`）を足して、内訳を分離しました。
@@ -241,6 +249,8 @@ net +18 自体は控えめですが、**5 シードすべてプラス**（+4 / +
 | ng_full vs ng_prune | activity 寄与（bump を止めると？） | **+18**（seed 別 +9/+2/+2/0/+5、一貫） |
 | ng_prune vs ng_off | 純粋な枝刈り（学習・伝播だけ） | **+9**（seed 別 0/+7/−1/0/+3、ばらつく） |
 | ng_full vs ng_off | 全体（検算） | +17（先の +18 とほぼ一致） |
+
+![NoGood の寄与内訳：activity 経由 vs 純粋な枝刈り](images/nogood_activity_vs_prune.svg)
 
 結果ははっきりしています。**NoGood の価値は主に activity bump 経由** です。bump を止めた瞬間に net +18 ぶん悪化する（しかも符号反転なし）のに対し、純粋な枝刈りの寄与（+9）は小さく、シードでばらつく。「弱い学習でも効く」の中身は、節による枝刈りそのものより、その節が activity を太らせて変数選択を導く効果の方が大きい、ということです。
 
@@ -255,6 +265,8 @@ net +18 自体は控えめですが、**5 シードすべてプラス**（+4 / +
 | 決定変数 bump のみ（フル） | +8 |
 | 上記 3 つ同時 | +14 |
 | + 制約 bump も（= conflict 由来の activity bump を全停止） | **+21（全シード正）** |
+
+![conflict 由来 activity bump：源を切るほど単調に悪化](images/activity_bump_sources.svg)
 
 予想は全部外れました。スケールで言えば最小の「学習 bump（0.01）」が単体では伝播 bump（フルスケール）より効き（+7 vs +2）、最大の決定変数 bump も単体では +8 止まり。どの単体も小さい。だが切る源を増やすほど単調に悪化し、全部切ると +21（全シードでプラス）。つまり「冗長な代替」の構造を持っています。ポイントは次のとおりです。
 
@@ -342,6 +354,8 @@ MiniZinc Challenge 2023+2024 の 38 問・各 30 秒・**5 シード**・目的�
 | base vs none | 34 | 41 | 115 | **−7** |
 | structural vs none | 38 | 45 | 107 | **−7** |
 
+![制約ごとの責任配分：structural vs base vs none](images/bump_mode_comparison.svg)
+
 ここで否定されるのが**何で、何でないか**を正確に切り分けます。
 
 - **否定されたのは「構造特化」**：structural は base に勝てていない（37–41、net −4）。しかも net −4 は 190 点中で誤差レベルで、シードごとに符号が反転します（あるシードでは base+7、別のシードでは structural+2）。generic な poor man's explanation の上に被せた制約ごとの構造特化（`occupier_` 等）は、generic 版を上回る利得を示しませんでした。
@@ -405,6 +419,8 @@ void end_cycle(size_t prune_delta, bool depth_grew) {
 | always_tighten | 両条件を無視して常に縮小 | **+31** | 同上 |
 | inverted | 信号を反転 | **+25** | 有害（下記のとおり率の効果） |
 
+![リスタート適応信号のアブレーション（vs adaptive）](images/restart_signal_ablation.svg)
+
 整理すると以下の三点になります。第一に、信号は情報を持っていません。レート合わせのコイントス（scrambled）と同着なので、決定が信号と相関すること自体の寄与は分散帯以下です。第二に、AND は実質 `depth_grew` 単独です。prune 成分（prune+domain）は 100% のサイクルで正（NoGood による値削除は毎サイクル起きる）なので条件として飽和しており、depth_only と 190 点中 178 引分。第三に、唯一まともに効く軸は縮小の頻度で、高頻度側が一様に有害です。縮小率が 93〜100% になる 3 アーム（prune_only / always_tighten / inverted）は、揃って同程度の大差（net +25〜+31）で adaptive に負けています。inverted の負けも「符号が逆」だからではなく、反転で縮小率が 6.5%→93.5% に変わる率の効果として説明が付きます。
 
 ### 検証②：「outer の拡大＋リセット」は文献の固定値に比べて有効か
@@ -421,6 +437,8 @@ fixed 側は**チューニングせず文献標準値をそのまま並べ**、�
 | geometric:1.5 | +38 | 同上 |
 | **best-of-fixed（oracle）** | **−37** | **全シード同符号で負け** |
 | **worst-of-fixed** | **+81** | **全シード同符号で勝ち** |
+
+![リスタート adaptive vs 文献標準の固定スケジュール](images/restart_vs_fixed_schedules.svg)
 
 未チューニングの fixed には全勝（接近されるのは短周期系の luby:100 / constant:100）、最悪選択の回避は +81 と、この記事でも最大級の margin です。一方 per-problem oracle には全シード同符号で −37。「best-of-fixed への追随」はできておらず、問題ごとに選べば取れる幅がまだある、という定量化です。
 
@@ -479,6 +497,8 @@ sabori_csp は branch-and-bound を基本としつつ、改善解を見つける
 |---|---|---|---|---|
 | grad_on vs grad_off | 12 | 25 | 143 | **−13** |
 
+![擬似勾配ヒント ON/OFF（probe内オプション）](images/gradient_on_off.svg)
+
 引分が 180 中 143（80%）で、決着した問題では OFF が勝ち越し（25–12）。**平均すると勾配ヒントは利得を生んでおらず、むしろ僅かにマイナス** です（集計値は wall-clock 30 秒判定のため run 間でブレ、別 run では net −7 でしたが、向きは安定して負け）。
 
 #### 効いた問題の特徴を抜き出す
@@ -509,6 +529,8 @@ sabori_csp は branch-and-bound を基本としつつ、改善解を見つける
 | **probe ON（既定）** | **14** | 13 | 9 |
 | **probe OFF** | 12 | 14 | 10 |
 
+![improvement probe ON/OFF：対 CP-SAT の勝敗](images/probe_vs_cpsat.svg)
+
 **probe ON の方が Sabori 勝が多く（14 vs 12）、CP-SAT 勝はむしろ 1 問少ない（13 vs 14）**。直接対決では負ける構成が、フィールド指標では両軸とも勝っています。別の年セット 2016+2025 でも同じ向き（probe ON 15 vs OFF 12、CP-SAT 勝はどちらも 17）で再現します。理屈はこうです。probe は多くの問題で目的値を僅かに悪化させる（だから直接対決でマイナス）が、数問で CP-SAT を超える閾値を押し上げて勝ちに変える（だから対フィールドでプラス）。
 
 ただし正直に書くと、この差は薄い。2023+2024 では実質 2023 の数問が動いただけ（2024 は集計上同数）で、vs CP-SAT の勝敗は単一シード判定なので run 間で揺れます。それでも独立した2つの年セット（2016+2025 と 2023+2024）がどちらも「probe ON ≥ OFF」を指すので、向きは確かと見ています。
@@ -530,6 +552,8 @@ FlatZinc は整数変数を one-hot のブール群に展開しがちで、そ�
 | 比較 | on 勝 | off 勝 | 引分 | net |
 |---|---|---|---|---|
 | onehot_on vs onehot_off | 25 | 19 | 36 | **+6** |
+
+![one-hot チャネル集約 ON/OFF](images/onehot_on_off.svg)
 
 net +6 で on が勝ち越し（5 シード中 4 シードが非負）。NoGood（3 章）ほど一貫した大差ではありませんが、方向は正で、探索ヒューリスティクスの精緻化（2 / 4 / 7 章）とは明確に違う側に立ちます。
 

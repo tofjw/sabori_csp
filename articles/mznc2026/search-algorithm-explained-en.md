@@ -64,6 +64,8 @@ To see how much this primary criterion is worth, I toggled it on/off (env `SABOR
 |---|---|---|---|---|
 | temporal_on vs temporal_off | 55 | 30 | 105 | **+25** |
 
+![temporal_activity (primary criterion) ON/OFF](images/temporal_on_off_en.svg)
+
 net +25, **positive across all 5 seeds** (+5/+5/+4/+2/+9). That's the *marginal* cost of removing this primary criterion from the full system, and in that sense it's the largest single lever — a strong conflict-directed override, as the CP literature would predict.
 
 But **the primary criterion being the biggest lever does *not* make activity a sideshow** — worth emphasizing. `temporal_activity` mostly decides the *first* pick right after a backtrack (the last-conflict variable); as search then descends normally, `temporal_activity` is ~0 for nearly all variables, and **the bulk of those descent selections are driven by activity (and MRV)** (instrumentation confirms: hot unassigned variables are only a few percent of selections on most problems). So **temporal picks the restart point and activity drives the descent** — they divide labor by search phase.
@@ -88,6 +90,8 @@ Fixing vs adapting `mix_p` (env `SABORI_FIX_MIXP`), 38 problems, single seed, ju
 | adaptive vs **always-activity** (p=1) | 8 | 7 | 23 |
 | adaptive vs **per-problem best-of-fixed** (oracle) | 8 | 8 | 22 |
 
+![mix_p: adaptive vs fixed heuristics](images/mixp_adaptive_vs_fixed_en.svg)
+
 The value isn't "beats every fixed heuristic" — it's **robustly avoiding the worst fixed choice per problem, and tracking best-of-fixed**. Read it as insurance for when you can't pick the right heuristic up front, not as a speedup.
 
 > Speculation about its dynamic nature (unmeasured): re-drawing mix_p every restart could adapt not just across problems but to the *time evolution within a run*. Early on, activity has accumulated little information and MRV (domain size) is the more reliable signal; as conflicts pile up, activity becomes more trustworthy and the activity-leaning arms start paying off — a shift over time the bandit may be tracking. But this is a mechanism-level guess; I haven't measured how mix_p actually drifts over the course of a search.
@@ -109,6 +113,8 @@ Toggling the tiebreak on/off (env `SABORI_BLOOM`; off means the path fingerprint
 | Comparison | on win | off win | tie | net |
 |---|---|---|---|---|
 | bloom_on vs bloom_off | 5 | 9 | **176** | **−4** |
+
+![NoGood-Bloom tiebreak ON/OFF](images/bloom_on_off_en.svg)
 
 **176 of 190 are ties (93%).** The tiebreak changes the outcome in only 14 cases, and in those, off edges out on (9–5) — well within noise. So the tiebreak provides no measurable gain and is a no-op 93% of the time. Adding a per-candidate 512-bit AND + popcount to the variable-selection hot path doesn't earn its keep *as a tiebreak*. Soft verdict: keep the fingerprint infrastructure (`var_ng_bloom`), find another use for it, or remove.
 
@@ -138,6 +144,8 @@ Despite "weaker than LCG," the weak NoGood does help. Toggling learning + propag
 |---|---|---|---|---|
 | ng_on vs ng_off | 54 | 36 | 100 | **+18** |
 
+![NoGood learning + propagation ON/OFF (whole mechanism)](images/nogood_on_off_en.svg)
+
 net +18 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign flip). Together with mix_p, this is one of the few consistently-positive results — in contrast to Bloom (Section 2), structural blame (Section 4), and gradient (Section 7), which all flipped sign across seeds.
 
 #### Splitting it: pruning vs activity
@@ -149,6 +157,8 @@ net +18 is modest, but **positive across all 5 seeds** (+4/+3/+2/+2/+7, no sign 
 | ng_full vs ng_prune | the activity-bump contribution | **+18** (seeds +9/+2/+2/0/+5, consistent) |
 | ng_prune vs ng_off | pure pruning (learning + propagation only) | **+9** (seeds 0/+7/−1/0/+3, noisy) |
 | ng_full vs ng_off | total (checksum) | +17 (≈ the +18 above) |
+
+![NoGood's contribution: activity-driven vs pure pruning](images/nogood_activity_vs_prune_en.svg)
 
 The reading is clear: **the NoGood's value flows mainly through activity.** Removing the activity bump costs +18 (and never flips sign), while pure pruning contributes a smaller, noisier +9. So "the weak learning works" is, in substance, more about *the learned clause reinforcing activity and steering variable selection* than about the clause pruning itself.
 
@@ -163,6 +173,8 @@ So *which* of the activity bumps does the work? There are actually several confl
 | decision-variable bump only (full) | +8 |
 | all three together | +14 |
 | + the constraint bump too (= all conflict-driven activity bumps off) | **+21 (positive across all seeds)** |
+
+![Conflict-driven activity bumps: removing more sources costs monotonically more](images/activity_bump_sources_en.svg)
 
 Every prediction was wrong. By magnitude the smallest path — the 0.01 learn bump — beats the full-scale propagation bump on its own (+7 vs +2), and even the largest (decision-variable) is only +8 alone. **No single source is load-bearing; but the cost accumulates monotonically as you remove more, and removing all of them is the worst (+21, all seeds positive).** That's the signature of a **redundant ensemble**:
 
@@ -221,6 +233,8 @@ The blame layer has three levels (env `SABORI_BUMP_MODE`): **none** (no constrai
 | base vs none | 34 | 41 | 115 | **−7** |
 | structural vs none | 38 | 45 | 107 | **−7** |
 
+![Per-constraint blame: structural vs base vs none](images/bump_mode_comparison_en.svg)
+
 What's refuted and what isn't, precisely:
 
 - **The structural specialization doesn't beat base** (37–41); net −4 is noise-level and the sign flips per seed (base+7 on one seed, structural+2 on others). The per-constraint structural blame shows no gain over the generic version.
@@ -271,12 +285,14 @@ A naive "adaptive vs Luby" turns into a tuning contest over scale factors, so th
 
 | adaptive (revived signal) vs | what changes | net | reading |
 |---|---|---|---|
-| scrambled:0.065 | cut only the signal coupling (rate-matched coin toss) | +6 | **tie = the signal is decorative** |
+| scrambled:0.065 | cut only the signal coupling (rate-matched coin toss) | +6 | **tie = below the detection limit of this sample** |
 | always_widen | cut shrinking entirely (= shipped behavior) | +7 | **tie = nothing was lost while it was dead** |
 | depth_only | ignore the prune condition | +6 (178/190 ties) | effectively the same mechanism |
 | prune_only | ignore the depth condition | **+29** | same sign across all seeds — harmful |
 | always_tighten | ignore both, always shrink | **+31** | ditto |
 | inverted | flip the signal | **+25** | harmful (a rate effect — see below) |
+
+![Restart adaptive-signal ablation (vs adaptive)](images/restart_signal_ablation_en.svg)
 
 Three observations cover it. First, **the signal carries no information** — it ties with the rate-matched coin toss (scrambled), so the contribution of the decision *correlating with the signal* is below the variance band. Second, **the AND reduces to `depth_grew` alone**: the prune component (prune+domain) is positive in 100% of cycles (NoGood value deletions happen every cycle), so it is saturated as a condition — 178 ties out of 190 against depth_only. Third, **the only axis that matters is the shrink frequency, and the high-frequency side is uniformly harmful**: the three arms whose shrink rate is 93–100% (prune_only / always_tighten / inverted) all lose to adaptive by similar large margins (net +25 to +31). Even inverted's loss is not "the sign was wrong": flipping the signal also flips the shrink rate from 6.5% to 93.5%, and the rate effect explains it.
 
@@ -294,6 +310,8 @@ The fixed side is deliberately **untuned — literature-standard values as-is** 
 | geometric:1.5 | +38 | ditto |
 | **best-of-fixed (oracle)** | **−37** | **same-sign loss across all seeds** |
 | **worst-of-fixed** | **+81** | **same-sign win across all seeds** |
+
+![Restart adaptive vs untuned literature-standard schedules](images/restart_vs_fixed_schedules_en.svg)
 
 **It beats every untuned fixed arm** (the close ones are the short-period luby:100 / constant:100), and **avoiding the worst pick is worth +81** — among the largest margins in this article. But it **loses to the per-problem oracle at −37, same sign on every seed**: it does not track best-of-fixed, which quantifies how much is still on the table if you could pick a fixed policy per problem.
 
@@ -342,6 +360,8 @@ First the option inside the container. Toggling the gradient hint on/off (env `S
 |---|---|---|---|---|
 | grad_on vs grad_off | 12 | 25 | 143 | **−13** |
 
+![Pseudo-gradient hint ON/OFF (probe-internal option)](images/gradient_on_off_en.svg)
+
 80% ties; among the decisive ones, off wins 25–12. On average the gradient hint provides no gain and leans slightly negative (the net wobbles run-to-run under wall-clock judging — another run gave −7 — but the direction is stably negative).
 
 #### Pulling out the winners
@@ -370,6 +390,8 @@ But here, **the metric you pick flips the verdict.** The actual Challenge goal i
 | **probe on (default)** | **14** | 13 | 9 |
 | **probe off** | 12 | 14 | 10 |
 
+![improvement probe ON/OFF: wins vs CP-SAT](images/probe_vs_cpsat_en.svg)
+
 **The probe-on config wins more (14 vs 12) and loses one fewer to CP-SAT (13 vs 14)** — the config that loses head-to-head wins on *both* axes of the field metric. A different year set (2016+2025) points the same way (probe on 15 vs off 12; CP-SAT wins tied at 17). The reason: the probe **slightly worsens the objective on many problems** (hence the head-to-head loss) but **pushes a few across CP-SAT's threshold into wins** (hence the vs-field gain).
 
 To be honest, the margin is thin: on 2023+2024 only a couple of 2023 problems moved (2024 ties at the aggregate), and the vs-CP-SAT verdict is single-seed, so it wobbles run-to-run. Still, **two independent year sets (2016+2025 and 2023+2024) both point to "probe on ≥ off,"** so I take the direction as solid.
@@ -389,6 +411,8 @@ Toggling aggregation on/off (env `SABORI_ONEHOT`). On problems where no aggregat
 | Comparison | on win | off win | tie | net |
 |---|---|---|---|---|
 | onehot_on vs onehot_off | 25 | 19 | 36 | **+6** |
+
+![one-hot channel aggregation ON/OFF](images/onehot_on_off_en.svg)
 
 net +6, on ahead (non-negative in 4 of 5 seeds). Not the consistent blowout of the NoGood (Section 3), but positive — and clearly on the *other* side from the search-heuristic refinements (Sections 2/4/7). And +6 *understates* it: `code-generator` runs at `fails=3218` with aggregation on vs `10867` off — search effort drops ~70%. The aggregate stays modest because at 30s judged by objective, "fewer fails but the same objective in time" registers as a tie (most of those 36 ties). The effect is "reach the same solution with less search," which a time-to-solution metric or a tighter budget would show more strongly. As a model-reduction presolve, it straightforwardly works.
 
@@ -419,7 +443,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 | Conflict learning | 1-UIP / LCG | **decision-trail conjunction** — weak but A/B-positive across 5 seeds (net +17, directional — magnitude not claimed) |
 | Conflict blame (activity) | dom/wdeg / LCG explanation | **poor man's explanation**; in A/B neither structural nor generic beats *none* — a redundant member of the activity-supply ensemble, surplus as a mechanism |
 | Propagation | 2-watched literal | same |
-| Restarts | Luby / geometric / PicoSAT nested / LBD | PicoSAT-style **inner/outer** + a home-grown adaptive signal (prune × depth) → A/B: **the signal is decorative** (dead since a regression; reviving it ties with scrambled). Effective behavior = "outer ×1.2 growth + reset on improvement" ≈ the literature's nested restart. Still beats every untuned fixed arm and avoids worst-of-fixed at +81 (oracle −37 = portfolio headroom) |
+| Restarts | Luby / geometric / PicoSAT nested / LBD | PicoSAT-style **inner/outer** + a home-grown adaptive signal (prune × depth) → A/B: **below the detection limit** (dead since a regression; reviving it ties with scrambled). Effective behavior = "outer ×1.2 growth + reset on improvement" ≈ the literature's nested restart. Still beats every untuned fixed arm and avoids worst-of-fixed at +81 (oracle −37 = portfolio headroom) |
 | Value selection | phase saving / solution-guided | solution-guided + **pseudo-gradient** (fires only inside the probe below; problem-dependent; portfolio-only) |
 | Optimization | branch-and-bound / LNS | branch-and-bound + **improvement probe** (contains the gradient hint; loses head-to-head, net −23, but wins more vs CP-SAT = worth keeping) |
 | Presolve | generic constraint fusion | **one-hot channel aggregation** — A/B +6, large search-effort drop (net +6, directional) |
@@ -428,7 +452,7 @@ This isn't a new observation — it lines up with prior work. Liang & Ganesh et 
 No world-first algorithm appears here. What it does is measure each deviation and report both the wins and the losses:
 
 - **Effective (foundation + model transform):** variable selection is two labor-sharing axes. The **two load-bearing results** (carried by magnitude) are: **activity is the descent workhorse** — with temporal off, ablating it costs **+81 (primary ①, 94–13, every seed)** — and **tendency control itself works** — all conflict-driven bumps off costs **+21 (primary ②, every seed, monotone)**. `temporal_activity` (Section 1, Last-Conflict-style) overrides the post-backtrack pick (largest marginal ablation, net +25, all seeds) — but treated as **directional**, magnitude not claimed. The weak decision-trail NoGood (Section 3, +17), one-hot aggregation (Section 8, +6), and the mix_p bandit (Section 1) are likewise **all same-sign across seeds — the direction is solid, but the magnitude isn't claimed** (variance band).
-- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The restart adaptive signal (Section 5) had been dead since a regression, and reviving it ties with a rate-matched coin toss — the envelope (growth schedule + improvement reset) is good insurance that beats every untuned fixed policy, but the "adaptive" part is decorative. The layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — the activity supply itself is a redundant ensemble (Section 3), so an extra blame channel is just surplus.
+- **No measurable gain (refinements on top):** Bloom tiebreak (Section 2, 93% no-op); constraint-side blame (Section 4 — not just the structural specialization, the generic version doesn't beat *none* either, so the whole mechanism is surplus). The restart adaptive signal (Section 5) had been dead since a regression, and reviving it ties with a rate-matched coin toss — the envelope (growth schedule + improvement reset) is good insurance that beats every untuned fixed policy, but the "adaptive" part is below the detection limit. The layers trying to add cleverness on top of the effective foundation (NoGood, activity) consistently go unrewarded — the activity supply itself is a redundant ensemble (Section 3), so an extra blame channel is just surplus.
 - **Problem-dependent (portfolio-only):** the pseudo-gradient hint (Section 7) is a value-ordering option that fires only inside the probe sub-search below. Given the probe, it loses on average but splits by problem (backfires on resource-coupled scheduling, helps on design/assignment); worth a portfolio slot, not an always-on default.
 - **Metric-dependent:** the improvement probe (Section 7, a ~5%-improvement sub-search that contains the gradient hint above) loses the config-vs-config head-to-head by objective (net −23) but **wins more against CP-SAT** (14 vs 12 on the same primary set 2023+2024, with one fewer CP-SAT win; 15 vs 12 on 2016+2025). On the head-to-head alone the probe looks droppable, but it wins more vs CP-SAT, so keeping it is right. The ablation metric (head-to-head) and the Challenge goal (beat the field) mostly agree, but this is where they diverge.
 

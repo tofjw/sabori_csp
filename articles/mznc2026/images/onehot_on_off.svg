@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="174" viewBox="0 0 760 174" role="img" aria-label="one-hot チャネル集約 ON/OFF">
+<rect x="0" y="0" width="760" height="174" rx="10" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)" stroke-width="1"/>
+<text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="17" font-weight="600" fill="#0b0b0b">one-hot チャネル集約 ON/OFF</text>
+<text x="24" y="54" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#52514e">集約が発火する16問×5シード＝80データ点・net +6</text>
+<rect x="210" y="66" width="12" height="12" rx="2" fill="#2a78d6"/>
+<text x="228" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">on 勝</text>
+<rect x="304" y="66" width="12" height="12" rx="2" fill="#c3c2b7"/>
+<text x="322" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">引分</text>
+<rect x="376" y="66" width="12" height="12" rx="2" fill="#e34948"/>
+<text x="394" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">off 勝</text>
+<text x="196" y="121.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">onehot_on vs onehot_off</text>
+<rect x="210.0" y="106.0" width="159.4" height="22" rx="3" fill="#2a78d6"/>
+<rect x="370.9" y="106.0" width="228.0" height="22" rx="3" fill="#c3c2b7"/>
+<rect x="600.4" y="106.0" width="119.6" height="22" rx="3" fill="#e34948"/>
+<text x="210.0" y="143.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781">25 / 36 / 19</text>
+</svg>

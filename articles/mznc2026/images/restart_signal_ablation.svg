@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="386" viewBox="0 0 820 386" role="img" aria-label="リスタート適応信号のアブレーション（vs adaptive）">
+<rect x="0" y="0" width="820" height="386" rx="10" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)" stroke-width="1"/>
+<text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="17" font-weight="600" fill="#0b0b0b">リスタート適応信号のアブレーション（vs adaptive）</text>
+<text x="24" y="54" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#52514e">38問×5シード・net = adaptive 勝 − 対抗 勝</text>
+<text x="690" y="74" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#2a78d6" text-anchor="start">adaptive 優位 →</text>
+<line x1="470.0" y1="82" x2="470.0" y2="340" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="236" y="113.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">scrambled:0.065</text>
+<text x="236" y="126.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">信号との結合だけ切る</text>
+<rect x="470.0" y="98.0" width="36.1" height="22" rx="4" fill="#2a78d6"/>
+<text x="514.1" y="113.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+6</text>
+<text x="236" y="155.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">always_widen（出荷挙動）</text>
+<text x="236" y="168.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">縮小そのものを切る</text>
+<rect x="470.0" y="140.0" width="42.1" height="22" rx="4" fill="#2a78d6"/>
+<text x="520.1" y="155.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+7</text>
+<text x="236" y="197.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">depth_only</text>
+<text x="236" y="210.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">prune 条件を無視</text>
+<rect x="470.0" y="182.0" width="36.1" height="22" rx="4" fill="#2a78d6"/>
+<text x="514.1" y="197.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+6</text>
+<text x="236" y="239.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">prune_only</text>
+<text x="236" y="252.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">depth 条件を無視</text>
+<rect x="470.0" y="224.0" width="174.4" height="22" rx="4" fill="#2a78d6"/>
+<text x="652.4" y="239.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+29</text>
+<text x="236" y="281.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">always_tighten</text>
+<text x="236" y="294.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">両条件を無視し常に縮小</text>
+<rect x="470.0" y="266.0" width="186.4" height="22" rx="4" fill="#2a78d6"/>
+<text x="664.4" y="281.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+31</text>
+<text x="236" y="323.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">inverted</text>
+<text x="236" y="336.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">信号を反転</text>
+<rect x="470.0" y="308.0" width="150.4" height="22" rx="4" fill="#2a78d6"/>
+<text x="628.4" y="323.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+25</text>
+</svg>

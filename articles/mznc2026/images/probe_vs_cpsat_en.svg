@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="220" viewBox="0 0 760 220" role="img" aria-label="improvement probe ON/OFF: wins vs CP-SAT">
+<rect x="0" y="0" width="760" height="220" rx="10" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)" stroke-width="1"/>
+<text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="17" font-weight="600" fill="#0b0b0b">improvement probe ON/OFF: wins vs CP-SAT</text>
+<text x="24" y="54" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#52514e">2023+2024, single-seed judged (Sabori win / tie / CP-SAT win)</text>
+<rect x="210" y="66" width="12" height="12" rx="2" fill="#2a78d6"/>
+<text x="228" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">Sabori win</text>
+<rect x="370" y="66" width="12" height="12" rx="2" fill="#c3c2b7"/>
+<text x="388" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">tie</text>
+<rect x="453" y="66" width="12" height="12" rx="2" fill="#e34948"/>
+<text x="471" y="76" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#52514e">CP-SAT win</text>
+<text x="196" y="121.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">probe ON (default)</text>
+<rect x="210.0" y="106.0" width="198.3" height="22" rx="3" fill="#2a78d6"/>
+<rect x="409.8" y="106.0" width="126.0" height="22" rx="3" fill="#c3c2b7"/>
+<rect x="537.3" y="106.0" width="182.7" height="22" rx="3" fill="#e34948"/>
+<text x="210.0" y="143.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781">14 / 9 / 13</text>
+<text x="196" y="167.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">probe OFF</text>
+<rect x="210.0" y="152.0" width="170.0" height="22" rx="3" fill="#2a78d6"/>
+<rect x="381.5" y="152.0" width="140.2" height="22" rx="3" fill="#c3c2b7"/>
+<rect x="523.2" y="152.0" width="196.8" height="22" rx="3" fill="#e34948"/>
+<text x="210.0" y="189.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781">12 / 10 / 14</text>
+</svg>

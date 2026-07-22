@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="344" viewBox="0 0 820 344" role="img" aria-label="conflict 由来 activity bump：源を切るほど単調に悪化">
+<rect x="0" y="0" width="820" height="344" rx="10" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)" stroke-width="1"/>
+<text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="17" font-weight="600" fill="#0b0b0b">conflict 由来 activity bump：源を切るほど単調に悪化</text>
+<text x="24" y="54" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#52514e">各行 = full 構成に対する悪化 net（38問×5シード）</text>
+<text x="690" y="74" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="11.5" fill="#2a78d6" text-anchor="start">悪化 (net) →</text>
+<line x1="470.0" y1="82" x2="470.0" y2="298" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="236" y="113.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">学習 bump のみ (0.01)</text>
+<rect x="470.0" y="98.0" width="62.1" height="22" rx="4" fill="#2a78d6"/>
+<text x="540.1" y="113.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+7</text>
+<text x="236" y="155.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">伝播 bump のみ (フル/n)</text>
+<rect x="470.0" y="140.0" width="17.8" height="22" rx="4" fill="#2a78d6"/>
+<text x="495.8" y="155.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+2</text>
+<text x="236" y="197.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">決定変数 bump のみ (フル)</text>
+<rect x="470.0" y="182.0" width="71.0" height="22" rx="4" fill="#2a78d6"/>
+<text x="549.0" y="197.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+8</text>
+<text x="236" y="239.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">上記3つ同時</text>
+<rect x="470.0" y="224.0" width="124.3" height="22" rx="4" fill="#2a78d6"/>
+<text x="602.3" y="239.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+14</text>
+<text x="236" y="281.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" fill="#0b0b0b" text-anchor="end">+ 制約 bump も全停止</text>
+<text x="236" y="294.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="10.5" fill="#898781" text-anchor="end">全シード正 — 主証拠②</text>
+<rect x="470.0" y="266.0" width="186.4" height="22" rx="4" fill="#2a78d6"/>
+<text x="664.4" y="281.0" font-family="system-ui, -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif" font-size="12.5" font-weight="600" fill="#0b0b0b" text-anchor="start">+21</text>
+</svg>
