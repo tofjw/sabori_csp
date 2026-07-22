@@ -45,7 +45,7 @@
     (tight な組合せ・一部スケジューリング) で届かない = 射程ガード「測っていない」領域の外部確認
   - 注意: Challenge は objective スコア (フィールド相対) で順位がつくので、記事で実証した
     「直接対決 vs vs-フィールド」の指標乖離 (probe の例) が効く。順位だけでなく勝敗の中身を見る
-  - 関連: `articles/search-algorithm-explained.md` §7・射程ガード、memory `mznc2026-third-party-analysis`
+  - 関連: `articles/mznc2026/search-algorithm-explained.md` §7・射程ガード、memory `mznc2026-third-party-analysis`
 
 ## 調査タスク (中)
 
