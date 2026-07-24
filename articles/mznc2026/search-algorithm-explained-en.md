@@ -472,6 +472,10 @@ Seen this way, the results line up. The "tendency" that decides search has two p
 
 This write-up also doubles as a small cross-domain check: do branching insights established for SAT/CDCL hold in a CP solver? Liang & Ganesh (2015), cited above, is a **SAT** result — "activity captures structural centrality (bridge variables) without explicit detection, so activity is a strong structural signal." This article's negative results (explicit community analysis adds nothing; the Bloom tiebreak is redundant) are **that SAT lesson re-confirmed in CP**. And the "tendency" framing itself is, at bottom, a measurement of **how far the SAT lesson "activity is the dominant structural signal" carries into CP**.
 
+### Postscript: MiniZinc Challenge 2026 results (2026-07)
+
+Every number in this write-up is self-measured, with repeated caveats about run-to-run wobble. The third-party check is now in. Aggregating the per-instance results of the Challenge 2026 free category, sabori_csp places **9th of 26 entries**, directly below the native-CDCL solver pumpkin: 53 points behind on the Complete score (which counts optimality proofs), dead even on the Incomplete score (solution quality only, 1334.0 vs 1333.3). sabori reached a solution on 82 of 100 instances vs pumpkin's 76; pumpkin proved optimality 34 times vs sabori's 28. The contrast above — tendency competes on reaching good solutions, proofs are logic's job — landed as literal numbers. On the other side, two problems (multiple-constant-multiplication and orthorio) were a total wipeout (all instances UNK), and the only solvers that solved *all* their instances were from the SAT/LCG and commercial camps — non-learning CP solvers picked up a few instances at best. The "classes where strong learning is decisive" from the scope note above exist, and the weak learning here doesn't reach them. Per-problem breakdown: [challenge-2026-results-en.md](challenge-2026-results-en.md) (original Japanese: [challenge-2026-results.md](challenge-2026-results.md)).
+
 ---
 
 ### Reproducing the measurements

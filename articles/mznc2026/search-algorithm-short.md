@@ -34,4 +34,4 @@ sabori_csp は標準的な骨格（バックトラッキング + 制約伝播 + 
 
 全文では8つのコンポーネントすべてを、数表・ソース参照・正直なネガティブ結果（探索高速化に効かず診断専用となったコミュニティ分析も含む）付きで歩きます: **[search-algorithm-explained.md（日本語全文）](search-algorithm-explained.md)**（English: [full](search-algorithm-explained-en.md) / [short](search-algorithm-en-short.md)）。
 
-コード: <https://github.com/tofjw/sabori_csp>。FlatZinc 準拠、MiniZinc Challenge 2026 にエントリー済み（結果待ち。どう転んでも正直に書きます）。個々の部品はどれも新しくなく、既存研究を全文で引用しています（Last Conflict、バンディットによる変数選択、activity の構造捕捉など）。まだ見落としている先行研究があれば教えてください。
+コード: <https://github.com/tofjw/sabori_csp>。FlatZinc 準拠。MiniZinc Challenge 2026 の結果は free カテゴリ集計で 26 エントリー中 9 位、native CDCL の pumpkin の真下でした（解の質では同着、証明で負け。2 問は全滅）。問題別の分解は別記事に: [challenge-2026-results.md](challenge-2026-results.md)。個々の部品はどれも新しくなく、既存研究を全文で引用しています（Last Conflict、バンディットによる変数選択、activity の構造捕捉など）。まだ見落としている先行研究があれば教えてください。
