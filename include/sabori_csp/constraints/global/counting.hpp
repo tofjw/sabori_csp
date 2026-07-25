@@ -91,8 +91,11 @@ private:
 
     /**
      * @brief 不変条件に基づく伝播
+     *
+     * forward sweep（c が def/def+poss に張り付いたときの一括除去・一括確定）で
+     * is_possible_ を先取り更新するため save_point を必要とする（trail 記録用）。
      */
-    bool propagate(Model& model);
+    bool propagate(Model& model, int save_point);
 };
 
 
@@ -178,8 +181,10 @@ private:
 
     /**
      * @brief y 確定後の full propagation
+     *
+     * forward sweep で is_possible_ を先取り更新するため save_point を必要とする。
      */
-    bool propagate(Model& model);
+    bool propagate(Model& model, int save_point);
 
     /**
      * @brief y 確定時に counts を初期化
