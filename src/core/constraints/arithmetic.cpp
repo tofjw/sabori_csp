@@ -1101,6 +1101,46 @@ PresolveResult IntModConstraint::presolve(Model& model) {
         }
     }
 
+    // y, z 両方確定 かつ x 未確定 → x を x%y==z を満たす値に絞る。
+    // 「x mod const = const」（y,z が定数）では探索中に instantiate イベントが
+    // 出ないため、この合同フィルタは presolve でしか掛からない。
+    // bounds-only の広いドメインを剰余類に絞ると removed リストが肥大するため
+    // （count_eq の O(P^2) と同種の罠）、full/sparse ドメインか小さい場合のみ hole 除去し、
+    // bounds-only の広い場合は端点を合同に合わせる bounds 絞りに留める。
+    if (model.variable(y_id_)->is_assigned() && model.variable(z_id_)->is_assigned() &&
+        !model.variable(x_id_)->is_assigned()) {
+        auto* xv = model.variable(x_id_);
+        auto y_val = model.variable(y_id_)->assigned_value().value();
+        auto z_val = model.variable(z_id_)->assigned_value().value();
+        if (y_val == 0) return PresolveResult::Contradiction;
+        // |z| < |y| かつ sign 整合は propagate/bounds が担うのでここでは剰余のみ
+        auto& xd = xv->domain();
+        constexpr size_t kEnumerateLimit = 4096;
+        if (!xd.is_bounds_only() || xd.size() <= kEnumerateLimit) {
+            for (auto v : xd.values()) {
+                if (v % y_val != z_val) {
+                    if (!xv->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+        } else {
+            // 広い bounds-only: 端点を x%y==z の最も近い内側の値へ寄せる
+            auto adjust_up = [&](Domain::value_type v) {
+                for (int i = 0; i < std::abs(y_val); ++i, ++v) if (v % y_val == z_val) return v;
+                return v;  // 到達しない（|y| 内に必ず1つ存在）
+            };
+            auto adjust_down = [&](Domain::value_type v) {
+                for (int i = 0; i < std::abs(y_val); ++i, --v) if (v % y_val == z_val) return v;
+                return v;
+            };
+            auto new_min = adjust_up(xv->min());
+            auto new_max = adjust_down(xv->max());
+            if (new_min > xv->min()) { if (!xv->remove_below(new_min)) return PresolveResult::Contradiction; changed = true; }
+            if (new_max < xv->max()) { if (!xv->remove_above(new_max)) return PresolveResult::Contradiction; changed = true; }
+            if (xv->min() > xv->max()) return PresolveResult::Contradiction;
+        }
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
@@ -1152,6 +1192,14 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
     // y != 0 を強制
     if (model.contains(y_id_, 0)) {
         model.enqueue_remove_value(y_id_, 0);
+    }
+
+    // 全変数確定 → 最終検証。y/z が定数（探索中に instantiate イベントを出さない）や
+    // 探索順によって以下の「1変数だけ未確定」を前提とした個別フィルタ枝が発火しない
+    // ケースの保険。これが無いと x mod const = const で無効な割当を解と誤判定してしまう。
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
     }
 
     // x と y が確定 → z = x % y

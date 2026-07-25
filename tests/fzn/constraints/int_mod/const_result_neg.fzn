@@ -1,0 +1,4 @@
+% 負の被除数 + 定数結果: x mod 3 = -2 (truncated division, 結果の符号は x に従う)。
+var -12..0: x :: output_var;
+constraint int_mod(x, 3, -2);
+solve satisfy;

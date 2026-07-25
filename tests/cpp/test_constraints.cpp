@@ -4,6 +4,8 @@
 #include "sabori_csp/domain.hpp"
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include <random>
+#include <vector>
 
 using namespace sabori_csp;
 
@@ -1727,5 +1729,99 @@ TEST_CASE("IntModConstraint with int_eq on y", "[constraint][int_mod][solver]") 
     for (const auto& sol : solutions) {
         REQUIRE(sol.at("x") % sol.at("y") == sol.at("z"));
         REQUIRE(sol.at("y") == sol.at("w"));
+    }
+}
+
+// 「x mod const = const」（y,z が定数）の回帰テスト。
+// 定数は探索中に instantiate イベントを出さないため、旧実装では合同フィルタも
+// 全確定検証も掛からず、無効な x を解と誤判定して verify error / false UNSAT に
+// なっていた（2026-07-25 修正）。
+TEST_CASE("IntModConstraint constant result (x mod const = const)",
+          "[constraint][int_mod][solver]") {
+    SECTION("x mod 2 = 1 over 0..10 → 5 solutions") {
+        Model model;
+        auto x = model.create_variable("x", 0, 10);
+        auto y = model.create_variable("y", 2);  // 定数
+        auto z = model.create_variable("z", 1);  // 定数
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
+        Solver solver;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            REQUIRE(sol.at("x") % 2 == 1);
+            return true;
+        });
+        REQUIRE(count == 5);  // 1,3,5,7,9
+    }
+
+    SECTION("x mod 2 = 0 over 0..10 → 6 solutions") {
+        Model model;
+        auto x = model.create_variable("x", 0, 10);
+        auto y = model.create_variable("y", 2);
+        auto z = model.create_variable("z", 0);
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
+        Solver solver;
+        size_t count = solver.solve_all(model, [](const Solution&) { return true; });
+        REQUIRE(count == 6);  // 0,2,4,6,8,10
+    }
+
+    SECTION("negative dividend: x mod 3 = -2 over -20..20") {
+        Model model;
+        auto x = model.create_variable("x", -20, 20);
+        auto y = model.create_variable("y", 3);
+        auto z = model.create_variable("z", -2);
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
+        Solver solver;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            REQUIRE(sol.at("x") % 3 == -2);
+            return true;
+        });
+        // -20..20 で x%3==-2: x=-20,-17,-14,-11,-8,-5,-2 = 7
+        REQUIRE(count == 7);
+    }
+}
+
+// int_mod のランダム全解ブルートフォース照合。定数/変数の y,z、正負の x を混ぜ、
+// 合同フィルタ・全確定検証・bounds-only 経路の健全性を検証する。
+TEST_CASE("IntModConstraint randomized soundness vs brute force",
+          "[constraint][int_mod][solver]") {
+    std::mt19937 rng(31337);
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    for (int trial = 0; trial < 80; ++trial) {
+        int64_t x_lo = -6 + (coin(rng) % 7);        // -6..0
+        int64_t x_hi = x_lo + 1 + (coin(rng) % 12); // 幅 1..12
+        // y: 定数 or 小区間（0 を含まない）
+        int64_t y_lo, y_hi;
+        if (coin(rng) < 50) { y_lo = y_hi = 2 + (coin(rng) % 4); }   // 定数 2..5
+        else { y_lo = 2 + (coin(rng) % 3); y_hi = y_lo + (coin(rng) % 3); }
+        // z: 定数 or 区間（|z| < max|y| の範囲を含む広めの区間）
+        int64_t z_lo, z_hi;
+        if (coin(rng) < 50) {
+            int64_t zc = (coin(rng) % (2 * y_hi + 1)) - y_hi;  // -y_hi..y_hi
+            z_lo = z_hi = zc;
+        } else { z_lo = -y_hi; z_hi = y_hi; }
+
+        // ブルートフォース
+        size_t expected = 0;
+        for (int64_t vx = x_lo; vx <= x_hi; ++vx)
+            for (int64_t vy = y_lo; vy <= y_hi; ++vy) {
+                if (vy == 0) continue;
+                for (int64_t vz = z_lo; vz <= z_hi; ++vz)
+                    if (vx % vy == vz) ++expected;
+            }
+
+        Model model;
+        auto x = model.create_variable("x", x_lo, x_hi);
+        auto y = (y_lo == y_hi) ? model.create_variable("y", y_lo)
+                                : model.create_variable("y", y_lo, y_hi);
+        auto z = (z_lo == z_hi) ? model.create_variable("z", z_lo)
+                                : model.create_variable("z", z_lo, z_hi);
+        model.add_constraint(std::make_unique<IntModConstraint>(x, y, z));
+
+        Solver solver;
+        size_t actual = solver.solve_all(model, [](const Solution&) { return true; });
+
+        INFO("trial " << trial << " x=[" << x_lo << "," << x_hi << "] y=["
+             << y_lo << "," << y_hi << "] z=[" << z_lo << "," << z_hi << "]");
+        REQUIRE(actual == expected);
     }
 }
