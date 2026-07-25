@@ -151,6 +151,13 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
+    // 全変数確定 → 最終検証。x,y 確定枝が z 確定時も整合チェックするため int_times は
+    // 現状でも安全だが、int_div/int_mod と揃えて const-result soundness ガードを明示する。
+    if (x_id_ != y_id_ && model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
+    }
+
     // x * y = z の伝播
     if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
         // x と y が確定したら z を確定（x_id_ == y_id_ のケースも含む）
@@ -902,6 +909,14 @@ bool IntDivConstraint::on_instantiate(Model& model, int save_point,
     // y != 0 を強制
     if (model.contains(y_id_, 0)) {
         model.enqueue_remove_value(y_id_, 0);
+    }
+
+    // 全変数確定 → 最終検証。以下の各枝は「第3変数が未確定」を前提にガードされて
+    // いるため、y,z が定数（x div const = const 等）だと全枝が空振りする。その場合の
+    // 無効割当を確実に棄却する保険（int_mod と同型の const-result soundness ガード）。
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
     }
 
     // x と y が確定 → z = x / y

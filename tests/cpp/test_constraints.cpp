@@ -1825,3 +1825,128 @@ TEST_CASE("IntModConstraint randomized soundness vs brute force",
         REQUIRE(actual == expected);
     }
 }
+
+// ============================================================================
+// IntDivConstraint tests
+// int_div は int_mod と同型の「N-1変数確定→残り1変数フィルタ」構造で、各枝が
+// 第3変数の未確定でガードされているため、定数オペランド時は全枝が空振りする。
+// valid set が連続区間で presolve の bounds 絞りに救われていたが、const-result
+// soundness ガード（全確定→on_final）を追加したので機構レベルで堅牢。
+// （従来 int_div の C++ テストが皆無だった網羅の穴も埋める）
+// ============================================================================
+
+TEST_CASE("IntDivConstraint constant result (x div const = const)",
+          "[constraint][int_div][solver]") {
+    SECTION("x div 2 = 3 over 0..20 → x in {6,7}") {
+        Model model;
+        auto x = model.create_variable("x", 0, 20);
+        auto y = model.create_variable("y", 2);  // 定数
+        auto z = model.create_variable("z", 3);  // 定数
+        model.add_constraint(std::make_unique<IntDivConstraint>(x, y, z));
+        Solver solver;
+        std::vector<int64_t> xs;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            xs.push_back(sol.at("x"));
+            REQUIRE(sol.at("x") / 2 == 3);
+            return true;
+        });
+        REQUIRE(count == 2);  // 6,7
+    }
+
+    SECTION("negative: x div -3 = 2 over -20..20") {
+        Model model;
+        auto x = model.create_variable("x", -20, 20);
+        auto y = model.create_variable("y", -3);
+        auto z = model.create_variable("z", 2);
+        model.add_constraint(std::make_unique<IntDivConstraint>(x, y, z));
+        Solver solver;
+        size_t count = solver.solve_all(model, [&](const Solution& sol) {
+            REQUIRE(sol.at("x") / -3 == 2);
+            return true;
+        });
+        // x/-3==2 (truncated): x=-6,-7,-8 (-6/-3=2, -7/-3=2, -8/-3=2) = 3
+        REQUIRE(count == 3);
+    }
+}
+
+TEST_CASE("IntDivConstraint randomized soundness vs brute force",
+          "[constraint][int_div][solver]") {
+    std::mt19937 rng(913377);
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    for (int trial = 0; trial < 80; ++trial) {
+        int64_t x_lo = -8 + (coin(rng) % 9);
+        int64_t x_hi = x_lo + 1 + (coin(rng) % 14);
+        // y: 定数 or 小区間（0 を含まない、正負）
+        int64_t y_lo, y_hi;
+        if (coin(rng) < 50) {
+            int64_t yc = 2 + (coin(rng) % 4);
+            if (coin(rng) < 40) yc = -yc;
+            y_lo = y_hi = yc;
+        } else {
+            y_lo = 2 + (coin(rng) % 3); y_hi = y_lo + (coin(rng) % 3);
+        }
+        // z: 定数 or 区間
+        int64_t z_lo, z_hi;
+        if (coin(rng) < 50) { z_lo = z_hi = (coin(rng) % 9) - 4; }
+        else { z_lo = -5; z_hi = 5; }
+
+        size_t expected = 0;
+        for (int64_t vx = x_lo; vx <= x_hi; ++vx)
+            for (int64_t vy = y_lo; vy <= y_hi; ++vy) {
+                if (vy == 0) continue;
+                for (int64_t vz = z_lo; vz <= z_hi; ++vz)
+                    if (vx / vy == vz) ++expected;
+            }
+
+        Model model;
+        auto x = model.create_variable("x", x_lo, x_hi);
+        auto y = (y_lo == y_hi) ? model.create_variable("y", y_lo)
+                                : model.create_variable("y", y_lo, y_hi);
+        auto z = (z_lo == z_hi) ? model.create_variable("z", z_lo)
+                                : model.create_variable("z", z_lo, z_hi);
+        model.add_constraint(std::make_unique<IntDivConstraint>(x, y, z));
+        Solver solver;
+        size_t actual = solver.solve_all(model, [](const Solution&) { return true; });
+        INFO("trial " << trial << " x=[" << x_lo << "," << x_hi << "] y=["
+             << y_lo << "," << y_hi << "] z=[" << z_lo << "," << z_hi << "]");
+        REQUIRE(actual == expected);
+    }
+}
+
+// int_times の定数オペランド soundness をブルートフォースと照合（const-result ガード）。
+TEST_CASE("IntTimesConstraint constant-operand soundness vs brute force",
+          "[constraint][int_times][solver]") {
+    std::mt19937 rng(713250);
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    for (int trial = 0; trial < 80; ++trial) {
+        int64_t x_lo = -6 + (coin(rng) % 7);
+        int64_t x_hi = x_lo + 1 + (coin(rng) % 12);
+        int64_t y_lo, y_hi;
+        if (coin(rng) < 55) { int64_t yc = -4 + (coin(rng) % 9); y_lo = y_hi = yc; }
+        else { y_lo = -3 + (coin(rng) % 3); y_hi = y_lo + (coin(rng) % 4); }
+        int64_t z_lo, z_hi;
+        if (coin(rng) < 50) { z_lo = z_hi = -12 + (coin(rng) % 25); }
+        else { z_lo = -24; z_hi = 24; }
+
+        size_t expected = 0;
+        for (int64_t vx = x_lo; vx <= x_hi; ++vx)
+            for (int64_t vy = y_lo; vy <= y_hi; ++vy)
+                for (int64_t vz = z_lo; vz <= z_hi; ++vz)
+                    if (vx * vy == vz) ++expected;
+
+        Model model;
+        auto x = model.create_variable("x", x_lo, x_hi);
+        auto y = (y_lo == y_hi) ? model.create_variable("y", y_lo)
+                                : model.create_variable("y", y_lo, y_hi);
+        auto z = (z_lo == z_hi) ? model.create_variable("z", z_lo)
+                                : model.create_variable("z", z_lo, z_hi);
+        model.add_constraint(std::make_unique<IntTimesConstraint>(x, y, z));
+        Solver solver;
+        size_t actual = solver.solve_all(model, [](const Solution&) { return true; });
+        INFO("trial " << trial << " x=[" << x_lo << "," << x_hi << "] y=["
+             << y_lo << "," << y_hi << "] z=[" << z_lo << "," << z_hi << "]");
+        REQUIRE(actual == expected);
+    }
+}
