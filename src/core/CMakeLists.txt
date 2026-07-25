@@ -27,6 +27,7 @@ add_library(sabori_csp_core
   constraints/global/int_lin_le.cpp
   constraints/global/int_lin_ne.cpp
   constraints/global/circuit.cpp
+  constraints/global/subcircuit.cpp
   constraints/global/int_element.cpp
   constraints/global/int_element_monotonic.cpp
   constraints/global/array_int_maximum.cpp

@@ -158,6 +158,82 @@ private:
 };
 
 
+/**
+ * @brief subcircuit制約: 変数が単一の部分閉路を形成する
+ *
+ * 変数 x[0], ..., x[n-1] は 1..n（base_offset ずれ）の順列で、x[i] = j は
+ * 「ノード i の次はノード j」を表す。x[i] = i（自己ループ）は「ノード i は
+ * 閉路に含まれない（out）」を意味し、x[i] != i のノード（in）が過不足なく
+ * 単一の閉路を成す。全ノードが自己ループ（空の部分閉路）も充足解。
+ *
+ * circuit との違い:
+ * - 自己ループを許容し、それを out ノードとして扱う。
+ * - 閉路が全 in ノードを含むかで妥当性を判定（circuit の size==n に対し
+ *   subcircuit は size==in_count_、in_count_ は「非自己ループの確定エッジ数」）。
+ * - 妥当な閉路が閉じた時点で、残りの未確定ノードを全て自己ループ（out）に強制。
+ *
+ * alldifferent は暗黙に含意（順列）。registry で AllDifferent を併設する。
+ */
+class SubcircuitConstraint : public Constraint {
+public:
+    explicit SubcircuitConstraint(std::vector<VariablePtr> vars);
+
+    std::string name() const override;
+
+    bool prepare_propagation(Model& model) override;
+    PresolveResult presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_last_uninstantiated(Model& model, int save_point,
+                                 size_t last_var_internal_idx) override;
+
+    void rewind_to(int save_point) override;
+
+    void bump_activity(const Model& model, size_t trigger_var_idx,
+                       double* activity, double activity_inc,
+                       bool& need_rescale, std::mt19937& rng) const override;
+
+private:
+    size_t n_;
+    Domain::value_type base_offset_;
+
+    // パス管理（circuit と同じ端点リンク方式。in ノードのパスのみを扱う）
+    std::vector<size_t> partner_;   // partner_[端点] = 反対側の端点
+    std::vector<size_t> size_;      // size_[head] = head のパスの in ノード数
+    std::vector<size_t> occupier_;  // occupier_[j] = ノード j に確定エッジを張る変数（自己ループ含む）
+
+    size_t unfixed_count_;  // 未確定変数の数
+    size_t in_count_;       // 非自己ループの確定エッジ数（= 閉路に含まれる in ノードの数）
+
+    // 値プール（Sparse Set、alldifferent 用）
+    std::vector<Domain::value_type> pool_;
+    std::vector<size_t> pool_idx_;
+    size_t pool_n_;
+
+    // Trail
+    struct TrailEntry {
+        size_t i;             // 確定した変数
+        size_t j;             // 確定値の内部インデックス
+        size_t h1;            // merge 前の i のパスの head
+        size_t t2;            // merge 前の j のパスの tail
+        size_t old_size_h1;
+        size_t old_pool_n;
+        size_t old_unfixed_count;
+        size_t old_in_count;
+        uint8_t kind;         // 0=self-loop(out), 1=merge, 2=closure
+    };
+    std::vector<std::pair<int, TrailEntry>> trail_;
+
+    void remove_from_pool(size_t value);
+    void rebuild_state(Model& model);  // ctor / prepare_propagation 共通の状態再構築
+};
+
+
 // ============================================================================
 // Inverse constraint
 // ============================================================================

@@ -1,0 +1,12 @@
+% UNSAT: pinning 1->2->1 and 3->4->3 forms two disjoint cycles, not a single
+% subcircuit.
+var 1..4: x1 :: output_var;
+var 1..4: x2 :: output_var;
+var 1..4: x3 :: output_var;
+var 1..4: x4 :: output_var;
+constraint subcircuit([x1, x2, x3, x4]);
+constraint int_eq(x1, 2);
+constraint int_eq(x2, 1);
+constraint int_eq(x3, 4);
+constraint int_eq(x4, 3);
+solve satisfy;
