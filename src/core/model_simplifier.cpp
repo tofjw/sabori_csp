@@ -211,7 +211,9 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             if (!substitute_in_linear(coeffs, vids, rhs)) continue;
 
             if (vids.empty()) {
-                if (rhs != 0) throw std::runtime_error("int_lin_eq: UNSAT after substitution (0 != " + std::to_string(rhs) + ")");
+                // 全変数が代入消去され定数式に簡約: 0 = rhs。rhs≠0 は確定 UNSAT。
+                // throw せず infeasible_ を立て、呼び出し側で UNSATISFIABLE を出力する。
+                if (rhs != 0) { infeasible_ = true; return; }
                 model.remove_constraint(ci);
                 continue;
             }
@@ -233,7 +235,8 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             if (!substitute_in_linear(coeffs, vids, rhs)) continue;
 
             if (vids.empty()) {
-                if (0 > rhs) throw std::runtime_error("int_lin_le: UNSAT after substitution (0 > " + std::to_string(rhs) + ")");
+                // 0 <= rhs。rhs<0 は確定 UNSAT。
+                if (0 > rhs) { infeasible_ = true; return; }
                 model.remove_constraint(ci);
                 continue;
             }
@@ -255,7 +258,8 @@ void ModelSimplifier::apply_substitutions(Model& model) {
             if (!substitute_in_linear(coeffs, vids, rhs)) continue;
 
             if (vids.empty()) {
-                if (rhs == 0) throw std::runtime_error("int_lin_ne: UNSAT after substitution (0 == 0)");
+                // 0 != rhs。rhs==0 は確定 UNSAT。
+                if (rhs == 0) { infeasible_ = true; return; }
                 model.remove_constraint(ci);
                 continue;
             }

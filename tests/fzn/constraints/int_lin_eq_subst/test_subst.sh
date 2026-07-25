@@ -30,21 +30,25 @@ else
     fail "all_solutions: expected 7 solutions, got $nsol" "$output"
 fi
 
+# 代入簡約の確定 UNSAT は "Error:" ではなく "=====UNSATISFIABLE=====" で報告すること。
+# （旧挙動の Error への退行を捕まえるため、UNSATISFIABLE を厳密に要求し Error を禁止する）
+check_subst_unsat() {  # $1=fzn名 $2=ラベル
+    local out; out=$("$SOLVER" "$SCRIPT_DIR/$1" 2>&1)
+    if echo "$out" | grep -q "=====UNSATISFIABLE=====" && ! echo "$out" | grep -q "Error"; then
+        pass "$2: reported UNSATISFIABLE (not Error)"
+    else
+        fail "$2: should report UNSATISFIABLE without Error" "$out"
+    fi
+}
+
 # --- Test 3: UNSAT from contradictory int_lin_eq ---
-output=$("$SOLVER" "$SCRIPT_DIR/unsat_eq.fzn" 2>&1)
-if echo "$output" | grep -q "UNSATISFIABLE\|UNSAT"; then
-    pass "unsat_eq: detected UNSAT"
-else
-    fail "unsat_eq: should be UNSAT" "$output"
-fi
+check_subst_unsat unsat_eq.fzn "unsat_eq"
 
 # --- Test 4: UNSAT from int_lin_le after substitution ---
-output=$("$SOLVER" "$SCRIPT_DIR/unsat_le.fzn" 2>&1)
-if echo "$output" | grep -q "UNSATISFIABLE\|UNSAT"; then
-    pass "unsat_le: detected UNSAT"
-else
-    fail "unsat_le: should be UNSAT" "$output"
-fi
+check_subst_unsat unsat_le.fzn "unsat_le"
+
+# --- Test 4b: UNSAT from int_lin_ne after substitution ---
+check_subst_unsat unsat_ne.fzn "unsat_ne"
 
 # --- Test 5: reif degenerates to b=true ---
 output=$("$SOLVER" "$SCRIPT_DIR/reif_true.fzn" 2>/dev/null)
