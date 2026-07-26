@@ -121,22 +121,65 @@ bash tests/golden/run_golden.sh check               # ゴールデンマスタ�
 - [制約実装ガイド](docs/constraint-implementation-guide.md)
 - [テスト方法](docs/TESTING.md)
 - [FlatZinc仕様](https://docs.minizinc.dev/en/2.9.5/fzn-spec.html)
-- [MiniZinc Challenge ベンチマーク](benchmarks/minizinc_challenge_2025/README.md)
+- [MiniZinc Challenge ベンチマーク](benchmarks/minizinc_challenge/README.md)
 
 ## ベンチマーク実行（重要）
 
-MiniZinc 問題のベンチマークは **必ず minizinc 経由** で実行すること。
+MiniZinc 問題のベンチマークは **必ず minizinc 経由**、**minizinc は snap 版 `/snap/bin/minizinc`**、
+**ソルバー設定は `build/share/minizinc/solvers/sabori_csp.msc` を絶対パスで指定** して実行すること。
 
 ```bash
-cd benchmarks/minizinc_challenge_2025
-./squashfs-root/usr/bin/minizinc --solver sabori_csp \
-    mznc2025_probs/<problem>/<problem>.mzn \
-    mznc2025_probs/<problem>/<data>.dzn
+cd benchmarks/minizinc_challenge
+MSC=$(pwd)/../../build/share/minizinc/solvers/sabori_csp.msc
+
+# 最適化問題（-i 必須。理由は後述）
+/snap/bin/minizinc --solver "$MSC" -i --time-limit 120000 \
+    mznc<year>_probs/<problem>/<problem>.mzn \
+    mznc<year>_probs/<problem>/<data>.dzn
+
+# 比較用: cp-sat / chuffed / highs / scip 等は snap 同梱の設定で使える
+/snap/bin/minizinc --solver cp-sat -i --time-limit 120000 ...
 ```
 
-**理由**: `redefinitions.mzn` により未サポート制約（gecode固有、set制約等）が標準分解に置き換えられる。直接 `fzn_sabori` を実行すると未サポート制約エラーになる。
+問題セットは `mznc2010_probs` 〜 `mznc2026_probs`。`bench_*.py` は `lib_benchmark.py` が
+同じ minizinc と `.msc` を解決するのでそのまま使ってよい。
 
-詳細は [benchmarks/minizinc_challenge_2025/README.md](benchmarks/minizinc_challenge_2025/README.md) を参照。
+### `squashfs-root/usr/bin/minizinc` は使わない
+
+AppImage 展開版（2.9.3）で snap 版（2.10.0）より古い。比較用ソルバーも snap 側のほうが
+揃っている（cp-sat / chuffed に加え highs / scip / cbc / gurobi / cplex）。
+
+### `--solver sabori_csp` と名前で指定してはいけない
+
+`--solver` は絶対パスの `.msc` で渡す。名前解決はどの `.msc` を掴んだかが見えず、別の
+mznlib を指す同名設定があるとネイティブ実装が**エラーなく std 分解に落ちる**。
+
+実際 `squashfs-root/usr/share/minizinc/solvers/sabori.msc` が同じ `name: sabori_csp` を
+持ち、その mznlib（`squashfs-root/usr/share/minizinc/sabori_csp/`）は
+`fzn_tree_int.mzn` / `fzn_subcircuit.mzn` / `fzn_lex_*` / `fzn_increasing_*` /
+`fzn_seq_precede_chain_int.mzn` / `fzn_value_precede*.mzn` を欠く古いスナップショットだった
+（2026-07-26 に削除済み。同ディレクトリの `sabori_a.msc` / `sabori_b.msc` /
+`sabori_nogac.msc` も同じ古い mznlib を指すので使わないこと）。
+
+正しさの確認方法 — 生成 FZN にネイティブ述語が出ているか見る:
+
+```bash
+/snap/bin/minizinc -c --solver "$MSC" ... --fzn /tmp/a.fzn
+grep -c sabori_tree /tmp/a.fzn    # 0 なら mznlib が古い側を掴んでいる
+```
+
+canonical な mznlib は `share/minizinc/sabori_csp/`、ビルド時に `build/share/minizinc/sabori_csp/`
+へコピーされる（新規 `.mzn` 追加時は cmake reconfigure が必要）。
+
+### 最適化問題では `-i` を必ず付ける
+
+`fzn_sabori` は `-a` なしだと最良解を内部に溜め込み終了時にまとめて出力する。minizinc の
+`--time-limit` は SIGTERM で殺すため、`-i` なしだと**解を見つけていても `=====UNKNOWN=====`
+になる**。`-i` を付ければ改善解が逐次流れる。
+
+**minizinc 経由が必須な理由**: `redefinitions.mzn` により未サポート制約（gecode固有、set制約等）が標準分解に置き換えられる。直接 `fzn_sabori` を実行すると未サポート制約エラーになる。
+
+詳細は [benchmarks/minizinc_challenge/README.md](benchmarks/minizinc_challenge/README.md) を参照。
 
 ## Profiling
 When profiling C++ code, use gprof (not perf) as perf is unavailable in WSL2. Always do a clean rebuild (`make clean && make`) before profiling to avoid stale binary/gmon.out issues. Use the solver's built-in timeout flag instead of SIGTERM to ensure gmon.out is written.

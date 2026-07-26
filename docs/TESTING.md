@@ -130,13 +130,27 @@ tests/
 
 ## MiniZinc経由のテスト
 
-ビルド時に `build/share/minizinc/` に MiniZinc ソルバー設定ファイルが生成されます。
+ビルド時に `build/share/minizinc/` に MiniZinc ソルバー設定ファイル（`.msc`）と
+mznlib が生成されます。**この build 側の設定だけを使うこと。**
 
-### 環境変数の設定
+### ソルバー設定の指定
+
+`.msc` を絶対パスで指定するのが確実です。
+
+```bash
+MSC=/path/to/sabori_csp/build/share/minizinc/solvers/sabori_csp.msc
+```
+
+`--solver sabori_csp` と名前で指定することもできますが、その場合は
+`MZN_SOLVER_PATH` を build 側に向けておく必要があります。
 
 ```bash
 export MZN_SOLVER_PATH=/path/to/sabori_csp/build/share/minizinc/solvers
 ```
+
+名前解決は「どの `.msc` を掴んだか」が見えず、別の mznlib を指す同名設定があると
+ネイティブ実装が**エラーなく std 分解へ落ちます**（実例と対処は
+[ベンチマーク README](../benchmarks/minizinc_challenge/README.md) 参照）。
 
 ### ソルバーの確認
 
@@ -149,17 +163,22 @@ minizinc --solvers | grep sabori
   sabori_csp 1.0.0 (io.github.tofjw.sabori_csp, cp)
 ```
 
+`id` が `io.github.tofjw.sabori_csp` であることを確認してください。
+
 ### MiniZincモデルの実行
 
 ```bash
 # 1解
-minizinc --solver sabori_csp model.mzn
+minizinc --solver "$MSC" model.mzn
 
 # 全解
-minizinc --solver sabori_csp -a model.mzn
+minizinc --solver "$MSC" -a model.mzn
+
+# 最適化問題（-i を付けないと、タイムアウト時に解を見つけていても UNKNOWN になる）
+minizinc --solver "$MSC" -i --time-limit 30000 model.mzn
 
 # FlatZinc出力の確認（デバッグ用）
-minizinc --solver sabori_csp -c model.mzn
+minizinc --solver "$MSC" -c model.mzn --fzn model.fzn
 cat model.fzn
 ```
 
@@ -177,8 +196,7 @@ solve satisfy;
 output ["x=\(x), y=\(y), z=\(z)\n"];
 EOF
 
-MZN_SOLVER_PATH=$PWD/build/share/minizinc/solvers \
-minizinc --solver sabori_csp -a /tmp/test.mzn
+minizinc --solver $PWD/build/share/minizinc/solvers/sabori_csp.msc -a /tmp/test.mzn
 ```
 
 ### ネイティブサポートされるグローバル制約

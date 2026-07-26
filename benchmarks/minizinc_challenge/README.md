@@ -8,62 +8,96 @@ MiniZinc Challenge の問題を使用した sabori_csp のベンチマーク環�
 
 ```
 benchmarks/minizinc_challenge/
-├── mznc2025_probs/           # MiniZinc Challenge 2025 問題セット
-├── squashfs-root/            # MiniZinc バンドル（AppImage展開）
-│   └── usr/share/minizinc/
-│       ├── solvers/
-│       │   └── sabori.msc    # Sabori ソルバー設定
-│       └── sabori_csp/
-│           └── redefinitions.mzn  # Sabori 用制約定義
-├── bench_compare.py             # 単一問題実行スクリプト
+├── mznc2010_probs/ .. mznc2026_probs/   # MiniZinc Challenge 各年度の問題セット
+├── squashfs-root/            # 旧 MiniZinc バンドル（AppImage展開・2.9.3）。使わない
+├── lib_benchmark.py          # bench_*.py 共通ライブラリ（minizinc と .msc をここで解決）
+├── bench_compare.py          # 年度別全問題ベンチマーク
 └── README.md
 ```
+
+**minizinc は snap 版 `/snap/bin/minizinc`（2.10.0）を使う。** `squashfs-root/` は 2.9.3 の
+古い展開物で、比較用ソルバーも snap 側のほうが揃っている（後述）。ディレクトリ自体は
+まだ残しているが、参照しないこと。
+
+Sabori 本体の mznlib は `build/share/minizinc/sabori_csp/` にある。canonical なソースは
+`share/minizinc/sabori_csp/` で、ビルド時に build へコピーされる
+（新規 `.mzn` を追加したら cmake reconfigure が必要）。
 
 ## 重要: ベンチマーク実行方法
 
 ### 必ず minizinc 経由で実行すること
 
-**理由**: `redefinitions.mzn` により、sabori がサポートしていない制約（gecode固有制約、set制約など）が標準の分解に置き換えられる。
+**理由**: `redefinitions.mzn` により、sabori がサポートしていない制約（gecode固有制約、set制約など）が標準の分解に置き換えられる。直接 `fzn_sabori` を実行すると未サポート制約エラーになる。
 
-### 正しい実行方法
+### ソルバー設定は絶対パスの .msc で指定すること
+
+`--solver sabori_csp` のような**名前指定はしない**。使うのは
+`build/share/minizinc/solvers/sabori_csp.msc` のみ。
 
 ```bash
-cd /path/to/sabori_csp/benchmarks/minizinc_challenge_2025
+cd /path/to/sabori_csp/benchmarks/minizinc_challenge
+MSC=$(pwd)/../../build/share/minizinc/solvers/sabori_csp.msc
 
-# Sabori で実行
-./squashfs-root/usr/bin/minizinc --solver sabori_csp \
-    mznc2025_probs/<problem>/<problem>.mzn \
-    mznc2025_probs/<problem>/<data>.dzn
+# Sabori で実行（最適化問題は -i 必須。理由は後述）
+/snap/bin/minizinc --solver "$MSC" -i --time-limit 30000 \
+    mznc<year>_probs/<problem>/<problem>.mzn \
+    mznc<year>_probs/<problem>/<data>.dzn
 
-# 比較用: CP-SAT で実行
-./squashfs-root/usr/bin/minizinc --solver cp-sat \
-    mznc2025_probs/<problem>/<problem>.mzn \
-    mznc2025_probs/<problem>/<data>.dzn
-
-# タイムアウト付き
-timeout 30 ./squashfs-root/usr/bin/minizinc --solver sabori_csp ...
+# 比較用: cp-sat / chuffed 等は snap 同梱の設定で使える
+/snap/bin/minizinc --solver cp-sat -i --time-limit 30000 \
+    mznc<year>_probs/<problem>/<problem>.mzn \
+    mznc<year>_probs/<problem>/<data>.dzn
 ```
+
+`bench_*.py` は `lib_benchmark.py` が同じ `.msc` を解決するのでそのまま使ってよい。
+
+#### 経緯: 名前指定が危険だった理由
+
+以前は旧バンドル側にも `squashfs-root/usr/share/minizinc/solvers/sabori.msc`
+（`name: sabori_csp`）があり、その
+`mznlib` は `squashfs-root/usr/share/minizinc/sabori_csp/` という**古いスナップショット**
+だった。`fzn_tree_int.mzn` / `fzn_subcircuit.mzn` / `fzn_lex_*` / `fzn_increasing_*` /
+`fzn_seq_precede_chain_int.mzn` / `fzn_value_precede*.mzn` を欠いており、名前解決すると
+これらのネイティブ実装が**エラーを出さずに std 分解へ落ちて**いた。
+
+`sabori.msc` は削除済みなので、`--solver sabori_csp` は
+`no solver with tag sabori_csp found` で失敗する（黙って壊れるより望ましい）。
+同ディレクトリに残る `sabori_a.msc` / `sabori_b.msc` / `sabori_nogac.msc` も
+同じ古い mznlib を指しているので使わないこと。
+
+ネイティブ述語が効いているかは生成 FZN で確認できる:
+
+```bash
+/snap/bin/minizinc -c --solver "$MSC" <model.mzn> <data.dzn> --fzn /tmp/a.fzn
+grep -c sabori_tree /tmp/a.fzn    # 0 なら mznlib が古い側を掴んでいる
+```
+
+### 最適化問題では `-i` を必ず付ける
+
+`fzn_sabori` は `-a` なしだと最良解を内部に溜め込み終了時に出力する。minizinc の
+`--time-limit` は SIGTERM でソルバーを殺すため、`-i` なしだと**解を見つけていても
+`=====UNKNOWN=====` になる**。`-i` を付ければ改善解が逐次流れる。
 
 ### FlatZinc のみ生成（デバッグ用）
 
 ```bash
-./squashfs-root/usr/bin/minizinc --solver sabori_csp -c \
-    mznc2025_probs/<problem>/<problem>.mzn \
-    mznc2025_probs/<problem>/<data>.dzn \
-    -o /tmp/output.fzn
+/snap/bin/minizinc -c --solver "$MSC" \
+    mznc<year>_probs/<problem>/<problem>.mzn \
+    mznc<year>_probs/<problem>/<data>.dzn \
+    --fzn /tmp/output.fzn
 ```
 
 ## ソルバー設定
 
-### sabori.msc
+### build/share/minizinc/solvers/sabori_csp.msc
 
-`squashfs-root/usr/share/minizinc/solvers/sabori.msc`:
+cmake が生成する。実体は次の通り（パスは絶対パスで埋め込まれる）:
 
 ```json
 {
-  "id": "org.sabori.sabori_csp",
-  "name": sabori_csp,
-  "mznlib": "../sabori_csp",
+  "id": "io.github.tofjw.sabori_csp",
+  "name": "sabori_csp",
+  "mznlib": "/path/to/sabori_csp/build/share/minizinc/sabori_csp",
   "executable": "/path/to/sabori_csp/build/src/fzn/fzn_sabori",
   ...
 }
@@ -71,7 +105,7 @@ timeout 30 ./squashfs-root/usr/bin/minizinc --solver sabori_csp ...
 
 ### redefinitions.mzn
 
-`squashfs-root/usr/share/minizinc/sabori_csp/redefinitions.mzn`:
+`build/share/minizinc/sabori_csp/redefinitions.mzn`（canonical は `share/minizinc/sabori_csp/`）:
 
 ```minizinc
 % Sabori CSP redefinitions
@@ -85,17 +119,23 @@ include "nosets.mzn";
 ## 利用可能なソルバー
 
 ```bash
-./squashfs-root/usr/bin/minizinc --solvers
+/snap/bin/minizinc --solvers
 ```
 
-- `Sabori CSP` (org.sabori.sabori_csp)
-- `cp-sat` (OR Tools CP-SAT)
-- `gecode` (Gecode) ※ライブラリ問題で動作しない場合あり
+snap 版には以下が同梱されている:
+
+- `cp-sat` (OR Tools CP-SAT 9.15)
+- `chuffed` (Chuffed 0.14.0 — LCG 比較用)
+- `gecode` (Gecode 6.2.0 / 6.4.0)
+- `highs` / `scip` / `coin-bc` / `gurobi` / `cplex` (MIP 比較用)
+
+Sabori はこの一覧には出ない（snap に登録していないため）。上記の `.msc` 絶対パスで指定する。
 
 ## 注意事項
 
-1. **ソルバー名は sabori_csp** - `--solver sabori` ではなく `--solver sabori_csp`
+1. **ソルバーは .msc の絶対パスで指定** - `--solver sabori_csp` は使わない
 2. **作業ディレクトリ** - `benchmarks/minizinc_challenge/` から実行すること
+3. **並列数は最大4プロセス**
 
 ## ベンチマーク実行条件
 
