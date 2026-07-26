@@ -52,13 +52,22 @@ file(GENERATE
 )
 
 # Copy mznlib files to build directory
-file(GLOB MZNLIB_FILES "${CMAKE_SOURCE_DIR}/share/minizinc/sabori_csp/*.mzn")
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/share/minizinc/sabori_csp")
-foreach(MZNLIB_FILE ${MZNLIB_FILES})
-  get_filename_component(MZNLIB_FILENAME ${MZNLIB_FILE} NAME)
-  configure_file(
-    ${MZNLIB_FILE}
-    "${CMAKE_BINARY_DIR}/share/minizinc/sabori_csp/${MZNLIB_FILENAME}"
-    COPYONLY
-  )
-endforeach()
+#
+# 毎ビルド、出力先を丸ごと消してから配置し直す（差分コピーにしない）。
+# 差分コピーだと、ブランチ切替などで share/ 側から消えた .mzn が build 側に残り、
+# 未実装の sabori_* 述語を emit して実行時に "Unsupported constraint" になる。
+# flatten は通ってしまうため原因を追いにくく、ベンチが黙って ERR になる。
+#
+# configure 時ではなくビルド時に走らせるのが要点。configure 時のコピーだけだと
+# `cmake --build` しか実行しない場合に同期されない（ブランチ切替の直後がまさにこれ）。
+set(SABORI_CSP_MZNLIB_SRC_DIR "${CMAKE_SOURCE_DIR}/share/minizinc/sabori_csp")
+
+add_custom_target(sabori_csp_mznlib ALL
+  COMMAND "${CMAKE_COMMAND}"
+          "-DSRC=${SABORI_CSP_MZNLIB_SRC_DIR}"
+          "-DDEST=${SABORI_CSP_MZNLIB_DIR}"
+          -P "${CMAKE_SOURCE_DIR}/cmake/sync_mznlib.cmake"
+  COMMENT "Syncing mznlib to ${SABORI_CSP_MZNLIB_DIR} (clean copy)"
+  VERBATIM
+)
+add_dependencies(fzn_sabori sabori_csp_mznlib)
