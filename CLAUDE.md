@@ -169,7 +169,9 @@ grep -c sabori_tree /tmp/a.fzn    # 0 なら mznlib が古い側を掴んでい�
 ```
 
 canonical な mznlib は `share/minizinc/sabori_csp/`、ビルド時に `build/share/minizinc/sabori_csp/`
-へコピーされる（新規 `.mzn` 追加時は cmake reconfigure が必要）。
+へ**毎ビルド クリーンコピー**される（`cmake/sync_mznlib.cmake`）。`.mzn` の追加・削除も
+`cmake --build build` だけで追従するので reconfigure は不要。差分コピーではないため、
+ブランチ切替で canonical から消えた `.mzn` が build 側に残ることもない。
 
 ### 最適化問題では `-i` を必ず付ける
 

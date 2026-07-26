@@ -20,8 +20,8 @@ benchmarks/minizinc_challenge/
 まだ残しているが、参照しないこと。
 
 Sabori 本体の mznlib は `build/share/minizinc/sabori_csp/` にある。canonical なソースは
-`share/minizinc/sabori_csp/` で、ビルド時に build へコピーされる
-（新規 `.mzn` を追加したら cmake reconfigure が必要）。
+`share/minizinc/sabori_csp/` で、**毎ビルド クリーンコピー**される（`cmake/sync_mznlib.cmake`）。
+`.mzn` の追加・削除も `cmake --build build` だけで追従するので reconfigure は不要。
 
 ## 重要: ベンチマーク実行方法
 
