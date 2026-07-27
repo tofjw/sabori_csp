@@ -192,6 +192,11 @@ public:
     bool on_last_uninstantiated(Model& model, int save_point,
                                  size_t last_var_internal_idx) override;
 
+    /**
+     * @brief バッチ伝播: 到達可能性フィルタを1回実行
+     */
+    bool propagate_batch(Model& model, int save_point) override;
+
     void rewind_to(int save_point) override;
 
     void bump_activity(const Model& model, size_t trigger_var_idx,
@@ -231,6 +236,34 @@ private:
 
     void remove_from_pool(size_t value);
     void rebuild_state(Model& model);  // ctor / prepare_propagation 共通の状態再構築
+
+    /**
+     * @brief 到達可能性フィルタ（必須ノードの相互到達性による刈り込み）
+     *
+     * 閉路は全ての必須ノード（自己ループ不可のノード）を通らなければならない。
+     * よって必須ノード m0 から前向き・後ろ向きの両方で到達できるノードだけが
+     * 閉路に入りうる。それ以外のノードは自己ループ（out）に強制できる。
+     *
+     * ステートレス（毎回モデルから再構築）で trail を持たないため backtrack 安全。
+     *
+     * @param in_presolve presolve 中は Domain を直接操作、探索中は enqueue する
+     * @return false なら矛盾
+     */
+    bool filter_reachability(Model& model, bool in_presolve, bool* changed = nullptr);
+
+    // filter_reachability の作業バッファ（呼び出しごとの再確保を避ける）
+    std::vector<uint8_t> reach_fwd_;
+    std::vector<uint8_t> reach_bwd_;
+    std::vector<size_t> reach_stack_;
+    std::vector<size_t> succ_start_;   // CSR: ノード i の後続の開始位置
+    std::vector<size_t> succ_list_;    // CSR: 後続ノード列（自己ループ除く）
+    std::vector<size_t> pred_start_;
+    std::vector<size_t> pred_list_;
+    std::vector<uint8_t> frag_occupied_;  // 確定弧が入っているノード
+    std::vector<size_t> frag_succ_;       // 確定した非自己ループ後続
+    std::vector<size_t> frag_id_;         // ノード -> 所属断片（SIZE_MAX = 自由）
+    std::vector<size_t> frag_head_;
+    std::vector<size_t> frag_tail_;
 };
 
 

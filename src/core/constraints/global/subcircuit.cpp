@@ -1,6 +1,7 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 
 namespace sabori_csp {
@@ -47,6 +48,211 @@ SubcircuitConstraint::SubcircuitConstraint(std::vector<VariablePtr> vars)
 
 std::string SubcircuitConstraint::name() const {
     return "subcircuit";
+}
+
+bool SubcircuitConstraint::filter_reachability(Model& model, bool in_presolve, bool* changed) {
+    // kill switch（退行時の切り分け用）
+    static const bool disabled = std::getenv("SABORI_NO_SUBCIRCUIT_REACH") != nullptr;
+    if (disabled) return true;
+    if (n_ < 3) return true;
+
+    // ------------------------------------------------------------------
+    // 断片グラフによる到達可能性フィルタ
+    //
+    // 確定済みの非自己ループ弧は「パス断片」を成す。閉路が閉じるには、全断片が
+    // 未使用ノードだけを通って1つの輪に繋がらなければならない。そこで各断片を
+    // 1ノードに縮約し（head で入り tail から出る）、その縮約グラフ上で
+    // 全断片が相互到達可能かを検査する。
+    //
+    // 縮約グラフ上で基準断片と相互到達できないノードは閉路に入りえないので、
+    // 自己ループ（out）に強制できる。必須ノードがそこに落ちたら矛盾。
+    //
+    // 内部状態には依存せずモデルから毎回再構築する（backtrack 安全）。
+    // ------------------------------------------------------------------
+    const auto self_of = [&](size_t i) {
+        return static_cast<Domain::value_type>(i) + base_offset_;
+    };
+
+    // --- ノード分類 ---
+    // occupied[j]: 確定弧が j に入っている（自己ループ含む）→ もう入れない
+    // succ[i]:     確定した非自己ループの後続（無ければ SIZE_MAX）
+    frag_occupied_.assign(n_, 0);
+    frag_succ_.assign(n_, SIZE_MAX);
+    size_t mandatory_anchor = SIZE_MAX;
+    for (size_t i = 0; i < n_; ++i) {
+        size_t vid = var_ids_[i];
+        if (!model.contains(vid, self_of(i)) && mandatory_anchor == SIZE_MAX) {
+            mandatory_anchor = i;
+        }
+        if (!model.is_instantiated(vid)) continue;
+        auto j = static_cast<size_t>(model.value(vid) - base_offset_);
+        if (j >= n_) return false;
+        if (frag_occupied_[j]) return false;  // alldifferent 違反
+        frag_occupied_[j] = 1;
+        if (j != i) frag_succ_[i] = j;
+    }
+
+    // --- 断片の抽出（head = 入次数0 かつ 出弧確定、tail = 入次数1 かつ 出弧未確定）---
+    // 縮約ノード ID: 0..n_-1 は素のノード、n_+f は断片 f
+    frag_id_.assign(n_, SIZE_MAX);   // ノード -> 所属断片
+    frag_tail_.clear();
+    frag_head_.clear();
+    for (size_t h = 0; h < n_; ++h) {
+        if (frag_occupied_[h]) continue;             // head は入次数0
+        if (frag_succ_[h] == SIZE_MAX) continue;     // 出弧が確定していない
+        size_t f = frag_head_.size();
+        size_t cur = h, steps = 0;
+        while (true) {
+            frag_id_[cur] = f;
+            size_t nx = frag_succ_[cur];
+            if (nx == SIZE_MAX) break;               // ここが tail
+            cur = nx;
+            if (++steps > n_) return false;          // 確定弧だけで閉路 → 別ルートで検出済みのはず
+        }
+        frag_head_.push_back(h);
+        frag_tail_.push_back(cur);
+    }
+    const size_t m = frag_head_.size();
+
+    // --- 走査の起点を決める ---
+    // 断片があればその0番、無ければ必須ノード。どちらも無ければ「全て out」が
+    // 妥当解なので何も強制できない。
+    size_t anchor;
+    if (m > 0) {
+        anchor = n_ + 0;
+    } else if (mandatory_anchor != SIZE_MAX) {
+        anchor = mandatory_anchor;
+    } else {
+        return true;
+    }
+
+    const size_t total = n_ + m;
+    // 縮約ノード v の「出口となる素ノード」
+    const auto exit_node = [&](size_t v) { return v < n_ ? v : frag_tail_[v - n_]; };
+    // 素ノード j を縮約ノードへ写す（進入可能なら）
+    const auto entry_of = [&](size_t j) {
+        size_t f = frag_id_[j];
+        if (f == SIZE_MAX) return j;                     // 自由ノード
+        return (frag_head_[f] == j) ? n_ + f : SIZE_MAX; // 断片へは head からのみ進入可
+    };
+
+    // --- 縮約グラフを CSR で構築 ---
+    succ_start_.assign(total + 1, 0);
+    pred_start_.assign(total + 1, 0);
+    size_t arc_count = 0;
+    for (size_t v = 0; v < total; ++v) {
+        size_t u = exit_node(v);
+        if (v < n_ && (frag_occupied_[u] || frag_id_[u] != SIZE_MAX)) continue;  // out/断片内部は起点にしない
+        const auto& dom = model.variable(var_ids_[u])->domain();
+        size_t deg = 0;
+        dom.for_each_value([&](Domain::value_type val) {
+            auto j = static_cast<size_t>(val - base_offset_);
+            if (j >= n_ || j == u) return;
+            if (frag_occupied_[j]) return;               // 既に入次数が埋まっている
+            size_t w = entry_of(j);
+            // 縮約後の自己ループ (w == v) は「断片の tail が自分の head へ戻る」
+            // = 閉路を閉じる弧。除外してはいけない。
+            if (w == SIZE_MAX) return;
+            ++deg;
+            ++pred_start_[w + 1];
+        });
+        succ_start_[v + 1] = deg;
+        arc_count += deg;
+    }
+    for (size_t v = 0; v < total; ++v) {
+        succ_start_[v + 1] += succ_start_[v];
+        pred_start_[v + 1] += pred_start_[v];
+    }
+    succ_list_.assign(arc_count, 0);
+    pred_list_.assign(arc_count, 0);
+    {
+        std::vector<size_t> spos(succ_start_.begin(), succ_start_.end() - 1);
+        std::vector<size_t> ppos(pred_start_.begin(), pred_start_.end() - 1);
+        for (size_t v = 0; v < total; ++v) {
+            size_t u = exit_node(v);
+            if (v < n_ && (frag_occupied_[u] || frag_id_[u] != SIZE_MAX)) continue;
+            const auto& dom = model.variable(var_ids_[u])->domain();
+            dom.for_each_value([&](Domain::value_type val) {
+                auto j = static_cast<size_t>(val - base_offset_);
+                if (j >= n_ || j == u) return;
+                if (frag_occupied_[j]) return;
+                size_t w = entry_of(j);
+                if (w == SIZE_MAX) return;
+                succ_list_[spos[v]++] = w;
+                pred_list_[ppos[w]++] = v;
+            });
+        }
+    }
+
+    // --- anchor からの前向き / 後ろ向き到達 ---
+    auto traverse = [&](std::vector<uint8_t>& mark, const std::vector<size_t>& start,
+                        const std::vector<size_t>& list) {
+        mark.assign(total, 0);
+        reach_stack_.clear();
+        mark[anchor] = 1;
+        reach_stack_.push_back(anchor);
+        while (!reach_stack_.empty()) {
+            size_t u = reach_stack_.back();
+            reach_stack_.pop_back();
+            for (size_t p = start[u]; p < start[u + 1]; ++p) {
+                size_t w = list[p];
+                if (!mark[w]) { mark[w] = 1; reach_stack_.push_back(w); }
+            }
+        }
+    };
+    traverse(reach_fwd_, succ_start_, succ_list_);
+    traverse(reach_bwd_, pred_start_, pred_list_);
+
+    // --- 規則1: 全断片が anchor と相互到達できなければ閉路は閉じない ---
+    for (size_t f = 0; f < m; ++f) {
+        if (!reach_fwd_[n_ + f] || !reach_bwd_[n_ + f]) return false;
+    }
+
+    // --- 規則2: 相互到達できない素ノードは閉路に入れない ---
+    for (size_t k = 0; k < n_; ++k) {
+        if (frag_id_[k] != SIZE_MAX) continue;          // 断片所属は規則1で判定済み
+        size_t vid = var_ids_[k];
+        if (model.is_instantiated(vid)) continue;       // 既に out 確定
+        if (reach_fwd_[k] && reach_bwd_[k]) continue;
+        if (!model.contains(vid, self_of(k))) return false;  // 必須なのに閉路外
+        if (in_presolve) {
+            if (!model.variable(vid)->assign(self_of(k))) return false;
+        } else {
+            model.enqueue_instantiate(vid, self_of(k));
+        }
+        if (changed) *changed = true;
+    }
+
+    // --- 規則3: 必須ノード・断片 head の入次数ルール ---
+    // 閉路上のノードには非自己ループの前任がちょうど1つ。候補0なら矛盾、
+    // 1つならその弧を強制できる（ドメインは縮む一方なので安全）。
+    for (size_t k = 0; k < n_; ++k) {
+        size_t vid = var_ids_[k];
+        bool must_be_in = !model.contains(vid, self_of(k));
+        size_t f = frag_id_[k];
+        if (!must_be_in && !(f != SIZE_MAX && frag_head_[f] == k)) continue;
+        if (frag_occupied_[k]) continue;                // 既に前任が確定
+        size_t w = (f != SIZE_MAX) ? n_ + f : k;
+        size_t cand = SIZE_MAX, cnt = 0;
+        for (size_t p = pred_start_[w]; p < pred_start_[w + 1]; ++p) {
+            cand = pred_list_[p];
+            if (++cnt > 1) break;
+        }
+        if (cnt == 0) return false;
+        if (cnt > 1) continue;
+        size_t u = exit_node(cand);
+        size_t uvid = var_ids_[u];
+        if (model.is_instantiated(uvid)) continue;
+        auto arc_val = self_of(k);
+        if (in_presolve) {
+            if (!model.variable(uvid)->assign(arc_val)) return false;
+        } else {
+            model.enqueue_instantiate(uvid, arc_val);
+        }
+        if (changed) *changed = true;
+    }
+
+    return true;
 }
 
 void SubcircuitConstraint::remove_from_pool(size_t value) {
@@ -154,7 +360,22 @@ PresolveResult SubcircuitConstraint::presolve(Model& model) {
         }
     }
 
+    // 到達可能性フィルタ（必須ノードの相互到達性）
+    {
+        bool f_changed = false;
+        if (!filter_reachability(model, /*in_presolve=*/true, &f_changed)) {
+            return PresolveResult::Contradiction;
+        }
+        if (f_changed) changed = true;
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
+}
+
+bool SubcircuitConstraint::propagate_batch(Model& model, int /*save_point*/) {
+    // 未確定が少なければ既存の O(1) ルールで十分。グラフ再構築のコストを避ける。
+    if (unfixed_count_ < 2 || n_ < 3) return true;
+    return filter_reachability(model, /*in_presolve=*/false, nullptr);
 }
 
 bool SubcircuitConstraint::on_instantiate(Model& model, int save_point,
@@ -178,6 +399,8 @@ bool SubcircuitConstraint::on_instantiate(Model& model, int save_point,
         occupier_[i] = i;
         remove_from_pool(i);
         --unfixed_count_;
+
+        if (unfixed_count_ >= 2 && n_ >= 3) model.schedule_constraint_batch(model_index());
 
         if (unfixed_count_ == 1) {
             size_t last_idx = find_last_uninstantiated(model);
@@ -255,6 +478,8 @@ bool SubcircuitConstraint::on_instantiate(Model& model, int save_point,
             model.enqueue_remove_value(vid, value);
         }
     }
+
+    if (unfixed_count_ >= 2 && n_ >= 3) model.schedule_constraint_batch(model_index());
 
     if (unfixed_count_ == 1) {
         size_t last_idx = find_last_uninstantiated(model);
