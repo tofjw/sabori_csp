@@ -39,6 +39,9 @@ void Solver::apply_restart_bookkeeping(Model& model) {
 
     // Activity 減衰
     decay_activities();
+
+    // phase hint 判定用の activity 統計を更新（ホットパスでの全走査を避ける）
+    refresh_activity_stats();
 }
 
 void Solver::resample_and_reshuffle(Model& model) {

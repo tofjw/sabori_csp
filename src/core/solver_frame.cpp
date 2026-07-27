@@ -98,18 +98,39 @@ bool Solver::phase_experiment_active() {
     return mode != nullptr && std::strncmp(mode, "full", 4) != 0;
 }
 
-bool Solver::phase_hint_allowed(size_t var_idx) const {
+void Solver::refresh_activity_stats() {
+    double mx = 0.0, sum = 0.0;
+    for (size_t i = 0; i < activity_.size(); ++i) {
+        if (activity_[i] > mx) mx = activity_[i];
+        sum += activity_[i];
+    }
+    activity_max_ = mx;
+    activity_mean_ = activity_.empty() ? 0.0 : sum / static_cast<double>(activity_.size());
+}
+
+// [EXPERIMENT] phase hint の適用範囲を制御する。
+//   SABORI_PHASE=full  (既定) 従来どおり常に適用
+//   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
+//   SABORI_PHASE=act:<r>       activity >= 最大値 * r の変数にのみ適用（二値）
+//   SABORI_PHASE=prob:<pmin>   p = clamp(activity/平均, pmin, 1) の確率で適用（連続）
+// 統計は refresh_activity_stats() がリスタート単位で更新する（ホットパスで
+// 全変数を走査しないため）。
+bool Solver::phase_hint_allowed(size_t var_idx) {
     static const char* mode = std::getenv("SABORI_PHASE");
     if (mode == nullptr) return true;
     if (std::strncmp(mode, "none", 4) == 0) return false;
     if (std::strncmp(mode, "act:", 4) == 0) {
-        double ratio = std::atof(mode + 4);
-        double max_act = 0.0;
-        for (size_t i = 0; i < activity_.size(); ++i) {
-            if (activity_[i] > max_act) max_act = activity_[i];
-        }
-        if (max_act <= 0.0) return false;
-        return activity_[var_idx] >= max_act * ratio;
+        static const double ratio = std::atof(mode + 4);
+        if (activity_max_ <= 0.0) return true;  // 失敗経験なし = 情報なし
+        return activity_[var_idx] >= activity_max_ * ratio;
+    }
+    if (std::strncmp(mode, "prob:", 5) == 0) {
+        static const double p_min = std::atof(mode + 5);
+        if (activity_mean_ <= 0.0) return true;
+        double p = activity_[var_idx] / activity_mean_;
+        if (p > 1.0) p = 1.0;
+        if (p < p_min) p = p_min;
+        return (static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < p;
     }
     return true;
 }

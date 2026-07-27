@@ -613,8 +613,13 @@ private:
      * act モードでは「失敗を多く経験した変数の保存値だけが貴重」という前提で、
      * activity が上位のものにのみ hint を適用する。
      */
-    bool phase_hint_allowed(size_t var_idx) const;
+    bool phase_hint_allowed(size_t var_idx);
     static bool phase_experiment_active();
+
+    /// activity 統計をリスタート単位で更新（phase hint の判定に使う）
+    void refresh_activity_stats();
+    double activity_max_ = 0.0;
+    double activity_mean_ = 0.0;
 
     /**
      * @brief リスタート時に使用する割り当てを選択
