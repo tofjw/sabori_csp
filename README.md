@@ -69,30 +69,51 @@ cmake --build build
 
 ### Install as a MiniZinc solver
 
-After building, register the solver so that MiniZinc can discover it:
+```bash
+cmake --install build --prefix ~/.local
+```
+
+This installs:
+
+```
+~/.local/
+├── bin/fzn_sabori
+└── share/minizinc/
+    ├── sabori_csp/*.mzn            # solver library (redefinitions, predicate files)
+    └── solvers/sabori_csp.msc      # relative paths to both of the above
+```
+
+Register it with MiniZinc — either put the `solvers/` directory on the search path, or symlink the single `.msc` into MiniZinc's user config directory:
 
 ```bash
-# Copy the solver config to MiniZinc's search path
+export MZN_SOLVER_PATH="$HOME/.local/share/minizinc/solvers"
+# or:
 mkdir -p ~/.minizinc/solvers
-cp build/share/minizinc/solvers/sabori_csp.msc ~/.minizinc/solvers/
+ln -sf ~/.local/share/minizinc/solvers/sabori_csp.msc ~/.minizinc/solvers/
 
-# Copy the solver library (redefinitions, predicate files)
-cp -r build/share/minizinc/sabori_csp ~/.minizinc/
-```
-
-Verify the installation:
-
-```bash
-minizinc --solvers | grep sabori
-```
-
-Then run:
-
-```bash
+minizinc --solvers | grep sabori          # verify discovery
 minizinc --solver sabori_csp model.mzn data.dzn
 ```
 
-**Note:** The `.msc` file contains absolute paths to `fzn_sabori` and the solver library directory. If you move the build directory, regenerate by re-running `cmake --build build`.
+The installed `.msc` uses paths relative to itself, so the installed tree can be moved or installed under any prefix and keeps working. **Do not copy the `.msc` alone to a different directory** — it resolves `../sabori_csp` relative to its own location, so it only works from inside the installed tree (symlinking is fine; MiniZinc resolves through the link).
+
+### Use directly from the build tree
+
+For development, benchmarking, and debugging there is no need to install anything. The build also emits a `.msc` that points into the build directory with absolute paths, kept in sync on every build:
+
+```bash
+minizinc --solver "$PWD/build/share/minizinc/solvers/sabori_csp.msc" model.mzn data.dzn
+# or
+export MZN_SOLVER_PATH="$PWD/build/share/minizinc/solvers"
+```
+
+Since those paths are absolute, moving or deleting the build directory breaks this one; re-run `cmake -B build && cmake --build build` to regenerate it.
+
+**Don't hand-copy the solver library into `~/.minizinc/sabori_csp`.** Both `.msc` files already point at a library directory of their own, so a hand-made copy is never read — it just goes stale and can shadow the real solver by name in `minizinc --solvers`. If you have such leftovers from an older setup, remove them:
+
+```bash
+rm -rf ~/.minizinc/solvers/sabori_csp.msc ~/.minizinc/sabori_csp
+```
 
 ## Python
 
