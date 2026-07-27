@@ -195,15 +195,33 @@ minizinc --solver sabori_csp -a /tmp/test.mzn
 ```
 share/minizinc/
 ├── solvers/
-│   └── sabori_csp.msc.in    # テンプレート（ソース管理）
-└── sabori_csp/
+│   └── sabori_csp.msc.in    # .msc のテンプレート（JSON の正本はここ 1 箇所）
+└── sabori_csp/              # mznlib の正本
     ├── redefinitions.mzn    # リダイレクト定義の読み込み
     ├── fzn_all_different_int.mzn
     └── fzn_circuit.mzn
 
-build/share/minizinc/        # ビルド時に生成
+build/share/minizinc/        # ビルド時に生成（開発用）
 ├── solvers/
-│   └── sabori_csp.msc       # 絶対パス埋め込み済み
+│   └── sabori_csp.msc       # build ツリーを絶対パスで指す
 └── sabori_csp/
-    └── *.mzn                # コピー
+    └── *.mzn                # 毎ビルド clean copy（差分コピーではない）
+
+<prefix>/                    # cmake --install で配置
+├── bin/fzn_sabori
+└── share/minizinc/
+    ├── solvers/sabori_csp.msc   # 相対パス（../../../bin/..., ../sabori_csp）
+    └── sabori_csp/*.mzn
 ```
+
+`.msc` は build ツリー用とインストール用の 2 つが生成される。どちらも
+`share/minizinc/solvers/sabori_csp.msc.in` を `configure_file` したもので、
+差し替わるのは `@SABORI_MSC_EXECUTABLE@` / `@SABORI_MSC_MZNLIB@` の 2 箇所だけ
+（`src/fzn/CMakeLists.txt`）。JSON のフィールドを増やすときはテンプレートを直す。
+
+build ツリー用は絶対パスなので `~/.minizinc/` にコピーしても意味がない
+（mznlib 側は読まれず、古いコピーが名前解決で本物を隠すだけ）。開発中は
+`MZN_SOLVER_PATH` か `--solver <.msc の絶対パス>` を使う。配布・常用には
+`cmake --install build --prefix ~/.local` で入れたツリー側を使う。こちらの `.msc` は
+相対パスなので、ツリーごと移動しても prefix を変えても動く（単体でのコピーは不可、
+シンボリックリンクは可）。
