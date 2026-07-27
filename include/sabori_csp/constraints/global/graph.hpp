@@ -245,6 +245,7 @@ private:
      * 閉路に入りうる。それ以外のノードは自己ループ（out）に強制できる。
      *
      * ステートレス（毎回モデルから再構築）で trail を持たないため backtrack 安全。
+     * 既定 OFF。SABORI_SUBCIRCUIT_REACH=1 で有効化する opt-in 機能。
      *
      * @param in_presolve presolve 中は Domain を直接操作、探索中は enqueue する
      * @return false なら矛盾

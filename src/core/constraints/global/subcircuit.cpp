@@ -51,9 +51,11 @@ std::string SubcircuitConstraint::name() const {
 }
 
 bool SubcircuitConstraint::filter_reachability(Model& model, bool in_presolve, bool* changed) {
-    // kill switch（退行時の切り分け用）
-    static const bool disabled = std::getenv("SABORI_NO_SUBCIRCUIT_REACH") != nullptr;
-    if (disabled) return true;
+    // 既定 OFF（opt-in）。どのベンチ問題でも利得を測定できておらず、
+    // 1ノードあたりのコストだけは確実に増えるため、既定では有効にしない。
+    // SABORI_SUBCIRCUIT_REACH=1 で有効化。
+    static const bool enabled = std::getenv("SABORI_SUBCIRCUIT_REACH") != nullptr;
+    if (!enabled) return true;
     if (n_ < 3) return true;
 
     // ------------------------------------------------------------------
