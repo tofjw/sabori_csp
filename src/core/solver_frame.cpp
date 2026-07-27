@@ -2,6 +2,8 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <iomanip>
@@ -86,6 +88,32 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
     ascending = true;
 }
 
+// [EXPERIMENT] phase hint の適用範囲を制御する。
+//   SABORI_PHASE=full  (既定) 従来どおり常に適用
+//   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
+//   SABORI_PHASE=act:<r>       activity が「最大値 * r」以上の変数にのみ適用
+// 実験モードが有効か（既定挙動を変えないためのガード）
+bool Solver::phase_experiment_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "full", 4) != 0;
+}
+
+bool Solver::phase_hint_allowed(size_t var_idx) const {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    if (mode == nullptr) return true;
+    if (std::strncmp(mode, "none", 4) == 0) return false;
+    if (std::strncmp(mode, "act:", 4) == 0) {
+        double ratio = std::atof(mode + 4);
+        double max_act = 0.0;
+        for (size_t i = 0; i < activity_.size(); ++i) {
+            if (activity_[i] > max_act) max_act = activity_[i];
+        }
+        if (max_act <= 0.0) return false;
+        return activity_[var_idx] >= max_act * ratio;
+    }
+    return true;
+}
+
 void Solver::order_values(const Model& model, size_t var_idx) {
     auto& values = value_buffer_;
 
@@ -115,13 +143,14 @@ void Solver::order_values(const Model& model, size_t var_idx) {
             }
         }
         gradient_strategy_.consume_hint();
-    } else if (current_best_assignment_[var_idx] != kNoValue) {
+    } else if (current_best_assignment_[var_idx] != kNoValue && phase_hint_allowed(var_idx)) {
         auto best_val = current_best_assignment_[var_idx];
         auto it = std::find(values.begin(), values.end(), best_val);
         if (it != values.end() && it != values.begin()) {
             std::swap(*it, values[0]);
         }
-    } else if (model.var_data(var_idx).randomize_value_order && values.size() > 1) {
+    } else if ((model.var_data(var_idx).randomize_value_order || phase_experiment_active()) &&
+               values.size() > 1) {
         // 値の試行順をランダム化
         for (size_t i = values.size() - 1; i > 0; --i) {
             size_t j = rng_() % (i + 1);
@@ -313,7 +342,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
             }
-        } else if (current_best_assignment_[var_idx] != kNoValue) {
+        } else if (current_best_assignment_[var_idx] != kNoValue && phase_hint_allowed(var_idx)) {
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {

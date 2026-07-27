@@ -607,6 +607,16 @@ private:
     void save_partial_assignment(const Model& model);
 
     /**
+     * @brief phase hint（保存値の再利用）をこの変数に適用してよいか
+     *
+     * SABORI_PHASE=full(既定) / none / act:<閾値> で切替える実験フック。
+     * act モードでは「失敗を多く経験した変数の保存値だけが貴重」という前提で、
+     * activity が上位のものにのみ hint を適用する。
+     */
+    bool phase_hint_allowed(size_t var_idx) const;
+    static bool phase_experiment_active();
+
+    /**
      * @brief リスタート時に使用する割り当てを選択
      */
     const std::vector<Domain::value_type>& select_best_assignment();
