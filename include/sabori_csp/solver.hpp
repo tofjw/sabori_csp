@@ -193,6 +193,11 @@ public:
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
 
     /**
+     * @brief div/mod チャネル集約 presolve を有効/無効にする
+     */
+    void set_divmod_channel(bool enabled) { divmod_enabled_ = enabled; }
+
+    /**
      * @brief NoGood の長さ分布を取得（デバッグ用）
      */
     std::map<size_t, size_t> nogood_length_distribution() const {
@@ -662,6 +667,11 @@ private:
     bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
     bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
     bool onehot_enabled_ = true;  ///< 計測用 ablation: one-hot チャネル集約 presolve（SABORI_ONEHOT=0 で無効, 既定有効）
+    bool divmod_enabled_ = true;  ///< 計測用 ablation: div/mod チャネル集約 presolve（SABORI_DIVMOD=0 で無効, 既定有効）
+    /// div/mod を IntDivModChannel へ置換するか（SABORI_DIVMOD>=2 で有効）。
+    /// 既定は false = 線形制約の追加のみ。全年ゲートで唯一 regression ゼロだったため。
+    bool divmod_replace_ = false;
+    bool divmod_sweep_on_bounds_ = false;  ///< 置換モードで境界変更でも値走査するか（SABORI_DIVMOD=3 で有効）
     bool decvar_bump_enabled_ = true;  ///< 計測用 ablation: 決定変数の activity bump（handle_failure, SABORI_DECVAR_BUMP=0 で無効）
     bool temporal_enabled_ = true;  ///< 計測用 ablation: temporal_activity（Last Conflict 系・変数選択の第1基準, SABORI_TEMPORAL=0 で無効）
     bool probe_enabled_ = true;  ///< 計測用 ablation: improvement probe（最適化, SABORI_PROBE=0 で無効）

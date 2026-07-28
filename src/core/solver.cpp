@@ -1,6 +1,7 @@
 #include "sabori_csp/solver.hpp"
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
+#include "sabori_csp/divmod_channel_aggregator.hpp"
 #include <algorithm>
 #include <limits>
 #include <numeric>
@@ -47,6 +48,21 @@ Solver::Solver()
     // 計測用: SABORI_ONEHOT=0 で one-hot チャネル集約 presolve を無効化（既定有効）。
     if (const char* env = std::getenv("SABORI_ONEHOT")) {
         onehot_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用: SABORI_DIVMOD で div/mod チャネル集約 presolve を切り替える。
+    //   0 = 無効
+    //   1 = 線形制約を追加（div/mod は残す, 既定）
+    //   2 = IntDivModChannel で置換（値走査は穴が生じるイベントのみ）
+    //   3 = IntDivModChannel で置換＋全イベントで値走査
+    // 自作の閉じる小インスタンスでは 3 が最良（fails・CPU 時間とも）だが、
+    // div/mod ペアを持つ実問題 15 インスタンス（rotating-workforce 2018/2019 +
+    // orthorio 2026）× 3 シードのゲートでは 1 が唯一 regression ゼロで最良:
+    // 解を見つけた run 数 mode0=9 / mode1=11 / mode3=8（45 run 中）。
+    if (const char* env = std::getenv("SABORI_DIVMOD")) {
+        int mode = std::atoi(env);
+        divmod_enabled_ = (mode != 0);
+        divmod_replace_ = (mode >= 2);
+        divmod_sweep_on_bounds_ = (mode >= 3);
     }
     // 計測用: SABORI_NG_NOBUMP=1 で NoGood 由来の activity bump だけ止める（学習・枝刈りは維持）。
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {
@@ -348,6 +364,25 @@ bool Solver::presolve(Model& model) {
             }
             // 制約配列が変化したため、変数 → 制約インデックスを再構築
             model.build_constraint_watch_list();
+        }
+
+        // Phase 1 後: ユークリッド除算チャネリングの集約
+        // int_div(x, c, q) + int_mod(x, c, r) を x = c*q + r へ置換する。
+        // IntMod は余り側から被除数へ bounds を返さないため、分解のままだと
+        // grid indexing（(n-1) div W / (n-1) mod W）の伝播が片方向になる。
+        // 計測用 ablation: SABORI_DIVMOD=0 で集約をスキップ（既定有効）。
+        if (divmod_enabled_) {
+            DivModChannelAggregator aggregator;
+            aggregator.set_replace(divmod_replace_);
+            aggregator.set_sweep_on_bounds(divmod_sweep_on_bounds_);
+            if (!aggregator.aggregate(model, verbose_)) {
+                return false;
+            }
+            // 発火したときだけ再構築する。無条件に呼ぶと、集約対象を持たない
+            // モデルでも watch 構造の内部順序が変わって探索軌道がずれる。
+            if (aggregator.applied() > 0) {
+                model.build_constraint_watch_list();
+            }
         }
 
         // Phase 1 後: 内部構造を再構築（ドメイン変更に対する整合性保証）
