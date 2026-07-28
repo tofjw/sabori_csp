@@ -10,6 +10,7 @@
 #include "sabori_csp/variable_selector.hpp"
 #include "sabori_csp/restart_controller.hpp"
 #include "sabori_csp/mode_reward_policy.hpp"
+#include "sabori_csp/phase_reward_policy.hpp"
 #include "sabori_csp/gradient_strategy.hpp"
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
@@ -615,6 +616,8 @@ private:
      */
     bool phase_hint_allowed(size_t var_idx);
     static bool phase_experiment_active();
+    /// SABORI_PHASE=bandit のときだけ true（既定では RNG を一切消費しない）
+    static bool phase_bandit_active();
 
     /// activity 統計をリスタート単位で更新（phase hint の判定に使う）
     void refresh_activity_stats();
@@ -659,6 +662,7 @@ private:
     // decision ごとに rng で activity_first を抽選し、reward は restart で抽選した bucket + 隣接に加算。
     // 状態と抽選ロジックは ModeRewardPolicy にカプセル化（mode_reward_policy.hpp）。
     ModeRewardPolicy mode_policy_;
+    PhaseRewardPolicy phase_policy_;  ///< phase hint 適用下限 p_min の適応（SABORI_PHASE=bandit）
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 

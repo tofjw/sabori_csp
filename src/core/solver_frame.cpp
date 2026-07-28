@@ -37,6 +37,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 stats_.max_depth = current_depth;
             }
             mode_policy_.observe_depth(current_depth);
+            if (phase_bandit_active()) phase_policy_.observe_depth(current_depth);
 
             // 決定ごとに mix_p で activity_first を抽選
             // 1024 段階で離散化（rng() コスト最小、グリッド解像度より細かい）
@@ -93,6 +94,11 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
 //   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
 //   SABORI_PHASE=act:<r>       activity が「最大値 * r」以上の変数にのみ適用
 // 実験モードが有効か（既定挙動を変えないためのガード）
+bool Solver::phase_bandit_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "bandit", 6) == 0;
+}
+
 bool Solver::phase_experiment_active() {
     static const char* mode = std::getenv("SABORI_PHASE");
     return mode != nullptr && std::strncmp(mode, "full", 4) != 0;
@@ -124,8 +130,11 @@ bool Solver::phase_hint_allowed(size_t var_idx) {
         if (activity_max_ <= 0.0) return true;  // 失敗経験なし = 情報なし
         return activity_[var_idx] >= activity_max_ * ratio;
     }
-    if (std::strncmp(mode, "prob:", 5) == 0) {
-        static const double p_min = std::atof(mode + 5);
+    if (std::strncmp(mode, "prob:", 5) == 0 || std::strncmp(mode, "bandit", 6) == 0) {
+        static const bool use_bandit = std::strncmp(mode, "bandit", 6) == 0;
+        static const double fixed_p_min = use_bandit ? 0.0 : std::atof(mode + 5);
+        const double p_min = use_bandit ? phase_policy_.p_min() : fixed_p_min;
+        if (p_min >= 1.0) return true;          // 従来の既定挙動と同じ
         if (activity_mean_ <= 0.0) return true;
         double p = activity_[var_idx] / activity_mean_;
         if (p > 1.0) p = 1.0;

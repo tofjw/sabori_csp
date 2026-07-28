@@ -47,6 +47,7 @@ void Solver::apply_restart_bookkeeping(Model& model) {
 void Solver::resample_and_reshuffle(Model& model) {
     // restart 前: 報酬更新と p 抽選
     mode_policy_.update_and_resample(rng_);
+    if (phase_bandit_active()) phase_policy_.update_and_resample(rng_);
     // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
     var_selector_.shuffle(rng_);
     var_selector_.init_tracking(model);
@@ -204,6 +205,7 @@ Solver::ProbeAction Solver::run_improvement_probe(
 
         if (probe_improved) {
             mode_policy_.note_improvement();
+            if (phase_bandit_active()) phase_policy_.note_improvement();
             best_objective_ = probe_obj;
             best_solution_ = probe_solution;
 
@@ -456,6 +458,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                 if (improved) {
                     mode_policy_.note_improvement();
+                    if (phase_bandit_active()) phase_policy_.note_improvement();
                     best_objective_ = obj_val;
                     best_solution_ = found_solution;
 
