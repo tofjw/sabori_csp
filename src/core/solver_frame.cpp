@@ -94,6 +94,11 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
 //   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
 //   SABORI_PHASE=act:<r>       activity が「最大値 * r」以上の変数にのみ適用
 // 実験モードが有効か（既定挙動を変えないためのガード）
+bool Solver::phase_rate_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "rate:", 5) == 0;
+}
+
 bool Solver::phase_bandit_active() {
     static const char* mode = std::getenv("SABORI_PHASE");
     return mode != nullptr && std::strncmp(mode, "bandit", 6) == 0;
@@ -112,6 +117,17 @@ void Solver::refresh_activity_stats() {
     }
     activity_max_ = mx;
     activity_mean_ = activity_.empty() ? 0.0 : sum / static_cast<double>(activity_.size());
+
+    // 失敗率の平均（試行のある変数のみ。Laplace 平滑化）
+    if (!phase_rate_active()) return;
+    double rate_sum = 0.0;
+    size_t rate_n = 0;
+    for (size_t i = 0; i < var_try_.size(); ++i) {
+        if (var_try_[i] == 0) continue;
+        rate_sum += (var_fail_[i] + 1.0) / (var_try_[i] + 2.0);
+        ++rate_n;
+    }
+    fail_rate_mean_ = rate_n ? rate_sum / static_cast<double>(rate_n) : 1.0;
 }
 
 // [EXPERIMENT] phase hint の適用範囲を制御する。
@@ -129,6 +145,20 @@ bool Solver::phase_hint_allowed(size_t var_idx) {
         static const double ratio = std::atof(mode + 4);
         if (activity_max_ <= 0.0) return true;  // 失敗経験なし = 情報なし
         return activity_[var_idx] >= activity_max_ * ratio;
+    }
+    if (std::strncmp(mode, "rate:", 5) == 0) {
+        static const double p_min = std::atof(mode + 5);
+        // 試行が少ないうちは率が信用できない。2026-07-22 の fail_rate 試作は
+        // 20サンプル程度の率をそのまま信じて破綻した（work-log 参照）ので、
+        // 最小試行数に満たない変数は「情報なし」として既定挙動に倒す。
+        static constexpr uint32_t kMinTrials = 16;
+        if (var_try_[var_idx] < kMinTrials) return true;
+        if (fail_rate_mean_ <= 0.0) return true;
+        double rate = (var_fail_[var_idx] + 1.0) / (var_try_[var_idx] + 2.0);
+        double p = rate / fail_rate_mean_;
+        if (p > 1.0) p = 1.0;
+        if (p < p_min) p = p_min;
+        return (static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < p;
     }
     if (std::strncmp(mode, "prob:", 5) == 0 || std::strncmp(mode, "bandit", 6) == 0) {
         static const bool use_bandit = std::strncmp(mode, "bandit", 6) == 0;
@@ -199,7 +229,9 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
 
         current_decision_++;
 
+        if (phase_rate_active()) ++var_try_[frame.var_idx];
         if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+            if (phase_rate_active()) ++var_fail_[frame.var_idx];
             current_decision_--;
             frame.value_idx++;
             continue;
@@ -232,6 +264,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         }
 
         if (!propagate_ok || queue_res != PropagationResult::Ok) {
+            if (phase_rate_active()) ++var_fail_[frame.var_idx];
             model.clear_pending_updates();
         }
 
@@ -283,6 +316,10 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         }
 
         PropagationResult queue_res = process_queue(model);
+        if (phase_rate_active()) {
+            ++var_try_[frame.var_idx];
+            if (queue_res != PropagationResult::Ok) ++var_fail_[frame.var_idx];
+        }
         if (queue_res == PropagationResult::Ok) {
             decision_trail_.push_back(decision_lit);
             if (community_analysis_.is_enabled()) {

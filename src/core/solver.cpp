@@ -162,6 +162,8 @@ bool Solver::init_search(Model& model) {
     nogood_mgr_.clear(variables.size());
     best_num_instantiated_ = 0;
     best_assignment_.assign(variables.size(), kNoValue);
+    var_try_.assign(variables.size(), 0);
+    var_fail_.assign(variables.size(), 0);
     current_best_assignment_.assign(variables.size(), kNoValue);
     current_decision_ = 0;
     stats_ = SolverStats{};

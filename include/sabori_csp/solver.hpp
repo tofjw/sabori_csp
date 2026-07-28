@@ -618,11 +618,20 @@ private:
     static bool phase_experiment_active();
     /// SABORI_PHASE=bandit のときだけ true（既定では RNG を一切消費しない）
     static bool phase_bandit_active();
+    /// SABORI_PHASE=rate: のときだけ true（既定ではカウンタを更新しない）
+    static bool phase_rate_active();
 
-    /// activity 統計をリスタート単位で更新（phase hint の判定に使う）
+    /// activity / 失敗率の統計をリスタート単位で更新（phase hint の判定に使う）
     void refresh_activity_stats();
     double activity_max_ = 0.0;
     double activity_mean_ = 0.0;
+    double fail_rate_mean_ = 1.0;
+
+    // 変数ごとの instantiate 試行数 / 失敗数。
+    // activity_ は「よく選ばれる変数」と「よく失敗させる変数」を区別できないが、
+    // 失敗率 = fail/try なら分離できる。SABORI_PHASE=rate:<pmin> で使う。
+    std::vector<uint32_t> var_try_;
+    std::vector<uint32_t> var_fail_;
 
     /**
      * @brief リスタート時に使用する割り当てを選択
