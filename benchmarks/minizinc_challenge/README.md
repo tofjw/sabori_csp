@@ -60,10 +60,13 @@ MSC=$(pwd)/../../build/share/minizinc/solvers/sabori_csp.msc
 `fzn_seq_precede_chain_int.mzn` / `fzn_value_precede*.mzn` を欠いており、名前解決すると
 これらのネイティブ実装が**エラーを出さずに std 分解へ落ちて**いた。
 
-`sabori.msc` は削除済みなので、`--solver sabori_csp` は
-`no solver with tag sabori_csp found` で失敗する（黙って壊れるより望ましい）。
-同ディレクトリに残る `sabori_a.msc` / `sabori_b.msc` / `sabori_nogac.msc` も
-同じ古い mznlib を指しているので使わないこと。
+バンドル側の `sabori.msc` は削除済み。同ディレクトリに残る `sabori_a.msc` /
+`sabori_b.msc` / `sabori_nogac.msc` も同じ古い mznlib を指しているので使わないこと。
+
+**ただし名前解決が失敗するとは限らない。** 現在 `--solver sabori_csp` は
+`~/.minizinc/solvers/sabori_csp.msc`（→ `~/.local` の install ツリーへの symlink）に
+解決される。これは壊れてはいないが **`cmake --install` した時点のスナップショット**で、
+ブランチを切り替えても追従しない。ベンチでは必ず build 側 `.msc` を絶対パスで指定すること。
 
 ネイティブ述語が効いているかは生成 FZN で確認できる:
 

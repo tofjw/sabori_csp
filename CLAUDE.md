@@ -161,6 +161,11 @@ mznlib を指す同名設定があるとネイティブ実装が**エラーな�
 （2026-07-26 に削除済み。同ディレクトリの `sabori_a.msc` / `sabori_b.msc` /
 `sabori_nogac.msc` も同じ古い mznlib を指すので使わないこと）。
 
+なお名前解決が必ず失敗するわけではない。現在 `--solver sabori_csp` は
+`~/.minizinc/solvers/sabori_csp.msc`（`cmake --install` した `~/.local` ツリーへの
+symlink）に解決される。壊れてはいないが**インストールした時点のスナップショット**で
+ブランチ切替に追従しないため、ベンチには使わないこと。
+
 正しさの確認方法 — 生成 FZN にネイティブ述語が出ているか見る:
 
 ```bash
