@@ -367,6 +367,9 @@ private:
     };
     std::vector<std::pair<int, TrailEntry>> trail_;
 
+    /// index 確定時に arr[index] と result を相互に締める（support 早期 return からも呼ぶ）
+    bool sync_selected_element(Model& model);
+
     Domain::value_type index_to_0based(Domain::value_type idx) const;
     Domain::value_type index_from_0based(size_t idx_0based) const;
 
