@@ -12,17 +12,38 @@
 namespace sabori_csp {
 
 namespace {
-// 計測用: 勾配・phase ヒントが無いときの二分方向。
-//   rand（既定, 従来動作）= コイン投げ / low = 常に下側を先 / high = 常に上側を先
-// 最小化問題ではコスト・時刻変数が多く、下側優先が原理的な先験になりうる。
+// 勾配・phase ヒントが無いときの二分方向（SABORI_BISECT_DIR）。
+//   rand（既定, 従来動作）= コイン投げ
+//   low / low:<p>        = 確率 p で下側を先（"low" は p=1.0）。p=0.5 はコイン投げと等価
+//   high                 = 常に上側を先
+//   vote / vote_major    = 制約からの方向票（Solver::vote_bisect_dir 側で処理）
+//
+// 固定（p=1.0）は初解が遅れる代わりに最終品質が良く、コイン（p=0.5）はその逆。
+// リスタートが 55 秒で 900〜1000 回走るため、決定的だと同じ prefix を選び直して
+// 袋小路から出られないことがある（12 シードで決定的な設定だけが同じシードで落ちた）。
+// p はそのトレードオフのつまみ。
+double bisect_low_prob() {
+    static const double p = [] {
+        const char* e = std::getenv("SABORI_BISECT_DIR");
+        if (!e) return -1.0;
+        std::string v(e);
+        if (v == "low") return 1.0;
+        if (v.rfind("low:", 0) == 0) {
+            double q = std::atof(v.c_str() + 4);
+            if (q < 0.0) q = 0.0;
+            if (q > 1.0) q = 1.0;
+            return q;
+        }
+        return -1.0;
+    }();
+    return p;
+}
+
+// high 固定のみ 2 を返す（low 系は bisect_low_prob が扱う）
 int bisect_dir_mode() {
     static const int m = [] {
         const char* e = std::getenv("SABORI_BISECT_DIR");
-        if (!e) return 0;
-        std::string v(e);
-        if (v == "low") return 1;
-        if (v == "high") return 2;
-        return 0;
+        return (e && std::string(e) == "high") ? 2 : 0;
     }();
     return m;
 }
@@ -409,9 +430,14 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                 }
                 else {
                     if (!vote_bisect_dir(var_idx, right_first)) {
-                        right_first = (bisect_dir_mode() == 1) ? false
-                                : (bisect_dir_mode() == 2) ? true
-                                : ((rng_() & 1) != 0);
+                        const double lp = bisect_low_prob();
+                        if (lp >= 0.0) {
+                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
+                                             / 16777216.0) < lp);
+                        } else {
+                            right_first = (bisect_dir_mode() == 2) ? true
+                                    : ((rng_() & 1) != 0);
+                        }
                     }
                     gradient_strategy_.consume_hint();
                 }
@@ -428,9 +454,14 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                 }
                 else {
                     if (!vote_bisect_dir(var_idx, right_first)) {
-                        right_first = (bisect_dir_mode() == 1) ? false
-                                : (bisect_dir_mode() == 2) ? true
-                                : ((rng_() & 1) != 0);
+                        const double lp = bisect_low_prob();
+                        if (lp >= 0.0) {
+                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
+                                             / 16777216.0) < lp);
+                        } else {
+                            right_first = (bisect_dir_mode() == 2) ? true
+                                    : ((rng_() & 1) != 0);
+                        }
                     }
                     gradient_strategy_.consume_hint();
                 }
@@ -440,9 +471,14 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
             right_first = (hint_val > mid);
         } else {
             if (!vote_bisect_dir(var_idx, right_first)) {
-                        right_first = (bisect_dir_mode() == 1) ? false
-                                : (bisect_dir_mode() == 2) ? true
-                                : ((rng_() & 1) != 0);
+                        const double lp = bisect_low_prob();
+                        if (lp >= 0.0) {
+                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
+                                             / 16777216.0) < lp);
+                        } else {
+                            right_first = (bisect_dir_mode() == 2) ? true
+                                    : ((rng_() & 1) != 0);
+                        }
                     }
         }
 
