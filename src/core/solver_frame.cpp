@@ -272,6 +272,15 @@ void Solver::order_values(const Model& model, size_t var_idx) {
         if (it != values.end() && it != values.begin()) {
             std::swap(*it, values[0]);
         }
+    } else if (bool vote_high = false;
+               values.size() > 1 && vote_bisect_dir(var_idx, vote_high)) {
+        // 制約からの方向票（SABORI_BISECT_DIR=vote 系）。
+        // enumerate 経路は bool・狭ドメイン変数が通る。bool_clause の極性票は
+        // ここで初めて意味を持つ（bool は bisect しないため）。
+        // 好まれる側の端値を先頭に置くだけで、残りの順序は触らない。
+        auto it = vote_high ? std::max_element(values.begin(), values.end())
+                            : std::min_element(values.begin(), values.end());
+        if (it != values.begin()) std::swap(*it, values.front());
     } else if ((model.var_data(var_idx).randomize_value_order || phase_experiment_active()) &&
                values.size() > 1) {
         // 値の試行順をランダム化

@@ -138,6 +138,11 @@ public:
      */
     BoolClauseConstraint(std::vector<VariablePtr> pos, std::vector<VariablePtr> neg);
 
+    /// 節 (∨pos) ∨ (∨¬neg): 正リテラルは true(high)、負リテラルは false(low) が充足に寄与
+    void vote_branch_direction(const Model& model,
+                               std::vector<uint32_t>& low,
+                               std::vector<uint32_t>& high) const override;
+
     std::string name() const override;
 
 
