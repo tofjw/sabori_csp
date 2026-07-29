@@ -321,6 +321,22 @@ public:
     virtual void init_activity(const Model& model, double* activity) const;
 
     /**
+     * @brief 分岐方向の投票: 各変数について「制約を満たしやすい側」を票として加算する
+     *
+     * bisect でどちら側を先に見るかの先験に使う（SABORI_BISECT_DIR=vote 系）。
+     * デフォルト実装は何もしない = **棄権 (none)**。方向の偏りが定義できる制約
+     * （不等式系）だけがオーバーライドする。等式・alldifferent・element 等は
+     * どちらの側が満たしやすいとも言えないので既定のまま棄権すること。
+     *
+     * @param model モデルへの参照
+     * @param low  low 側（小さい値）を先に見るべき票。変数 ID で添字。
+     * @param high high 側（大きい値）を先に見るべき票。変数 ID で添字。
+     */
+    virtual void vote_branch_direction(const Model& model,
+                                       std::vector<uint32_t>& low,
+                                       std::vector<uint32_t>& high) const;
+
+    /**
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,

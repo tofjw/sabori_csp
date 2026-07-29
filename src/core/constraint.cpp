@@ -283,4 +283,10 @@ size_t Constraint::find_last_uninstantiated(const Model& model) const {
     return SIZE_MAX;
 }
 
+void Constraint::vote_branch_direction(const Model& /*model*/,
+                                       std::vector<uint32_t>& /*low*/,
+                                       std::vector<uint32_t>& /*high*/) const {
+    // 既定は棄権 (none)。
+}
+
 } // namespace sabori_csp

@@ -578,38 +578,22 @@ void Solver::build_direction_votes(const Model& model) {
     dir_votes_high_.assign(n, 0);
     if (!dir_vote_enabled_) return;
 
-    // 「その制約を満たしやすいのはどちら側か」を制約ごとに投票する。
-    //   Σ c_i x_i <= bound : c_i > 0 なら小さいほど満たしやすい（low）、c_i < 0 なら high
-    //   x <= y / x < y     : x は low、y は high
-    // 等式・alldifferent・element 等は方向の偏りが無いので棄権（none）。
+    // 各制約が「その変数はどちら側が満たしやすいか」を投票する
+    // （Constraint::vote_branch_direction、既定実装は棄権 = none）。
     for (const auto& c : model.constraints()) {
         if (!c) continue;
-        if (auto* l = dynamic_cast<const IntLinLeConstraint*>(c.get())) {
-            const auto& coeffs = l->coeffs();
-            const auto& vids = l->var_ids_ref();
-            size_t m = std::min(coeffs.size(), vids.size());
-            for (size_t i = 0; i < m; ++i) {
-                if (vids[i] >= n || coeffs[i] == 0) continue;
-                // defined var（他制約から関数的に決まる変数）には投票しない。
-                // steelmillslab では「この色を使うか」の bool2int 指標がここに当たり、
-                // 上限制約 sum(indicator) <= 2 が全指標に low 票（= 使わない）を入れて
-                // しまう。要求側（注文を必ず割り当てる）は等式で表現され棄権するため、
-                // 票が「何もしない」方向へ一方的に偏る。
-                if (model.is_defined_var(vids[i])) continue;
-                if (coeffs[i] > 0) ++dir_votes_low_[vids[i]];
-                else ++dir_votes_high_[vids[i]];
-            }
-            continue;
-        }
-        if (auto* le = dynamic_cast<const IntLeConstraint*>(c.get())) {
-            if (le->x_id() < n && !model.is_defined_var(le->x_id())) ++dir_votes_low_[le->x_id()];
-            if (le->y_id() < n && !model.is_defined_var(le->y_id())) ++dir_votes_high_[le->y_id()];
-            continue;
-        }
-        if (auto* lt = dynamic_cast<const IntLtConstraint*>(c.get())) {
-            if (lt->x_id() < n && !model.is_defined_var(lt->x_id())) ++dir_votes_low_[lt->x_id()];
-            if (lt->y_id() < n && !model.is_defined_var(lt->y_id())) ++dir_votes_high_[lt->y_id()];
-            continue;
+        c->vote_branch_direction(model, dir_votes_low_, dir_votes_high_);
+    }
+
+    // defined var（他制約から関数的に決まる変数）の票は捨てる。
+    // これは制約の意味論でなくモデルの性質なので、制約側でなくここで濾す。
+    // steelmillslab では「この色を使うか」の bool2int 指標に上限制約
+    // sum(indicator) <= 2 が low 票（= 使わない）を入れる一方、要求側は等式で
+    // 表現され棄権するため、票が「何もしない」方向へ一方的に偏っていた。
+    for (size_t v = 0; v < n; ++v) {
+        if (model.is_defined_var(v)) {
+            dir_votes_low_[v] = 0;
+            dir_votes_high_[v] = 0;
         }
     }
 

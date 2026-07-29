@@ -373,5 +373,16 @@ void IntLinLeConstraint::bump_activity(const Model& model, size_t trigger_var_id
     return;
 }
 
+void IntLinLeConstraint::vote_branch_direction(const Model& /*model*/,
+                                               std::vector<uint32_t>& low,
+                                               std::vector<uint32_t>& high) const {
+    const size_t m = std::min(coeffs_.size(), var_ids_.size());
+    for (size_t i = 0; i < m; ++i) {
+        if (coeffs_[i] == 0 || var_ids_[i] >= low.size()) continue;
+        if (coeffs_[i] > 0) ++low[var_ids_[i]];
+        else ++high[var_ids_[i]];
+    }
+}
+
 }  // namespace sabori_csp
 
