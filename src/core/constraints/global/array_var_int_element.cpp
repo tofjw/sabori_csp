@@ -2,6 +2,7 @@
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <limits>
+#include <cstdlib>
 
 namespace sabori_csp {
 
@@ -164,13 +165,29 @@ bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     if (!has_valid_index) return false;
     if (current_result_min_support_ > current_result_max_support_) return false;
 
-    // 密度判定: elem_dom_avg が小さければ support tracking 有効
+    // 密度判定: elem_dom_avg が閾値以下なら support tracking 有効。
+    // 既定は事実上「常に有効」。SABORI_ELEM_SUPPORT=4 で従来動作に戻せる。
+    //
+    // support tracking を切ると、配列要素側の起床が毎回 propagate_via_queue の
+    // 全スキャンになる。起床の大半は「現在の support ではない要素」なので
+    // （yumi-static の実測で array_var_int_element の起床の 97.5% が配列側、
+    //  うち support に当たるのは 1/n）、ドメインが広い問題ほど無駄が大きい。
+    // 一方 support モードは非 support 要素の変化時に index フィルタしか行わない
+    // ぶん枝刈りは弱い。純粋な高速化ではなくトレードオフ。
+    // array_var_int_element を 20 本超持つ 59 モデルのゲート（60s）で
+    // ステータス階層は正味 +3（UNK→SAT 1 / SAT→OPT 3 / OPT→SAT 1）、
+    // 目的値は勝ち 10・負け 6、スループットは 速い 28 / 同等 20 / 遅い 11。
+    static const size_t support_threshold = [] {
+        const char* env = std::getenv("SABORI_ELEM_SUPPORT");
+        return env ? static_cast<size_t>(std::strtoull(env, nullptr, 10))
+                   : std::numeric_limits<size_t>::max();
+    }();
     size_t total_dom = 0;
     for (size_t i = 0; i < n_; ++i) {
         total_dom += static_cast<size_t>(
             model.var_max(var_ids_[2 + i]) - model.var_min(var_ids_[2 + i]) + 1);
     }
-    use_support_tracking_ = (n_ > 0 && total_dom / n_ <= 4);
+    use_support_tracking_ = (n_ > 0 && total_dom / n_ <= support_threshold);
 
     return true;
 }
