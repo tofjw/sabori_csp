@@ -64,6 +64,12 @@ Solver::Solver()
         divmod_replace_ = (mode >= 2);
         divmod_sweep_on_bounds_ = (mode >= 3);
     }
+    // SABORI_BISECT_DIR=vote: 制約ごとの「充足しやすい側」の票を集めて構成比で分岐方向を決める。
+    if (const char* env = std::getenv("SABORI_BISECT_DIR")) {
+        std::string v(env);
+        dir_vote_enabled_ = (v == "vote" || v == "vote_major");
+        dir_vote_major_ = (v == "vote_major");
+    }
     // 計測用: SABORI_NG_NOBUMP=1 で NoGood 由来の activity bump だけ止める（学習・枝刈りは維持）。
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {
         nogood_mgr_.set_activity_bump(std::atoi(env) == 0);
@@ -193,6 +199,8 @@ bool Solver::init_search(Model& model) {
         if (verbose_) std::cerr << "% [verbose] presolve failed\n";
         return false;
     }
+
+    build_direction_votes(model);
 
     // 勾配に関わる変数インデックスを収集（勾配候補の高速列挙用）
     gradient_strategy_.rebuild_eligible(model);
@@ -561,6 +569,71 @@ void Solver::save_partial_assignment(const Model& model) {
 
 const std::vector<Domain::value_type>& Solver::select_best_assignment() {
     return best_assignment_;
+}
+
+
+void Solver::build_direction_votes(const Model& model) {
+    const size_t n = model.variables().size();
+    dir_votes_low_.assign(n, 0);
+    dir_votes_high_.assign(n, 0);
+    if (!dir_vote_enabled_) return;
+
+    // 「その制約を満たしやすいのはどちら側か」を制約ごとに投票する。
+    //   Σ c_i x_i <= bound : c_i > 0 なら小さいほど満たしやすい（low）、c_i < 0 なら high
+    //   x <= y / x < y     : x は low、y は high
+    // 等式・alldifferent・element 等は方向の偏りが無いので棄権（none）。
+    for (const auto& c : model.constraints()) {
+        if (!c) continue;
+        if (auto* l = dynamic_cast<const IntLinLeConstraint*>(c.get())) {
+            const auto& coeffs = l->coeffs();
+            const auto& vids = l->var_ids_ref();
+            size_t m = std::min(coeffs.size(), vids.size());
+            for (size_t i = 0; i < m; ++i) {
+                if (vids[i] >= n || coeffs[i] == 0) continue;
+                if (coeffs[i] > 0) ++dir_votes_low_[vids[i]];
+                else ++dir_votes_high_[vids[i]];
+            }
+            continue;
+        }
+        if (auto* le = dynamic_cast<const IntLeConstraint*>(c.get())) {
+            if (le->x_id() < n) ++dir_votes_low_[le->x_id()];
+            if (le->y_id() < n) ++dir_votes_high_[le->y_id()];
+            continue;
+        }
+        if (auto* lt = dynamic_cast<const IntLtConstraint*>(c.get())) {
+            if (lt->x_id() < n) ++dir_votes_low_[lt->x_id()];
+            if (lt->y_id() < n) ++dir_votes_high_[lt->y_id()];
+            continue;
+        }
+    }
+
+    if (verbose_) {
+        size_t voted = 0, both = 0, tied = 0;
+        for (size_t v = 0; v < n; ++v) {
+            if (dir_votes_low_[v] + dir_votes_high_[v] == 0) continue;
+            ++voted;
+            if (dir_votes_low_[v] > 0 && dir_votes_high_[v] > 0) ++both;
+            if (dir_votes_low_[v] == dir_votes_high_[v]) ++tied;
+        }
+        std::cerr << "% [verbose] direction votes: " << voted << "/" << n
+                  << " voted, both-sided=" << both << ", tied=" << tied << "\n";
+    }
+}
+
+bool Solver::vote_bisect_dir(size_t var_idx, bool& right_first) {
+    if (!dir_vote_enabled_ || var_idx >= dir_votes_low_.size()) return false;
+    uint32_t lo = dir_votes_low_[var_idx], hi = dir_votes_high_[var_idx];
+    uint32_t tot = lo + hi;
+    if (tot == 0) return false;
+    if (dir_vote_major_) {
+        // 多数決（同数はコイン投げ）。構成比より決め打ちに近い。
+        if (lo == hi) { right_first = (rng_() & 1) != 0; return true; }
+        right_first = (hi > lo);
+        return true;
+    }
+    // 構成比で当てる。票の比率をそのまま確率として使う。
+    right_first = (rng_() % tot) < hi;
+    return true;
 }
 
 } // namespace sabori_csp

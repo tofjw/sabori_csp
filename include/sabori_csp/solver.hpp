@@ -675,6 +675,20 @@ private:
     bool decvar_bump_enabled_ = true;  ///< 計測用 ablation: 決定変数の activity bump（handle_failure, SABORI_DECVAR_BUMP=0 で無効）
     bool temporal_enabled_ = true;  ///< 計測用 ablation: temporal_activity（Last Conflict 系・変数選択の第1基準, SABORI_TEMPORAL=0 で無効）
     bool probe_enabled_ = true;  ///< 計測用 ablation: improvement probe（最適化, SABORI_PROBE=0 で無効）
+    /// 分岐方向の投票。制約ごとに「その変数はどちら側が充足しやすいか」を集計する。
+    /// 目的関数は「良い方向」しか教えないが、充足しやすさは制約側にしかない。
+    std::vector<uint32_t> dir_votes_low_;
+    std::vector<uint32_t> dir_votes_high_;
+    /// SABORI_BISECT_DIR=vote のときだけ投票を使う
+    bool dir_vote_enabled_ = false;
+    /// SABORI_BISECT_DIR=vote_major で構成比でなく多数決にする
+    bool dir_vote_major_ = false;
+
+    /// 各制約から分岐方向の票を集める（init_search で 1 回）
+    void build_direction_votes(const Model& model);
+    /// 票の構成比で方向を決める。票が無ければ false（呼び出し側でコイン投げ）
+    bool vote_bisect_dir(size_t var_idx, bool& right_first);
+
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理。

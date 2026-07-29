@@ -408,9 +408,11 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (bisect_dir_mode() == 1) ? false
+                    if (!vote_bisect_dir(var_idx, right_first)) {
+                        right_first = (bisect_dir_mode() == 1) ? false
                                 : (bisect_dir_mode() == 2) ? true
                                 : ((rng_() & 1) != 0);
+                    }
                     gradient_strategy_.consume_hint();
                 }
             } else {
@@ -425,9 +427,11 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (bisect_dir_mode() == 1) ? false
+                    if (!vote_bisect_dir(var_idx, right_first)) {
+                        right_first = (bisect_dir_mode() == 1) ? false
                                 : (bisect_dir_mode() == 2) ? true
                                 : ((rng_() & 1) != 0);
+                    }
                     gradient_strategy_.consume_hint();
                 }
             }
@@ -435,9 +439,11 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {
-            right_first = (bisect_dir_mode() == 1) ? false
+            if (!vote_bisect_dir(var_idx, right_first)) {
+                        right_first = (bisect_dir_mode() == 1) ? false
                                 : (bisect_dir_mode() == 2) ? true
                                 : ((rng_() & 1) != 0);
+                    }
         }
 
         SearchFrame frame;
