@@ -590,19 +590,25 @@ void Solver::build_direction_votes(const Model& model) {
             size_t m = std::min(coeffs.size(), vids.size());
             for (size_t i = 0; i < m; ++i) {
                 if (vids[i] >= n || coeffs[i] == 0) continue;
+                // defined var（他制約から関数的に決まる変数）には投票しない。
+                // steelmillslab では「この色を使うか」の bool2int 指標がここに当たり、
+                // 上限制約 sum(indicator) <= 2 が全指標に low 票（= 使わない）を入れて
+                // しまう。要求側（注文を必ず割り当てる）は等式で表現され棄権するため、
+                // 票が「何もしない」方向へ一方的に偏る。
+                if (model.is_defined_var(vids[i])) continue;
                 if (coeffs[i] > 0) ++dir_votes_low_[vids[i]];
                 else ++dir_votes_high_[vids[i]];
             }
             continue;
         }
         if (auto* le = dynamic_cast<const IntLeConstraint*>(c.get())) {
-            if (le->x_id() < n) ++dir_votes_low_[le->x_id()];
-            if (le->y_id() < n) ++dir_votes_high_[le->y_id()];
+            if (le->x_id() < n && !model.is_defined_var(le->x_id())) ++dir_votes_low_[le->x_id()];
+            if (le->y_id() < n && !model.is_defined_var(le->y_id())) ++dir_votes_high_[le->y_id()];
             continue;
         }
         if (auto* lt = dynamic_cast<const IntLtConstraint*>(c.get())) {
-            if (lt->x_id() < n) ++dir_votes_low_[lt->x_id()];
-            if (lt->y_id() < n) ++dir_votes_high_[lt->y_id()];
+            if (lt->x_id() < n && !model.is_defined_var(lt->x_id())) ++dir_votes_low_[lt->x_id()];
+            if (lt->y_id() < n && !model.is_defined_var(lt->y_id())) ++dir_votes_high_[lt->y_id()];
             continue;
         }
     }
