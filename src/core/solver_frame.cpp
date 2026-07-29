@@ -148,6 +148,30 @@ bool Solver::phase_experiment_active() {
     return mode != nullptr && std::strncmp(mode, "full", 4) != 0;
 }
 
+bool Solver::fallback_bisect_dir(size_t var_idx) {
+    bool right_first;
+    if (vote_bisect_dir(var_idx, right_first)) return right_first;
+
+    // cycle: リスタート毎に方向ポリシーを巡回する（low → high → coin）。
+    // 固定方向は「当たったシード」では tail が強いが、外れると初解が遅れて
+    // phase saving に悪い初解が固定される（p 補間は毎回少しずつ外すので不成立）。
+    // ポリシーをリスタート単位で切り替えれば、どのシードでも 3 リスタート以内に
+    // 全ポリシーを試すことになり、固定の強さと確率の頑健さを両取りできる。
+    if (bisect_cycle_) {
+        switch (stats_.restart_count % 3) {
+        case 0:  return false;                 // low を先に
+        case 1:  return true;                  // high を先に
+        default: return (rng_() & 1) != 0;     // コイン投げ
+        }
+    }
+
+    const double lp = bisect_low_prob();
+    if (lp >= 0.0) {
+        return !((static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < lp);
+    }
+    return (bisect_dir_mode() == 2) ? true : ((rng_() & 1) != 0);
+}
+
 void Solver::refresh_activity_stats() {
     double mx = 0.0, sum = 0.0;
     for (size_t i = 0; i < activity_.size(); ++i) {
@@ -429,16 +453,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    if (!vote_bisect_dir(var_idx, right_first)) {
-                        const double lp = bisect_low_prob();
-                        if (lp >= 0.0) {
-                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
-                                             / 16777216.0) < lp);
-                        } else {
-                            right_first = (bisect_dir_mode() == 2) ? true
-                                    : ((rng_() & 1) != 0);
-                        }
-                    }
+                    right_first = fallback_bisect_dir(var_idx);
                     gradient_strategy_.consume_hint();
                 }
             } else {
@@ -453,16 +468,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    if (!vote_bisect_dir(var_idx, right_first)) {
-                        const double lp = bisect_low_prob();
-                        if (lp >= 0.0) {
-                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
-                                             / 16777216.0) < lp);
-                        } else {
-                            right_first = (bisect_dir_mode() == 2) ? true
-                                    : ((rng_() & 1) != 0);
-                        }
-                    }
+                    right_first = fallback_bisect_dir(var_idx);
                     gradient_strategy_.consume_hint();
                 }
             }
@@ -470,16 +476,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {
-            if (!vote_bisect_dir(var_idx, right_first)) {
-                        const double lp = bisect_low_prob();
-                        if (lp >= 0.0) {
-                            right_first = !((static_cast<double>(rng_() & 0xFFFFFF)
-                                             / 16777216.0) < lp);
-                        } else {
-                            right_first = (bisect_dir_mode() == 2) ? true
-                                    : ((rng_() & 1) != 0);
-                        }
-                    }
+            right_first = fallback_bisect_dir(var_idx);
         }
 
         SearchFrame frame;

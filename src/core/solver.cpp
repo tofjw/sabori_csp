@@ -69,6 +69,7 @@ Solver::Solver()
         std::string v(env);
         dir_vote_enabled_ = (v == "vote" || v == "vote_major");
         dir_vote_major_ = (v == "vote_major");
+        bisect_cycle_ = (v == "cycle");
     }
     // 計測用: SABORI_NG_NOBUMP=1 で NoGood 由来の activity bump だけ止める（学習・枝刈りは維持）。
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {

@@ -681,6 +681,17 @@ private:
     std::vector<uint32_t> dir_votes_high_;
     /// SABORI_BISECT_DIR=vote のときだけ投票を使う
     bool dir_vote_enabled_ = false;
+    /// SABORI_BISECT_DIR=cycle: リスタート毎に方向ポリシーを low → high → coin と巡回
+    bool bisect_cycle_ = false;
+
+    /**
+     * @brief 勾配・phase ヒントが無い分岐のフォールバック方向
+     *
+     * 投票 → cycle → low[:p]/high → コイン投げの順で決める。
+     * この地点は初解が出る前にしか実質的に通らない（実測 45 回程度）ため、
+     * ここでの選択が初解の質を決め、phase saving でそれが固定される。
+     */
+    bool fallback_bisect_dir(size_t var_idx);
     /// SABORI_BISECT_DIR=vote_major で構成比でなく多数決にする
     bool dir_vote_major_ = false;
 
