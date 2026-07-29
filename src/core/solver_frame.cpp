@@ -11,6 +11,24 @@
 
 namespace sabori_csp {
 
+namespace {
+// 計測用: 勾配・phase ヒントが無いときの二分方向。
+//   rand（既定, 従来動作）= コイン投げ / low = 常に下側を先 / high = 常に上側を先
+// 最小化問題ではコスト・時刻変数が多く、下側優先が原理的な先験になりうる。
+int bisect_dir_mode() {
+    static const int m = [] {
+        const char* e = std::getenv("SABORI_BISECT_DIR");
+        if (!e) return 0;
+        std::string v(e);
+        if (v == "low") return 1;
+        if (v == "high") return 2;
+        return 0;
+    }();
+    return m;
+}
+}  // namespace
+
+
 // 明示スタック探索のフレーム管理（run_search / 値列挙 / 分岐 / frame 生成）。solver.cpp から分離。
 
 
@@ -390,7 +408,9 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (rng_() & 1) != 0;
+                    right_first = (bisect_dir_mode() == 1) ? false
+                                : (bisect_dir_mode() == 2) ? true
+                                : ((rng_() & 1) != 0);
                     gradient_strategy_.consume_hint();
                 }
             } else {
@@ -405,7 +425,9 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (rng_() & 1) != 0;
+                    right_first = (bisect_dir_mode() == 1) ? false
+                                : (bisect_dir_mode() == 2) ? true
+                                : ((rng_() & 1) != 0);
                     gradient_strategy_.consume_hint();
                 }
             }
@@ -413,7 +435,9 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {
-            right_first = (rng_() & 1) != 0;
+            right_first = (bisect_dir_mode() == 1) ? false
+                                : (bisect_dir_mode() == 2) ? true
+                                : ((rng_() & 1) != 0);
         }
 
         SearchFrame frame;
