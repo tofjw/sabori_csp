@@ -630,6 +630,112 @@ TEST_CASE("SubcircuitConstraint solver integration", "[solver][subcircuit]") {
 }
 
 // ============================================================================
+// TreeConstraint tests
+// ============================================================================
+
+namespace {
+// ブルートフォース: ns/es/r が根 r の無向木を成すか判定
+bool is_valid_tree(const std::vector<int>& nsv, const std::vector<int>& esv,
+                   int r, const std::vector<int>& from, const std::vector<int>& to) {
+    size_t N = nsv.size();
+    if (nsv[r - 1] != 1) return false;  // 根は選択
+    std::vector<size_t> par(N), sz(N, 1);
+    for (size_t i = 0; i < N; ++i) par[i] = i;
+    std::function<size_t(size_t)> find = [&](size_t x) { while (par[x] != x) x = par[x]; return x; };
+    size_t sn = 0, se = 0;
+    for (size_t i = 0; i < N; ++i) if (nsv[i] == 1) sn++;
+    for (size_t e = 0; e < esv.size(); ++e) {
+        if (esv[e] != 1) continue;
+        se++;
+        size_t a = from[e] - 1, b = to[e] - 1;
+        if (nsv[a] != 1 || nsv[b] != 1) return false;
+        size_t ra = find(a), rb = find(b);
+        if (ra == rb) return false;  // 閉路
+        if (sz[ra] < sz[rb]) std::swap(ra, rb);
+        par[rb] = ra; sz[ra] += sz[rb];
+    }
+    if (se + 1 != sn) return false;
+    size_t rc = find(r - 1);
+    for (size_t i = 0; i < N; ++i) if (nsv[i] == 1 && find(i) != rc) return false;
+    return true;
+}
+}  // namespace
+
+TEST_CASE("TreeConstraint name", "[constraint][tree]") {
+    Model model;
+    std::vector<Variable*> ns, es;
+    for (int i = 0; i < 3; ++i) ns.push_back(model.create_variable("n" + std::to_string(i), 0, 1));
+    for (int i = 0; i < 2; ++i) es.push_back(model.create_variable("e" + std::to_string(i), 0, 1));
+    auto* r = model.create_variable("r", 1, 3);
+    TreeConstraint c(ns, es, r, {1, 2}, {2, 3});
+    REQUIRE(c.name() == "tree");
+}
+
+TEST_CASE("TreeConstraint randomized solution count vs brute force",
+          "[constraint][tree]") {
+    std::mt19937 rng(20260726);
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    for (int trial = 0; trial < 40; ++trial) {
+        size_t N = 3 + (coin(rng) % 3);  // 3..5 ノード
+        // ランダム辺（自己ループ/重複なし、1-based）
+        std::set<std::pair<int, int>> eset;
+        int m = static_cast<int>(N) - 1 + (coin(rng) % 4);
+        for (int k = 0; k < m; ++k) {
+            int a = 1 + coin(rng) % N, b = 1 + coin(rng) % N;
+            if (a != b) eset.insert({std::min(a, b), std::max(a, b)});
+        }
+        if (eset.empty()) eset.insert({1, 2});
+        std::vector<int> from, to;
+        for (auto& [a, b] : eset) { from.push_back(a); to.push_back(b); }
+        size_t E = from.size();
+
+        // ブルートフォース: 全 (ns, es, r) を列挙
+        size_t expected = 0;
+        std::vector<int> nsv(N), esv(E);
+        for (uint32_t nm = 0; nm < (1u << N); ++nm) {
+            for (size_t i = 0; i < N; ++i) nsv[i] = (nm >> i) & 1;
+            for (uint32_t em = 0; em < (1u << E); ++em) {
+                for (size_t e = 0; e < E; ++e) esv[e] = (em >> e) & 1;
+                for (int r = 1; r <= static_cast<int>(N); ++r) {
+                    if (is_valid_tree(nsv, esv, r, from, to)) expected++;
+                }
+            }
+        }
+
+        Model model;
+        std::vector<Variable*> ns, es;
+        for (size_t i = 0; i < N; ++i) ns.push_back(model.create_variable("n" + std::to_string(i), 0, 1));
+        for (size_t e = 0; e < E; ++e) es.push_back(model.create_variable("e" + std::to_string(e), 0, 1));
+        auto* r = model.create_variable("r", 1, static_cast<int>(N));
+        model.add_constraint(std::make_unique<TreeConstraint>(ns, es, r, from, to));
+
+        Solver solver;
+        size_t actual = solver.solve_all(model, [](const Solution&) { return true; });
+
+        INFO("trial " << trial << " N=" << N << " E=" << E);
+        REQUIRE(actual == expected);
+    }
+}
+
+TEST_CASE("TreeConstraint solver integration", "[solver][tree]") {
+    SECTION("finds a spanning tree") {
+        Model model;
+        std::vector<Variable*> ns, es;
+        for (int i = 0; i < 4; ++i) ns.push_back(model.create_variable("n" + std::to_string(i), 0, 1));
+        for (int i = 0; i < 4; ++i) es.push_back(model.create_variable("e" + std::to_string(i), 0, 1));
+        auto* r = model.create_variable("r", 1, 4);
+        // 全ノードを木に含める
+        for (auto* nv : ns) nv->assign(1);
+        model.add_constraint(std::make_unique<TreeConstraint>(ns, es, r,
+            std::vector<int>{1, 2, 3, 1}, std::vector<int>{2, 3, 4, 3}));
+        Solver solver;
+        auto sol = solver.solve(model);
+        REQUIRE(sol.has_value());
+    }
+}
+
+// ============================================================================
 // InverseConstraint tests
 // ============================================================================
 

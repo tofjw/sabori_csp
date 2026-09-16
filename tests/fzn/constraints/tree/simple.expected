@@ -1,0 +1,71 @@
+e1 = false;
+e2 = false;
+n1 = false;
+n2 = true;
+n3 = false;
+r = 2;
+----------
+e1 = false;
+e2 = false;
+n1 = true;
+n2 = false;
+n3 = false;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+n1 = true;
+n2 = true;
+n3 = false;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+n1 = true;
+n2 = true;
+n3 = false;
+r = 2;
+----------
+e1 = false;
+e2 = true;
+n1 = false;
+n2 = true;
+n3 = true;
+r = 2;
+----------
+e1 = false;
+e2 = false;
+n1 = false;
+n2 = false;
+n3 = true;
+r = 3;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 2;
+----------
+e1 = false;
+e2 = true;
+n1 = false;
+n2 = true;
+n3 = true;
+r = 3;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 1;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 3;
+----------
+==========

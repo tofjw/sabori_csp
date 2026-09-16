@@ -294,6 +294,23 @@ static std::optional<ConstraintPtr> make_subcircuit(const ConstraintDecl& decl, 
     return std::make_shared<SubcircuitConstraint>(std::move(vars));
 }
 
+static std::optional<ConstraintPtr> make_tree(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    // sabori_tree(N, E, from, to, r, ns, es)
+    if (decl.args.size() != 7) throw std::runtime_error("tree requires 7 arguments (N, E, from, to, r, ns, es)");
+    auto from64 = ctx.resolve_int_array(decl.args[2]);
+    auto to64 = ctx.resolve_int_array(decl.args[3]);
+    auto r = ctx.get_var(decl.args[4]);
+    auto ns = resolve_vars(decl.args[5], ctx);
+    auto es = resolve_vars(decl.args[6], ctx);
+    if (from64.size() != es.size() || to64.size() != es.size()) {
+        throw std::runtime_error("tree: from/to length must equal es length");
+    }
+    std::vector<int> from_i(from64.begin(), from64.end());
+    std::vector<int> to_i(to64.begin(), to64.end());
+    return std::make_shared<TreeConstraint>(std::move(ns), std::move(es), r,
+                                            std::move(from_i), std::move(to_i));
+}
+
 static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("array_bool_and requires 2 arguments");
     auto vars = resolve_vars(decl.args[0], ctx);
@@ -1031,6 +1048,8 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("subcircuit", make_subcircuit);
     registry.register_constraint("fzn_subcircuit", make_subcircuit);
     registry.register_constraint("sabori_csp_subcircuit", make_subcircuit);
+    registry.register_constraint("sabori_tree", make_tree);
+    registry.register_constraint("fzn_tree", make_tree);
     registry.register_constraint("array_bool_and", make_array_bool_and);
     registry.register_constraint("array_bool_or", make_array_bool_or);
     registry.register_constraint("array_bool_xor", make_array_bool_xor);

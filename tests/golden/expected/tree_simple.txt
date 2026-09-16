@@ -1,0 +1,74 @@
+e1 = false;
+e2 = false;
+n1 = false;
+n2 = true;
+n3 = false;
+r = 2;
+----------
+e1 = false;
+e2 = false;
+n1 = true;
+n2 = false;
+n3 = false;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+n1 = true;
+n2 = true;
+n3 = false;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+n1 = true;
+n2 = true;
+n3 = false;
+r = 2;
+----------
+e1 = false;
+e2 = true;
+n1 = false;
+n2 = true;
+n3 = true;
+r = 2;
+----------
+e1 = false;
+e2 = false;
+n1 = false;
+n2 = false;
+n3 = true;
+r = 3;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 2;
+----------
+e1 = false;
+e2 = true;
+n1 = false;
+n2 = true;
+n3 = true;
+r = 3;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 1;
+----------
+e1 = true;
+e2 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+r = 3;
+----------
+==========
+--- stats ---
+% Stats: fails=16 restarts=4 max_depth=6 avg_depth=2 nogoods=20 unit_nogoods=2 ng_check=400 ng_domain=111 ng_prune=15 ng_noop=274 bisect=0 enumerate=62
+% NG length distribution: 1:2 2:2 4:6 5:2 6:10
