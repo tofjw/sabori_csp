@@ -1271,4 +1271,17 @@ bool BoolXorConstraint::on_final_instantiate(const Model& model) {
     return model.value(c_id_) == ((model.value(a_id_) != model.value(b_id_)) ? 1 : 0);
 }
 
+void BoolClauseConstraint::vote_branch_direction(const Model& /*model*/,
+                                                 std::vector<uint32_t>& low,
+                                                 std::vector<uint32_t>& high) const {
+    // SAT の極性ヒューリスティクス（Jeroslow-Wang の非重み付き版）。
+    // 正リテラルは true、負リテラルは false にすると節が充足する。
+    for (size_t id : pos_ids_) {
+        if (id < high.size()) ++high[id];
+    }
+    for (size_t id : neg_ids_) {
+        if (id < low.size()) ++low[id];
+    }
+}
+
 } // namespace sabori_csp

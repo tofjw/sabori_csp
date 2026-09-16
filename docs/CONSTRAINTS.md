@@ -228,6 +228,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_ne` | `IntLinNeConstraint` | Σ(coeffs[i] * vars[i]) != target |
 | `int_lin_ne_reif` | `IntLinNeReifConstraint` | Σ(coeffs[i] * vars[i]) != target <-> b |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
+| `subcircuit` | `SubcircuitConstraint` | 非自己ループのノードが単一の部分閉路を形成する（x[i]=i は閉路外） |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
 | `array_bool_element` | `IntElementConstraint` | bool定数配列版（int版を流用） |
 | `array_var_int_element` | `ArrayVarIntElementConstraint` | array[index] = result（配列が変数） |
@@ -281,6 +282,27 @@ constraint table_int([x, y], [1,2, 2,3, 3,1]);
 **例:** n=3 の場合、有効な解は以下の2つ:
 - `x = [1, 2, 0]` → 0 → 1 → 2 → 0
 - `x = [2, 0, 1]` → 0 → 2 → 1 → 0
+
+#### subcircuit 制約
+
+変数 `x[0], ..., x[n-1]` の非自己ループ要素が単一の部分閉路を形成する制約。
+`x[i] = j`（j≠i）は「ノード i の次はノード j」、`x[i] = i`（自己ループ）は
+「ノード i は閉路に含まれない（out）」を意味する。全ノードが自己ループ（空の
+部分閉路）も充足解。
+
+**特徴:**
+- circuit と同じ端点リンク方式でパスを管理し、自己ループを out ノードとして扱う
+- 閉路の妥当性を `size == in_count`（非自己ループの確定エッジ数）で判定し、
+  部分閉路が全 in ノードを含まない早期閉じを検出
+- 妥当な閉路が閉じた時点で残りの未確定ノードを out に強制
+- AllDifferent を含意（registry で明示併設）
+- FlatZinc の `subcircuit` は 1-based。標準ライブラリの `order` 変数分解は
+  大域伝播を持たないため、`fzn_subcircuit.mzn` でネイティブ実装に配線する
+
+**例:** n=3 の有効解には次が含まれる:
+- `x = [0, 1, 2]` → 全て自己ループ（空の部分閉路）
+- `x = [1, 0, 2]` → 0 → 1 → 0、ノード 2 は out
+- `x = [1, 2, 0]` → 0 → 1 → 2 → 0（全ノードが閉路）
 
 #### int_element 制約
 

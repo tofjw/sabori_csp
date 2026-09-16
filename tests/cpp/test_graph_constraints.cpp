@@ -483,6 +483,153 @@ TEST_CASE("CircuitConstraint with partial assignment", "[solver][circuit]") {
 }
 
 // ============================================================================
+// SubcircuitConstraint tests
+// ============================================================================
+
+TEST_CASE("SubcircuitConstraint name", "[constraint][subcircuit]") {
+    Model model;
+    auto* x0 = model.create_variable("x0", Domain(0, 2));
+    auto* x1 = model.create_variable("x1", Domain(0, 2));
+    auto* x2 = model.create_variable("x2", Domain(0, 2));
+    SubcircuitConstraint c({x0, x1, x2});
+    REQUIRE(c.name() == "subcircuit");
+}
+
+TEST_CASE("SubcircuitConstraint on_final_instantiate", "[constraint][subcircuit]") {
+    SECTION("full cycle is valid") {
+        // 0 -> 1 -> 2 -> 0
+        Model model;
+        auto* x0 = model.create_variable("x0", Domain(1, 1));
+        auto* x1 = model.create_variable("x1", Domain(2, 2));
+        auto* x2 = model.create_variable("x2", Domain(0, 0));
+        SubcircuitConstraint c({x0, x1, x2});
+        REQUIRE(c.on_final_instantiate(model) == true);
+    }
+
+    SECTION("partial cycle with a self-loop out-node is valid") {
+        // 0 -> 1 -> 0, node 2 out (self-loop)
+        Model model;
+        auto* x0 = model.create_variable("x0", Domain(1, 1));
+        auto* x1 = model.create_variable("x1", Domain(0, 0));
+        auto* x2 = model.create_variable("x2", Domain(2, 2));
+        SubcircuitConstraint c({x0, x1, x2});
+        REQUIRE(c.on_final_instantiate(model) == true);
+    }
+
+    SECTION("all self-loops (empty subcircuit) is valid") {
+        Model model;
+        auto* x0 = model.create_variable("x0", Domain(0, 0));
+        auto* x1 = model.create_variable("x1", Domain(1, 1));
+        auto* x2 = model.create_variable("x2", Domain(2, 2));
+        SubcircuitConstraint c({x0, x1, x2});
+        REQUIRE(c.on_final_instantiate(model) == true);
+    }
+
+    SECTION("two disjoint 2-cycles is invalid") {
+        // 0->1->0 and 2->3->2 : non-fixpoints do NOT form a single cycle
+        Model model;
+        auto* x0 = model.create_variable("x0", Domain(1, 1));
+        auto* x1 = model.create_variable("x1", Domain(0, 0));
+        auto* x2 = model.create_variable("x2", Domain(3, 3));
+        auto* x3 = model.create_variable("x3", Domain(2, 2));
+        SubcircuitConstraint c({x0, x1, x2, x3});
+        REQUIRE(c.on_final_instantiate(model) == false);
+    }
+}
+
+TEST_CASE("SubcircuitConstraint randomized solution count", "[constraint][subcircuit]") {
+    // ランダムな部分ドメイン（自己ループ許容）で全解数をブルートフォースと比較。
+    // false UNSAT（正解の見逃し）と false SAT（非解の受理）の両方を検出する。
+    std::mt19937 rng(918273);
+    constexpr size_t kN = 6;
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    // 部分閉路の妥当性: 非自己ループのノードが単一閉路を成す（空も可）
+    auto is_valid_subcircuit = [](const std::array<int64_t, kN>& a) -> bool {
+        size_t start = SIZE_MAX, in_nodes = 0;
+        for (size_t i = 0; i < kN; ++i) {
+            if (static_cast<size_t>(a[i]) != i) {
+                ++in_nodes;
+                if (start == SIZE_MAX) start = i;
+            }
+        }
+        if (start == SIZE_MAX) return true;  // 全て自己ループ
+        size_t cur = start, count = 0;
+        do {
+            cur = static_cast<size_t>(a[cur]);
+            if (++count > in_nodes) return false;
+        } while (cur != start);
+        return count == in_nodes;
+    };
+
+    for (int trial = 0; trial < 40; ++trial) {
+        std::array<std::vector<int64_t>, kN> doms;
+        for (size_t i = 0; i < kN; ++i) {
+            for (int64_t v = 0; v < static_cast<int64_t>(kN); ++v) {
+                if (coin(rng) < 55) doms[i].push_back(v);  // 自己ループ v==i も候補に含める
+            }
+            if (doms[i].empty()) doms[i].push_back(static_cast<int64_t>(i));  // 最低限 out 可能
+        }
+        // base_offset 検出を 0 に固定するため値 0 を必ずどこかに含める
+        bool has_zero = false;
+        for (size_t i = 0; i < kN; ++i)
+            if (std::find(doms[i].begin(), doms[i].end(), 0) != doms[i].end()) has_zero = true;
+        if (!has_zero) doms[0].insert(doms[0].begin(), 0);
+
+        // ブルートフォース（alldifferent + 単一部分閉路）
+        size_t expected = 0;
+        std::array<int64_t, kN> assign{};
+        std::array<bool, kN> used{};
+        std::function<void(size_t)> rec = [&](size_t depth) {
+            if (depth == kN) {
+                if (is_valid_subcircuit(assign)) ++expected;
+                return;
+            }
+            for (auto v : doms[depth]) {
+                if (used[static_cast<size_t>(v)]) continue;
+                used[static_cast<size_t>(v)] = true;
+                assign[depth] = v;
+                rec(depth + 1);
+                used[static_cast<size_t>(v)] = false;
+            }
+        };
+        rec(0);
+
+        Model model;
+        std::vector<Variable*> vars;
+        for (size_t i = 0; i < kN; ++i) {
+            vars.push_back(model.create_variable("x" + std::to_string(i), Domain(doms[i])));
+        }
+        // registry と同様に alldifferent を併設
+        model.add_constraint(std::make_unique<AllDifferentConstraint>(vars));
+        model.add_constraint(std::make_unique<SubcircuitConstraint>(vars));
+
+        Solver solver;
+        size_t actual = 0;
+        solver.solve_all(model, [&](const Solution&) { ++actual; return true; });
+
+        INFO("trial " << trial);
+        REQUIRE(actual == expected);
+    }
+}
+
+TEST_CASE("SubcircuitConstraint solver integration", "[solver][subcircuit]") {
+    SECTION("finds a valid subcircuit") {
+        Model model;
+        std::vector<Variable*> vars;
+        for (int i = 0; i < 5; ++i) {
+            vars.push_back(model.create_variable("x" + std::to_string(i), 0, 4));
+        }
+        model.add_constraint(std::make_unique<AllDifferentConstraint>(vars));
+        model.add_constraint(std::make_unique<SubcircuitConstraint>(vars));
+
+        Solver solver;
+        auto solution = solver.solve(model);
+        REQUIRE(solution.has_value());
+    }
+}
+
+// ============================================================================
 // InverseConstraint tests
 // ============================================================================
 

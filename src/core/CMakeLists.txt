@@ -12,10 +12,12 @@ add_library(sabori_csp_core
   model.cpp
   model_simplifier.cpp
   one_hot_channel_aggregator.cpp
+  divmod_channel_aggregator.cpp
   community_analysis.cpp
   gradient_strategy.cpp
   # Constraints
   constraints/arithmetic.cpp
+  constraints/int_divmod_channel.cpp
   constraints/comparison.cpp
   constraints/logical.cpp
   # Global constraints (split into separate files)
@@ -27,6 +29,7 @@ add_library(sabori_csp_core
   constraints/global/int_lin_le.cpp
   constraints/global/int_lin_ne.cpp
   constraints/global/circuit.cpp
+  constraints/global/subcircuit.cpp
   constraints/global/int_element.cpp
   constraints/global/int_element_monotonic.cpp
   constraints/global/array_int_maximum.cpp

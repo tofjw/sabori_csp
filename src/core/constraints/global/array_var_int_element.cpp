@@ -2,6 +2,7 @@
 #include "sabori_csp/model.hpp"
 #include <algorithm>
 #include <limits>
+#include <cstdlib>
 
 namespace sabori_csp {
 
@@ -164,13 +165,29 @@ bool ArrayVarIntElementConstraint::prepare_propagation(Model& model) {
     if (!has_valid_index) return false;
     if (current_result_min_support_ > current_result_max_support_) return false;
 
-    // 密度判定: elem_dom_avg が小さければ support tracking 有効
+    // 密度判定: elem_dom_avg が閾値以下なら support tracking 有効。
+    // 既定は事実上「常に有効」。SABORI_ELEM_SUPPORT=4 で従来動作に戻せる。
+    //
+    // support tracking を切ると、配列要素側の起床が毎回 propagate_via_queue の
+    // 全スキャンになる。起床の大半は「現在の support ではない要素」なので
+    // （yumi-static の実測で array_var_int_element の起床の 97.5% が配列側、
+    //  うち support に当たるのは 1/n）、ドメインが広い問題ほど無駄が大きい。
+    // 一方 support モードは非 support 要素の変化時に index フィルタしか行わない
+    // ぶん枝刈りは弱い。純粋な高速化ではなくトレードオフ。
+    // array_var_int_element を 20 本超持つ 59 モデルのゲート（60s）で
+    // ステータス階層は正味 +3（UNK→SAT 1 / SAT→OPT 3 / OPT→SAT 1）、
+    // 目的値は勝ち 10・負け 6、スループットは 速い 28 / 同等 20 / 遅い 11。
+    static const size_t support_threshold = [] {
+        const char* env = std::getenv("SABORI_ELEM_SUPPORT");
+        return env ? static_cast<size_t>(std::strtoull(env, nullptr, 10))
+                   : std::numeric_limits<size_t>::max();
+    }();
     size_t total_dom = 0;
     for (size_t i = 0; i < n_; ++i) {
         total_dom += static_cast<size_t>(
             model.var_max(var_ids_[2 + i]) - model.var_min(var_ids_[2 + i]) + 1);
     }
-    use_support_tracking_ = (n_ > 0 && total_dom / n_ <= 4);
+    use_support_tracking_ = (n_ > 0 && total_dom / n_ <= support_threshold);
 
     return true;
 }
@@ -245,29 +262,33 @@ bool ArrayVarIntElementConstraint::propagate_via_queue(Model& model) {
         model.enqueue_set_max(result_id_, new_result_max);
     }
 
-    if (model.is_instantiated(index_id_)) {
-        auto idx = model.value(index_id_);
-        auto idx_0based = index_to_0based(idx);
-        if (idx_0based >= 0 && static_cast<size_t>(idx_0based) < n_) {
-            auto arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
-            auto common_min = std::max(model.var_min(arr_id), model.var_min(result_id_));
-            auto common_max = std::min(model.var_max(arr_id), model.var_max(result_id_));
-            if (common_min > common_max) return false;
-            if (common_min > model.var_min(result_id_))
-                model.enqueue_set_min(result_id_, common_min);
-            if (common_max < model.var_max(result_id_))
-                model.enqueue_set_max(result_id_, common_max);
-            if (common_min > model.var_min(arr_id))
-                model.enqueue_set_min(arr_id, common_min);
-            if (common_max < model.var_max(arr_id))
-                model.enqueue_set_max(arr_id, common_max);
-            if (model.is_instantiated(arr_id) && !model.is_instantiated(result_id_))
-                model.enqueue_instantiate(result_id_, model.value(arr_id));
-            if (model.is_instantiated(result_id_) && !model.is_instantiated(arr_id))
-                model.enqueue_instantiate(arr_id, model.value(result_id_));
-        }
-    }
+    return sync_selected_element(model);
+}
 
+// index が確定しているとき、arr[index] と result を相互に締める。
+// support tracking の早期 return 経路からも呼ぶ必要がある。ここを飛ばすと
+// 「result が他制約で締まっても arr[index] に伝わらない」枝刈り落ちになる。
+bool ArrayVarIntElementConstraint::sync_selected_element(Model& model) {
+    if (!model.is_instantiated(index_id_)) return true;
+    auto idx_0based = index_to_0based(model.value(index_id_));
+    if (idx_0based < 0 || static_cast<size_t>(idx_0based) >= n_) return true;
+
+    auto arr_id = var_ids_[2 + static_cast<size_t>(idx_0based)];
+    auto common_min = std::max(model.var_min(arr_id), model.var_min(result_id_));
+    auto common_max = std::min(model.var_max(arr_id), model.var_max(result_id_));
+    if (common_min > common_max) return false;
+    if (common_min > model.var_min(result_id_))
+        model.enqueue_set_min(result_id_, common_min);
+    if (common_max < model.var_max(result_id_))
+        model.enqueue_set_max(result_id_, common_max);
+    if (common_min > model.var_min(arr_id))
+        model.enqueue_set_min(arr_id, common_min);
+    if (common_max < model.var_max(arr_id))
+        model.enqueue_set_max(arr_id, common_max);
+    if (model.is_instantiated(arr_id) && !model.is_instantiated(result_id_))
+        model.enqueue_instantiate(result_id_, model.value(arr_id));
+    if (model.is_instantiated(result_id_) && !model.is_instantiated(arr_id))
+        model.enqueue_instantiate(arr_id, model.value(result_id_));
     return true;
 }
 
@@ -314,8 +335,10 @@ bool ArrayVarIntElementConstraint::on_set_min(
 
     // Support tracking モード
     if (internal_var_idx == 1) {
-        // result の min が増加 → index フィルタリングのみ（result bounds 不変）
-        return filter_index_against_result(model);
+        // result の min が増加 → index フィルタリング（result bounds は不変）。
+        // index が確定していれば arr[index] へ落とし込む必要がある。
+        if (!filter_index_against_result(model)) return false;
+        return sync_selected_element(model);
     }
 
     if (internal_var_idx >= 2) {
@@ -327,7 +350,7 @@ bool ArrayVarIntElementConstraint::on_set_min(
             if (model.var_min(arr_id) > model.var_max(result_id_)) {
                 model.enqueue_remove_value(index_id_, index_from_0based(arr_idx));
             }
-            return true;
+            return sync_selected_element(model);
         }
         // min support が invalidate → 全スキャン
     }
@@ -349,8 +372,9 @@ bool ArrayVarIntElementConstraint::on_set_max(
 
     // Support tracking モード
     if (internal_var_idx == 1) {
-        // result の max が減少 → index フィルタリングのみ
-        return filter_index_against_result(model);
+        // result の max が減少 → index フィルタリング + arr[index] への落とし込み
+        if (!filter_index_against_result(model)) return false;
+        return sync_selected_element(model);
     }
 
     if (internal_var_idx >= 2) {
@@ -361,7 +385,7 @@ bool ArrayVarIntElementConstraint::on_set_max(
             if (model.var_max(arr_id) < model.var_min(result_id_)) {
                 model.enqueue_remove_value(index_id_, index_from_0based(arr_idx));
             }
-            return true;
+            return sync_selected_element(model);
         }
         // max support が invalidate → 全スキャン
     }

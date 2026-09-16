@@ -10,6 +10,7 @@
 #include "sabori_csp/variable_selector.hpp"
 #include "sabori_csp/restart_controller.hpp"
 #include "sabori_csp/mode_reward_policy.hpp"
+#include "sabori_csp/phase_reward_policy.hpp"
 #include "sabori_csp/gradient_strategy.hpp"
 #include "sabori_csp/community_analysis.hpp"
 #include <functional>
@@ -190,6 +191,11 @@ public:
      * @brief NoGood 学習を有効/無効にする
      */
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
+
+    /**
+     * @brief div/mod チャネル集約 presolve を有効/無効にする
+     */
+    void set_divmod_channel(bool enabled) { divmod_enabled_ = enabled; }
 
     /**
      * @brief NoGood の長さ分布を取得（デバッグ用）
@@ -607,6 +613,32 @@ private:
     void save_partial_assignment(const Model& model);
 
     /**
+     * @brief phase hint（保存値の再利用）をこの変数に適用してよいか
+     *
+     * SABORI_PHASE=full(既定) / none / act:<閾値> で切替える実験フック。
+     * act モードでは「失敗を多く経験した変数の保存値だけが貴重」という前提で、
+     * activity が上位のものにのみ hint を適用する。
+     */
+    bool phase_hint_allowed(size_t var_idx);
+    static bool phase_experiment_active();
+    /// SABORI_PHASE=bandit のときだけ true（既定では RNG を一切消費しない）
+    static bool phase_bandit_active();
+    /// SABORI_PHASE=rate: のときだけ true（既定ではカウンタを更新しない）
+    static bool phase_rate_active();
+
+    /// activity / 失敗率の統計をリスタート単位で更新（phase hint の判定に使う）
+    void refresh_activity_stats();
+    double activity_max_ = 0.0;
+    double activity_mean_ = 0.0;
+    double fail_rate_mean_ = 1.0;
+
+    // 変数ごとの instantiate 試行数 / 失敗数。
+    // activity_ は「よく選ばれる変数」と「よく失敗させる変数」を区別できないが、
+    // 失敗率 = fail/try なら分離できる。SABORI_PHASE=rate:<pmin> で使う。
+    std::vector<uint32_t> var_try_;
+    std::vector<uint32_t> var_fail_;
+
+    /**
      * @brief リスタート時に使用する割り当てを選択
      */
     const std::vector<Domain::value_type>& select_best_assignment();
@@ -635,15 +667,46 @@ private:
     bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
     bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
     bool onehot_enabled_ = true;  ///< 計測用 ablation: one-hot チャネル集約 presolve（SABORI_ONEHOT=0 で無効, 既定有効）
+    bool divmod_enabled_ = true;  ///< 計測用 ablation: div/mod チャネル集約 presolve（SABORI_DIVMOD=0 で無効, 既定有効）
+    /// div/mod を IntDivModChannel へ置換するか（SABORI_DIVMOD>=2 で有効）。
+    /// 既定は false = 線形制約の追加のみ。全年ゲートで唯一 regression ゼロだったため。
+    bool divmod_replace_ = false;
+    bool divmod_sweep_on_bounds_ = false;  ///< 置換モードで境界変更でも値走査するか（SABORI_DIVMOD=3 で有効）
     bool decvar_bump_enabled_ = true;  ///< 計測用 ablation: 決定変数の activity bump（handle_failure, SABORI_DECVAR_BUMP=0 で無効）
     bool temporal_enabled_ = true;  ///< 計測用 ablation: temporal_activity（Last Conflict 系・変数選択の第1基準, SABORI_TEMPORAL=0 で無効）
     bool probe_enabled_ = true;  ///< 計測用 ablation: improvement probe（最適化, SABORI_PROBE=0 で無効）
+    /// 分岐方向の投票。制約ごとに「その変数はどちら側が充足しやすいか」を集計する。
+    /// 目的関数は「良い方向」しか教えないが、充足しやすさは制約側にしかない。
+    std::vector<uint32_t> dir_votes_low_;
+    std::vector<uint32_t> dir_votes_high_;
+    /// SABORI_BISECT_DIR=vote のときだけ投票を使う
+    bool dir_vote_enabled_ = false;
+    /// SABORI_BISECT_DIR=cycle: リスタート毎に方向ポリシーを low → high → coin と巡回
+    bool bisect_cycle_ = false;
+
+    /**
+     * @brief 勾配・phase ヒントが無い分岐のフォールバック方向
+     *
+     * 投票 → cycle → low[:p]/high → コイン投げの順で決める。
+     * この地点は初解が出る前にしか実質的に通らない（実測 45 回程度）ため、
+     * ここでの選択が初解の質を決め、phase saving でそれが固定される。
+     */
+    bool fallback_bisect_dir(size_t var_idx);
+    /// SABORI_BISECT_DIR=vote_major で構成比でなく多数決にする
+    bool dir_vote_major_ = false;
+
+    /// 各制約から分岐方向の票を集める（init_search で 1 回）
+    void build_direction_votes(const Model& model);
+    /// 票の構成比で方向を決める。票が無ければ false（呼び出し側でコイン投げ）
+    bool vote_bisect_dir(size_t var_idx, bool& right_first);
+
     bool restart_enabled_ = true;
     bool activity_selection_ = true;
     // Activity優先と MRV 優先の混合比 p ∈ [0,1] をグリッド (0.0, 0.25, 0.5, 0.75, 1.0) で管理。
     // decision ごとに rng で activity_first を抽選し、reward は restart で抽選した bucket + 隣接に加算。
     // 状態と抽選ロジックは ModeRewardPolicy にカプセル化（mode_reward_policy.hpp）。
     ModeRewardPolicy mode_policy_;
+    PhaseRewardPolicy phase_policy_;  ///< phase hint 適用下限 p_min の適応（SABORI_PHASE=bandit）
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
 

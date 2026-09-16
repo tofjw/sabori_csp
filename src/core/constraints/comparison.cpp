@@ -1671,4 +1671,25 @@ bool IntMinConstraint::on_final_instantiate(const Model& model) {
     return m_val == std::min(x_val, y_val);
 }
 
+namespace {
+// x (<|<=) y: x は小さいほど・y は大きいほど満たしやすい
+void vote_le_pair(size_t x_id, size_t y_id,
+                  std::vector<uint32_t>& low, std::vector<uint32_t>& high) {
+    if (x_id < low.size()) ++low[x_id];
+    if (y_id < high.size()) ++high[y_id];
+}
+} // namespace
+
+void IntLeConstraint::vote_branch_direction(const Model& /*model*/,
+                                            std::vector<uint32_t>& low,
+                                            std::vector<uint32_t>& high) const {
+    vote_le_pair(x_id_, y_id_, low, high);
+}
+
+void IntLtConstraint::vote_branch_direction(const Model& /*model*/,
+                                            std::vector<uint32_t>& low,
+                                            std::vector<uint32_t>& high) const {
+    vote_le_pair(x_id_, y_id_, low, high);
+}
+
 } // namespace sabori_csp

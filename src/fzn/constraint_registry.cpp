@@ -279,6 +279,21 @@ static std::optional<ConstraintPtr> make_circuit(const ConstraintDecl& decl, Fzn
     return std::make_shared<CircuitConstraint>(std::move(vars));
 }
 
+static std::optional<ConstraintPtr> make_subcircuit(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 1) throw std::runtime_error("subcircuit requires 1 argument (array)");
+    auto vars = resolve_vars(decl.args[0], ctx);
+    // subcircuit も順列（alldifferent）を含意する。circuit と同様に明示併設して
+    // Hall ペア / 値伝播を効かせる（SubcircuitConstraint 自体はパス構造に専念）。
+    if (vars.size() >= 2) {
+        if (ctx.use_gac) {
+            ctx.model->add_constraint(std::make_shared<AllDifferentGACConstraint>(vars));
+        } else {
+            ctx.model->add_constraint(std::make_shared<AllDifferentConstraint>(vars));
+        }
+    }
+    return std::make_shared<SubcircuitConstraint>(std::move(vars));
+}
+
 static std::optional<ConstraintPtr> make_array_bool_and(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("array_bool_and requires 2 arguments");
     auto vars = resolve_vars(decl.args[0], ctx);
@@ -954,6 +969,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("circuit", make_circuit);
     registry.register_constraint("fzn_circuit", make_circuit);
     registry.register_constraint("sabori_csp_circuit", make_circuit);
+    registry.register_constraint("subcircuit", make_subcircuit);
+    registry.register_constraint("fzn_subcircuit", make_subcircuit);
+    registry.register_constraint("sabori_csp_subcircuit", make_subcircuit);
     registry.register_constraint("array_bool_and", make_array_bool_and);
     registry.register_constraint("array_bool_or", make_array_bool_or);
     registry.register_constraint("array_bool_xor", make_array_bool_xor);

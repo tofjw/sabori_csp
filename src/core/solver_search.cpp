@@ -2,6 +2,7 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 #include <numeric>
 #include <iomanip>
@@ -19,6 +20,14 @@ void Solver::apply_restart_bookkeeping(Model& model) {
         community_analysis_.reset_stats();
     }
     current_best_assignment_ = select_best_assignment();
+    // [EXPERIMENT] SABORI_PHASE_RESET=1: phase 供給源の鮮度を保つ。
+    // best_num_instantiated_ は既定では solver 初期化時にしかリセットされないため、
+    // 「これまでで最も深い行き詰まり」が単調に凍結し、リスタートのたびに
+    // 同じ死んだ領域へ値順序を引き戻してしまう。
+    {
+        static const bool reset_phase = std::getenv("SABORI_PHASE_RESET") != nullptr;
+        if (reset_phase) best_num_instantiated_ = 0;
+    }
     ng_usage_bloom_ = Bloom512{};
 
     // リスタート後の起点変数を選択（探索多様化）
@@ -30,11 +39,15 @@ void Solver::apply_restart_bookkeeping(Model& model) {
 
     // Activity 減衰
     decay_activities();
+
+    // phase hint 判定用の activity 統計を更新（ホットパスでの全走査を避ける）
+    refresh_activity_stats();
 }
 
 void Solver::resample_and_reshuffle(Model& model) {
     // restart 前: 報酬更新と p 抽選
     mode_policy_.update_and_resample(rng_);
+    if (phase_bandit_active()) phase_policy_.update_and_resample(rng_);
     // スキャン順シャッフル（タイブレークのランダム化、各区間を独立に）
     var_selector_.shuffle(rng_);
     var_selector_.init_tracking(model);
@@ -192,6 +205,7 @@ Solver::ProbeAction Solver::run_improvement_probe(
 
         if (probe_improved) {
             mode_policy_.note_improvement();
+            if (phase_bandit_active()) phase_policy_.note_improvement();
             best_objective_ = probe_obj;
             best_solution_ = probe_solution;
 
@@ -444,6 +458,7 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                 if (improved) {
                     mode_policy_.note_improvement();
+                    if (phase_bandit_active()) phase_policy_.note_improvement();
                     best_objective_ = obj_val;
                     best_solution_ = found_solution;
 
@@ -462,6 +477,19 @@ std::optional<Solution> Solver::search_with_restart_optimize(
                     for (size_t i = 0; i < variables.size(); ++i) {
                         if (model.is_instantiated(i)) {
                             current_best_assignment_[i] = model.value(i);
+                        }
+                    }
+                    // [EXPERIMENT] SABORI_PHASE_SOL=1: 解を phase 供給源にも書き戻す。
+                    // 既定では best_assignment_ が更新されないため、次のリスタートで
+                    // apply_restart_bookkeeping が「最も深い行き詰まり」で解の phase を
+                    // 上書きしてしまい、solution-guided な値順序が1リスタートで失われる。
+                    {
+                        static const bool sol_phase = std::getenv("SABORI_PHASE_SOL") != nullptr;
+                        if (sol_phase) {
+                            for (size_t i = 0; i < variables.size(); ++i) {
+                                if (model.is_instantiated(i)) best_assignment_[i] = model.value(i);
+                            }
+                            best_num_instantiated_ = variables.size();
                         }
                     }
 

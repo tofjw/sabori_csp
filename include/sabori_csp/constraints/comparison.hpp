@@ -193,6 +193,11 @@ public:
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
 
+    /// x <= y / x < y: x は low、y は high が満たしやすい
+    void vote_branch_direction(const Model& model,
+                               std::vector<uint32_t>& low,
+                               std::vector<uint32_t>& high) const override;
+
 private:
     size_t x_id_, y_id_;
 };
@@ -220,6 +225,11 @@ public:
                     Domain::value_type new_max,
                     Domain::value_type old_max) override;
     bool on_final_instantiate(const Model& model) override;
+
+    /// x <= y / x < y: x は low、y は high が満たしやすい
+    void vote_branch_direction(const Model& model,
+                               std::vector<uint32_t>& low,
+                               std::vector<uint32_t>& high) const override;
 
 private:
     size_t x_id_, y_id_;

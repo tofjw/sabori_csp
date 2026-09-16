@@ -2,12 +2,53 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/one_hot_channel_aggregator.hpp"
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <iomanip>
 #include <iostream>
 
 namespace sabori_csp {
+
+namespace {
+// 勾配・phase ヒントが無いときの二分方向（SABORI_BISECT_DIR）。
+//   rand（既定, 従来動作）= コイン投げ
+//   low / low:<p>        = 確率 p で下側を先（"low" は p=1.0）。p=0.5 はコイン投げと等価
+//   high                 = 常に上側を先
+//   vote / vote_major    = 制約からの方向票（Solver::vote_bisect_dir 側で処理）
+//
+// 固定（p=1.0）は初解が遅れる代わりに最終品質が良く、コイン（p=0.5）はその逆。
+// リスタートが 55 秒で 900〜1000 回走るため、決定的だと同じ prefix を選び直して
+// 袋小路から出られないことがある（12 シードで決定的な設定だけが同じシードで落ちた）。
+// p はそのトレードオフのつまみ。
+double bisect_low_prob() {
+    static const double p = [] {
+        const char* e = std::getenv("SABORI_BISECT_DIR");
+        if (!e) return -1.0;
+        std::string v(e);
+        if (v == "low") return 1.0;
+        if (v.rfind("low:", 0) == 0) {
+            double q = std::atof(v.c_str() + 4);
+            if (q < 0.0) q = 0.0;
+            if (q > 1.0) q = 1.0;
+            return q;
+        }
+        return -1.0;
+    }();
+    return p;
+}
+
+// high 固定のみ 2 を返す（low 系は bisect_low_prob が扱う）
+int bisect_dir_mode() {
+    static const int m = [] {
+        const char* e = std::getenv("SABORI_BISECT_DIR");
+        return (e && std::string(e) == "high") ? 2 : 0;
+    }();
+    return m;
+}
+}  // namespace
+
 
 // 明示スタック探索のフレーム管理（run_search / 値列挙 / 分岐 / frame 生成）。solver.cpp から分離。
 
@@ -35,6 +76,7 @@ SearchResult Solver::run_search(Model& model, int conflict_limit, size_t depth,
                 stats_.max_depth = current_depth;
             }
             mode_policy_.observe_depth(current_depth);
+            if (phase_bandit_active()) phase_policy_.observe_depth(current_depth);
 
             // 決定ごとに mix_p で activity_first を抽選
             // 1024 段階で離散化（rng() コスト最小、グリッド解像度より細かい）
@@ -86,6 +128,115 @@ void Solver::handle_failure(Model& model, SearchFrame& frame,
     ascending = true;
 }
 
+// [EXPERIMENT] phase hint の適用範囲を制御する。
+//   SABORI_PHASE=full  (既定) 従来どおり常に適用
+//   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
+//   SABORI_PHASE=act:<r>       activity が「最大値 * r」以上の変数にのみ適用
+// 実験モードが有効か（既定挙動を変えないためのガード）
+bool Solver::phase_rate_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "rate:", 5) == 0;
+}
+
+bool Solver::phase_bandit_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "bandit", 6) == 0;
+}
+
+bool Solver::phase_experiment_active() {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    return mode != nullptr && std::strncmp(mode, "full", 4) != 0;
+}
+
+bool Solver::fallback_bisect_dir(size_t var_idx) {
+    bool right_first;
+    if (vote_bisect_dir(var_idx, right_first)) return right_first;
+
+    // cycle: リスタート毎に方向ポリシーを巡回する（low → high → coin）。
+    // 固定方向は「当たったシード」では tail が強いが、外れると初解が遅れて
+    // phase saving に悪い初解が固定される（p 補間は毎回少しずつ外すので不成立）。
+    // ポリシーをリスタート単位で切り替えれば、どのシードでも 3 リスタート以内に
+    // 全ポリシーを試すことになり、固定の強さと確率の頑健さを両取りできる。
+    if (bisect_cycle_) {
+        switch (stats_.restart_count % 3) {
+        case 0:  return false;                 // low を先に
+        case 1:  return true;                  // high を先に
+        default: return (rng_() & 1) != 0;     // コイン投げ
+        }
+    }
+
+    const double lp = bisect_low_prob();
+    if (lp >= 0.0) {
+        return !((static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < lp);
+    }
+    return (bisect_dir_mode() == 2) ? true : ((rng_() & 1) != 0);
+}
+
+void Solver::refresh_activity_stats() {
+    double mx = 0.0, sum = 0.0;
+    for (size_t i = 0; i < activity_.size(); ++i) {
+        if (activity_[i] > mx) mx = activity_[i];
+        sum += activity_[i];
+    }
+    activity_max_ = mx;
+    activity_mean_ = activity_.empty() ? 0.0 : sum / static_cast<double>(activity_.size());
+
+    // 失敗率の平均（試行のある変数のみ。Laplace 平滑化）
+    if (!phase_rate_active()) return;
+    double rate_sum = 0.0;
+    size_t rate_n = 0;
+    for (size_t i = 0; i < var_try_.size(); ++i) {
+        if (var_try_[i] == 0) continue;
+        rate_sum += (var_fail_[i] + 1.0) / (var_try_[i] + 2.0);
+        ++rate_n;
+    }
+    fail_rate_mean_ = rate_n ? rate_sum / static_cast<double>(rate_n) : 1.0;
+}
+
+// [EXPERIMENT] phase hint の適用範囲を制御する。
+//   SABORI_PHASE=full  (既定) 従来どおり常に適用
+//   SABORI_PHASE=none          一切適用しない（値順序はランダム化に委ねる）
+//   SABORI_PHASE=act:<r>       activity >= 最大値 * r の変数にのみ適用（二値）
+//   SABORI_PHASE=prob:<pmin>   p = clamp(activity/平均, pmin, 1) の確率で適用（連続）
+// 統計は refresh_activity_stats() がリスタート単位で更新する（ホットパスで
+// 全変数を走査しないため）。
+bool Solver::phase_hint_allowed(size_t var_idx) {
+    static const char* mode = std::getenv("SABORI_PHASE");
+    if (mode == nullptr) return true;
+    if (std::strncmp(mode, "none", 4) == 0) return false;
+    if (std::strncmp(mode, "act:", 4) == 0) {
+        static const double ratio = std::atof(mode + 4);
+        if (activity_max_ <= 0.0) return true;  // 失敗経験なし = 情報なし
+        return activity_[var_idx] >= activity_max_ * ratio;
+    }
+    if (std::strncmp(mode, "rate:", 5) == 0) {
+        static const double p_min = std::atof(mode + 5);
+        // 試行が少ないうちは率が信用できない。2026-07-22 の fail_rate 試作は
+        // 20サンプル程度の率をそのまま信じて破綻した（work-log 参照）ので、
+        // 最小試行数に満たない変数は「情報なし」として既定挙動に倒す。
+        static constexpr uint32_t kMinTrials = 16;
+        if (var_try_[var_idx] < kMinTrials) return true;
+        if (fail_rate_mean_ <= 0.0) return true;
+        double rate = (var_fail_[var_idx] + 1.0) / (var_try_[var_idx] + 2.0);
+        double p = rate / fail_rate_mean_;
+        if (p > 1.0) p = 1.0;
+        if (p < p_min) p = p_min;
+        return (static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < p;
+    }
+    if (std::strncmp(mode, "prob:", 5) == 0 || std::strncmp(mode, "bandit", 6) == 0) {
+        static const bool use_bandit = std::strncmp(mode, "bandit", 6) == 0;
+        static const double fixed_p_min = use_bandit ? 0.0 : std::atof(mode + 5);
+        const double p_min = use_bandit ? phase_policy_.p_min() : fixed_p_min;
+        if (p_min >= 1.0) return true;          // 従来の既定挙動と同じ
+        if (activity_mean_ <= 0.0) return true;
+        double p = activity_[var_idx] / activity_mean_;
+        if (p > 1.0) p = 1.0;
+        if (p < p_min) p = p_min;
+        return (static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < p;
+    }
+    return true;
+}
+
 void Solver::order_values(const Model& model, size_t var_idx) {
     auto& values = value_buffer_;
 
@@ -115,13 +266,23 @@ void Solver::order_values(const Model& model, size_t var_idx) {
             }
         }
         gradient_strategy_.consume_hint();
-    } else if (current_best_assignment_[var_idx] != kNoValue) {
+    } else if (current_best_assignment_[var_idx] != kNoValue && phase_hint_allowed(var_idx)) {
         auto best_val = current_best_assignment_[var_idx];
         auto it = std::find(values.begin(), values.end(), best_val);
         if (it != values.end() && it != values.begin()) {
             std::swap(*it, values[0]);
         }
-    } else if (model.var_data(var_idx).randomize_value_order && values.size() > 1) {
+    } else if (bool vote_high = false;
+               values.size() > 1 && vote_bisect_dir(var_idx, vote_high)) {
+        // 制約からの方向票（SABORI_BISECT_DIR=vote 系）。
+        // enumerate 経路は bool・狭ドメイン変数が通る。bool_clause の極性票は
+        // ここで初めて意味を持つ（bool は bisect しないため）。
+        // 好まれる側の端値を先頭に置くだけで、残りの順序は触らない。
+        auto it = vote_high ? std::max_element(values.begin(), values.end())
+                            : std::min_element(values.begin(), values.end());
+        if (it != values.begin()) std::swap(*it, values.front());
+    } else if ((model.var_data(var_idx).randomize_value_order || phase_experiment_active()) &&
+               values.size() > 1) {
         // 値の試行順をランダム化
         for (size_t i = values.size() - 1; i > 0; --i) {
             size_t j = rng_() % (i + 1);
@@ -140,7 +301,9 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
 
         current_decision_++;
 
+        if (phase_rate_active()) ++var_try_[frame.var_idx];
         if (!model.instantiate(current_decision_, frame.var_idx, val)) {
+            if (phase_rate_active()) ++var_fail_[frame.var_idx];
             current_decision_--;
             frame.value_idx++;
             continue;
@@ -173,6 +336,7 @@ void Solver::try_enumerate_values(Model& model, SearchFrame& frame,
         }
 
         if (!propagate_ok || queue_res != PropagationResult::Ok) {
+            if (phase_rate_active()) ++var_fail_[frame.var_idx];
             model.clear_pending_updates();
         }
 
@@ -224,6 +388,10 @@ void Solver::try_bisect_branches(Model& model, SearchFrame& frame,
         }
 
         PropagationResult queue_res = process_queue(model);
+        if (phase_rate_active()) {
+            ++var_try_[frame.var_idx];
+            if (queue_res != PropagationResult::Ok) ++var_fail_[frame.var_idx];
+        }
         if (queue_res == PropagationResult::Ok) {
             decision_trail_.push_back(decision_lit);
             if (community_analysis_.is_enabled()) {
@@ -294,7 +462,7 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (rng_() & 1) != 0;
+                    right_first = fallback_bisect_dir(var_idx);
                     gradient_strategy_.consume_hint();
                 }
             } else {
@@ -309,15 +477,15 @@ void Solver::create_search_frame(Model& model, size_t var_idx,
                     gradient_strategy_.consume_hint();
                 }
                 else {
-                    right_first = (rng_() & 1) != 0;
+                    right_first = fallback_bisect_dir(var_idx);
                     gradient_strategy_.consume_hint();
                 }
             }
-        } else if (current_best_assignment_[var_idx] != kNoValue) {
+        } else if (current_best_assignment_[var_idx] != kNoValue && phase_hint_allowed(var_idx)) {
             auto hint_val = current_best_assignment_[var_idx];
             right_first = (hint_val > mid);
         } else {
-            right_first = (rng_() & 1) != 0;
+            right_first = fallback_bisect_dir(var_idx);
         }
 
         SearchFrame frame;

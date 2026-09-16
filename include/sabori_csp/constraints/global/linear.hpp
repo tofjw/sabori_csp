@@ -198,6 +198,11 @@ public:
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
     int64_t bound() const { return bound_; }
 
+    /// Σ c_i x_i <= bound: c_i > 0 の変数は low、c_i < 0 の変数は high が満たしやすい
+    void vote_branch_direction(const Model& model,
+                               std::vector<uint32_t>& low,
+                               std::vector<uint32_t>& high) const override;
+
     bool prepare_propagation(Model& model) override;
     PresolveResult presolve(Model& model) override;
 
