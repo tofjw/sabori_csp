@@ -30,6 +30,7 @@ add_library(sabori_csp_core
   constraints/global/int_lin_ne.cpp
   constraints/global/circuit.cpp
   constraints/global/subcircuit.cpp
+  constraints/global/tree.cpp
   constraints/global/int_element.cpp
   constraints/global/int_element_monotonic.cpp
   constraints/global/array_int_maximum.cpp
@@ -50,7 +51,6 @@ add_library(sabori_csp_core
   constraints/global/global_cardinality.cpp
   constraints/global/value_precede.cpp
   constraints/global/lex_lesseq.cpp
-  constraints/global/subcircuit.cpp
   constraints/global/int_one_hot_channel.cpp
   constraints/global/increasing.cpp
 )

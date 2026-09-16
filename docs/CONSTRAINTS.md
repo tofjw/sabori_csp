@@ -229,6 +229,7 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `int_lin_ne_reif` | `IntLinNeReifConstraint` | Σ(coeffs[i] * vars[i]) != target <-> b |
 | `circuit` | `CircuitConstraint` | 変数がハミルトン閉路を形成する |
 | `subcircuit` | `SubcircuitConstraint` | 非自己ループのノードが単一の部分閉路を形成する（x[i]=i は閉路外） |
+| `tree` / `fzn_tree` | `TreeConstraint` | 選択部分グラフ (ns, es) が根 r の無向木を成す |
 | `int_element` | `IntElementConstraint` | array[index] = result を維持する |
 | `array_bool_element` | `IntElementConstraint` | bool定数配列版（int版を流用） |
 | `array_var_int_element` | `ArrayVarIntElementConstraint` | array[index] = result（配列が変数） |
@@ -247,7 +248,6 @@ BoolClauseConstraint c({p1, p2}, {n1});
 | `sabori_global_cardinality` | `GlobalCardinalityConstraint` | counts[j] = \|{i : x[i]==cover[j]}\|（open 意味論。fzn_global_cardinality / fzn_global_cardinality_low_up を mznlib で経路付け） |
 | `sabori_value_precede` | `ValuePrecedeConstraint` | 値 t の出現前に値 s の出現を要求（対称性破壊。fzn_value_precede_int / fzn_value_precede_chain_int / fzn_seq_precede_chain_int を mznlib で経路付け） |
 | `sabori_lex_less` / `sabori_lex_lesseq` (+ `_bool`) | `LexLessEqConstraint` | x が y より辞書順で小さい（か等しい）。fzn_lex_less_int / fzn_lex_lesseq_int（+bool）を経路付け。lex_chain_* は std が連続ペアに分解するので自動 native 化 |
-| `sabori_subcircuit` | `SubcircuitConstraint` | 非自己ループのノードがちょうど1つの閉路を形成（x[i]=i は不参加）。alldifferent は registry が併設。fzn_subcircuit を経路付け |
 | `increasing` / `fzn_increasing_int` / `fzn_increasing_bool` | `IncreasingConstraint` | x[0] <= x[1] <= ... <= x[n-1] |
 | `strictly_increasing` / `fzn_strictly_increasing_int` / `fzn_strictly_increasing_bool` | `IncreasingConstraint(strict=true)` | x[0] < x[1] < ... < x[n-1] |
 
@@ -308,6 +308,28 @@ constraint table_int([x, y], [1,2, 2,3, 3,1]);
 - `x = [0, 1, 2]` → 全て自己ループ（空の部分閉路）
 - `x = [1, 0, 2]` → 0 → 1 → 0、ノード 2 は out
 - `x = [1, 2, 0]` → 0 → 1 → 2 → 0（全ノードが閉路）
+
+#### tree 制約
+
+`fzn_tree(N, E, from, to, r, ns, es)` に対応する無向木連結性制約。
+選択部分グラフ（`ns[n]`=ノード選択、`es[e]`=辺選択）が根 `r` の木を成す。
+
+**引数:**
+- `ns[1..N]` (var bool): ノード n が部分グラフに含まれるか
+- `es[1..E]` (var bool): 辺 e が部分グラフに含まれるか
+- `r` (var int): 根ノード（1-based）。`ns[r]` は真
+- `from[e], to[e]`: 辺 e の両端（定数、1-based）
+
+**特徴:**
+- 選択辺の union-find で閉路を検出/予防（両端が同成分の未確定辺は `es=0` に強制）
+- 辺端点強制（`es[e]=1 → ns[両端]=1`）、根強制（`ns[r]=1`、`ns[n]=0 → r≠n`）
+- 全確定時に木性（単一成分・非閉路・辺数=ノード数-1）を検証
+- 標準ライブラリの分解（parent/dist の距離ラベリング + reified）は大域連結性
+  propagator を持たないため、`fzn_tree_int.mzn` でネイティブ実装に配線する
+
+**動機:** MZC2026 surface-based-tsp（三角形の全域木構造）で std 分解では大インスタンス
+（berlin52/st70/ch130）が最初の実行可能解に到達できなかったが、ネイティブ化で解を
+発見できるようになった。
 
 #### int_element 制約
 

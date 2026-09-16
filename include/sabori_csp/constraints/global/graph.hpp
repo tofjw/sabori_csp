@@ -326,6 +326,67 @@ private:
     int64_t invf_offset_;  ///< invf の値域の最小値 (= min(index_set(f)))
 };
 
+/**
+ * @brief tree 制約（無向）: 選択部分グラフが根 r の木を成す
+ *
+ * fzn_tree(N, E, from, to, r, ns, es) に対応。
+ * - ns[n] (var bool): ノード n が部分グラフに含まれるか
+ * - es[e] (var bool): 辺 e が部分グラフに含まれるか
+ * - r (var int): 根ノード（1-based ノードID）。ns[r] は真でなければならない
+ * - from[e], to[e]: 辺 e の両端ノード（定数、1-based）
+ *
+ * 選択された ns/es が単一の木（連結かつ非閉路、辺数 = ノード数 - 1）を成す。
+ *
+ * 伝播:
+ * - es[e]=1 → ns[from[e]]=1, ns[to[e]]=1（辺の両端は選択）
+ * - ns[n]=0 → n を端点に持つ辺 es[e]=0
+ * - 根: ns[r]=1、ns[n]=0 なら r≠n
+ * - 閉路検出/防止: es[e]=1 のたびに現在の選択辺から union-find を構築し、両端が
+ *   既に同成分なら閉路 → 矛盾。両端が既に同成分の未確定辺は es[e]=0 に強制（閉路予防）。
+ * - 全確定時に木性（単一成分・非閉路・辺数=ノード数-1・ns[r]）を検証。
+ *
+ * union-find は毎回モデル状態から再構築するステートレス方式（trail/rewind 不要、
+ * backtrack 安全）。O(E) per es=1 イベント。
+ */
+class TreeConstraint : public Constraint {
+public:
+    /**
+     * @param ns   ノード選択 bool 変数（size N）
+     * @param es   辺選択 bool 変数（size E）
+     * @param r    根ノード変数
+     * @param from 各辺の始点ノードID（1-based）
+     * @param to   各辺の終点ノードID（1-based）
+     */
+    TreeConstraint(std::vector<VariablePtr> ns, std::vector<VariablePtr> es,
+                   VariablePtr r, std::vector<int> from, std::vector<int> to);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+private:
+    size_t n_;  // ノード数
+    size_t e_;  // 辺数
+    Domain::value_type node_base_;  // ノードIDのオフセット（通常 1）
+
+    std::vector<int> efrom_;  // 辺 e の始点（0-based 内部インデックス）
+    std::vector<int> eto_;    // 辺 e の終点（0-based 内部インデックス）
+    std::vector<std::vector<size_t>> incident_;  // ノード → 接続辺インデックス
+
+    // var_ids_ レイアウト: [ns(0..n-1), es(n..n+e-1), r(n+e)]
+    size_t ns_idx(size_t node) const { return node; }
+    size_t es_idx(size_t edge) const { return n_ + edge; }
+    size_t r_internal() const { return n_ + e_; }
+
+    /// 現在 es=1 の辺から union-find を構築（par/sz を埋める）。閉路があれば false。
+    bool build_uf(const Model& model, std::vector<size_t>& par, std::vector<size_t>& sz) const;
+};
 
 } // namespace sabori_csp
 

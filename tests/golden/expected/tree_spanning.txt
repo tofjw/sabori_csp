@@ -1,0 +1,34 @@
+e1 = false;
+e2 = true;
+e3 = true;
+e4 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+e1 = true;
+e2 = true;
+e3 = true;
+e4 = false;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+e3 = true;
+e4 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+==========
+--- stats ---
+% Stats: fails=6 restarts=1 max_depth=4 avg_depth=1 nogoods=8 unit_nogoods=1 ng_check=42 ng_domain=23 ng_prune=3 ng_noop=16 bisect=0 enumerate=21
+% NG length distribution: 1:1 2:3 3:2 4:3

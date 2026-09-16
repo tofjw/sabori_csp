@@ -1,0 +1,10 @@
+% tree: 全4ノードを含む全域木。edge (1,2),(2,3),(3,4),(1,3)。r は 1 に固定。
+var 1..1: r :: output_var;
+var bool: n1 :: output_var; var bool: n2 :: output_var;
+var bool: n3 :: output_var; var bool: n4 :: output_var;
+var bool: e1 :: output_var; var bool: e2 :: output_var;
+var bool: e3 :: output_var; var bool: e4 :: output_var;
+constraint bool_eq(n1, true); constraint bool_eq(n2, true);
+constraint bool_eq(n3, true); constraint bool_eq(n4, true);
+constraint sabori_tree(4, 4, [1,2,3,1], [2,3,4,3], r, [n1,n2,n3,n4], [e1,e2,e3,e4]);
+solve satisfy;

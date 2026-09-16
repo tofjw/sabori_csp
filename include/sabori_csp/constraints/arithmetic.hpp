@@ -40,6 +40,23 @@ private:
     size_t x_id_, y_id_, z_id_;
 
     bool propagate_bounds(Model& model);
+
+    /**
+     * @brief スパースオペランド対応の domain 伝播
+     *
+     * x または y のドメインが小さい（≤ kSparseLimit）とき、bounds 一貫では
+     * 取りこぼす枝刈りを行う。mcm のように「2の冪だけのスパースな乗数
+     * （区間は広いが実値は少数）× 広いドメイン」で bounds が無力になる問題に効く。
+     * - z 確定時: スパースオペランドを約数集合に、相手を対応値集合に絞る
+     * - z 未確定時: スパースオペランドの各値の積区間が z 区間に届かなければ除去
+     */
+    bool propagate_sparse(Model& model);
+
+    /// z=vz 確定時、スパースオペランド s を約数に絞り相手 o を対応値集合に絞る
+    bool divisor_filter(Model& model, size_t s_id, size_t o_id, Domain::value_type vz);
+
+    /// スパースオペランド s の各値について、s*[o区間] が z 区間に届かない値を除去
+    bool feasibility_filter(Model& model, size_t s_id, size_t o_id);
 };
 
 /**

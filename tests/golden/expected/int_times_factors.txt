@@ -16,5 +16,5 @@ z = 12;
 ----------
 ==========
 --- stats ---
-% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=4 unit_nogoods=1 ng_check=14 ng_domain=7 ng_prune=7 ng_noop=0 bisect=5 enumerate=4
+% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=4 unit_nogoods=1 ng_check=18 ng_domain=9 ng_prune=9 ng_noop=0 bisect=5 enumerate=4
 % NG length distribution: 1:1 2:4
