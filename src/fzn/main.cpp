@@ -252,7 +252,13 @@ int g_probe_fail_limit = 5;
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
-    if (!g_no_elimination) simplify_model(*model, fzn_model);
+    if (!g_no_elimination) {
+        // 代入消去で線形制約が確定 UNSAT に簡約された場合は、探索前に UNSATISFIABLE。
+        if (simplify_model(*model, fzn_model).is_infeasible()) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+            return;
+        }
+    }
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
@@ -299,7 +305,12 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
-    if (!g_no_elimination) simplify_model(*model, fzn_model);
+    if (!g_no_elimination) {
+        if (simplify_model(*model, fzn_model).is_infeasible()) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+            return;
+        }
+    }
     sabori_csp::Solver solver;
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);

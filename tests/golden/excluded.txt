@@ -13,8 +13,8 @@
 #       golden の corpus 構築が Error: 行頭を除外するため byte 照合に乗らない。
 #       → これらは専用 .sh runner (ctest 登録済み) で別途検証していること。
 #   (b) タイムアウトや非決定的出力で byte 照合が不安定な fzn (現状なし)。
-
-# (a) int_lin_eq_subst: presolve 代入で UNSAT を検出し "Error: ... UNSAT after substitution" を出す。
-#     tests/fzn/constraints/int_lin_eq_subst/test_subst.sh (ctest: int_lin_eq_subst) で検証済み。
-tests/fzn/constraints/int_lin_eq_subst/unsat_eq.fzn  # presolve UNSAT (Error:出力)。test_subst.sh で検証
-tests/fzn/constraints/int_lin_eq_subst/unsat_le.fzn  # presolve UNSAT (Error:出力)。test_subst.sh で検証
+#
+# 注: かつて int_lin_eq_subst/unsat_eq.fzn・unsat_le.fzn がここに (a) として列挙されて
+#     いたが、代入簡約の確定 UNSAT を "Error:" ではなく "=====UNSATISFIABLE=====" で
+#     報告するよう修正したため、通常の byte 照合対象 (corpus) に移動した。現状 (a)(b) の
+#     除外エントリは無い。

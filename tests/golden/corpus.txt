@@ -161,6 +161,9 @@ tests/fzn/constraints/int_lin_eq_subst/output_protected.fzn
 tests/fzn/constraints/int_lin_eq_subst/propagation_chain.fzn
 tests/fzn/constraints/int_lin_eq_subst/reif_false.fzn
 tests/fzn/constraints/int_lin_eq_subst/reif_true.fzn
+tests/fzn/constraints/int_lin_eq_subst/unsat_eq.fzn
+tests/fzn/constraints/int_lin_eq_subst/unsat_le.fzn
+tests/fzn/constraints/int_lin_eq_subst/unsat_ne.fzn
 tests/fzn/constraints/int_lin_le/boundary_exact.fzn
 tests/fzn/constraints/int_lin_le/simple.fzn
 tests/fzn/constraints/int_lin_le/unsat.fzn

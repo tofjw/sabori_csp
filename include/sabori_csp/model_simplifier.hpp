@@ -53,6 +53,15 @@ public:
      */
     const std::vector<SubstitutionInfo>& substitutions() const { return substitutions_; }
 
+    /**
+     * @brief 代入適用で線形制約が確定的に UNSAT に簡約されたか
+     *
+     * 例: x を代入消去した結果 int_lin_eq が「0 = 2」になるケース。
+     * これは Error ではなく UNSATISFIABLE として報告すべきなので、呼び出し側は
+     * simplify() 後に本フラグを確認して UNSAT 出力すること。
+     */
+    bool is_infeasible() const { return infeasible_; }
+
 private:
     /**
      * @brief 変数ごとの制約インデックスリストを構築
@@ -69,7 +78,9 @@ private:
 
     /**
      * @brief 代入を全制約に適用
-     * @throws std::runtime_error UNSAT 検出時
+     *
+     * 線形制約が確定的に UNSAT へ簡約された場合は throw せず infeasible_ を立てる
+     * （Error ではなく UNSATISFIABLE として報告するため）。
      */
     void apply_substitutions(Model& model);
 
@@ -85,6 +96,7 @@ private:
     std::unordered_map<size_t, size_t> subst_map_;  ///< x_id -> substitutions_ のインデックス
     std::unordered_set<size_t> y_vars_;              ///< 連鎖防止用
     std::unordered_set<size_t> defining_constraints_;  ///< 定義制約のインデックス集合
+    bool infeasible_ = false;  ///< 代入簡約で確定 UNSAT を検出したか
 };
 
 } // namespace sabori_csp
