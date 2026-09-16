@@ -192,7 +192,7 @@ bool CountEqConstraint::on_instantiate(Model& model, int save_point,
         return on_final_instantiate(model);
     }
 
-    return propagate(model);
+    return propagate(model, save_point);
 }
 
 bool CountEqConstraint::on_final_instantiate(const Model& model) {
@@ -205,7 +205,7 @@ bool CountEqConstraint::on_final_instantiate(const Model& model) {
     return count == model.value(var_ids_[n_]);
 }
 
-bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
+bool CountEqConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                  size_t last_var_internal_idx) {
     if (last_var_internal_idx == n_) {
         // 最後の未確定変数が c（count 変数）
@@ -232,7 +232,7 @@ bool CountEqConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
         // c は確定済みのはず
         if (!model.is_instantiated(c_id_)) {
             // c もまだ未確定ならロジックエラーだが、安全のため propagate に任せる
-            return propagate(model);
+            return propagate(model, save_point);
         }
 
         auto cv = model.value(c_id_);
@@ -275,12 +275,12 @@ bool CountEqConstraint::on_set_min(Model& model, int save_point,
             trail_.back().second.is_possible_changes.push_back({internal_idx, true});
             is_possible_[internal_idx] = false;
             possible_count_--;
-            return propagate(model);
+            return propagate(model, save_point);
         }
     } else {
         // c の下限更新 → propagate
         save_trail_if_needed(model, save_point);
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -298,12 +298,12 @@ bool CountEqConstraint::on_set_max(Model& model, int save_point,
             trail_.back().second.is_possible_changes.push_back({internal_idx, true});
             is_possible_[internal_idx] = false;
             possible_count_--;
-            return propagate(model);
+            return propagate(model, save_point);
         }
     } else {
         // c の上限更新 → propagate
         save_trail_if_needed(model, save_point);
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -318,7 +318,7 @@ bool CountEqConstraint::on_remove_value(Model& model, int save_point,
         trail_.back().second.is_possible_changes.push_back({internal_idx, true});
         is_possible_[internal_idx] = false;
         possible_count_--;
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -344,7 +344,7 @@ void CountEqConstraint::save_trail_if_needed(Model& model, int save_point) {
     }
 }
 
-bool CountEqConstraint::propagate(Model& model) {
+bool CountEqConstraint::propagate(Model& model, int save_point) {
     auto c_min = model.var_min(c_id_);
     auto c_max = model.var_max(c_id_);
     auto def = static_cast<Domain::value_type>(definite_count_);
@@ -363,12 +363,26 @@ bool CountEqConstraint::propagate(Model& model) {
         model.enqueue_set_max(c_id_, def_plus_poss);
     }
 
-    // Forward propagation
+    // Forward propagation。
+    // c が def / def+poss に張り付いたら、残り possible な x[i] を一括処理する。ここで
+    // is_possible_ を「先取り」で落として trail に記録するのが要点。そうしないと、enqueue した
+    // 除去/確定が後で適用される際に発火する on_set_*/on_remove_value/on_instantiate が
+    // 再びこの propagate を呼び、まだ適用されていない要求を possible 変数の数だけ再 enqueue する。
+    // pending_updates_ は読み取りインデックス方式で fixpoint 終了まで解放されないため、これが
+    // O(possible^2) のメモリ肥大となり、大規模インスタンス（warehouse/wlp22 で 14GB+）で
+    // OOM→ERR を起こしていた。先取りで落とせば (a) 適用時の callback が is_possible_ ガードで
+    // no-op になり再帰 propagate を止め、(b) 同一 fixpoint 内の再 propagate が同じ i を二度
+    // enqueue しない。最終的な fixpoint 状態（除去される値の集合）は不変。
+
     // c.max == definite_count_ → 残りの possible な x[i] から target を除去
     if (c_max == def) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
                 model.enqueue_remove_value(var_ids_[i], target_);
+                save_trail_if_needed(model, save_point);
+                trail_.back().second.is_possible_changes.push_back({i, true});
+                is_possible_[i] = false;
+                possible_count_--;
             }
         }
     }
@@ -378,6 +392,11 @@ bool CountEqConstraint::propagate(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i] && !model.is_instantiated(var_ids_[i])) {
                 model.enqueue_instantiate(var_ids_[i], target_);
+                save_trail_if_needed(model, save_point);
+                trail_.back().second.is_possible_changes.push_back({i, true});
+                is_possible_[i] = false;
+                possible_count_--;
+                definite_count_++;
             }
         }
     }
@@ -611,7 +630,7 @@ bool CountEqVarTargetConstraint::on_instantiate(Model& model, int save_point,
         return true;
     }
 
-    return propagate(model);
+    return propagate(model, save_point);
 }
 
 bool CountEqVarTargetConstraint::on_final_instantiate(const Model& model) {
@@ -625,7 +644,7 @@ bool CountEqVarTargetConstraint::on_final_instantiate(const Model& model) {
     return count == model.value(var_ids_[n_ + 1]);
 }
 
-bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save_point*/,
+bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int save_point,
                                                           size_t last_var_internal_idx) {
     if (!target_known_) {
         // y 未確定: 弱い bounds のみ
@@ -665,7 +684,7 @@ bool CountEqVarTargetConstraint::on_last_uninstantiated(Model& model, int /*save
         }
 
         if (!model.is_instantiated(c_id_)) {
-            return propagate(model);
+            return propagate(model, save_point);
         }
 
         auto cv = model.value(c_id_);
@@ -704,12 +723,12 @@ bool CountEqVarTargetConstraint::on_set_min(Model& model, int save_point,
             trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
             is_possible_[internal_var_idx] = false;
             possible_count_--;
-            return propagate(model);
+            return propagate(model, save_point);
         }
     } else if (internal_var_idx == n_ + 1) {
         // c の下限更新
         save_trail_if_needed(model, save_point);
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -726,12 +745,12 @@ bool CountEqVarTargetConstraint::on_set_max(Model& model, int save_point,
             trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
             is_possible_[internal_var_idx] = false;
             possible_count_--;
-            return propagate(model);
+            return propagate(model, save_point);
         }
     } else if (internal_var_idx == n_ + 1) {
         // c の上限更新
         save_trail_if_needed(model, save_point);
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -746,7 +765,7 @@ bool CountEqVarTargetConstraint::on_remove_value(Model& model, int save_point,
         trail_.back().second.is_possible_changes.push_back({internal_var_idx, true});
         is_possible_[internal_var_idx] = false;
         possible_count_--;
-        return propagate(model);
+        return propagate(model, save_point);
     }
     return true;
 }
@@ -774,7 +793,7 @@ void CountEqVarTargetConstraint::save_trail_if_needed(Model& model, int save_poi
     }
 }
 
-bool CountEqVarTargetConstraint::propagate(Model& model) {
+bool CountEqVarTargetConstraint::propagate(Model& model, int save_point) {
     auto c_min = model.var_min(c_id_);
     auto c_max = model.var_max(c_id_);
     auto def = static_cast<Domain::value_type>(definite_count_);
@@ -792,11 +811,18 @@ bool CountEqVarTargetConstraint::propagate(Model& model) {
         model.enqueue_set_max(c_id_, def_plus_poss);
     }
 
+    // forward sweep で is_possible_ を先取り更新する理由は CountEqConstraint::propagate
+    // 側の詳細コメントを参照（pending_updates_ の O(possible^2) 肥大の回避）。
+
     // c.max == definite_count_ → 残りの possible な x[i] から target を除去
     if (c_max == def) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i]) {
                 model.enqueue_remove_value(var_ids_[i], target_);
+                save_trail_if_needed(model, save_point);
+                trail_.back().second.is_possible_changes.push_back({i, true});
+                is_possible_[i] = false;
+                possible_count_--;
             }
         }
     }
@@ -806,6 +832,11 @@ bool CountEqVarTargetConstraint::propagate(Model& model) {
         for (size_t i = 0; i < n_; ++i) {
             if (is_possible_[i] && !model.is_instantiated(var_ids_[i])) {
                 model.enqueue_instantiate(var_ids_[i], target_);
+                save_trail_if_needed(model, save_point);
+                trail_.back().second.is_possible_changes.push_back({i, true});
+                is_possible_[i] = false;
+                possible_count_--;
+                definite_count_++;
             }
         }
     }
