@@ -19,10 +19,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ターゲットアーキテクチャ（SIMD 自動ベクトル化の有効化）
-# 既定 x86-64-v3 = AVX2 + BMI2 + FMA（配布可能な現行 CPU の共通基盤）。
-# ローカル最速を測るなら -DSABORI_MARCH=native（AVX-512 も解禁）。
-# 無効化は -DSABORI_MARCH=OFF。
-set(SABORI_MARCH "x86-64-v3" CACHE STRING "Target arch for SIMD (-march=...); 'OFF' to disable")
+#
+# 既定は OFF（SSE2 ベースライン）。2026-09-17 の A/B 実測で、x86-64-v3 の
+# 寄与は証明完了ペアの時間比 中央値 0.981（約2%、ノイズと区別できない）だった。
+# hot loop がメモリレイテンシと制御フロー律速で、自動ベクトル化に噛む余地が
+# 小さいという c734f31 の所見と一致する。一方 x86-64-v3 は AVX2 必須なので、
+# 非搭載機に配ったバイナリは SIGILL で落ちる。2% のために提出バイナリの
+# 移植性を失うのは割に合わない。
+#
+# ローカル計測で有効化: -DSABORI_MARCH=x86-64-v3（AVX2+BMI2+FMA）
+#                       -DSABORI_MARCH=native（AVX-512 も解禁）
+set(SABORI_MARCH "OFF" CACHE STRING "Target arch for SIMD (-march=...); 'OFF' to disable")
 if(NOT SABORI_MARCH STREQUAL "OFF")
   include(CheckCXXCompilerFlag)
   set(_sabori_arch_flag "-march=${SABORI_MARCH}")
