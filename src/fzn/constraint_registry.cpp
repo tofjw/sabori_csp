@@ -407,6 +407,65 @@ static std::optional<ConstraintPtr> make_cumulative(const ConstraintDecl& decl, 
         std::move(requirements), std::move(capacity));
 }
 
+static std::optional<ConstraintPtr> make_bin_packing_load(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_bin_packing_load requires 3 arguments (load, bin, w)");
+    auto loads = resolve_vars(decl.args[0], ctx);
+    auto bins  = resolve_vars(decl.args[1], ctx);
+    auto w_raw = ctx.resolve_int_array(decl.args[2]);
+    if (w_raw.size() != bins.size())
+        throw std::runtime_error("sabori_bin_packing_load: bin と w の長さが一致しません");
+    std::vector<int64_t> weights;
+    weights.reserve(w_raw.size());
+    for (auto v : w_raw) weights.push_back(static_cast<int64_t>(v));
+    // FlatZinc 1-indexed convention: bin[i] ∈ [1, length(load)].
+    return std::make_shared<BinPackingLoadConstraint>(
+        std::move(loads), std::move(bins), std::move(weights), /*index_offset=*/1);
+}
+
+static std::optional<ConstraintPtr> make_global_cardinality(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_global_cardinality requires 3 arguments (x, cover, counts)");
+    auto xs        = resolve_vars(decl.args[0], ctx);
+    auto cover_raw = ctx.resolve_int_array(decl.args[1]);
+    auto counts    = resolve_vars(decl.args[2], ctx);
+    if (cover_raw.size() != counts.size())
+        throw std::runtime_error("sabori_global_cardinality: cover と counts の長さが一致しません");
+    std::vector<int64_t> cover;
+    cover.reserve(cover_raw.size());
+    for (auto v : cover_raw) cover.push_back(static_cast<int64_t>(v));
+    return std::make_shared<GlobalCardinalityConstraint>(
+        std::move(xs), std::move(cover), std::move(counts));
+}
+
+static std::optional<ConstraintPtr> make_value_precede(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    if (decl.args.size() != 3)
+        throw std::runtime_error("sabori_value_precede requires 3 arguments (s, t, x)");
+    if (!std::holds_alternative<Domain::value_type>(decl.args[0]) ||
+        !std::holds_alternative<Domain::value_type>(decl.args[1]))
+        throw std::runtime_error("sabori_value_precede: s, t must be integers");
+    auto s = std::get<Domain::value_type>(decl.args[0]);
+    auto t = std::get<Domain::value_type>(decl.args[1]);
+    auto xs = resolve_vars(decl.args[2], ctx);
+    return std::make_shared<ValuePrecedeConstraint>(s, t, std::move(xs));
+}
+
+static std::optional<ConstraintPtr> make_lex(const ConstraintDecl& decl, FznBuildContext& ctx, bool strict) {
+    if (decl.args.size() != 2)
+        throw std::runtime_error("sabori_lex_less(eq) requires 2 arguments (x, y)");
+    auto xs = resolve_vars(decl.args[0], ctx);
+    auto ys = resolve_vars(decl.args[1], ctx);
+    return std::make_shared<LexLessEqConstraint>(std::move(xs), std::move(ys), strict);
+}
+
+static std::optional<ConstraintPtr> make_lex_less(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    return make_lex(decl, ctx, /*strict=*/true);
+}
+
+static std::optional<ConstraintPtr> make_lex_lesseq(const ConstraintDecl& decl, FznBuildContext& ctx) {
+    return make_lex(decl, ctx, /*strict=*/false);
+}
+
 static std::optional<ConstraintPtr> make_inverse(const ConstraintDecl& decl, FznBuildContext& ctx) {
     if (decl.args.size() != 2) throw std::runtime_error("fzn_inverse requires 2 arguments (f, invf)");
     auto f = resolve_vars(decl.args[0], ctx);
@@ -1029,6 +1088,21 @@ void register_all_constraints(ConstraintRegistry& registry) {
 
     // Pattern I: NValue
     registry.register_constraint("fzn_nvalue", make_nvalue);
+
+    // Pattern J: Bin packing
+    registry.register_constraint("sabori_bin_packing_load", make_bin_packing_load);
+
+    // Pattern K: Global cardinality
+    registry.register_constraint("sabori_global_cardinality", make_global_cardinality);
+
+    // Pattern L: Value precedence (symmetry breaking)
+    registry.register_constraint("sabori_value_precede", make_value_precede);
+
+    // Pattern M: Lexicographic ordering (symmetry breaking)
+    registry.register_constraint("sabori_lex_less", make_lex_less);
+    registry.register_constraint("sabori_lex_lesseq", make_lex_lesseq);
+    registry.register_constraint("sabori_lex_less_bool", make_lex_less);
+    registry.register_constraint("sabori_lex_lesseq_bool", make_lex_lesseq);
 }
 
 } // namespace fzn

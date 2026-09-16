@@ -19,8 +19,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 BASE_DIR = Path(__file__).resolve().parent
 MINIZINC = "/snap/bin/minizinc"
 SABORI_MSC = str(Path(__file__).resolve().parent.parent.parent / "build" / "share" / "minizinc" / "solvers" / "sabori_csp.msc")
-TIMEOUT = 30  # seconds
+TIMEOUT = int(os.environ.get("BENCH_TIMEOUT", "30"))  # seconds
 MAX_WORKERS = 4
+# CP-SAT にだけ渡す追加 minizinc フラグ（例: "-p 1" でシングルスレッド強制。
+# fzn-cp-sat の --threads は default 0 = 全コア使用なので、スレッド数を
+# 揃えた比較には明示指定が必要）
+CPSAT_FLAGS = os.environ.get("BENCH_CPSAT_FLAGS", "").split()
+# インスタンス選択: "first"（既定・名前順先頭）/ "median"（名前順中央）
+INSTANCE_PICK = os.environ.get("BENCH_INSTANCE_PICK", "first")
 
 def natural_sort_key(s):
     return [int(t) if t.isdigit() else t.lower() for t in re.split('([0-9]+)', str(s))]
@@ -105,15 +111,20 @@ def find_instances(prob_dir):
     if not mzn_files:
         return []
 
+    def pick(files):
+        if INSTANCE_PICK == "median":
+            return files[len(files) // 2]
+        return files[0]
+
     if len(mzn_files) > 1 and not data_files:
-        # 複数mzn、データなし → 各mznがインスタンス（最小1つ）
-        mzn = mzn_files[0]
+        # 複数mzn、データなし → 各mznがインスタンス（1つ選択）
+        mzn = pick(mzn_files)
         return [(str(mzn), None, mzn.stem)]
 
-    # 通常パターン: 1つのmzn + 最小データファイル
+    # 通常パターン: 1つのmzn + データファイル1つ選択
     mzn = mzn_files[0]
     if data_files:
-        inst = data_files[0]
+        inst = pick(data_files)
         return [(str(mzn), str(inst), inst.stem)]
     else:
         return [(str(mzn), None, mzn.stem)]
@@ -249,6 +260,17 @@ def _verify_fzn(mzn, data, solution, timeout):
             alias_map = {}
             ozn_text = base_ozn.read_text() if base_ozn.exists() else ''
             ident = re.compile(r'^\w+$')
+
+            # gecode の flatten で定数化された出力変数は FZN に現れず、.ozn に
+            #   `int: nMdl_1__X = 4;` / `bool: b = true;`
+            # の literal として残る（connect では出力 2525 個中 2243 個）。
+            # これらは制約を張る代わりに Python 側で直接比較する。
+            # 不一致ならその場で不整合確定。一致はカバレッジに数える。
+            literal_map = {}
+            for m in re.finditer(
+                    r'^(?:int|bool)\s*:\s*(\w+)\s*=\s*(-?\d+|true|false)\s*;',
+                    ozn_text, re.MULTILINE):
+                literal_map[m.group(1)] = m.group(2)
             for m in re.finditer(
                 r'array\s*\[[^\]]+\]\s*of\s+(?:var\s+)?[^:]+:\s*(\w+)\s*=\s*'
                 r'array\d+d?\((.*?)\)\s*;', ozn_text, re.DOTALL):
@@ -276,6 +298,12 @@ def _verify_fzn(mzn, data, solution, timeout):
             extra = []
             n_fixed_vars = 0
             for varname, value in solution.items():
+                # flatten で定数化済みの出力変数は Python 比較で決着させる
+                if varname not in declared and varname in literal_map:
+                    if value.strip() != literal_map[varname]:
+                        return "CHECK_FAIL"
+                    n_fixed_vars += 1
+                    continue
                 # FZN に存在しない MZN 名は .ozn 経由で X_INTRODUCED_ などの
                 # 別名に飛ばす（`inFlow → X_INTRODUCED_57_` 等）。
                 fzn_name = varname if varname in declared else alias_map.get(varname)
@@ -382,6 +410,8 @@ def run_solver(problem, solver_name, solver_id, mzn, data, prob_type="SAT"):
     # 残ったまま落ち、最後に出力された obj/解が捕捉できない（バッファ消失）。
     # minizinc 自前のタイムアウトは graceful 終了でバッファを保全する。
     cmd = [MINIZINC, "--solver", solver_id, "-t", str(TIMEOUT * 1000)]
+    if solver_name == "CP-SAT" and CPSAT_FLAGS:
+        cmd.extend(CPSAT_FLAGS)
     if prob_type != "SAT":
         cmd.append("-a")
     cmd.extend(["--output-objective", "--output-mode", "dzn", mzn_arg])

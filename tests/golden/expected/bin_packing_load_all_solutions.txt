@@ -1,0 +1,24 @@
+L1 = 2;
+L2 = 0;
+b1 = 1;
+b2 = 1;
+----------
+L1 = 1;
+L2 = 1;
+b1 = 2;
+b2 = 1;
+----------
+L1 = 0;
+L2 = 2;
+b1 = 2;
+b2 = 2;
+----------
+L1 = 1;
+L2 = 1;
+b1 = 1;
+b2 = 2;
+----------
+==========
+--- stats ---
+% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=4 unit_nogoods=1 ng_check=17 ng_domain=7 ng_prune=7 ng_noop=3 bisect=0 enumerate=10
+% NG length distribution: 1:1 4:4
