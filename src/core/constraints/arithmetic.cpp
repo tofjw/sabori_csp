@@ -151,6 +151,13 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         return false;
     }
 
+    // 全変数確定 → 最終検証。x,y 確定枝が z 確定時も整合チェックするため int_times は
+    // 現状でも安全だが、int_div/int_mod と揃えて const-result soundness ガードを明示する。
+    if (x_id_ != y_id_ && model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
+    }
+
     // x * y = z の伝播
     if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_)) {
         // x と y が確定したら z を確定（x_id_ == y_id_ のケースも含む）
@@ -904,6 +911,14 @@ bool IntDivConstraint::on_instantiate(Model& model, int save_point,
         model.enqueue_remove_value(y_id_, 0);
     }
 
+    // 全変数確定 → 最終検証。以下の各枝は「第3変数が未確定」を前提にガードされて
+    // いるため、y,z が定数（x div const = const 等）だと全枝が空振りする。その場合の
+    // 無効割当を確実に棄却する保険（int_mod と同型の const-result soundness ガード）。
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
+    }
+
     // x と y が確定 → z = x / y
     if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) && !model.is_instantiated(z_id_)) {
         auto x_val = model.value(x_id_);
@@ -1101,6 +1116,46 @@ PresolveResult IntModConstraint::presolve(Model& model) {
         }
     }
 
+    // y, z 両方確定 かつ x 未確定 → x を x%y==z を満たす値に絞る。
+    // 「x mod const = const」（y,z が定数）では探索中に instantiate イベントが
+    // 出ないため、この合同フィルタは presolve でしか掛からない。
+    // bounds-only の広いドメインを剰余類に絞ると removed リストが肥大するため
+    // （count_eq の O(P^2) と同種の罠）、full/sparse ドメインか小さい場合のみ hole 除去し、
+    // bounds-only の広い場合は端点を合同に合わせる bounds 絞りに留める。
+    if (model.variable(y_id_)->is_assigned() && model.variable(z_id_)->is_assigned() &&
+        !model.variable(x_id_)->is_assigned()) {
+        auto* xv = model.variable(x_id_);
+        auto y_val = model.variable(y_id_)->assigned_value().value();
+        auto z_val = model.variable(z_id_)->assigned_value().value();
+        if (y_val == 0) return PresolveResult::Contradiction;
+        // |z| < |y| かつ sign 整合は propagate/bounds が担うのでここでは剰余のみ
+        auto& xd = xv->domain();
+        constexpr size_t kEnumerateLimit = 4096;
+        if (!xd.is_bounds_only() || xd.size() <= kEnumerateLimit) {
+            for (auto v : xd.values()) {
+                if (v % y_val != z_val) {
+                    if (!xv->remove(v)) return PresolveResult::Contradiction;
+                    changed = true;
+                }
+            }
+        } else {
+            // 広い bounds-only: 端点を x%y==z の最も近い内側の値へ寄せる
+            auto adjust_up = [&](Domain::value_type v) {
+                for (int i = 0; i < std::abs(y_val); ++i, ++v) if (v % y_val == z_val) return v;
+                return v;  // 到達しない（|y| 内に必ず1つ存在）
+            };
+            auto adjust_down = [&](Domain::value_type v) {
+                for (int i = 0; i < std::abs(y_val); ++i, --v) if (v % y_val == z_val) return v;
+                return v;
+            };
+            auto new_min = adjust_up(xv->min());
+            auto new_max = adjust_down(xv->max());
+            if (new_min > xv->min()) { if (!xv->remove_below(new_min)) return PresolveResult::Contradiction; changed = true; }
+            if (new_max < xv->max()) { if (!xv->remove_above(new_max)) return PresolveResult::Contradiction; changed = true; }
+            if (xv->min() > xv->max()) return PresolveResult::Contradiction;
+        }
+    }
+
     return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
 }
 
@@ -1152,6 +1207,14 @@ bool IntModConstraint::on_instantiate(Model& model, int save_point,
     // y != 0 を強制
     if (model.contains(y_id_, 0)) {
         model.enqueue_remove_value(y_id_, 0);
+    }
+
+    // 全変数確定 → 最終検証。y/z が定数（探索中に instantiate イベントを出さない）や
+    // 探索順によって以下の「1変数だけ未確定」を前提とした個別フィルタ枝が発火しない
+    // ケースの保険。これが無いと x mod const = const で無効な割当を解と誤判定してしまう。
+    if (model.is_instantiated(x_id_) && model.is_instantiated(y_id_) &&
+        model.is_instantiated(z_id_)) {
+        return on_final_instantiate(model);
     }
 
     // x と y が確定 → z = x % y

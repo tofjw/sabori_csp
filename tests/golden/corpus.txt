@@ -191,6 +191,8 @@ tests/fzn/constraints/int_min/basic.fzn
 tests/fzn/constraints/int_min/equal.fzn
 tests/fzn/constraints/int_min/negative.fzn
 tests/fzn/constraints/int_mod/all_solutions.fzn
+tests/fzn/constraints/int_mod/const_result.fzn
+tests/fzn/constraints/int_mod/const_result_neg.fzn
 tests/fzn/constraints/int_mod/negative.fzn
 tests/fzn/constraints/int_mod/simple.fzn
 tests/fzn/constraints/int_ne/simple.fzn

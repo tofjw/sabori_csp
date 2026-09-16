@@ -1,0 +1,14 @@
+x = 5;
+----------
+x = 1;
+----------
+x = 9;
+----------
+x = 7;
+----------
+x = 3;
+----------
+==========
+--- stats ---
+% Stats: fails=2 restarts=0 max_depth=2 avg_depth=0 nogoods=5 unit_nogoods=2 ng_check=9 ng_domain=0 ng_prune=9 ng_noop=0 bisect=6 enumerate=7
+% NG length distribution: 1:7

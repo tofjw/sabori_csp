@@ -1,0 +1,6 @@
+% int_mod with constant result: x mod 2 = 1 (literal z). 定数 y,z は探索中に
+% instantiate イベントを出さないため、旧実装ではフィルタ/検証が掛からず
+% verify error になっていた回帰テスト。解は x=1,3,5,7,9。
+var 0..10: x :: output_var;
+constraint int_mod(x, 2, 1);
+solve satisfy;
