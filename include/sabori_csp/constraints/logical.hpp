@@ -292,6 +292,61 @@ private:
     size_t c_id_;
 };
 
+/**
+ * @brief 節の witness チャネリング (plain 意味論): literal_s が真
+ *
+ * bool_clause (pos ∨ ¬neg) に対し「どの literal で充足するか」を表す
+ * 補助整数変数 s (0..L-1、decision 層) を導入する。
+ * (1) 探索が「節をどう充足するか」へ直接分岐できる
+ * (2) 節がらみの conflict の activity が s に集約される (節単位の紛争度)
+ * (3) s は非関数的なので -a では解が重複する = 単解/最適化モード限定。
+ * literal index は pos が先、neg が後 (i < npos は b=1 が真、以降は b=0 が真)。
+ * 既存の BoolClauseConstraint (2WL) は温存し、本制約は純粋に探索ハンドル。
+ * unit propagation は節本体の仕事なので複製せず、witness 側は 1WL で
+ * (a) s 確定 → l_s 真 (b) 不偽 literal 1本の見届け、のみを行う。
+ * SABORI_CLAUSE_WITNESS=<最小節長> で opt-in (constraint_registry 参照)。
+ */
+class ClauseWitnessConstraint : public Constraint {
+public:
+    ClauseWitnessConstraint(const std::vector<VariablePtr>& pos,
+                            const std::vector<VariablePtr>& neg,
+                            VariablePtr s);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;
+
+private:
+    bool propagate_impl(Model& model, bool direct, bool& changed,
+                        int save_point = -1);
+
+    size_t n_;     ///< literal 数 (var_ids_[0..n_) = literals, var_ids_[n_] = s)
+    size_t npos_;  ///< 正リテラル数
+    size_t watch_ = 0;  ///< 1WL: 不偽 literal の内部 index。
+                        ///< 同一変数が複数 index に現れる節では stale になりうるが
+                        ///< 健全性は節本体と s 割当時チェックが担保する
+};
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_LOGICAL_HPP

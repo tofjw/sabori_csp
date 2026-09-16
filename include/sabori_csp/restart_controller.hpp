@@ -21,8 +21,11 @@ namespace sabori_csp {
  *
  * 計測用に outer 調整の決定則（Policy）を差し替えられる。adaptive 系は
  * パラメータ包絡（shrink 0.99 / grow 1.2 / min / max / inner 1.01）を共有し、
- * 「決定が信号と相関しているか」だけが異なる。fixed 系（Luby/Geometric/Constant）
- * は inner/outer 機構をバイパスして文献標準のリスタート列を生成する。
+ * 「決定が信号と相関しているか」だけが異なる。fixed 系（Luby）は
+ * inner/outer 機構をバイパスして文献標準のリスタート列を生成する。
+ * （inverted / prune_only / depth_only / always_tighten / always_widen /
+ *   geometric / constant のアブレーション variant は 2026-07 に撤去
+ *   — pre-flag-purge タグ参照）
  */
 class RestartController {
 public:
@@ -32,14 +35,7 @@ public:
     enum class Policy {
         Adaptive,       ///< 現行: prune_delta>0 && depth_grew で tighten、それ以外 widen
         Scrambled,      ///< 信号を無視し、固定確率 scramble_p_ のコイントスで tighten
-        Inverted,       ///< 信号を反転: prune_delta>0 && depth_grew で widen
-        PruneOnly,      ///< depth を無視: prune_delta>0 で tighten
-        DepthOnly,      ///< prune を無視: depth_grew で tighten
-        AlwaysTighten,  ///< 両信号を無視して常に tighten
-        AlwaysWiden,    ///< 両信号を無視して常に widen（stale-stats 退行後の出荷挙動と等価）
-        Luby,           ///< fixed: conflict_limit = base × Luby列（cycle 機構なし）
-        Geometric,      ///< fixed: conflict_limit = base × ratio^n（cycle 機構なし）
-        Constant        ///< fixed: conflict_limit = 一定（cycle 機構なし）
+        Luby            ///< fixed: conflict_limit = base × Luby列（cycle 機構なし）
     };
 
     RestartController() = default;
@@ -96,16 +92,7 @@ public:
     void advance_inner() {
         if (is_fixed_policy()) {
             ++restart_idx_;
-            switch (policy_) {
-            case Policy::Luby:
-                fixed_cur_ = fixed_base_ * static_cast<double>(luby(restart_idx_));
-                break;
-            case Policy::Geometric:
-                fixed_cur_ *= fixed_ratio_;
-                break;
-            default:  // Constant
-                break;
-            }
+            fixed_cur_ = fixed_base_ * static_cast<double>(luby(restart_idx_));
             return;
         }
         inner_ *= inner_ratio_;
@@ -123,11 +110,6 @@ public:
         bool tighten = false;
         switch (policy_) {
         case Policy::Adaptive:      tighten = signal; break;
-        case Policy::Inverted:      tighten = !signal; break;
-        case Policy::PruneOnly:     tighten = (prune_delta > 0); break;
-        case Policy::DepthOnly:     tighten = depth_grew; break;
-        case Policy::AlwaysTighten: tighten = true; break;
-        case Policy::AlwaysWiden:   tighten = false; break;
         case Policy::Scrambled:
             tighten = std::uniform_real_distribution<double>(0.0, 1.0)(rng) < scramble_p_;
             break;
@@ -161,7 +143,7 @@ public:
     Policy policy() const { return policy_; }
 
     /**
-     * @brief fixed 系ポリシー（Luby/Geometric/Constant）かどうか
+     * @brief fixed 系ポリシー（Luby）かどうか
      *
      * fixed 系では conflict_limit() は per-node 予算ではなく
      * 「リスタートまでのグローバル fail 数」を意味する。
@@ -173,23 +155,16 @@ public:
     /**
      * @brief outer 調整の決定則を設定（計測用）。reset() の前に呼ぶこと。
      * @param policy 決定則
-     * @param param Scrambled: tighten 確率 / Luby・Constant: base /
-     *              Geometric: 成長率（base は param2）
-     * @param param2 Geometric の base（省略時 100）
+     * @param param Scrambled: tighten 確率 / Luby: base
      */
-    void set_policy(Policy policy, double param = 0.0, double param2 = 0.0) {
+    void set_policy(Policy policy, double param = 0.0) {
         policy_ = policy;
         switch (policy) {
         case Policy::Scrambled:
             scramble_p_ = (param > 0.0 && param < 1.0) ? param : 0.5;
             break;
         case Policy::Luby:
-        case Policy::Constant:
             fixed_base_ = (param > 0.0) ? param : 100.0;
-            break;
-        case Policy::Geometric:
-            fixed_ratio_ = (param > 1.0) ? param : 1.1;
-            fixed_base_ = (param2 > 0.0) ? param2 : 100.0;
             break;
         default:
             break;
@@ -198,8 +173,7 @@ public:
 
 private:
     bool is_fixed_policy() const {
-        return policy_ == Policy::Luby || policy_ == Policy::Geometric ||
-               policy_ == Policy::Constant;
+        return policy_ == Policy::Luby;
     }
 
     /**
@@ -226,8 +200,7 @@ private:
 
     Policy policy_ = Policy::Adaptive;
     double scramble_p_ = 0.5;     ///< Scrambled の tighten 確率
-    double fixed_base_ = 100.0;   ///< Luby/Geometric/Constant の base
-    double fixed_ratio_ = 1.1;    ///< Geometric の成長率
+    double fixed_base_ = 100.0;   ///< Luby の base
 
     // 状態
     double inner_ = 2.0;

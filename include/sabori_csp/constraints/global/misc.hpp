@@ -20,7 +20,14 @@ namespace sabori_csp {
  *   （bools のうち厳密に 1 個だけ true）として伝播
  * - 部分被覆の場合は at-most-one ベース（true は高々 1 個）
  *
- * 集約は presolve 後の core 側で OneHotChannelAggregator が自動的に行う。
+ * エントリごとに half-reified (imp) フラグを持てる。imp エントリの意味論は
+ * bools[i] -> (x == values[i]) の片方向のみで、許される推論は
+ *   b=1 ⇒ x:=v / v ∉ dom(x) ⇒ b:=0（対偶）/ at-most-one
+ * に限られる。x==v ⇒ b:=1 と b=0 ⇒ remove v は使えず、exactly-one 推論
+ * （残り1個のbを1に）は imp エントリが 1 つでもあると無効になる。
+ *
+ * 集約は presolve 後の core 側で OneHotChannelAggregator が自動的に行う
+ * （int_eq_reif / int_eq_imp の両方を消費する）。
  * このクラスを直接 add_constraint する直接利用も可。
  */
 class IntOneHotChannelConstraint : public Constraint {
@@ -28,6 +35,16 @@ public:
     IntOneHotChannelConstraint(VariablePtr x,
                                std::vector<Domain::value_type> values,
                                std::vector<VariablePtr> bools);
+
+    /**
+     * @brief imp フラグ付きコンストラクタ
+     * @param imp imp[i]!=0 なら bools[i] -> (x==values[i]) の片方向
+     *            （空なら全エントリ reif）
+     */
+    IntOneHotChannelConstraint(VariablePtr x,
+                               std::vector<Domain::value_type> values,
+                               std::vector<VariablePtr> bools,
+                               std::vector<uint8_t> imp);
 
     std::string name() const override;
     std::optional<bool> is_satisfied(const Model& model) const override;
@@ -63,6 +80,7 @@ public:
     size_t x_id() const { return x_id_; }
     const std::vector<Domain::value_type>& values() const { return values_; }
     const std::vector<size_t>& b_ids() const { return b_ids_; }
+    const std::vector<uint8_t>& imp_flags() const { return imp_; }
     /// x の初期ドメインに含まれるが values_ にない値の個数。
     /// 0 のとき exhaustive（exactly-one として伝播可能）、
     /// >0 のときは partial coverage（at-most-one として伝播）。
@@ -80,6 +98,8 @@ private:
     size_t x_id_;
     std::vector<Domain::value_type> values_;  ///< 昇順ソート、重複なし
     std::vector<size_t> b_ids_;               ///< values_ と添え字対応
+    std::vector<uint8_t> imp_;                ///< values_ と添え字対応。!=0 で half-reified
+    bool all_reif_;                           ///< imp エントリなし（exactly-one 推論の前提）
     Domain::value_type offset_;  ///< values_.front() (空なら 0)
     bool contiguous_;            ///< values_ が連続整数（v[i+1] == v[i]+1）か
     /// x の初期ドメインのうち values_ にない値の個数（"穴"）。
@@ -135,6 +155,147 @@ private:
 
     size_t n_;
     bool strict_;
+};
+
+
+/**
+ * @brief value_precede 制約: x[j]==t なら ∃i<j x[i]==s
+ *
+ * 値 t の出現より前に値 s が出現することを要求する（対称性破壊の定番）。
+ * fzn_value_precede_int / fzn_value_precede_chain_int / fzn_seq_precede_chain_int
+ * を mznlib でこの propagator（chain は連続ペアの連言）に経路付けする。
+ * std 分解（H[i]=max(X[i],H[i-1]) チェーン + マッピング変数）の
+ * int_max/element/reif 網を回避する。
+ *
+ * 伝播 (Law & Lee 2004 の α/β/γ 規則の全再計算版):
+ * - α = s を取り得る最小 index。i ≤ α の全変数から t を除去
+ *   （s が i より前に来られないため。α が無ければ全域から t を除去）
+ * - γ = t に確定した最小 index。γ が存在するとき:
+ *   α ≥ γ なら矛盾。γ より前の s サポートが α のみなら x[α] := s
+ * - s == t の縮退: s は一切出現できない（全域から除去）
+ *
+ * ステートレスな全再計算 batch propagator（bin_packing_load と同方式）。
+ */
+class ValuePrecedeConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param s  先行しなければならない値（定数）
+     * @param t  後続の値（定数）
+     * @param xs 対象変数列
+     */
+    ValuePrecedeConstraint(Domain::value_type s, Domain::value_type t,
+                           std::vector<VariablePtr> xs);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    Domain::value_type s_;
+    Domain::value_type t_;
+    size_t n_;
+
+    /**
+     * @brief 全再計算伝播の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @param save_point 探索モード時の entailment フラグ設定に使用
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed, int save_point = -1);
+};
+
+
+/**
+ * @brief lex_less / lex_lesseq 制約: x が y より辞書順で小さい（か等しい）
+ *
+ * fzn_lex_less_int / fzn_lex_lesseq_int（と bool 変種）を mznlib でこの
+ * propagator に経路付けする。lex_chain_* は std が連続ペアの lex_lesseq に
+ * 分解するので自動的に native 化される。std の bool チェーン分解
+ * （位置ごとの reified 比較）を回避する。
+ *
+ * 伝播（全再計算・確定等値 prefix 走査）:
+ * - 先頭から両者確定かつ等値の間だけ進み、最初の非強制等値位置 i で
+ *   x[i] ≤ y[i] の bounds を強制（prefix が等値強制なら x[i] > y[i] は違反）
+ * - x[i] < y[i] が保証されたら constraint は充足済み（それ以降は無拘束）
+ * - 最終比較位置では strict（または len(x) > len(y)）なら x[i] < y[i] を強制
+ * - 配列長は異なってよい（等値 prefix で短い方が辞書順で先）
+ *
+ * ステートレスな全再計算 batch propagator（bin_packing_load と同方式）。
+ * var_ids_ レイアウト: [x[0..nx-1], y[0..ny-1]]
+ */
+class LexLessEqConstraint : public Constraint {
+public:
+    /**
+     * @brief コンストラクタ
+     * @param xs     左辺の変数列
+     * @param ys     右辺の変数列
+     * @param strict true なら lex_less（厳密）、false なら lex_lesseq
+     */
+    LexLessEqConstraint(std::vector<VariablePtr> xs,
+                        std::vector<VariablePtr> ys,
+                        bool strict);
+
+    std::string name() const override;
+
+    PresolveResult presolve(Model& model) override;
+    bool prepare_propagation(Model& model) override;
+
+    bool on_instantiate(Model& model, int save_point,
+                        size_t internal_var_idx,
+                        Domain::value_type value,
+                        Domain::value_type prev_min, Domain::value_type prev_max) override;
+    bool on_final_instantiate(const Model& model) override;
+
+    bool on_set_min(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_min, Domain::value_type old_min) override;
+    bool on_set_max(Model& model, int save_point,
+                    size_t internal_var_idx,
+                    Domain::value_type new_max, Domain::value_type old_max) override;
+    bool on_remove_value(Model& model, int save_point,
+                         size_t internal_var_idx,
+                         Domain::value_type removed_value) override;
+
+    bool propagate_batch(Model& model, int save_point) override;
+
+    void rewind_to(int save_point) override;  // ステートレス（no-op）
+
+private:
+    size_t nx_;
+    size_t ny_;
+    bool strict_;
+
+    /**
+     * @brief 全再計算伝播の本体
+     * @param direct true=presolve（直接ドメイン操作）、false=search（enqueue）
+     * @param changed 何か変更したら true
+     * @param save_point 探索モード時の entailment フラグ設定に使用
+     * @return 矛盾なら false
+     */
+    bool propagate_impl(Model& model, bool direct, bool& changed, int save_point = -1);
 };
 
 } // namespace sabori_csp

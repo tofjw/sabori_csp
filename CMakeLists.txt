@@ -18,6 +18,23 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ターゲットアーキテクチャ（SIMD 自動ベクトル化の有効化）
+# 既定 x86-64-v3 = AVX2 + BMI2 + FMA（配布可能な現行 CPU の共通基盤）。
+# ローカル最速を測るなら -DSABORI_MARCH=native（AVX-512 も解禁）。
+# 無効化は -DSABORI_MARCH=OFF。
+set(SABORI_MARCH "x86-64-v3" CACHE STRING "Target arch for SIMD (-march=...); 'OFF' to disable")
+if(NOT SABORI_MARCH STREQUAL "OFF")
+  include(CheckCXXCompilerFlag)
+  set(_sabori_arch_flag "-march=${SABORI_MARCH}")
+  check_cxx_compiler_flag("${_sabori_arch_flag}" SABORI_MARCH_SUPPORTED)
+  if(SABORI_MARCH_SUPPORTED)
+    add_compile_options("${_sabori_arch_flag}")
+    message(STATUS "SIMD: enabling ${_sabori_arch_flag}")
+  else()
+    message(WARNING "SIMD: compiler rejects ${_sabori_arch_flag}; building without it")
+  endif()
+endif()
+
 # Find Bison and Flex (only needed for FlatZinc solver)
 option(BUILD_FZN "Build FlatZinc solver (requires Bison/Flex)" ON)
 if(BUILD_FZN)

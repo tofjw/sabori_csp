@@ -326,6 +326,7 @@ private:
     int64_t invf_offset_;  ///< invf の値域の最小値 (= min(index_set(f)))
 };
 
+
 } // namespace sabori_csp
 
 #endif // SABORI_CSP_CONSTRAINTS_GLOBAL_GRAPH_HPP

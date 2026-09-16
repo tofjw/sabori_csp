@@ -274,10 +274,16 @@ bool TableConstraint::prepare_propagation(Model& model) {
 
     if (table_is_empty()) return false;
 
-    trail_.clear();
+    trail_diffs_.clear();
+    trail_markers_.clear();
     trail_generation_ = 0;
     std::fill(word_saved_at_.begin(), word_saved_at_.end(), 0);
-    filter_gen_ = 0;
+    // filter_gen_ の意味論: word_modified_at_[w] == filter_gen_ が
+    // 「現在の開いたラウンド（前回 filter 以降）で変更された」を表す。
+    // イベントハンドラは現 gen でマークだけ行い、filter_domains が
+    // 実行完了時に gen を進めてラウンドを閉じる（バッチ集約対応）。
+    // 初期値: gen=1, marks=1 → 初回 filter は全 residual を検証する。
+    filter_gen_ = 1;
     std::fill(word_modified_at_.begin(), word_modified_at_.end(), 1);
     init_watches();
     return true;
@@ -298,7 +304,6 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
     size_t offset = get_support_offset(internal_idx, value);
     if (offset == NO_SUPPORT) return false;
 
-    ++filter_gen_;
     save_trail_if_needed(model, save_point);
 
     if (use_sparse_) {
@@ -342,7 +347,11 @@ bool TableConstraint::on_instantiate(Model& model, int save_point,
 
     if (table_is_empty()) return false;
 
-    return filter_domains(model, static_cast<int>(internal_idx));
+    // filter はイベントごとに即時実行せず、キューが空になった時点の
+    // propagate_batch で1回だけ行う（イベント連鎖での full-pass 二次爆発防止。
+    // 巨大テーブル×多数イベントの groupsplitter で 27s/決定 → 実用速度に）
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 bool TableConstraint::on_final_instantiate(const Model& model) {
@@ -392,7 +401,6 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
     // supports にその値がなければ何もしない
     if (get_support_offset(internal_idx, removed_value) == NO_SUPPORT) return true;
 
-    ++filter_gen_;
     save_trail_if_needed(model, save_point);
 
     clear_supports_for(internal_idx, removed_value);
@@ -404,7 +412,8 @@ bool TableConstraint::on_remove_value(Model& model, int save_point,
 
     if (table_is_empty()) return false;
 
-    return filter_domains(model, -1);
+    model.schedule_constraint_batch(model_index());
+    return true;
 }
 
 bool TableConstraint::on_set_min(Model& model, int save_point,
@@ -418,7 +427,6 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
     for (auto val = old_min; val < new_min; ++val) {
         if (get_support_offset(internal_idx, val) == NO_SUPPORT) continue;
         if (!changed) {
-            ++filter_gen_;
             save_trail_if_needed(model, save_point);
             changed = true;
         }
@@ -431,7 +439,7 @@ bool TableConstraint::on_set_min(Model& model, int save_point,
             --last_nz_word_;
         }
         if (table_is_empty()) return false;
-        return filter_domains(model, -1);
+        model.schedule_constraint_batch(model_index());
     }
     return true;
 }
@@ -447,7 +455,6 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
     for (auto val = new_max + 1; val <= old_max; ++val) {
         if (get_support_offset(internal_idx, val) == NO_SUPPORT) continue;
         if (!changed) {
-            ++filter_gen_;
             save_trail_if_needed(model, save_point);
             changed = true;
         }
@@ -460,7 +467,7 @@ bool TableConstraint::on_set_max(Model& model, int save_point,
             --last_nz_word_;
         }
         if (table_is_empty()) return false;
-        return filter_domains(model, -1);
+        model.schedule_constraint_batch(model_index());
     }
     return true;
 }
@@ -503,19 +510,25 @@ bool TableConstraint::clear_supports_for(size_t internal_idx, Domain::value_type
 }
 
 void TableConstraint::rewind_to(int save_point) {
-    while (!trail_.empty() && trail_.back().first > save_point) {
-        for (auto& [w, old_val] : trail_.back().second.word_diffs) {
-            current_table_[w] = old_val;
+    // マーカーを新しい順に処理（deepest-first）。各マーカー内の word は generation
+    // dedup により一意なので復元順は不問。resize で巻き戻し（ヒープ解放なし）。
+    while (!trail_markers_.empty() && trail_markers_.back().save_point > save_point) {
+        const TrailMarker& m = trail_markers_.back();
+        for (size_t i = m.diff_start; i < trail_diffs_.size(); ++i) {
+            current_table_[trail_diffs_[i].first] = trail_diffs_[i].second;
         }
-        last_nz_word_ = trail_.back().second.old_last_nz_word;
-        trail_.pop_back();
+        trail_diffs_.resize(m.diff_start);
+        last_nz_word_ = m.old_last_nz_word;
+        trail_markers_.pop_back();
     }
 }
 
 void TableConstraint::save_trail_if_needed(Model& model, int save_point) {
-    if (trail_.empty() || trail_.back().first != save_point) {
+    if (trail_markers_.empty() || trail_markers_.back().save_point != save_point) {
         ++trail_generation_;
-        trail_.push_back({save_point, {{}, last_nz_word_}});
+        trail_markers_.push_back({save_point,
+                                  static_cast<uint32_t>(trail_diffs_.size()),
+                                  last_nz_word_});
         model.mark_constraint_dirty(model_index(), save_point);
     }
 }
@@ -605,7 +618,15 @@ bool TableConstraint::filter_domains(Model& model, int skip_var_idx) {
             }
         }
     }
+    // ラウンドを閉じる: 以降のイベントは新しいラウンドとしてマークされる。
+    // （word_modified_at_[w] == filter_gen_ が「前回 filter 以降に変更」の意味）
+    ++filter_gen_;
     return true;
+}
+
+bool TableConstraint::propagate_batch(Model& model, int /*save_point*/) {
+    if (table_is_empty()) return false;
+    return filter_domains(model, -1);
 }
 
 bool TableConstraint::has_support(size_t var_idx, Domain::value_type value) const {

@@ -27,6 +27,9 @@ bool Solver::propagate_instantiate(Model& model, size_t var_idx,
 
     const auto& constraint_indices = model.constraints_for_var(var_idx);
     for (const auto& w : constraint_indices) {
+        // 充足済み制約はコールバック自体をスキップ（フラット配列の inline 読み。
+        // 仮想呼び出し + 本体より桁違いに安い）
+        if (model.is_constraint_entailed(w.constraint_idx)) continue;
         if (!record_constraint_call(model, w.constraint_idx, var_idx, [&]{
             return constraints[w.constraint_idx]->on_instantiate(model, current_decision_,
                         w.internal_var_idx, val, prev_min, prev_max);
@@ -122,6 +125,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_min = model.var_min(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
+                    if (model.is_constraint_entailed(w.constraint_idx)) continue;
                     if (!invoke_cb(var_idx, w, [&]{
                         return constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                             w.internal_var_idx, actual_new_min, prev_min);
@@ -154,6 +158,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 auto actual_new_max = model.var_max(var_idx);
                 const auto& constraint_indices = model.constraints_for_var(var_idx);
                 for (const auto& w : constraint_indices) {
+                    if (model.is_constraint_entailed(w.constraint_idx)) continue;
                     if (!invoke_cb(var_idx, w, [&]{
                         return constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                             w.internal_var_idx, actual_new_max, prev_max);
@@ -189,6 +194,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // 下限が変化した場合 → on_set_min
                 if (new_min > prev_min) {
                     for (const auto& w : constraint_indices) {
+                        if (model.is_constraint_entailed(w.constraint_idx)) continue;
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_set_min(model, current_decision_,
                                 w.internal_var_idx, new_min, prev_min);
@@ -204,6 +210,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // 上限が変化した場合 → on_set_max
                 if (new_max < prev_max) {
                     for (const auto& w : constraint_indices) {
+                        if (model.is_constraint_entailed(w.constraint_idx)) continue;
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_set_max(model, current_decision_,
                                 w.internal_var_idx, new_max, prev_max);
@@ -219,6 +226,7 @@ PropagationResult Solver::process_queue(Model& model) {
                 // removed_value が新しい範囲内 → on_remove_value も呼ぶ
                 if (removed_value > new_min && removed_value < new_max) {
                     for (const auto& w : constraint_indices) {
+                        if (model.is_constraint_entailed(w.constraint_idx)) continue;
                         if (!invoke_cb(var_idx, w, [&]{
                             return constraints[w.constraint_idx]->on_remove_value(model, current_decision_,
                                 w.internal_var_idx, removed_value);
@@ -238,6 +246,7 @@ PropagationResult Solver::process_queue(Model& model) {
     size_t batch_idx = model.pop_scheduled_constraint();
     if (batch_idx == SIZE_MAX) break;
     if (stopped_) return PropagationResult::Stopped;
+    if (model.is_constraint_entailed(batch_idx)) continue;
 
     if (!record_constraint_call(model, batch_idx,
                                 constraints[batch_idx]->var_ids_ref().front(), [&]{

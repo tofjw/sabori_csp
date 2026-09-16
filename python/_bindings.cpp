@@ -387,6 +387,45 @@ PYBIND11_MODULE(_sabori_csp, m) {
         .def(py::init<VariablePtr, std::vector<VariablePtr>>(),
              py::arg("n_var"), py::arg("x_vars"));
 
+    py::class_<BinPackingLoadConstraint, Constraint,
+               std::shared_ptr<BinPackingLoadConstraint>>(
+            m, "BinPackingLoadConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>,
+                      std::vector<int64_t>, int64_t>(),
+             py::arg("loads"), py::arg("bins"), py::arg("weights"),
+             py::arg("index_offset") = 0);
+
+    py::class_<GlobalCardinalityConstraint, Constraint,
+               std::shared_ptr<GlobalCardinalityConstraint>>(
+            m, "GlobalCardinalityConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<int64_t>,
+                      std::vector<VariablePtr>>(),
+             py::arg("xs"), py::arg("cover"), py::arg("counts"));
+
+    py::class_<ValuePrecedeConstraint, Constraint,
+               std::shared_ptr<ValuePrecedeConstraint>>(
+            m, "ValuePrecedeConstraint")
+        .def(py::init<Domain::value_type, Domain::value_type,
+                      std::vector<VariablePtr>>(),
+             py::arg("s"), py::arg("t"), py::arg("xs"));
+
+    py::class_<LexLessEqConstraint, Constraint,
+               std::shared_ptr<LexLessEqConstraint>>(
+            m, "LexLessEqConstraint")
+        .def(py::init<std::vector<VariablePtr>, std::vector<VariablePtr>, bool>(),
+             py::arg("xs"), py::arg("ys"), py::arg("strict"));
+
+    py::class_<SubcircuitConstraint, Constraint,
+               std::shared_ptr<SubcircuitConstraint>>(
+            m, "SubcircuitConstraint")
+        .def(py::init<std::vector<VariablePtr>>(), py::arg("vars"));
+
+    py::class_<IncreasingConstraint, Constraint,
+               std::shared_ptr<IncreasingConstraint>>(
+            m, "IncreasingConstraint")
+        .def(py::init<std::vector<VariablePtr>, bool>(),
+             py::arg("vars"), py::arg("strict") = false);
+
     // ---- Logical constraints ----
     py::class_<ArrayBoolAndConstraint, Constraint, std::shared_ptr<ArrayBoolAndConstraint>>(
             m, "ArrayBoolAndConstraint")

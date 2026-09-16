@@ -313,6 +313,7 @@ public:
      * @param limit fail上限（0=probe無効）
      */
     void set_probe_fail_limit(int limit) { probe_fail_limit_ = limit; }
+    void set_bottomup_fail_limit(int limit) { bottomup_fail_limit_ = limit; }
 
 private:
     void log_presolve_start(const Model& model) const;
@@ -417,6 +418,28 @@ private:
     ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
 
     /**
+     * @brief bottom-up optimistic probe（G1 ペナルティ和対策、SABORI_BOTTOMUP で opt-in）
+     *
+     * リスタート時に lb 側から obj ≤ lb+δ を投機的に試す。ペナルティ和型では
+     * tight bound 自体が伝播ガイドになる（Σ ≤ K が大半のペナルティを 0 に強制）。
+     * SAT → 準最適解へジャンプ / 証明付き UNSAT → root で lb 引き上げ（健全）/
+     * UNKNOWN → δ 半減 + 指数バックオフ。投機中に学習される NoGood は仮定を
+     * decision literal として含む条件付き連言なので大域健全（improvement probe と同機構）。
+     */
+    ProbeAction run_bottomup_probe(Model& model, SolutionCallback& callback, int root_point);
+
+    /**
+     * @brief root probing / failed literal 検出（SABORI_PROBE_ROOT で opt-in）
+     *
+     * 探索開始前に、ドメインサイズ2の未確定変数へ両値を仮置き伝播し、
+     * 片側が矛盾すれば反対値を root で確定する（伝播のみ・探索なしなので安価）。
+     * 確定が連鎖しうるため進捗がある間は限定ラウンドで繰り返す。
+     * 全解探索でも健全（矛盾側の値を持つ解は存在しない）。
+     * @return false = root で矛盾（UNSAT 確定）
+     */
+    bool run_root_probing(Model& model);
+
+    /**
      * @brief handle_find_all_solution の戻り値
      *
      * ContinueLoop: 解を NoGood 登録し探索継続（inner restart ループを continue）。
@@ -515,23 +538,12 @@ private:
         //   0 = 制約からの加点なし（activity は学習由来のみ）
         //   1 = 基底クラスの poor man's explanation を強制（構造特化を無効化）
         //   2 = 制約ごとの構造特化オーバーライド（既定・現行動作）
-        // さらに SABORI_BUMP_STRUCT_ONLY=<name部分一致> が設定されていれば、
-        //   その名前を含む制約だけ構造特化、それ以外は基底に強制する（制約別寄与の切り分け用）。
         if (bump_mode_ == 0) {
             return;
         }
         const auto& constraint = model.constraints()[constraint_idx];
         bool need_rescale = false;
-        bool use_structural;
-        if (!bump_struct_only_.empty()) {
-            if (!struct_mask_built_ || structural_mask_.size() != model.constraints().size()) {
-                build_structural_mask(model);
-            }
-            use_structural = structural_mask_[constraint_idx] != 0;
-        } else {
-            use_structural = (bump_mode_ == 2);
-        }
-        if (use_structural) {
+        if (bump_mode_ == 2) {
             constraint->bump_activity(model, trigger_var_idx, activity_.data(), activity_inc_, need_rescale, rng_);
         } else {
             // 明示修飾で仮想ディスパッチを殺し、基底実装を強制する。
@@ -540,16 +552,6 @@ private:
         if (need_rescale) {
             rescale_activities();
         }
-    }
-
-    /// SABORI_BUMP_STRUCT_ONLY 用: 各制約の name() が指定語を含むか一度だけ判定してマスク化。
-    inline void build_structural_mask(const Model& model) {
-        const auto& cs = model.constraints();
-        structural_mask_.assign(cs.size(), 0);
-        for (size_t i = 0; i < cs.size(); ++i) {
-            structural_mask_[i] = (cs[i]->name().find(bump_struct_only_) != std::string::npos) ? 1 : 0;
-        }
-        struct_mask_built_ = true;
     }
 
     /**
@@ -661,9 +663,6 @@ private:
     // 設定
     bool nogood_learning_ = true;
     int bump_mode_ = 2;  ///< 計測用 ablation: 制約側 activity 配分 (0=なし/1=基底/2=構造特化, 既定2)
-    std::string bump_struct_only_;       ///< 計測用: 指定 name を含む制約だけ構造特化（空=無効）
-    std::vector<uint8_t> structural_mask_;  ///< constraint_idx → 構造特化を使うか
-    bool struct_mask_built_ = false;
     bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
     bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
     bool onehot_enabled_ = true;  ///< 計測用 ablation: one-hot チャネル集約 presolve（SABORI_ONEHOT=0 で無効, 既定有効）
@@ -709,6 +708,18 @@ private:
     PhaseRewardPolicy phase_policy_;  ///< phase hint 適用下限 p_min の適応（SABORI_PHASE=bandit）
     size_t bisection_threshold_ = 8;  // ドメインサイズがこの値を超えたら二分割（0=無効）
     int probe_fail_limit_ = 5;      // improvement probe の fail 上限（0=無効）
+    int bottomup_fail_limit_ = 0;   // bottom-up probe の fail 予算（0=無効, SABORI_BOTTOMUP）
+    Domain::value_type bottomup_delta_ = 0;  // 楽観幅 δ（UNSAT で倍増+1 / UNKNOWN で半減）
+    int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
+    int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
+    int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
+    int root_probe_limit_ = 0;               // root probing の probe 予算 (0=無効, SABORI_PROBE_ROOT)
+    int promote_impact_k_ = 0;               // impact 上位 K の defined 変数を昇格 (0=無効, SABORI_PROMOTE_IMPACT)
+    int promote_impact_period_ = 8;          // 昇格再実行のリスタート周期 (0=開始時のみ, SABORI_PROMOTE_IMPACT_PERIOD)
+    size_t promote_impact_total_ = 0;        // 累計昇格数 (上限 8*K のガード用)
+    bool bottomup_isolate_ = false;          // probe の activity 汚染を隔離 (SABORI_BOTTOMUP_ISOLATE)
+    std::vector<double> bottomup_saved_activity_;        // 隔離用スナップショット
+    std::vector<int> bottomup_saved_temporal_;
 
     // 最適化状態
     bool optimizing_ = false;

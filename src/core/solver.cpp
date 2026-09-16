@@ -16,6 +16,41 @@ Solver::Solver()
     : rng_(12345678) {
     // 計測用: SABORI_SEED が設定されていれば RNG シードを差し替える（多シード検証用）。
     // 未設定なら従来どおり固定シード（デフォルト動作は不変）。
+    // 計測用: SABORI_BOTTOMUP=<fail予算> で bottom-up optimistic probe を有効化。
+    if (const char* env = std::getenv("SABORI_BOTTOMUP")) {
+        bottomup_fail_limit_ = std::atoi(env);
+        // SABORI_BOTTOMUP=1 は「既定構成で有効化」の糖衣
+        // (グリッド計測 bench_bottomup.py 2026-07-09: budget=2000,
+        //  cutoff=/8, isolate=off が G1 net +5 / 対照への害なしで最良)
+        if (bottomup_fail_limit_ == 1) bottomup_fail_limit_ = 2000;
+    }
+    if (const char* env = std::getenv("SABORI_BOTTOMUP_ISOLATE")) {
+        bottomup_isolate_ = std::atoi(env) != 0;
+    }
+    if (const char* env = std::getenv("SABORI_BOTTOMUP_CUTOFF")) {
+        bottomup_cutoff_denom_ = std::atoi(env);
+    }
+    // 計測用: SABORI_PROBE_ROOT=<probe予算> で root probing を有効化。
+    // =1 は既定予算 2000 の糖衣。伝播のみの failed literal 検出 (G4 対策候補)。
+    if (const char* env = std::getenv("SABORI_PROBE_ROOT")) {
+        root_probe_limit_ = std::atoi(env);
+        if (root_probe_limit_ == 1) root_probe_limit_ = 2000;
+    }
+    // 計測用: SABORI_PROMOTE_IMPACT=<K> で impact 上位 K の defined 変数を
+    // decision 層へ昇格 (=1 は K=32 の糖衣)。probing の副産物 (両分岐の trail 長)
+    // を impact 尺度に使うため、root probing を暗黙に有効化する。
+    // SABORI_PROMOTE_IMPACT_PERIOD=<R> でリスタート R 回ごとに再計測・追加昇格
+    // (0=探索開始時のみ、既定 8)。
+    if (const char* env = std::getenv("SABORI_PROMOTE_IMPACT")) {
+        promote_impact_k_ = std::atoi(env);
+        if (promote_impact_k_ == 1) promote_impact_k_ = 32;
+        if (promote_impact_k_ > 0 && root_probe_limit_ <= 0) {
+            root_probe_limit_ = 2000;
+        }
+    }
+    if (const char* env = std::getenv("SABORI_PROMOTE_IMPACT_PERIOD")) {
+        promote_impact_period_ = std::atoi(env);
+    }
     if (const char* env = std::getenv("SABORI_SEED")) {
         rng_.seed(static_cast<std::mt19937::result_type>(std::strtoul(env, nullptr, 10)));
     }
@@ -28,10 +63,6 @@ Solver::Solver()
     //   0 = 制約からの加点なし / 1 = 基底の poor man's explanation / 2 = 構造特化
     if (const char* env = std::getenv("SABORI_BUMP_MODE")) {
         bump_mode_ = std::atoi(env);
-    }
-    // 計測用: 指定 name を含む制約だけ構造特化、他は基底に強制（制約別寄与の切り分け）。
-    if (const char* env = std::getenv("SABORI_BUMP_STRUCT_ONLY")) {
-        bump_struct_only_ = env;
     }
     // 計測用: SABORI_BLOOM=0 で NoGood-Bloom 重なりタイブレークを無効化（既定有効）。
     if (const char* env = std::getenv("SABORI_BLOOM")) {
@@ -75,15 +106,6 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {
         nogood_mgr_.set_activity_bump(std::atoi(env) == 0);
     }
-    // 計測用: NoGood bump をさらに学習時/伝播時に分けて切る。
-    //   SABORI_NG_LEARN_BUMP=0 → 学習時 bump（0.01 スケール）のみ無効
-    //   SABORI_NG_PROP_BUMP=0  → 伝播時 bump（フルスケール/n）のみ無効
-    if (const char* env = std::getenv("SABORI_NG_LEARN_BUMP")) {
-        nogood_mgr_.set_learn_bump(std::atoi(env) != 0);
-    }
-    if (const char* env = std::getenv("SABORI_NG_PROP_BUMP")) {
-        nogood_mgr_.set_prop_bump(std::atoi(env) != 0);
-    }
     // 計測用: SABORI_DECVAR_BUMP=0 で決定変数の activity bump（handle_failure, フルスケール）を無効化。
     if (const char* env = std::getenv("SABORI_DECVAR_BUMP")) {
         decvar_bump_enabled_ = (std::atoi(env) != 0);
@@ -97,15 +119,14 @@ Solver::Solver()
         probe_enabled_ = (std::atoi(env) != 0);
     }
     // 計測用: SABORI_RESTART_POLICY で outer 調整の決定則を差し替える。
-    // adaptive 系アブレーション（パラメータ包絡は現行と同一、信号との結合だけを変える）:
-    //   adaptive / inverted / prune_only / depth_only / always_tighten / always_widen /
-    //   scrambled[:p]（p=tighten確率、既定0.5）
-    // fixed 系（inner/outer 機構をバイパスし文献標準のリスタート列を生成）:
-    //   luby:<base> / geometric:<ratio>[:<base>] / constant:<limit>
+    //   adaptive        — ライブ信号で tighten/widen（未設定時と違い tighten が実際に発火する）
+    //   scrambled[:p]   — 信号無視の確率 p コイントス（既定0.5）
+    //   luby:<base>     — inner/outer 機構をバイパスし文献標準の Luby 列
+    // （inverted/prune_only/depth_only/always_*/geometric/constant は
+    //   2026-07 のアブレーション完了につき撤去 — pre-flag-purge タグ参照）
     //
     // 注意: 未設定時は出荷挙動（stale stats により prune_delta 恒等 0 → 事実上
-    // always-widen）をそのまま保存する。設定時はライブ信号 (restart_signal_live_)
-    // を使うため、"adaptive" 指定は未設定と同じではない（tighten が実際に発火する）。
+    // always-widen）をそのまま保存する。
     if (const char* env = std::getenv("SABORI_RESTART_POLICY")) {
         restart_signal_live_ = true;
         std::string spec(env);
@@ -124,22 +145,8 @@ Solver::Solver()
             restart_ctrl_.set_policy(Policy::Adaptive);
         } else if (name == "scrambled") {
             restart_ctrl_.set_policy(Policy::Scrambled, param_at(1));
-        } else if (name == "inverted") {
-            restart_ctrl_.set_policy(Policy::Inverted);
-        } else if (name == "prune_only") {
-            restart_ctrl_.set_policy(Policy::PruneOnly);
-        } else if (name == "depth_only") {
-            restart_ctrl_.set_policy(Policy::DepthOnly);
-        } else if (name == "always_tighten") {
-            restart_ctrl_.set_policy(Policy::AlwaysTighten);
-        } else if (name == "always_widen") {
-            restart_ctrl_.set_policy(Policy::AlwaysWiden);
         } else if (name == "luby") {
             restart_ctrl_.set_policy(Policy::Luby, param_at(1));
-        } else if (name == "geometric") {
-            restart_ctrl_.set_policy(Policy::Geometric, param_at(1), param_at(2));
-        } else if (name == "constant") {
-            restart_ctrl_.set_policy(Policy::Constant, param_at(1));
         } else {
             std::cerr << "% WARNING: unknown SABORI_RESTART_POLICY '" << spec
                       << "' (using adaptive)\n";
