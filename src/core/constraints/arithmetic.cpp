@@ -141,6 +141,99 @@ bool IntTimesConstraint::propagate_bounds(Model& model) {
     return true;
 }
 
+bool IntTimesConstraint::feasibility_filter(Model& model, size_t s_id, size_t o_id) {
+    // s(スパース) の各値 vs について、vs * [o_min, o_max] が [z_min, z_max] と
+    // 交わらなければ vs は実現不能なので除去する。O(|dom(s)|)。
+    auto o_min = model.var_min(o_id);
+    auto o_max = model.var_max(o_id);
+    auto z_min = model.var_min(z_id_);
+    auto z_max = model.var_max(z_id_);
+    std::vector<Domain::value_type> vals;
+    model.variable(s_id)->domain().copy_values_to(vals);
+    for (auto vs : vals) {
+        auto p1 = vs * o_min;
+        auto p2 = vs * o_max;
+        auto lo = std::min(p1, p2);
+        auto hi = std::max(p1, p2);
+        if (hi < z_min || lo > z_max) {
+            model.enqueue_remove_value(s_id, vs);
+        }
+    }
+    return true;
+}
+
+bool IntTimesConstraint::divisor_filter(Model& model, size_t s_id, size_t o_id,
+                                         Domain::value_type vz) {
+    // z=vz 確定。x*y=vz で s(スパース) を約数に絞り、相手 o を対応値集合に絞る。
+    std::vector<Domain::value_type> vals;
+    model.variable(s_id)->domain().copy_values_to(vals);
+    std::vector<Domain::value_type> o_candidates;
+    bool o_unconstrained = false;  // vz==0 かつ vs==0 が生き残ると o は無制約
+    for (auto vs : vals) {
+        if (vs == 0) {
+            if (vz != 0) {
+                model.enqueue_remove_value(s_id, vs);  // 0*o=vz(≠0) 不可
+            } else {
+                o_unconstrained = true;  // 0*o=0 は任意 o で成立
+            }
+            continue;
+        }
+        if (vz % vs != 0) { model.enqueue_remove_value(s_id, vs); continue; }
+        auto vo = vz / vs;
+        if (!model.contains(o_id, vo)) { model.enqueue_remove_value(s_id, vs); continue; }
+        o_candidates.push_back(vo);
+    }
+
+    if (o_unconstrained) return true;
+    if (o_candidates.empty()) return false;  // s が全滅 → 矛盾
+
+    std::sort(o_candidates.begin(), o_candidates.end());
+    o_candidates.erase(std::unique(o_candidates.begin(), o_candidates.end()),
+                       o_candidates.end());
+
+    // o を候補集合に絞る。bounds-only ドメインでは removed リスト肥大を避けるため
+    // bounds のみ絞る。full/sparse ドメインなら hole も除去して完全に約数集合へ。
+    auto& o_dom = model.variable(o_id)->domain();
+    model.enqueue_set_min(o_id, o_candidates.front());
+    model.enqueue_set_max(o_id, o_candidates.back());
+    if (!o_dom.is_bounds_only()) {
+        std::vector<Domain::value_type> ovals;
+        o_dom.copy_values_to(ovals);
+        for (auto vo : ovals) {
+            if (!std::binary_search(o_candidates.begin(), o_candidates.end(), vo)) {
+                model.enqueue_remove_value(o_id, vo);
+            }
+        }
+    }
+    return true;
+}
+
+bool IntTimesConstraint::propagate_sparse(Model& model) {
+    // x^2=z（x_id_==y_id_）は on_instantiate 側で domain 反復済みなので対象外
+    if (x_id_ == y_id_) return true;
+    constexpr size_t kSparseLimit = 64;
+
+    auto z_min = model.var_min(z_id_);
+    auto z_max = model.var_max(z_id_);
+    auto x_size = model.var_size(x_id_);
+    auto y_size = model.var_size(y_id_);
+
+    // z 確定: スパースオペランド（小さい方）を約数に絞る（最も効く経路）
+    if (z_min == z_max) {
+        if (x_size <= kSparseLimit && x_size <= y_size) {
+            if (!divisor_filter(model, x_id_, y_id_, z_min)) return false;
+        } else if (y_size <= kSparseLimit) {
+            if (!divisor_filter(model, y_id_, x_id_, z_min)) return false;
+        }
+    }
+
+    // スパースオペランドの実現不能値を除去（z 未確定でも有効）
+    if (x_size <= kSparseLimit && !feasibility_filter(model, x_id_, y_id_)) return false;
+    if (y_size <= kSparseLimit && !feasibility_filter(model, y_id_, x_id_)) return false;
+
+    return true;
+}
+
 bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
                                          size_t internal_var_idx, Domain::value_type value,
                                          Domain::value_type prev_min,
@@ -323,7 +416,7 @@ bool IntTimesConstraint::on_instantiate(Model& model, int save_point,
         }
     }
 
-    return true;
+    return propagate_sparse(model);
 }
 
 bool IntTimesConstraint::on_set_min(Model& model, int /*save_point*/,
@@ -359,7 +452,7 @@ bool IntTimesConstraint::on_set_min(Model& model, int /*save_point*/,
                                                 div_floor_int(z_max, x_min), div_floor_int(z_max, x_max)}));
     }
 
-    return true;
+    return propagate_sparse(model);
 }
 
 bool IntTimesConstraint::on_set_max(Model& model, int save_point,

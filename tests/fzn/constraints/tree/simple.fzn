@@ -1,0 +1,10 @@
+% tree SAT: subgraph over 3 nodes, 2 edges (1-2),(2-3) forming a rooted tree.
+% 全部分木(単一ノード×3 + 2ノード木×2 + 3ノード木パス×2 = 7)を列挙。
+var 1..3: r :: output_var;
+var bool: n1 :: output_var;
+var bool: n2 :: output_var;
+var bool: n3 :: output_var;
+var bool: e1 :: output_var;
+var bool: e2 :: output_var;
+constraint sabori_tree(3, 2, [1, 2], [2, 3], r, [n1, n2, n3], [e1, e2]);
+solve satisfy;

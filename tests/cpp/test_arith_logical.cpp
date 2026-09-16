@@ -1107,6 +1107,51 @@ TEST_CASE("IntTimesConstraint mixed sign propagation", "[constraint][int_times]"
     }
 }
 
+TEST_CASE("IntTimesConstraint sparse-operand randomized soundness",
+          "[constraint][int_times]") {
+    // スパースオペランド domain 伝播（divisor_filter / feasibility_filter）の健全性を
+    // ブルートフォースと照合。false UNSAT（正解の見逃し）を検出する。
+    std::mt19937 rng(20260725);
+    std::uniform_int_distribution<int> coin(0, 99);
+
+    // 2の冪を含むスパース値プール（mcm の ka を模す）
+    const std::vector<int64_t> pool = {-8, -4, -2, -1, 0, 1, 2, 4, 8};
+
+    for (int trial = 0; trial < 60; ++trial) {
+        // x: スパース（pool の部分集合）
+        std::vector<int64_t> xd;
+        for (auto v : pool) if (coin(rng) < 55) xd.push_back(v);
+        if (xd.empty()) xd.push_back(1);
+        // y: 区間
+        int64_t y_lo = -3 + (coin(rng) % 4);        // -3..0
+        int64_t y_hi = y_lo + 1 + (coin(rng) % 6);  // 幅 1..6
+        // z: 区間（時に狭く固定気味にして divisor_filter を踏む）
+        int64_t z_lo = -20 + (coin(rng) % 10);
+        int64_t z_hi = z_lo + (coin(rng) < 40 ? (coin(rng) % 3)     // 狭い（固定寄り）
+                                              : 10 + (coin(rng) % 20));
+
+        // ブルートフォース
+        size_t expected = 0;
+        for (auto vx : xd)
+            for (int64_t vy = y_lo; vy <= y_hi; ++vy)
+                for (int64_t vz = z_lo; vz <= z_hi; ++vz)
+                    if (vx * vy == vz) ++expected;
+
+        Model model;
+        auto x = model.create_variable("x", xd);
+        auto y = model.create_variable("y", y_lo, y_hi);
+        auto z = model.create_variable("z", z_lo, z_hi);
+        model.add_constraint(std::make_unique<IntTimesConstraint>(x, y, z));
+
+        Solver solver;
+        size_t actual = solver.solve_all(model, [](const Solution&) { return true; });
+
+        INFO("trial " << trial << " xd.size=" << xd.size()
+             << " y=[" << y_lo << "," << y_hi << "] z=[" << z_lo << "," << z_hi << "]");
+        REQUIRE(actual == expected);
+    }
+}
+
 // ============================================================================
 // CountEqConstraint tests
 // ============================================================================

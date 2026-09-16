@@ -1,0 +1,31 @@
+e1 = false;
+e2 = true;
+e3 = true;
+e4 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+e1 = true;
+e2 = true;
+e3 = true;
+e4 = false;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+e1 = true;
+e2 = false;
+e3 = true;
+e4 = true;
+n1 = true;
+n2 = true;
+n3 = true;
+n4 = true;
+r = 1;
+----------
+==========
