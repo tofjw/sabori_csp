@@ -307,10 +307,427 @@ Solver::ProbeAction Solver::run_improvement_probe(
     return ProbeAction::Continue;
 }
 
+Solver::ProbeAction Solver::run_bottomup_probe(
+        Model& model, SolutionCallback& callback, int root_point) {
+    // --- bottom-up optimistic probe: lb 側から obj <= lb+δ を投機的に試す ---
+    // ペナルティ和型 (G1) では tight bound 自体が伝播ガイドになる
+    // (Σpenalty <= K が大半のペナルティを 0 に強制し reified 網が連鎖する)。
+    // 学習される NoGood は仮定 (Leq/Geq) を decision literal として含む
+    // 条件付き連言なので大域健全。lb 引き上げは証明付き UNSAT のときのみ。
+    if (bottomup_fail_limit_ <= 0) return ProbeAction::Continue;
+    if (bottomup_skip_ > 0) {
+        --bottomup_skip_;
+        return ProbeAction::Continue;
+    }
+
+    // UNSAT (証明成功) が続く限り階段を連続で登る（生産的な間は投機を継続）。
+    // UNKNOWN で長期撤退。1 呼び出しの総ステップ数は安全のため上限を置く。
+    for (int step = 0; step < 64 && !stopped_; ++step) {
+
+    auto obj_lb = model.var_min(obj_var_idx_);
+    auto obj_ub = model.var_max(obj_var_idx_);
+    if (obj_lb >= obj_ub) return ProbeAction::Continue;  // 既に一点
+
+    Domain::value_type target;
+    if (minimize_) {
+        target = obj_lb + bottomup_delta_;
+        if (target >= obj_ub) target = obj_ub - 1;  // 真の部分問題に留める
+    } else {
+        target = obj_ub - bottomup_delta_;
+        if (target <= obj_lb) target = obj_lb + 1;
+    }
+
+    if (verbose_) {
+        std::cerr << "% [verbose] bottomup probe: obj=[" << obj_lb << ".." << obj_ub
+                  << "] target=" << target << " delta=" << bottomup_delta_
+                  << " budget=" << bottomup_fail_limit_ << "\n";
+    }
+
+    current_decision_++;
+    if (minimize_) {
+        decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Leq});
+        model.enqueue_set_max(obj_var_idx_, target);
+    } else {
+        decision_trail_.push_back({obj_var_idx_, target, Literal::Type::Geq});
+        model.enqueue_set_min(obj_var_idx_, target);
+    }
+
+    Domain::value_type probe_obj = 0;
+    std::optional<Solution> probe_solution;
+    SearchResult res2 = SearchResult::UNKNOWN;
+    bool probe_propagation_ok = false;
+    const size_t fails_before_step = stats_.fail_count;
+
+    if (process_queue(model) == PropagationResult::Ok) {
+        probe_propagation_ok = true;
+        // cl はフレーム毎のリトライ予算で深さ方向に爆発し得るため、
+        // グローバル fail 予算 (restart_fail_cutoff_) で打ち切る
+        size_t saved_cutoff = restart_fail_cutoff_;
+        restart_fail_cutoff_ = stats_.fail_count
+            + static_cast<size_t>(bottomup_fail_limit_);
+        res2 = run_search(model, std::numeric_limits<int>::max(), 0,
+                          [&probe_solution](const Solution& sol) {
+                              probe_solution = sol;
+                              return false;
+                          }, false);
+        restart_fail_cutoff_ = saved_cutoff;
+        if (res2 == SearchResult::SAT) {
+            probe_obj = model.value(obj_var_idx_);
+            const auto& variables = model.variables();
+            std::fill(current_best_assignment_.begin(),
+                      current_best_assignment_.end(), kNoValue);
+            for (size_t i = 0; i < variables.size(); ++i) {
+                if (model.is_instantiated(i)) {
+                    current_best_assignment_[i] = model.value(i);
+                }
+            }
+        }
+    }
+    bool probe_unsat = !probe_propagation_ok || res2 == SearchResult::UNSAT;
+
+    // 仮定を除去して root へ
+    decision_trail_.pop_back();
+    model.clear_pending_updates();
+    backtrack(model, root_point);
+    current_decision_ = root_point;
+
+    // probe の探索で var_selector_ の追跡状態が汚れるため再初期化
+    // （improvement probe 後に呼び出し元が行うのと同じ処置。これを怠ると
+    //   以降の select() が破綻し本探索が解を見つけられなくなる）
+    var_selector_.init_tracking(model);
+    unassigned_trail_.clear();
+
+    if (res2 == SearchResult::SAT) {
+        // obj_ub は root で best-1 に縮小済みなので probe 解は常に改善
+        bottomup_unknown_streak_ = 0;
+        mode_policy_.note_improvement();
+        best_objective_ = probe_obj;
+        best_solution_ = probe_solution;
+        if (verbose_) {
+            std::cerr << "% [verbose] bottomup probe improved: " << probe_obj << "\n";
+        }
+        if (callback) {
+            callback(*probe_solution);
+        }
+        nogood_mgr_.enqueue_unit_nogoods(model);
+        if (minimize_) {
+            model.enqueue_set_max(obj_var_idx_, probe_obj - 1);
+        } else {
+            model.enqueue_set_min(obj_var_idx_, probe_obj + 1);
+        }
+        auto pr = process_queue(model);
+        if (pr == PropagationResult::Stopped) return ProbeAction::BreakInnerLoop;
+        if (pr == PropagationResult::Conflict) {
+            model.clear_pending_updates();
+            sync_nogood_stats();
+            if (verbose_) {
+                std::cerr << "% [verbose] optimal (bottomup probe proved optimality)\n";
+            }
+            return ProbeAction::ReturnOptimal;
+        }
+    } else if (probe_unsat) {
+        // 証明付き UNSAT: obj > target が確定 → root で lb を引き上げ (健全)
+        bottomup_unknown_streak_ = 0;
+        bottomup_delta_ = bottomup_delta_ * 2 + 1;  // 階段を加速
+        if (verbose_) {
+            std::cerr << "% [verbose] bottomup probe UNSAT: lb past target=" << target
+                      << " step_fails=" << (stats_.fail_count - fails_before_step) << "\n";
+        }
+        nogood_mgr_.enqueue_unit_nogoods(model);
+        if (minimize_) {
+            model.enqueue_set_min(obj_var_idx_, target + 1);
+            if (best_objective_) model.enqueue_set_max(obj_var_idx_, *best_objective_ - 1);
+        } else {
+            model.enqueue_set_max(obj_var_idx_, target - 1);
+            if (best_objective_) model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
+        }
+        auto pr = process_queue(model);
+        if (pr == PropagationResult::Stopped) return ProbeAction::BreakInnerLoop;
+        if (pr == PropagationResult::Conflict) {
+            // lb が incumbent (or ドメイン) を横断 → best が最適 (解なしなら UNSAT)
+            model.clear_pending_updates();
+            sync_nogood_stats();
+            if (verbose_) {
+                std::cerr << "% [verbose] optimal (bottomup lb crossed bound)\n";
+            }
+            return ProbeAction::ReturnOptimal;
+        }
+        // 相転移カットオフ: 証明は成功したがコストが急増している場合、
+        // SAT/UNSAT 境界に接近している（次段はブローアウトの公算大）。
+        // 実測 (zephyrus, opt=12): step_fails は 0 → 2.5k → 4.7k → 壁(>20k)
+        // と超線形に上昇する。予算の 1/8 を超えたら階段を止め、lb 進捗を
+        // 保持したまま撤退して残り予算を本探索（+ 蓄積した lb の伝播）に回す。
+        if (bottomup_cutoff_denom_ > 0) {
+            const size_t step_cost = stats_.fail_count - fails_before_step;
+            if (step_cost * static_cast<size_t>(bottomup_cutoff_denom_)
+                    > static_cast<size_t>(bottomup_fail_limit_)) {
+                if (verbose_) {
+                    std::cerr << "% [verbose] bottomup phase-transition cutoff: "
+                              << "step_fails=" << step_cost << " lb="
+                              << model.var_min(obj_var_idx_) << "\n";
+                }
+                ++bottomup_unknown_streak_;
+                bottomup_skip_ = 64 << std::min(bottomup_unknown_streak_, 6);
+                return ProbeAction::Continue;
+            }
+        }
+        continue;  // 証明成功 (低コスト) → 次の階段を直ちに登る
+    } else {
+        // UNKNOWN: この tightness では予算内で決着せず → δ 半減 + 長期撤退
+        // （投機は「生産的な間だけ」。決着しない問題では本探索に道を譲る）
+        bottomup_delta_ /= 2;
+        ++bottomup_unknown_streak_;
+        bottomup_skip_ = 64 << std::min(bottomup_unknown_streak_, 6);
+        nogood_mgr_.enqueue_unit_nogoods(model);
+        if (best_objective_) {
+            if (minimize_) {
+                model.enqueue_set_max(obj_var_idx_, *best_objective_ - 1);
+            } else {
+                model.enqueue_set_min(obj_var_idx_, *best_objective_ + 1);
+            }
+        }
+        auto pr = process_queue(model);
+        if (pr == PropagationResult::Stopped) return ProbeAction::BreakInnerLoop;
+        if (pr == PropagationResult::Conflict) {
+            model.clear_pending_updates();
+            sync_nogood_stats();
+            return ProbeAction::ReturnOptimal;
+        }
+        return ProbeAction::Continue;  // UNKNOWN → 撤退
+    }
+
+    return ProbeAction::Continue;  // SAT → 本探索へ (obj は縮小済み)
+
+    }  // staircase loop
+    return ProbeAction::Continue;
+}
+
+bool Solver::run_root_probing(Model& model) {
+    // --- root probing / failed literal 検出 (SABORI_PROBE_ROOT, opt-in) ---
+    // ドメインサイズ2の未確定変数に両値を仮置き伝播し、片側矛盾なら反対値を
+    // root で確定。伝播のみ (探索なし) なので1probe は安価。確定は伝播連鎖で
+    // 他候補を落としうるため、進捗がある間は限定ラウンドで繰り返す。
+    if (root_probe_limit_ <= 0) return true;
+    const int root_point = current_decision_;
+
+    // probe 伝播中の過渡的矛盾は record_constraint_call 経由で bump_activity を
+    // 呼び、activity を汚染し rng_ を消費する (entailment フラグの教訓と同機構)。
+    // probe は無指向の総当たりで bump に情報価値がないため、activity / rng /
+    // activity_inc を snapshot/restore して探索軌道への副作用を消す
+    // (fixed=0 なら無効時と bit 同一の状態で本探索に入る)。
+    const std::vector<double> saved_activity = activity_;
+    const std::vector<int> saved_temporal = temporal_activity_;
+    const std::mt19937 saved_rng = rng_;
+    const double saved_activity_inc = activity_inc_;
+    std::vector<size_t> saved_order = var_selector_.var_order();
+
+    std::vector<size_t> cand;
+    const size_t n = model.variables().size();
+    for (size_t i = 0; i < n; ++i) {
+        if (!model.is_instantiated(i) && model.var_size(i) == 2) {
+            cand.push_back(i);
+        }
+    }
+    // 構造 activity の高い順 = 制約関与の濃い変数から (予算切れに備える)
+    std::sort(cand.begin(), cand.end(), [&](size_t a, size_t b) {
+        return activity_[a] > activity_[b];
+    });
+
+    int budget = root_probe_limit_;
+    size_t probed = 0, fixed = 0, fixed_defined = 0, tightened = 0;
+    bool interrupted = false;
+
+    // 両側生存ペアの共通剪定回収 (bounds 交差 = shaving 相当) 用の作業領域。
+    // probe のオーバーヘッドは既に払っているので、trail に残った両分岐の
+    // ドメイン縮小を「ついで」に回収する: どの解でも x=lo か x=hi なので、
+    // 両分岐で成り立つ bound は root で無条件に成り立つ。
+    const size_t nv = model.variables().size();
+    std::vector<uint32_t> mark_lo(nv, 0), mark_hi(nv, 0);
+    std::vector<Domain::value_type> lo_min(nv), lo_max(nv);
+    uint32_t epoch = 0;
+    std::vector<std::tuple<size_t, Domain::value_type, Domain::value_type>> tighten_cand;
+
+    // impact 昇格アーム用: 両側生存 probe の trail 長合計 = 分岐したときの
+    // 伝播影響力の実測値。defined 層は select 厳格優先で activity が死ぬため
+    // 浮上機構が効かない (2026-07-09 実測: G4 の unit fix は 100% defined)。
+    // 高 impact の defined 変数に decision 層への入場券を配る。
+    std::vector<std::pair<size_t, size_t>> impact;  // (trail長合計, vid)
+    const bool collect_impact =
+        promote_impact_k_ > 0 &&
+        promote_impact_total_ < static_cast<size_t>(8 * promote_impact_k_);
+
+    // 1 probe: v を仮置きして伝播、矛盾なら true。必ず root へ巻き戻す。
+    // 伝播成功時は巻き戻す前に on_ok(trail_from) で分岐内状態を回収できる
+    auto probe_fails = [&](size_t vid, Domain::value_type v, auto&& on_ok) {
+        const size_t trail_from = model.var_trail_size();
+        ++current_decision_;
+        decision_trail_.push_back({vid, v, Literal::Type::Eq});
+        model.enqueue_instantiate(vid, v);
+        auto pr = process_queue(model);
+        if (pr == PropagationResult::Ok) on_ok(trail_from);
+        decision_trail_.pop_back();
+        model.clear_pending_updates();
+        backtrack(model, root_point);
+        current_decision_ = root_point;
+        if (pr == PropagationResult::Stopped) interrupted = true;
+        return pr == PropagationResult::Conflict;
+    };
+
+    for (int round = 0; round < 3 && !interrupted; ++round) {
+        bool progress = false;
+        for (size_t vid : cand) {
+            if (budget <= 0 || interrupted || stopped_) break;
+            if (model.is_instantiated(vid)) continue;
+            --budget;
+            ++probed;
+            const auto lo = model.var_min(vid);
+            const auto hi = model.var_max(vid);
+
+            Domain::value_type forced = 0;
+            bool has_forced = false;
+            ++epoch;
+            tighten_cand.clear();
+            size_t impact_sum = 0;
+            if (probe_fails(vid, lo, [&](size_t from) {
+                    // lo 分岐で変化した変数の分岐内 bounds を記録
+                    impact_sum += model.var_trail_size() - from;
+                    model.for_each_trailed_var(from, [&](size_t w) {
+                        if (mark_lo[w] == epoch) return;
+                        mark_lo[w] = epoch;
+                        lo_min[w] = model.var_min(w);
+                        lo_max[w] = model.var_max(w);
+                    });
+                })) {
+                forced = hi;
+                has_forced = true;
+            } else if (!interrupted && probe_fails(vid, hi, [&](size_t from) {
+                    // hi 分岐でも変化した変数だけが交差候補
+                    impact_sum += model.var_trail_size() - from;
+                    model.for_each_trailed_var(from, [&](size_t w) {
+                        if (mark_hi[w] == epoch) return;
+                        mark_hi[w] = epoch;
+                        if (mark_lo[w] != epoch) return;
+                        tighten_cand.emplace_back(
+                            w, std::min(lo_min[w], model.var_min(w)),
+                            std::max(lo_max[w], model.var_max(w)));
+                    });
+                })) {
+                forced = lo;
+                has_forced = true;
+            }
+            if (interrupted) break;
+            if (!has_forced && collect_impact && model.is_defined_var(vid)) {
+                impact.push_back({impact_sum, vid});
+            }
+
+            if (has_forced) {
+                // 反対値を root レベルで確定 (全解探索でも健全: 矛盾側の値を
+                // 持つ解は存在しない)
+                model.enqueue_instantiate(vid, forced);
+                auto pr = process_queue(model);
+                if (pr == PropagationResult::Conflict) {
+                    return false;  // 両側矛盾 = root UNSAT
+                }
+                if (pr == PropagationResult::Stopped) {
+                    interrupted = true;
+                    break;
+                }
+                ++fixed;
+                if (model.is_defined_var(vid)) ++fixed_defined;
+                progress = true;
+                continue;
+            }
+
+            // 両側生存: 交差 bound が root より強ければ適用
+            bool any = false;
+            for (const auto& [w, cmin, cmax] : tighten_cand) {
+                if (cmin > model.var_min(w)) {
+                    model.enqueue_set_min(w, cmin);
+                    ++tightened;
+                    any = true;
+                }
+                if (cmax < model.var_max(w)) {
+                    model.enqueue_set_max(w, cmax);
+                    ++tightened;
+                    any = true;
+                }
+            }
+            if (any) {
+                auto pr = process_queue(model);
+                if (pr == PropagationResult::Conflict) {
+                    return false;  // 交差剪定は健全 → root UNSAT
+                }
+                if (pr == PropagationResult::Stopped) {
+                    interrupted = true;
+                    break;
+                }
+                progress = true;
+            }
+        }
+        if (!progress || budget <= 0) break;
+    }
+
+    activity_ = saved_activity;
+    temporal_activity_ = saved_temporal;
+    rng_ = saved_rng;
+    activity_inc_ = saved_activity_inc;
+    if (probed > 0) {
+        // probe 伝播の on_instantiate swap は var_order_ を恒久的に並べ替える
+        // (backtrack は end しか戻さない) ため、保存した順序ごと復元する。
+        // fixed=0 なら probe 前と bit 同一、fixed>0 なら確定分だけが後方へ移る。
+        var_selector_.restore_order(std::move(saved_order), model);
+        unassigned_trail_.clear();
+    }
+
+    // impact 上位 K の defined 変数を decision 層へ昇格 (意図的な軌道変更アーム)
+    size_t promoted = 0;
+    if (collect_impact && !impact.empty()) {
+        std::sort(impact.begin(), impact.end(), std::greater<>());
+        std::vector<size_t> to_promote;
+        const size_t cap = 8 * static_cast<size_t>(promote_impact_k_);
+        size_t quota = std::min(static_cast<size_t>(promote_impact_k_),
+                                cap - promote_impact_total_);
+        for (const auto& [imp, pvid] : impact) {
+            if (to_promote.size() >= quota || imp == 0) break;
+            if (model.is_instantiated(pvid)) continue;
+            if (var_selector_.is_decision_tier(pvid)) continue;  // 昇格済み
+            to_promote.push_back(pvid);
+        }
+        promoted = var_selector_.promote_to_decision(to_promote);
+        if (promoted > 0) {
+            promote_impact_total_ += promoted;
+            // 昇格変数の activity は defined 層で死んでいるので、decision 層で
+            // 即座に競争できる値を与える (無価値なら decay で自然に沈む)
+            double max_act = 0.0;
+            for (double a : activity_) max_act = std::max(max_act, a);
+            for (size_t pvid : to_promote) {
+                activity_[pvid] = std::max(activity_[pvid], max_act);
+            }
+            var_selector_.init_tracking(model);
+            unassigned_trail_.clear();
+        }
+    }
+
+    if (verbose_) {
+        std::cerr << "% [verbose] root probing: candidates=" << cand.size()
+                  << " probed=" << probed << " fixed=" << fixed
+                  << " (defined=" << fixed_defined
+                  << " decision=" << (fixed - fixed_defined) << ")"
+                  << " tightened=" << tightened
+                  << (promoted > 0 ? " promoted=" + std::to_string(promoted) : "")
+                  << (interrupted ? " (interrupted)" : "") << "\n";
+    }
+    return true;
+}
+
 std::optional<Solution> Solver::search_with_restart(Model& model,
                                                       SolutionCallback callback,
                                                       bool find_all) {
     int root_point = current_decision_;
+
+    if (!run_root_probing(model)) {
+        return std::nullopt;  // root で矛盾 = UNSAT
+    }
 
     if (verbose_) {
         std::cerr << "% [verbose] search_with_restart start"
@@ -413,6 +830,10 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 std::optional<Solution> Solver::search_with_restart_optimize(
         Model& model, SolutionCallback callback) {
     int root_point = current_decision_;
+
+    if (!run_root_probing(model)) {
+        return std::nullopt;  // root で矛盾 = UNSAT
+    }
 
     gradient_strategy_.clear();  // prev solution empty = まだ改善解なし
 
@@ -581,6 +1002,42 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             apply_restart_bookkeeping(model);
 
             resample_and_reshuffle(model);
+
+            // --- impact 昇格の周期再実行 (opt-in: SABORI_PROMOTE_IMPACT) ---
+            // root 演繹の蓄積でドメインが縮み impact 地形が変わるため、
+            // リスタート数回に一回、再 probe して追加昇格する (累計 8K で頭打ち)。
+            if (promote_impact_k_ > 0 && promote_impact_period_ > 0 &&
+                stats_.restart_count > 0 &&
+                stats_.restart_count %
+                        static_cast<size_t>(promote_impact_period_) == 0) {
+                if (!run_root_probing(model)) {
+                    // root で矛盾: obj bound 適用済みなので best が最適
+                    // (best が無ければ UNSAT)
+                    model.clear_pending_updates();
+                    sync_nogood_stats();
+                    return best_solution_;
+                }
+            }
+
+            // --- bottom-up optimistic probe (opt-in: SABORI_BOTTOMUP) ---
+            {
+                // SABORI_BOTTOMUP_ISOLATE: probe 中の conflict による
+                // activity/temporal の bump を隔離（本探索の誘導を汚染しない）。
+                // NoGood・lb 引き上げ・best 更新は残す（健全な成果物）。
+                const bool isolate = bottomup_isolate_ && bottomup_fail_limit_ > 0
+                                     && bottomup_skip_ == 0;
+                if (isolate) {
+                    bottomup_saved_activity_ = activity_;
+                    bottomup_saved_temporal_ = temporal_activity_;
+                }
+                ProbeAction pa = run_bottomup_probe(model, callback, root_point);
+                if (isolate) {
+                    activity_ = bottomup_saved_activity_;
+                    temporal_activity_ = bottomup_saved_temporal_;
+                }
+                if (pa == ProbeAction::ReturnOptimal) return best_solution_;
+                if (pa == ProbeAction::BreakInnerLoop) break;  // timeout → cycle 終端へ
+            }
 
             // 解が見つからなかった場合: 探索を多様化するため勾配を使わない
             gradient_strategy_.disable_hint();

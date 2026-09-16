@@ -192,6 +192,7 @@ void IntLinLeImpConstraint::rewind_to(int save_point) {
         current_fixed_sum_ = entry.fixed_sum;
         min_rem_potential_ = entry.min_pot;
     });
+    max_contribution_ = max_static_ub_;  // 動的上界を静的へリセット
 }
 
 bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
@@ -207,6 +208,7 @@ bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
     // 変数の現在状態に基づいて内部状態を初期化
     current_fixed_sum_ = 0;
     min_rem_potential_ = 0;
+    max_static_ub_ = 0;
 
     size_t n_linear = coeffs_.size();
     for (size_t i = 0; i < n_linear; ++i) {
@@ -223,8 +225,13 @@ bool IntLinLeImpConstraint::prepare_propagation(Model& model) {
             } else {
                 min_rem_potential_ += c * max_val;
             }
+
+            int64_t abs_c = c >= 0 ? c : -c;
+            int64_t contrib = abs_c * (max_val - min_val);
+            if (contrib > max_static_ub_) max_static_ub_ = contrib;
         }
     }
+    max_contribution_ = max_static_ub_;
 
     // 2WL を初期化
     init_watches();
@@ -311,6 +318,21 @@ bool IntLinLeImpConstraint::on_remove_value(Model& /*model*/, int /*save_point*/
 }
 
 bool IntLinLeImpConstraint::propagate_bounds(Model& model, size_t skip_idx) {
+    // no-op スキップ: S = bound - total_min。max_contribution_ <= S なら枝刈り不能
+    int64_t S = bound_ - current_fixed_sum_ - min_rem_potential_;
+    if (S >= max_contribution_) return true;
+
+    // フルスキャン: 厳密な max_j|c_j|*width_j へ動的上界を締め直す（b は線形項に含まれない）
+    int64_t mc = 0;
+    for (size_t j = 0; j < coeffs_.size(); ++j) {
+        size_t vid = var_ids_[j];
+        if (model.is_instantiated(vid)) continue;
+        int64_t ac = coeffs_[j] >= 0 ? coeffs_[j] : -coeffs_[j];
+        int64_t contrib = ac * (model.var_max(vid) - model.var_min(vid));
+        if (contrib > mc) mc = contrib;
+    }
+    max_contribution_ = mc;
+
     prune_sum_le(model, bound_, current_fixed_sum_, min_rem_potential_, skip_idx);
     return true;
 }

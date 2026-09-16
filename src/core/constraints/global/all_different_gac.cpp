@@ -16,8 +16,14 @@ AllDifferentGACConstraint::AllDifferentGACConstraint(std::vector<VariablePtr> va
     // GAC 用の安定マッピングを構築（pool 構築後のスナップショット）
     total_values_ = pool_.capacity();
     gac_idx_to_val_ = pool_.values();
-    for (size_t i = 0; i < total_values_; ++i) {
-        gac_val_to_idx_[gac_idx_to_val_[i]] = static_cast<int>(i);
+    // フラット索引を構築（dense 値域前提: span = max-min+1）
+    if (total_values_ > 0) {
+        gac_min_val_ = *std::min_element(gac_idx_to_val_.begin(), gac_idx_to_val_.end());
+        auto max_val = *std::max_element(gac_idx_to_val_.begin(), gac_idx_to_val_.end());
+        gac_val_to_idx_.assign(static_cast<size_t>(max_val - gac_min_val_ + 1), -1);
+        for (size_t i = 0; i < total_values_; ++i) {
+            gac_val_to_idx_[static_cast<size_t>(gac_idx_to_val_[i] - gac_min_val_)] = static_cast<int>(i);
+        }
     }
 }
 
@@ -209,9 +215,8 @@ bool AllDifferentGACConstraint::hk_bfs(Model& model) {
         auto vid = var_ids_[u];
 
         model.variable(vid)->domain().for_each_value([&](Domain::value_type val) {
-            auto it = gac_val_to_idx_.find(val);
-            if (it == gac_val_to_idx_.end()) return;
-            int j = it->second;
+            int j = gac_idx_of(val);
+            if (j < 0) return;
             if (!is_val_in_pool(j)) return;
             int v = match_val_[j];
             if (v == -1) {
@@ -237,9 +242,8 @@ bool AllDifferentGACConstraint::hk_dfs(Model& model, int u, size_t depth) {
     for (size_t idx = hk_iter_[u]; idx < local_buf.size(); ++idx) {
         hk_iter_[u] = static_cast<int>(idx);
         auto val = local_buf[idx];
-        auto it = gac_val_to_idx_.find(val);
-        if (it == gac_val_to_idx_.end()) continue;
-        int j = it->second;
+        int j = gac_idx_of(val);
+        if (j < 0) continue;
         if (!is_val_in_pool(j)) continue;
         int v = match_val_[j];
 
@@ -264,9 +268,8 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
     for (size_t i = 0; i < n; ++i) {
         if (model.is_instantiated(var_ids_[i])) continue;
         model.variable(var_ids_[i])->domain().for_each_value([&](Domain::value_type val) {
-            auto it = gac_val_to_idx_.find(val);
-            if (it == gac_val_to_idx_.end()) return;
-            int j = it->second;
+            int j = gac_idx_of(val);
+            if (j < 0) return;
             if (!is_val_in_pool(j)) return;
             val_to_vars_[j].push_back(static_cast<int>(i));
         });
@@ -354,9 +357,8 @@ void AllDifferentGACConstraint::compute_sccs_and_filter(Model& model) {
         model.variable(var_ids_[i])->domain().copy_values_to(domain_buf_);
 
         for (auto val : domain_buf_) {
-            auto it = gac_val_to_idx_.find(val);
-            if (it == gac_val_to_idx_.end()) continue;
-            int j = it->second;
+            int j = gac_idx_of(val);
+            if (j < 0) continue;
             if (!is_val_in_pool(j)) continue;
 
             if (match_var_[i] == j) continue;

@@ -31,6 +31,15 @@ VariablePtr FznBuildContext::get_var_by_name(const std::string& name) {
         var_map[name] = var;
         return var;
     }
+    // 固定値 (par) var_decl の遅延実体化。par 配列要素・スカラ定数は
+    // to_model() で eager 生成をスキップしているため（定数セル数ぶんの
+    // Variable がモデルに積まれるのを防ぐ）、名前参照された時だけ作る。
+    auto dit = var_decls.find(name);
+    if (dit != var_decls.end() && dit->second.fixed_value) {
+        auto var = model->create_variable(name, *dit->second.fixed_value);
+        var_map[name] = var;
+        return var;
+    }
     throw std::runtime_error("Unknown variable: " + name);
 }
 

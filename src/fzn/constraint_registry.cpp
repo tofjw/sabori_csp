@@ -1,4 +1,5 @@
 #include "constraint_registry.hpp"
+#include <cstdlib>
 #include "sabori_csp/constraints/arithmetic.hpp"
 #include "sabori_csp/constraints/comparison.hpp"
 #include "sabori_csp/constraints/global.hpp"
@@ -341,6 +342,38 @@ static std::optional<ConstraintPtr> make_bool_clause(const ConstraintDecl& decl,
     if (decl.args.size() != 2) throw std::runtime_error("bool_clause requires 2 arguments");
     auto pos_vars = resolve_vars(decl.args[0], ctx);
     auto neg_vars = resolve_vars(decl.args[1], ctx);
+
+    // 計測用: SABORI_CLAUSE_WITNESS=<最小節長> (=1 は 8 の糖衣) で、長い節に
+    // witness 変数 s (literal_s が真、plain 意味論) を追加する (decision 層の
+    // 探索ハンドル + 節単位 activity 集約)。節本体 (2WL) は温存。
+    // 注意: s は非関数的なので -a では解が重複する。単解/最適化専用。
+    static const int witness_minlen = [] {
+        const char* e = std::getenv("SABORI_CLAUSE_WITNESS");
+        if (!e) return 0;
+        const int v = std::atoi(e);
+        return v == 1 ? 8 : v;
+    }();
+    const size_t len = pos_vars.size() + neg_vars.size();
+    if (witness_minlen > 0 && len >= static_cast<size_t>(witness_minlen)) {
+        // 恒真節 (同一変数が両極性) は witness の意味論が無価値なので対象外
+        bool tautology = false;
+        for (const auto& p : pos_vars) {
+            for (const auto& q : neg_vars) {
+                if (p == q) {
+                    tautology = true;
+                    break;
+                }
+            }
+            if (tautology) break;
+        }
+        if (!tautology) {
+            auto s = ctx.model->create_variable(
+                "__clause_witness_" + std::to_string(ctx.model->variables().size()),
+                0, static_cast<Domain::value_type>(len) - 1);
+            ctx.model->add_constraint(std::make_shared<ClauseWitnessConstraint>(
+                pos_vars, neg_vars, s));
+        }
+    }
     return std::make_shared<BoolClauseConstraint>(pos_vars, neg_vars);
 }
 
@@ -1122,6 +1155,9 @@ void register_all_constraints(ConstraintRegistry& registry) {
     registry.register_constraint("sabori_lex_lesseq", make_lex_lesseq);
     registry.register_constraint("sabori_lex_less_bool", make_lex_less);
     registry.register_constraint("sabori_lex_lesseq_bool", make_lex_lesseq);
+
+    // Pattern N: Subcircuit
+    registry.register_constraint("sabori_subcircuit", make_subcircuit);
 }
 
 } // namespace fzn

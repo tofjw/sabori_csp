@@ -532,6 +532,11 @@ void Model::rewind_dirty_constraints(int save_point) {
         constraint_ptrs_[c_idx]->rewind_to(save_point);
         dirty_constraint_trail_.pop_back();
     }
+    // entailment フラグの解除（フラグ設定時点より浅く戻ったら未充足に復帰）
+    while (!entailed_trail_.empty() && entailed_trail_.back().first > save_point) {
+        constraint_entailed_[entailed_trail_.back().second] = 0;
+        entailed_trail_.pop_back();
+    }
 }
 
 size_t Model::var_trail_size() const {
@@ -583,6 +588,10 @@ void Model::build_constraint_watch_list() {
     constraint_scheduled_.assign(constraints_.size(), 0);
     scheduled_queue_.clear();
     scheduled_head_ = 0;
+
+    // entailment フラグを制約数に合わせて初期化
+    constraint_entailed_.assign(constraints_.size(), 0);
+    entailed_trail_.clear();
 
     // 変数インデックス → 関連する制約インデックスのリスト
     var_to_constraint_indices_.clear();

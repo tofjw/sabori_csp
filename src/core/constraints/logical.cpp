@@ -198,6 +198,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                     return false;  // 既に 0 が確定している bi がある
                 }
             }
+            // r=1 で全 bi を 1 に強制済み → 以後このサブツリーでは常に充足
+            model.set_constraint_entailed(model_index(), save_point);
             return true;
         }
         // r = 0: 0 になりうる bi をスキャンし、watch を再初期化
@@ -215,7 +217,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
                 if (first_candidate == SIZE_MAX) first_candidate = i;
                 else if (second_candidate == SIZE_MAX) second_candidate = i;
             } else if (model.value(var_ids_[i]) == 0) {
-                // 既に 0 の bi がある → r = 0 は既に充足
+                // 既に 0 の bi がある → r = 0 は既に充足（以後 no-op）
+                model.set_constraint_entailed(model_index(), save_point);
                 return true;
             }
         }
@@ -226,8 +229,10 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         }
 
         if (unassigned_count == 1) {
-            // 未確定が1つだけ → それを 0 に強制
+            // 未確定が1つだけ → それを 0 に強制 → 以後常に充足
             model.enqueue_instantiate(var_ids_[last_unassigned], 0);
+            model.set_constraint_entailed(model_index(), save_point);
+            return true;
         }
 
         // watch を有効な候補に更新
@@ -244,6 +249,7 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         } else if (model.value(r_id_) != 0) {
             return false;  // r = 1 だが bi = 0
         }
+        model.set_constraint_entailed(model_index(), save_point);
         return true;
     }
 
@@ -265,6 +271,8 @@ bool ArrayBoolAndConstraint::on_instantiate(Model& model, int save_point,
         } else if (model.value(r_id_) != 1) {
             return false;  // 全 bi=1 だが r=0 → 矛盾
         }
+        // 全 bi=1 かつ r=1 強制済み → 以後常に充足
+        model.set_constraint_entailed(model_index(), save_point);
     }
 
     // r = 0 で bi = 1 が確定した場合: 2WL 処理
@@ -1282,6 +1290,219 @@ void BoolClauseConstraint::vote_branch_direction(const Model& /*model*/,
     for (size_t id : neg_ids_) {
         if (id < low.size()) ++low[id];
     }
+}
+
+// ============================================================================
+// ClauseWitnessConstraint (plain 意味論)
+//
+// literal_s が真。伝播規則:
+//   Step 1: 偽 literal の index を s から除去。
+//   Step 2: s が確定したら literal_s を真に強制 → 以後 entailed。
+// 探索中は 1WL (on_instantiate)、presolve のみ propagate_impl で全走査。
+// ============================================================================
+
+namespace {
+std::vector<VariablePtr> concat_witness_vars(const std::vector<VariablePtr>& pos,
+                                             const std::vector<VariablePtr>& neg,
+                                             const VariablePtr& s) {
+    std::vector<VariablePtr> all;
+    all.reserve(pos.size() + neg.size() + 1);
+    all.insert(all.end(), pos.begin(), pos.end());
+    all.insert(all.end(), neg.begin(), neg.end());
+    all.push_back(s);
+    return all;
+}
+}  // namespace
+
+ClauseWitnessConstraint::ClauseWitnessConstraint(
+        const std::vector<VariablePtr>& pos,
+        const std::vector<VariablePtr>& neg,
+        VariablePtr s)
+    : Constraint(extract_var_ids(concat_witness_vars(pos, neg, s)))
+    , n_(pos.size() + neg.size())
+    , npos_(pos.size()) {
+}
+
+std::string ClauseWitnessConstraint::name() const {
+    return "sabori_clause_witness";
+}
+
+bool ClauseWitnessConstraint::propagate_impl(Model& model, bool direct,
+                                             bool& changed, int save_point) {
+    const size_t sid = var_ids_[n_];
+
+    auto inst = [&](size_t id) {
+        return direct ? model.variable(id)->is_assigned() : model.is_instantiated(id);
+    };
+    auto val = [&](size_t id) {
+        return direct ? model.variable(id)->assigned_value().value() : model.value(id);
+    };
+    // literal 状態: 1=真, 0=偽, -1=未確定
+    auto lit_state = [&](size_t i) -> int {
+        size_t id = var_ids_[i];
+        if (!inst(id)) return -1;
+        const bool bv = val(id) == 1;
+        return ((i < npos_) == bv) ? 1 : 0;
+    };
+    auto scontains = [&](Domain::value_type v) {
+        return direct ? model.variable(sid)->domain().contains(v)
+                      : model.contains(sid, v);
+    };
+    auto srem = [&](Domain::value_type v) -> bool {
+        if (direct) return model.variable(sid)->remove(v);
+        model.enqueue_remove_value(sid, v);
+        return true;
+    };
+    // literal i を truth 方向に確定 (truth=true → 充足方向)
+    auto bforce = [&](size_t i, bool truth) -> bool {
+        const Domain::value_type v = ((i < npos_) == truth) ? 1 : 0;
+        size_t id = var_ids_[i];
+        if (direct) return model.variable(id)->assign(v);
+        model.enqueue_instantiate(id, v);
+        return true;
+    };
+
+    // Step 1: 偽 literal を s から除去 (真 literal から s への情報は流れない
+    // — s は「どれか真の位置」を指すだけ)
+    for (size_t i = 0; i < n_; ++i) {
+        if (lit_state(i) == 0 && scontains(static_cast<Domain::value_type>(i))) {
+            if (!srem(static_cast<Domain::value_type>(i))) return false;
+            changed = true;
+        }
+    }
+
+    // Step 2: s 確定 → witness を真に。以後このサブツリーで常に充足
+    if (inst(sid)) {
+        const size_t i = static_cast<size_t>(val(sid));
+        if (i >= n_) return false;
+        const int st = lit_state(i);
+        if (st == 0) return false;
+        if (st == -1) {
+            if (!bforce(i, true)) return false;
+            changed = true;
+        }
+        if (!direct) model.set_constraint_entailed(model_index(), save_point);
+    }
+    return true;
+}
+
+PresolveResult ClauseWitnessConstraint::presolve(Model& model) {
+    bool changed = false;
+    if (!propagate_impl(model, /*direct=*/true, changed)) {
+        return PresolveResult::Contradiction;
+    }
+    return changed ? PresolveResult::Changed : PresolveResult::Unchanged;
+}
+
+bool ClauseWitnessConstraint::prepare_propagation(Model& model) {
+    init_watches();
+    // 1WL: 不偽 literal を1本指す (指し先が偽化したときだけ働く)。
+    // バックトラックで literal が未定に戻っても「不偽」不変条件は壊れない
+    // ので watch の復元は不要。
+    watch_ = 0;
+    for (size_t i = 0; i < n_; ++i) {
+        size_t id = var_ids_[i];
+        if (!model.is_instantiated(id) ||
+            ((i < npos_) == (model.value(id) == 1))) {
+            watch_ = i;
+            return true;
+        }
+    }
+    return false;  // 全 literal 偽 = 節違反
+}
+
+bool ClauseWitnessConstraint::on_instantiate(
+    Model& model, int save_point,
+    size_t internal_var_idx, Domain::value_type value,
+    Domain::value_type prev_min, Domain::value_type prev_max) {
+    if (!Constraint::on_instantiate(model, save_point, internal_var_idx, value,
+                                     prev_min, prev_max)) {
+        return false;
+    }
+    if (!has_uninstantiated(model)) {
+        return on_final_instantiate(model);
+    }
+
+    // ---- 1WL ----
+    // unit propagation は節本体 (BoolClause 2WL) の仕事なので複製しない。
+    // witness の仕事は (a) s 確定 → l_s を真に (b) 不偽 literal の見届け、のみ。
+    if (internal_var_idx == n_) {
+        // s = v が確定 → literal v を真に強制。以後このサブツリーで常に充足
+        const size_t v = static_cast<size_t>(value);
+        if (v >= n_) return false;
+        size_t id = var_ids_[v];
+        if (!model.is_instantiated(id)) {
+            model.enqueue_instantiate(id, (v < npos_) ? 1 : 0);
+        } else if ((v < npos_) != (model.value(id) == 1)) {
+            return false;  // 死んだ witness 位置への割当
+        }
+        model.set_constraint_entailed(model_index(), save_point);
+        return true;
+    }
+    if (internal_var_idx != watch_) {
+        return true;  // 非 watch literal のイベントは O(1) で無視
+    }
+    // watched literal のイベント: 真になったなら指し続けてよい
+    const bool truthy = (internal_var_idx < npos_) == (value == 1);
+    if (truthy) return true;
+    // 偽化 → 次の不偽 literal へ移動。スキャンで通過した偽 index は
+    // dom(s) から償却除去 (watch は前進しかしないのでスキャンは節長で償却)
+    for (size_t step = 1; step <= n_; ++step) {
+        const size_t j = (watch_ + step) % n_;
+        size_t id = var_ids_[j];
+        if (!model.is_instantiated(id) ||
+            ((j < npos_) == (model.value(id) == 1))) {
+            if (model.contains(var_ids_[n_],
+                               static_cast<Domain::value_type>(watch_))) {
+                model.enqueue_remove_value(
+                    var_ids_[n_], static_cast<Domain::value_type>(watch_));
+            }
+            watch_ = j;
+            return true;
+        }
+        // j も偽: dom(s) から除去 (スキャンついで)
+        if (model.contains(var_ids_[n_], static_cast<Domain::value_type>(j))) {
+            model.enqueue_remove_value(var_ids_[n_],
+                                       static_cast<Domain::value_type>(j));
+        }
+    }
+    return false;  // 不偽 literal なし = 節違反
+}
+
+bool ClauseWitnessConstraint::on_set_min(
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*new_min*/, Domain::value_type /*old_min*/) {
+    // s の bounds は何も強制しない (割当時に一括処理)
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_set_max(
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*new_max*/, Domain::value_type /*old_max*/) {
+    return true;
+}
+
+bool ClauseWitnessConstraint::on_remove_value(
+    Model& /*model*/, int /*save_point*/, size_t /*internal_var_idx*/,
+    Domain::value_type /*removed_value*/) {
+    return true;
+}
+
+bool ClauseWitnessConstraint::propagate_batch(Model& model, int save_point) {
+    bool changed = false;
+    return propagate_impl(model, /*direct=*/false, changed, save_point);
+}
+
+bool ClauseWitnessConstraint::on_final_instantiate(const Model& model) {
+    // s 番目の literal が真であればよい
+    const size_t s = static_cast<size_t>(model.value(var_ids_[n_]));
+    if (s >= n_) return false;
+    const bool bv = model.value(var_ids_[s]) == 1;
+    return (s < npos_) == bv;
+}
+
+void ClauseWitnessConstraint::rewind_to(int /*save_point*/) {
+    // ステートレス — 復元不要
 }
 
 } // namespace sabori_csp
