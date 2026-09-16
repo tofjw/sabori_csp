@@ -565,7 +565,7 @@ class CpModel:
             )
         elif isinstance(ct, _Subcircuit):
             raw = [v._var for v in ct.vars]
-            self._add_constraint(core.SubcircuitConstraint(raw, 0), _label)
+            self._add_constraint(core.SubcircuitConstraint(raw), _label)
         elif isinstance(ct, _Increasing):
             raw = [v._var for v in ct.vars]
             self._add_constraint(
