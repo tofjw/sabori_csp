@@ -1,5 +1,6 @@
 #include "sabori_csp/constraints/global.hpp"
 #include "sabori_csp/model.hpp"
+#include <algorithm>
 
 namespace sabori_csp {
 
@@ -59,74 +60,102 @@ struct DirectAccess {
     bool set_max(size_t vid, Domain::value_type v) { return model.variable(vid)->remove_above(v); }
 };
 
-// pairwise obligatory-region 分離。各矩形ペアで分離可能方向を数え、1方向のみなら
+// 矩形ペア (i, j) の obligatory-region 分離。分離可能方向を数え、1方向のみなら
 // その方向へ bounds を絞る。読み書きは Acc に委譲（伝播版/presolve 版で共通）。
+template <class Acc>
+bool diffn_pair(const std::vector<size_t>& var_ids, size_t n, bool strict, Acc& a,
+                size_t i, size_t j) {
+    auto x_i  = var_ids[i];
+    auto y_i  = var_ids[n + i];
+    auto dx_i = var_ids[2 * n + i];
+    auto dy_i = var_ids[3 * n + i];
+
+    auto xi_min  = a.lo(x_i);
+    auto xi_max  = a.hi(x_i);
+    auto yi_min  = a.lo(y_i);
+    auto yi_max  = a.hi(y_i);
+    auto dxi_min = a.lo(dx_i);
+    auto dyi_min = a.lo(dy_i);
+
+    // nonstrict: サイズ 0 の矩形はスキップ
+    if (!strict && (dxi_min == 0 || dyi_min == 0)) return true;
+
+    auto x_j  = var_ids[j];
+    auto y_j  = var_ids[n + j];
+    auto dx_j = var_ids[2 * n + j];
+    auto dy_j = var_ids[3 * n + j];
+
+    auto xj_min  = a.lo(x_j);
+    auto xj_max  = a.hi(x_j);
+    auto yj_min  = a.lo(y_j);
+    auto yj_max  = a.hi(y_j);
+    auto dxj_min = a.lo(dx_j);
+    auto dyj_min = a.lo(dy_j);
+
+    if (!strict && (dxj_min == 0 || dyj_min == 0)) return true;
+
+    // 4方向の分離可能性チェック
+    bool can_left  = (xi_min + dxi_min <= xj_max);  // i が j の左
+    bool can_right = (xj_min + dxj_min <= xi_max);  // i が j の右
+    bool can_below = (yi_min + dyi_min <= yj_max);  // i が j の下
+    bool can_above = (yj_min + dyj_min <= yi_max);  // i が j の上
+
+    int directions = can_left + can_right + can_below + can_above;
+
+    if (directions == 0) return false;  // 分離不可能 → 矛盾
+
+    if (directions == 1) {
+        // 強制分離: 1方向のみ可能 → bounds tightening
+        if (can_left) {
+            // i が j の左に強制: x[i] + dx[i] <= x[j]
+            if (!a.set_min(x_j, xi_min + dxi_min)) return false;
+            if (!a.set_max(x_i, xj_max - dxi_min)) return false;
+        } else if (can_right) {
+            // i が j の右に強制: x[j] + dx[j] <= x[i]
+            if (!a.set_min(x_i, xj_min + dxj_min)) return false;
+            if (!a.set_max(x_j, xi_max - dxj_min)) return false;
+        } else if (can_below) {
+            // i が j の下に強制: y[i] + dy[i] <= y[j]
+            if (!a.set_min(y_j, yi_min + dyi_min)) return false;
+            if (!a.set_max(y_i, yj_max - dyi_min)) return false;
+        } else {  // can_above
+            // i が j の上に強制: y[j] + dy[j] <= y[i]
+            if (!a.set_min(y_i, yj_min + dyj_min)) return false;
+            if (!a.set_max(y_j, yi_max - dyj_min)) return false;
+        }
+    }
+    // directions >= 2: 伝播なし
+    return true;
+}
+
+/// 全ペア走査 O(n^2)。presolve と、変化した矩形が特定できない場合に使う。
 template <class Acc>
 bool diffn_pairwise(const std::vector<size_t>& var_ids, size_t n, bool strict, Acc a) {
     for (size_t i = 0; i < n; ++i) {
-        auto x_i  = var_ids[i];
-        auto y_i  = var_ids[n + i];
-        auto dx_i = var_ids[2 * n + i];
-        auto dy_i = var_ids[3 * n + i];
-
-        auto xi_min  = a.lo(x_i);
-        auto xi_max  = a.hi(x_i);
-        auto yi_min  = a.lo(y_i);
-        auto yi_max  = a.hi(y_i);
-        auto dxi_min = a.lo(dx_i);
-        auto dyi_min = a.lo(dy_i);
-
-        // nonstrict: サイズ 0 の矩形はスキップ
-        if (!strict && (dxi_min == 0 || dyi_min == 0)) continue;
-
         for (size_t j = i + 1; j < n; ++j) {
-            auto x_j  = var_ids[j];
-            auto y_j  = var_ids[n + j];
-            auto dx_j = var_ids[2 * n + j];
-            auto dy_j = var_ids[3 * n + j];
-
-            auto xj_min  = a.lo(x_j);
-            auto xj_max  = a.hi(x_j);
-            auto yj_min  = a.lo(y_j);
-            auto yj_max  = a.hi(y_j);
-            auto dxj_min = a.lo(dx_j);
-            auto dyj_min = a.lo(dy_j);
-
-            // nonstrict: サイズ 0 の矩形はスキップ
-            if (!strict && (dxj_min == 0 || dyj_min == 0)) continue;
-
-            // 4方向の分離可能性チェック
-            bool can_left  = (xi_min + dxi_min <= xj_max);  // i が j の左
-            bool can_right = (xj_min + dxj_min <= xi_max);  // i が j の右
-            bool can_below = (yi_min + dyi_min <= yj_max);  // i が j の下
-            bool can_above = (yj_min + dyj_min <= yi_max);  // i が j の上
-
-            int directions = can_left + can_right + can_below + can_above;
-
-            if (directions == 0) return false;  // 分離不可能 → 矛盾
-
-            if (directions == 1) {
-                // 強制分離: 1方向のみ可能 → bounds tightening
-                if (can_left) {
-                    // i が j の左に強制: x[i] + dx[i] <= x[j]
-                    if (!a.set_min(x_j, xi_min + dxi_min)) return false;
-                    if (!a.set_max(x_i, xj_max - dxi_min)) return false;
-                } else if (can_right) {
-                    // i が j の右に強制: x[j] + dx[j] <= x[i]
-                    if (!a.set_min(x_i, xj_min + dxj_min)) return false;
-                    if (!a.set_max(x_j, xi_max - dxj_min)) return false;
-                } else if (can_below) {
-                    // i が j の下に強制: y[i] + dy[i] <= y[j]
-                    if (!a.set_min(y_j, yi_min + dyi_min)) return false;
-                    if (!a.set_max(y_i, yj_max - dyi_min)) return false;
-                } else {  // can_above
-                    // i が j の上に強制: y[j] + dy[j] <= y[i]
-                    if (!a.set_min(y_i, yj_min + dyj_min)) return false;
-                    if (!a.set_max(y_j, yi_max - dyj_min)) return false;
-                }
-            }
-            // directions >= 2: 伝播なし
+            if (!diffn_pair(var_ids, n, strict, a, i, j)) return false;
         }
+    }
+    return true;
+}
+
+/**
+ * @brief 矩形 r を含むペアだけを走査する O(n) 版
+ *
+ * 矩形 r の bounds が変わったとき、判定が変わりうるのはペア (r, *) に限られる。
+ * ペア (j, k)（r を含まない）は j か k が最後に変化した時点で走査済みで、
+ * その後 bounds が動いていないなら結果も同じ（= 新しい伝播は出ない）。
+ * 各変数の変化は必ず自分のコールバックを呼ぶので、この分割で不動点は変わらない。
+ */
+template <class Acc>
+bool diffn_pairwise_one(const std::vector<size_t>& var_ids, size_t n, bool strict,
+                        Acc a, size_t r) {
+    for (size_t j = 0; j < n; ++j) {
+        if (j == r) continue;
+        // 引数順は (小さい方, 大きい方) に揃える（分離方向の意味は対称だが、
+        // 全走査版と同じ評価順・同じ書き込み順にして挙動を一致させる）。
+        const size_t i0 = std::min(r, j), j0 = std::max(r, j);
+        if (!diffn_pair(var_ids, n, strict, a, i0, j0)) return false;
     }
     return true;
 }
@@ -135,6 +164,10 @@ bool diffn_pairwise(const std::vector<size_t>& var_ids, size_t n, bool strict, A
 
 bool DiffnConstraint::propagate_pairwise(Model& model) {
     return diffn_pairwise(var_ids_, n_, strict_, EnqueueAccess{model});
+}
+
+bool DiffnConstraint::propagate_pairwise_for(Model& model, size_t rect_idx) {
+    return diffn_pairwise_one(var_ids_, n_, strict_, EnqueueAccess{model}, rect_idx);
 }
 
 // ---------- Pairwise propagation (presolve版: Domain 直接 + 即時 remove) ----------
@@ -183,7 +216,8 @@ bool DiffnConstraint::on_instantiate(
         return on_final_instantiate(model);
     }
 
-    return propagate_pairwise(model);
+    // 変化したのは矩形 (internal_var_idx % n_) だけなので、そのペアだけ見る。
+    return propagate_pairwise_for(model, internal_var_idx % n_);
 }
 
 bool DiffnConstraint::on_final_instantiate(const Model& model) {
@@ -213,20 +247,20 @@ bool DiffnConstraint::on_final_instantiate(const Model& model) {
 
 bool DiffnConstraint::on_set_min(
     Model& model, int save_point,
-    size_t /*internal_var_idx*/,
+    size_t internal_var_idx,
     Domain::value_type /*new_min*/,
     Domain::value_type /*old_min*/)
 {
-    return propagate_pairwise(model);
+    return propagate_pairwise_for(model, internal_var_idx % n_);
 }
 
 bool DiffnConstraint::on_set_max(
     Model& model, int save_point,
-    size_t /*internal_var_idx*/,
+    size_t internal_var_idx,
     Domain::value_type /*new_max*/,
     Domain::value_type /*old_max*/)
 {
-    return propagate_pairwise(model);
+    return propagate_pairwise_for(model, internal_var_idx % n_);
 }
 
 // ---------- Trail ----------

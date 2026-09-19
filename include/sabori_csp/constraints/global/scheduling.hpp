@@ -153,6 +153,9 @@ private:
     // var_ids_ レイアウト: [x0..xn-1, y0..yn-1, dx0..dxn-1, dy0..dyn-1]
 
     bool propagate_pairwise(Model& model);
+
+    /// 矩形 rect_idx を含むペアだけを走査する O(n) 版（イベント駆動用）
+    bool propagate_pairwise_for(Model& model, size_t rect_idx);
     bool propagate_pairwise_direct(Model& model);
 };
 
