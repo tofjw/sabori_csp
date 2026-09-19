@@ -252,15 +252,23 @@ void TTEFPropagator::build_tasks(const Model& model, size_t n,
 
         int64_t est = model.var_min(var_ids[i]);
         int64_t lst = model.var_max(var_ids[i]);
-        tasks_.push_back({i, est, lst, est + dur, lst + dur, dur, req, dur * req});
+        const int64_t ect = est + dur;
+        const int64_t mand = (ect > lst) ? req * (ect - lst) : 0;
+        tasks_.push_back({i, est, lst, ect, lst + dur, dur, req, dur * req, mand});
+    }
+    max_task_energy_ = 0;
+    for (const auto& t : tasks_) {
+        if (t.energy > max_task_energy_) max_task_energy_ = t.energy;
     }
 }
 
 void TTEFPropagator::build_profile()
 {
     // Build mandatory-part profile from tasks_
-    struct Event { int64_t time; int64_t delta; };
-    std::vector<Event> events;
+    // events_ はメンバ（容量を持ち越すので 2 回目以降は確保しない）。
+    // build_profile は伝播ごとに 1〜2 回呼ばれるため、ここでの確保/解放は効く。
+    auto& events = events_;
+    events.clear();
     events.reserve(2 * tasks_.size());
 
     for (const auto& t : tasks_) {
@@ -322,6 +330,18 @@ int64_t TTEFPropagator::energy_up_to(int64_t x) const
     return prefix_energy_[k] + profile_[k].usage * (x - profile_[k].time);
 }
 
+int64_t TTEFPropagator::energy_up_to_hint(int64_t x, size_t& cur) const
+{
+    if (profile_.empty() || x <= profile_[0].time) return 0;
+    const size_t last = profile_.size() - 1;
+    if (cur > last) cur = last;
+    // 単調クエリ前提なので、どちらか一方のループだけが回る（償却 O(1)）。
+    while (cur < last && profile_[cur + 1].time <= x) ++cur;
+    while (cur > 0 && profile_[cur].time > x) --cur;
+    if (cur >= last) return prefix_energy_.back();
+    return prefix_energy_[cur] + profile_[cur].usage * (x - profile_[cur].time);
+}
+
 int64_t TTEFPropagator::profile_integral(int64_t lo, int64_t hi) const
 {
     if (lo >= hi || profile_.empty()) return 0;
@@ -334,7 +354,8 @@ bool TTEFPropagator::forward_pass(
     int64_t cap_max, bool direct, bool& changed)
 {
     // Sort tasks by LCT ascending for the forward pass
-    std::vector<size_t> order(tasks_.size());
+    auto& order = order_;
+    order.resize(tasks_.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(), [this](size_t a, size_t b) {
         return tasks_[a].lct < tasks_[b].lct;
@@ -342,47 +363,42 @@ bool TTEFPropagator::forward_pass(
 
     if (order.empty()) return true;
 
-    // lst/ect/req を order 順に連続パック（theta_cp 内側ループの O(n^2) ギャザリング
-    // を連続アクセス化）。resize は容量維持なので 2 回目以降は再確保なし。
-    const size_t n_ord = order.size();
-    lst_o_.resize(n_ord); ect_o_.resize(n_ord); req_o_.resize(n_ord);
-    for (size_t i = 0; i < n_ord; ++i) {
-        const auto& t = tasks_[order[i]];
-        lst_o_[i] = t.lst; ect_o_[i] = t.ect; req_o_[i] = t.req;
-    }
-
     // For each prefix Theta = {order[0..k]}, check energy bounds.
     // order はパス内で固定なので L(=min est) と energy_theta は prefix を進める
     // だけの running 累積にできる（旧来の内側 O(n) 再計算＝全体 O(n^2) を排除）。
+    //
+    // theta_cp も同様に running 累積でよい。Theta 内の i (i<=k) については
+    //   lct_i <= lct_k = R かつ ect_i <= lct_i     → min(ect_i, R) = ect_i
+    //   est_i >= L      かつ lst_i >= est_i        → max(lst_i, L) = lst_i
+    // が常に成り立つので、clip は恒等変換になり寄与は L,R に依存しない
+    // 「タスク固有の mandatory エネルギー」そのものになる（TaskInfo::mand）。
+    // これで内側 O(k) ループが消え、パス全体が O(n^2) → O(n log n)（sort 律速）。
     int64_t L = tasks_[order[0]].est;
     int64_t energy_theta = 0;
+    int64_t theta_cp = 0;
+    size_t cur_lo = 0, cur_hi = 0;  // energy_up_to_hint 用（L は下り、R は上り）
     for (size_t k = 0; k < order.size(); ++k) {
         const auto& tk = tasks_[order[k]];
         if (tk.est < L) L = tk.est;
         energy_theta += tk.energy;
+        theta_cp += tk.mand;
         int64_t R = tk.lct;
 
         if (R <= L) continue;
 
-        int64_t tt_energy = profile_integral(L, R);
+        int64_t tt_energy = energy_up_to_hint(R, cur_hi) - energy_up_to_hint(L, cur_lo);
         int64_t capacity_area = (R - L) * cap_max;
         int64_t free = capacity_area - tt_energy;
-
-        // theta_cp: Theta タスクの [L,R) 内 mandatory energy。
-        // 旧 `if(lst<ect)` ガードは clip と冗長（lst>=ect なら b<=a で寄与0）なので
-        // 分岐レス `req * max(0, min(ect,R)-max(lst,L))` に等価変換し連続配列で reduce。
-        int64_t theta_cp = 0;
-        for (size_t i = 0; i <= k; ++i) {
-            int64_t a = std::max(lst_o_[i], L);
-            int64_t b = std::min(ect_o_[i], R);
-            int64_t w = b - a;
-            if (w > 0) theta_cp += req_o_[i] * w;
-        }
 
         int64_t extra_theta = energy_theta - theta_cp;
 
         // Overload check
         if (extra_theta > free) return false;
+
+        // j ループのスキップ判定。extra_j <= energy_j <= max_task_energy_ なので、
+        // extra_theta + max_task_energy_ <= free ならどの j も枝刈り条件
+        // (extra_theta + extra_j > free) を満たさない。O(1) で O(n) を飛ばせる。
+        if (extra_theta + max_task_energy_ <= free) continue;
 
         // Pruning: for tasks NOT in Theta
         for (size_t j_idx = k + 1; j_idx < order.size(); ++j_idx) {
@@ -441,7 +457,8 @@ bool TTEFPropagator::backward_pass(
     int64_t cap_max, bool direct, bool& changed)
 {
     // Sort tasks by EST descending for the backward pass
-    std::vector<size_t> order(tasks_.size());
+    auto& order = order_;
+    order.resize(tasks_.size());
     std::iota(order.begin(), order.end(), 0);
     std::sort(order.begin(), order.end(), [this](size_t a, size_t b) {
         return tasks_[a].est > tasks_[b].est;
@@ -449,41 +466,34 @@ bool TTEFPropagator::backward_pass(
 
     if (order.empty()) return true;
 
-    // theta_cp 用に lst/ect/req を order 順パック（前方パスと同様）
-    const size_t n_ord = order.size();
-    lst_o_.resize(n_ord); ect_o_.resize(n_ord); req_o_.resize(n_ord);
-    for (size_t i = 0; i < n_ord; ++i) {
-        const auto& t = tasks_[order[i]];
-        lst_o_[i] = t.lst; ect_o_[i] = t.ect; req_o_[i] = t.req;
-    }
-
-    // R(=max lct) と energy_theta を running 累積化（前方パスと同様に O(n^2)→O(n)）
+    // R(=max lct) と energy_theta を running 累積化（前方パスと同様に O(n^2)→O(n)）。
+    // theta_cp も同じ理由で running 累積でよい。Theta 内の i (i<=k) については
+    //   est_i >= est_k = L かつ lst_i >= est_i  → max(lst_i, L) = lst_i
+    //   lct_i <= R         かつ ect_i <= lct_i  → min(ect_i, R) = ect_i
+    // で clip が恒等になる（前方パスと対称）。
     int64_t R = tasks_[order[0]].lct;
     int64_t energy_theta = 0;
+    int64_t theta_cp = 0;
+    size_t cur_lo = 0, cur_hi = 0;  // energy_up_to_hint 用（L は下り、R は上り）
     for (size_t k = 0; k < order.size(); ++k) {
         const auto& tk = tasks_[order[k]];
         if (tk.lct > R) R = tk.lct;
         energy_theta += tk.energy;
+        theta_cp += tk.mand;
         int64_t L = tk.est;
 
         if (R <= L) continue;
 
-        int64_t tt_energy = profile_integral(L, R);
+        int64_t tt_energy = energy_up_to_hint(R, cur_hi) - energy_up_to_hint(L, cur_lo);
         int64_t capacity_area = (R - L) * cap_max;
         int64_t free = capacity_area - tt_energy;
-
-        // theta_cp: 分岐レス連続 reduce（前方パスと同一の等価変換）
-        int64_t theta_cp = 0;
-        for (size_t i = 0; i <= k; ++i) {
-            int64_t a = std::max(lst_o_[i], L);
-            int64_t b = std::min(ect_o_[i], R);
-            int64_t w = b - a;
-            if (w > 0) theta_cp += req_o_[i] * w;
-        }
 
         int64_t extra_theta = energy_theta - theta_cp;
 
         if (extra_theta > free) return false;
+
+        // 前方パスと同じ O(1) スキップ判定
+        if (extra_theta + max_task_energy_ <= free) continue;
 
         // Pruning: for tasks NOT in Theta, push LST down
         for (size_t j_idx = k + 1; j_idx < order.size(); ++j_idx) {

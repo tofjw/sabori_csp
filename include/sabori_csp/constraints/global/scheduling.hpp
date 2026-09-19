@@ -256,6 +256,7 @@ private:
         size_t idx;        // original task index
         int64_t est, lst, ect, lct;
         int64_t dur, req, energy;
+        int64_t mand;      // mandatory part energy = req * max(0, ect - lst)
     };
 
     struct ProfileEntry {
@@ -267,9 +268,14 @@ private:
     std::vector<ProfileEntry> profile_;
     std::vector<int64_t> prefix_energy_;  // prefix sum for profile integral
 
-    // TTEF パス用 order 順パック済みスクラッチ（theta_cp 内側ループの連続化用、
-    // 呼び出し毎に resize=容量維持で再確保なし）。lst/ect/req を order 順に並べる。
-    std::vector<int64_t> lst_o_, ect_o_, req_o_;
+    struct Event { int64_t time; int64_t delta; };
+
+    // スクラッチ（呼び出し毎に clear/resize=容量維持で再確保なし）
+    std::vector<size_t> order_;
+    std::vector<Event> events_;
+
+    /// 全タスク中の最大エネルギー（j ループのスキップ判定用の上界）
+    int64_t max_task_energy_ = 0;
 
     bool propagate_impl(Model& model, size_t n,
                         const std::vector<size_t>& var_ids,
@@ -281,6 +287,15 @@ private:
     int64_t profile_integral(int64_t lo, int64_t hi) const;
     /// usage を (-inf, x) で積分した値。prefix_energy_ + 二分探索で O(log P)。
     int64_t energy_up_to(int64_t x) const;
+
+    /**
+     * @brief energy_up_to のカーソル版（二分探索を単調移動に置換）
+     *
+     * 両パスとも k を進めるにつれ L は単調非増加・R は単調非減少なので、
+     * 前回位置から片方向に動かすだけで済み、パス全体で償却 O(1)。
+     * cur は「profile_[cur].time <= x となる最大の添字」に更新される。
+     */
+    int64_t energy_up_to_hint(int64_t x, size_t& cur) const;
 
     bool forward_pass(Model& model, const std::vector<size_t>& var_ids,
                       int64_t cap_max, bool direct, bool& changed);
