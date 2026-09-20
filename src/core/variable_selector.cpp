@@ -181,8 +181,11 @@ size_t VariableSelector::select_linear(const Model& model,
 
     size_t start = rng() % n;
     size_t tie_count = 0;
-    for (size_t j = 0; j < n; ++j) {
-        size_t k = begin + (start + j) % n;
+    // 走査位置は begin+start から始めて end で begin へ折り返す。
+    // 旧 `begin + (start + j) % n` と同一系列だが、変数 1 本ごとの整数除算が消える
+    // （この関数は table-layout で 43%、opd で 11% を占めるホットパス）。
+    size_t k = begin + start;
+    for (size_t j = 0; j < n; ++j, (++k == end ? k = begin : k)) {
         size_t i = var_order_[k];
         if (model.is_instantiated(i)) continue;
         size_t domain_size = model.var_size(i);
@@ -211,12 +214,13 @@ size_t VariableSelector::select_linear(const Model& model,
             }
         }
 
+        int cand_overlap = -1;  // popcount 済みなら >= 0
         if (tied && use_bloom) {
-            int ng_overlap = (model.var_ng_bloom(i) & ng_usage_bloom).popcount();
-            if (ng_overlap > best_ng_overlap) {
+            cand_overlap = (model.var_ng_bloom(i) & ng_usage_bloom).popcount();
+            if (cand_overlap > best_ng_overlap) {
                 better = true;
                 tied = false;
-            } else if (ng_overlap < best_ng_overlap) {
+            } else if (cand_overlap < best_ng_overlap) {
                 tied = false;
             }
         }
@@ -227,7 +231,10 @@ size_t VariableSelector::select_linear(const Model& model,
             best_activity = activity[i];
             best_temporal = ta;
             if (use_bloom) {
-                best_ng_overlap = (model.var_ng_bloom(i) & ng_usage_bloom).popcount();
+                // tie 経由で better になった場合は上で計算済みの値を使い回す
+                best_ng_overlap = (cand_overlap >= 0)
+                        ? cand_overlap
+                        : (model.var_ng_bloom(i) & ng_usage_bloom).popcount();
             }
             tie_count = 1;
         } else if (tied) {
