@@ -60,11 +60,15 @@ bool NoGoodManager::propagate_eq_watches(Model& model, size_t var_idx, Domain::v
                                           double activity_inc) {
     if (var_idx >= ng_eq_watches_.size()) return true;
     auto& var_watches = ng_eq_watches_[var_idx];
+    // 空なら find のハッシュ計算ごと飛ばす（大半の変数は eq watch を持たない）
+    if (var_watches.empty()) return true;
     auto it2 = var_watches.find(val);
     if (it2 == var_watches.end()) return true;
 
-    // コピーして回す（propagate_nogood が watches を変更するため）
-    for (auto* ng : std::vector<NoGood*>(it2->second)) {
+    // コピーして回す（propagate_nogood が watches を変更するため）。
+    // 確保を避けるためスクラッチを使い回す。
+    eq_watch_scratch_.assign(it2->second.begin(), it2->second.end());
+    for (auto* ng : eq_watch_scratch_) {
         check_count_++;
         if (!propagate_nogood(model, ng, {var_idx, val, Literal::Type::Eq}, restart_count)) {
             ng->last_active = restart_count;
@@ -89,9 +93,11 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
         // 下限が上がった → Geq リテラル (x >= v) が充足された可能性
         if (var_idx < ng_geq_watches_.size() && !ng_geq_watches_[var_idx].empty()) {
             auto current_min = model.var_min(var_idx);
-            // コピーして回す（propagate_nogood が watches を変更するため）
-            auto watches_copy = ng_geq_watches_[var_idx];
-            for (const auto& [threshold, ng] : watches_copy) {
+            // コピーして回す（propagate_nogood が watches を変更するため）。
+            // 確保を避けるためスクラッチを使い回す。
+            bound_watch_scratch_.assign(ng_geq_watches_[var_idx].begin(),
+                                        ng_geq_watches_[var_idx].end());
+            for (const auto& [threshold, ng] : bound_watch_scratch_) {
                 if (current_min >= threshold) {
                     check_count_++;
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Geq}, restart_count)) {
@@ -112,8 +118,9 @@ bool NoGoodManager::propagate_bound_nogoods(Model& model, size_t var_idx, bool i
         // 上限が下がった → Leq リテラル (x <= v) が充足された可能性
         if (var_idx < ng_leq_watches_.size() && !ng_leq_watches_[var_idx].empty()) {
             auto current_max = model.var_max(var_idx);
-            auto watches_copy = ng_leq_watches_[var_idx];
-            for (const auto& [threshold, ng] : watches_copy) {
+            bound_watch_scratch_.assign(ng_leq_watches_[var_idx].begin(),
+                                        ng_leq_watches_[var_idx].end());
+            for (const auto& [threshold, ng] : bound_watch_scratch_) {
                 if (current_max <= threshold) {
                     check_count_++;
                     if (!propagate_nogood(model, ng, {var_idx, threshold, Literal::Type::Leq}, restart_count)) {
