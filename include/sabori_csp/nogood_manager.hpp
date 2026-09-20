@@ -216,6 +216,12 @@ private:
     std::vector<std::vector<std::pair<Domain::value_type, NoGood*>>> ng_leq_watches_;
     std::vector<std::vector<std::pair<Domain::value_type, NoGood*>>> ng_geq_watches_;
 
+    // watch リストを回す間に propagate_nogood が元のリストを変更しうるため、
+    // コピーしてから回す必要がある。そのコピー先を使い回して呼び出しごとの
+    // 確保/解放を避ける（propagate_nogood は enqueue のみで同期再入しないので安全）。
+    std::vector<NoGood*> eq_watch_scratch_;
+    std::vector<std::pair<Domain::value_type, NoGood*>> bound_watch_scratch_;
+
     // 容量制限
     static constexpr size_t max_nogoods_ = 100000;
 
