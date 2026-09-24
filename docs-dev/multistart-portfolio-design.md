@@ -254,6 +254,39 @@ ClauseWitness）が増えており、どれも `clone()` を持たない。**マ
 6. 2次元の軸表を分離（§2a）
 7. 軸×シードのグリッドで**再チューニング**
 
+### clone 時の不変ペイロード共有（移植時に最初から入れる）
+
+2026-09-24 の調査。`feature/mp-multistart` の clone はコピーコンストラクタ経由の
+ディープコピーで、**スレッドごとに不変データまで複製している**。変数リストは
+ただの番号列なのでスレッド間で共有してよい（ユーザ指摘）。共有安全の根拠3点を
+main で確認済み:
+
+1. `var_ids_` は構築後不変（`set_var_ids()` は呼び出し元ゼロの死 API、
+   制約コードに構築後の書き換えなし）
+2. 制約は `VariablePtr` メンバを一切持たない（純粋 id ベース。Domain 状態は
+   Model 側 = per-worker）
+3. clone は presolve 後（simplifier の var id 書き換えは clone 前に完了）
+
+**共有すべきもの（clone 後不変）と、共有してはいけないもの（per-thread 可変）**:
+
+| 共有 OK | 共有 NG（値コピー必須） |
+|---------|------------------------|
+| `var_ids_`（全制約） | extensional の `current_table_` / `trail_diffs_` |
+| extensional の `flat_tuples_`（タプル定義、巨大になりうる） | support カウンタ類・trail 系全般 |
+| element 系の配列リテラル | `search_var_count_` 等は複製でも実害なし（同値） |
+| linear 系の `coeffs_` | |
+
+実装方針: `var_ids_` は全アクセスが `var_ids_ref()` / `var_id(i)` 経由なので、
+基底クラス内部を `shared_ptr<const vector<size_t>>` に変えるだけで**具象制約側の
+変更不要**・参照取得後のホットパスコスト不変。tuples/coeffs は制約ごとの個別対応。
+節約は -j8 で「不変ペイロード合計 × 7」— 通常は MB 級だが巨大 table モデル
+（groupsplitter の table filter 爆発の類）で実益。読み取り専用共有は LLC にも
+プラスで false sharing なし。
+
+手順3（clone 基盤の移植 + 新規7制約の clone 実装）の時点で共有前提で書けば
+手戻りがない。後から入れ替えるとコピーコンストラクタ依存の clone 群を再監査
+する羽目になる。
+
 ### 再チューニングが必須な理由
 
 [[portfolio-ladder-seed-first]] の教訓が「1スレッド処理方式を変えたらラダーは要再チューニング」。
