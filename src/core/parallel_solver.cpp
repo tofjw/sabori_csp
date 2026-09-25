@@ -1,7 +1,48 @@
 #include "sabori_csp/parallel_solver.hpp"
+#include <cstdlib>
+#include <string>
 #include <limits>
 
 namespace sabori_csp {
+
+void apply_probe_env_overrides(WorkerConfig& cfg) {
+    // 糖衣は Solver コンストラクタの env 解釈と同一に保つこと（=1 → 既定予算）。
+    if (const char* e = std::getenv("SABORI_PROBE_ROOT")) {
+        cfg.root_probe_limit = std::atoi(e);
+        if (cfg.root_probe_limit == 1) cfg.root_probe_limit = 2000;
+    }
+    if (const char* e = std::getenv("SABORI_PROMOTE_IMPACT")) {
+        cfg.promote_impact_k = std::atoi(e);
+        if (cfg.promote_impact_k == 1) cfg.promote_impact_k = 32;
+    }
+    if (const char* e = std::getenv("SABORI_PROMOTE_IMPACT_PERIOD")) {
+        cfg.promote_impact_period = std::atoi(e);
+    }
+    if (const char* e = std::getenv("SABORI_BOTTOMUP")) {
+        cfg.bottomup_fail_limit = std::atoi(e);
+        if (cfg.bottomup_fail_limit == 1) cfg.bottomup_fail_limit = 2000;
+    }
+    if (const char* e = std::getenv("SABORI_BOTTOMUP_ISOLATE")) {
+        cfg.bottomup_isolate = std::atoi(e) != 0;
+    }
+    if (const char* e = std::getenv("SABORI_BOTTOMUP_CUTOFF")) {
+        cfg.bottomup_cutoff_denom = std::atoi(e);
+    }
+    // 分岐方向（low/high/p のみ。vote/cycle は per-worker 化しない — env 専用）。
+    if (const char* e = std::getenv("SABORI_BISECT_DIR")) {
+        std::string v(e);
+        if (v == "low") {
+            cfg.bisect_low_prob = 1.0;
+        } else if (v.rfind("low:", 0) == 0) {
+            double q = std::atof(v.c_str() + 4);
+            if (q < 0.0) q = 0.0;
+            if (q > 1.0) q = 1.0;
+            cfg.bisect_low_prob = q;
+        } else if (v == "high") {
+            cfg.bisect_low_prob = 2.0;
+        }
+    }
+}
 
 namespace {
 

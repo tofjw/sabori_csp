@@ -186,7 +186,14 @@ PYBIND11_MODULE(_sabori_csp, m) {
         .def_readwrite("temporal_enabled", &WorkerConfig::temporal_enabled)
         .def_readwrite("bisection_threshold", &WorkerConfig::bisection_threshold)
         .def_readwrite("probe_fail_limit", &WorkerConfig::probe_fail_limit)
-        .def_readwrite("promote_def_bool", &WorkerConfig::promote_def_bool);
+        .def_readwrite("promote_def_bool", &WorkerConfig::promote_def_bool)
+        .def_readwrite("root_probe_limit", &WorkerConfig::root_probe_limit)
+        .def_readwrite("promote_impact_k", &WorkerConfig::promote_impact_k)
+        .def_readwrite("promote_impact_period", &WorkerConfig::promote_impact_period)
+        .def_readwrite("bottomup_fail_limit", &WorkerConfig::bottomup_fail_limit)
+        .def_readwrite("bottomup_isolate", &WorkerConfig::bottomup_isolate)
+        .def_readwrite("bottomup_cutoff_denom", &WorkerConfig::bottomup_cutoff_denom)
+        .def_readwrite("bisect_low_prob", &WorkerConfig::bisect_low_prob);
 
     // ---- make_portfolio_configs (多様化テーブル構築ヘルパ) ----
     m.def("make_portfolio_configs", &make_portfolio_configs,

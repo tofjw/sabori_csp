@@ -102,12 +102,24 @@ Solver::Solver()
         divmod_replace_ = (mode >= 2);
         divmod_sweep_on_bounds_ = (mode >= 3);
     }
-    // SABORI_BISECT_DIR=vote: 制約ごとの「充足しやすい側」の票を集めて構成比で分岐方向を決める。
+    // SABORI_BISECT_DIR: 分岐方向。vote/cycle は env 専用、low/high/p は
+    // メンバー（bisect_low_prob_）に取り込み per-worker arm 化に対応
+    //（WorkerConfig.bisect_low_prob。apply_worker_config が上書きする）。
     if (const char* env = std::getenv("SABORI_BISECT_DIR")) {
         std::string v(env);
         dir_vote_enabled_ = (v == "vote" || v == "vote_major");
         dir_vote_major_ = (v == "vote_major");
         bisect_cycle_ = (v == "cycle");
+        if (v == "low") {
+            bisect_low_prob_ = 1.0;
+        } else if (v.rfind("low:", 0) == 0) {
+            double q = std::atof(v.c_str() + 4);
+            if (q < 0.0) q = 0.0;
+            if (q > 1.0) q = 1.0;
+            bisect_low_prob_ = q;
+        } else if (v == "high") {
+            bisect_low_prob_ = 2.0;
+        }
     }
     // 計測用: SABORI_NG_NOBUMP=1 で NoGood 由来の activity bump だけ止める（学習・枝刈りは維持）。
     if (const char* env = std::getenv("SABORI_NG_NOBUMP")) {

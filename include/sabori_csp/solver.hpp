@@ -67,7 +67,32 @@ struct WorkerConfig {
     size_t bisection_threshold = 8;     ///< 二分割の閾値
     int probe_fail_limit = 5;           ///< improvement probe の fail 上限
     bool promote_def_bool = false;      ///< defined bool を decision tier に昇格（最適化ラダー用 arm）
+
+    // --- probe 系アーム（env → WorkerConfig 移設分。既定値 = 従来の env 未設定時の挙動） ---
+    int root_probe_limit = 0;           ///< root probing の fail 予算（0=無効。旧 SABORI_PROBE_ROOT, =1 は 2000 の糖衣）
+    int promote_impact_k = 0;           ///< impact 上位 K の defined 変数を decision 層へ昇格（0=無効。旧 SABORI_PROMOTE_IMPACT。>0 で root probing を暗黙有効化）
+    int promote_impact_period = 8;      ///< 昇格再実行のリスタート周期（0=開始時のみ。旧 SABORI_PROMOTE_IMPACT_PERIOD）
+    int bottomup_fail_limit = 0;        ///< bottom-up optimistic probe の fail 予算（0=無効。旧 SABORI_BOTTOMUP, =1 は 2000 の糖衣）
+    bool bottomup_isolate = false;      ///< bottom-up probe の activity 汚染隔離（旧 SABORI_BOTTOMUP_ISOLATE）
+    int bottomup_cutoff_denom = 8;      ///< 相転移カットオフ分母（0=無効。旧 SABORI_BOTTOMUP_CUTOFF）
+
+    // --- 分岐方向アーム（旧 SABORI_BISECT_DIR の low/high/p 部分。スロット軸の第一候補） ---
+    // -1.0 = 既定（コイン投げ）/ 1.0 = 常に下側（"low"）/ 0..1 = 確率 p で下側 /
+    // 2.0 = 常に上側（"high" の符号化）。vote/cycle 系は env 専用のまま
+    //（先験としては全滅済み — memory: bisect-direction-prior-closed。arm 化がこの続き）。
+    double bisect_low_prob = -1.0;
 };
+
+/**
+ * @brief SABORI_* 環境変数の probe 系アーム指定を WorkerConfig に上書き適用する
+ *
+ * 「パース一箇所・本籍 WorkerConfig・env はデバッグ上書き」の一箇所。
+ * fzn CLI の build_worker_configs が base 構成に適用し、全ワーカーが継承する
+ * （ラダー/TUNE による per-worker 上書きはこの後段）。単一スレッド経路は
+ * Solver コンストラクタの直接 env 読みが従来どおり効く（挙動不変）。
+ * 糖衣（=1 → 既定予算）も従来の env 解釈と同一。
+ */
+void apply_probe_env_overrides(WorkerConfig& cfg);
 
 
 /**
@@ -436,6 +461,15 @@ public:
         set_bisection_threshold(cfg.bisection_threshold);
         set_probe_fail_limit(cfg.probe_fail_limit);
         var_selector_.set_promote_def_bool(cfg.promote_def_bool);
+        // probe 系アーム。PROMOTE_IMPACT は probing の副産物（両分岐 trail 長）を
+        // impact 尺度に使うため root probing を暗黙有効化する（env 時代と同じ含意）。
+        int rpl = cfg.root_probe_limit;
+        if (cfg.promote_impact_k > 0 && rpl <= 0) rpl = 2000;
+        set_root_probe_limit(rpl);
+        set_promote_impact(cfg.promote_impact_k, cfg.promote_impact_period);
+        set_bottomup_fail_limit(cfg.bottomup_fail_limit);
+        set_bottomup_options(cfg.bottomup_isolate, cfg.bottomup_cutoff_denom);
+        set_bisect_low_prob(cfg.bisect_low_prob);
     }
 
     /**
@@ -454,6 +488,24 @@ public:
         restart_yield_hook_ = std::move(hook);
     }
     void set_bottomup_fail_limit(int limit) { bottomup_fail_limit_ = limit; }
+
+    /** @brief root probing の fail 予算を設定（0=無効。ポートフォリオ arm 用） */
+    void set_root_probe_limit(int limit) { root_probe_limit_ = limit; }
+
+    /** @brief impact 昇格の K と再実行周期を設定（K=0 で無効。ポートフォリオ arm 用） */
+    void set_promote_impact(int k, int period) {
+        promote_impact_k_ = k;
+        promote_impact_period_ = period;
+    }
+
+    /** @brief bottom-up probe の隔離・カットオフを設定（ポートフォリオ arm 用） */
+    void set_bottomup_options(bool isolate, int cutoff_denom) {
+        bottomup_isolate_ = isolate;
+        bottomup_cutoff_denom_ = cutoff_denom;
+    }
+
+    /** @brief 分岐方向を設定（-1=コイン投げ / 0..1=確率 p で下側 / 2=常に上側。arm 用） */
+    void set_bisect_low_prob(double p) { bisect_low_prob_ = p; }
 
 private:
     void log_presolve_start(const Model& model) const;
@@ -921,6 +973,8 @@ private:
     int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
     int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
     int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
+    // 分岐方向（旧 SABORI_BISECT_DIR の low/high/p。-1=コイン / 0..1=確率p で下側 / 2=上側固定）
+    double bisect_low_prob_ = -1.0;
     int root_probe_limit_ = 0;               // root probing の probe 予算 (0=無効, SABORI_PROBE_ROOT)
     int promote_impact_k_ = 0;               // impact 上位 K の defined 変数を昇格 (0=無効, SABORI_PROMOTE_IMPACT)
     int promote_impact_period_ = 8;          // 昇格再実行のリスタート周期 (0=開始時のみ, SABORI_PROMOTE_IMPACT_PERIOD)

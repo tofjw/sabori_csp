@@ -11,43 +11,17 @@
 
 namespace sabori_csp {
 
-namespace {
-// 勾配・phase ヒントが無いときの二分方向（SABORI_BISECT_DIR）。
-//   rand（既定, 従来動作）= コイン投げ
-//   low / low:<p>        = 確率 p で下側を先（"low" は p=1.0）。p=0.5 はコイン投げと等価
-//   high                 = 常に上側を先
-//   vote / vote_major    = 制約からの方向票（Solver::vote_bisect_dir 側で処理）
+// 勾配・phase ヒントが無いときの二分方向は bisect_low_prob_（Solver メンバー）が決める。
+//   -1.0（既定, 従来動作）= コイン投げ
+//   1.0 ("low")           = 常に下側を先 / 0..1 = 確率 p で下側（p=0.5 はコインと等価）
+//   2.0 ("high")          = 常に上側を先
+//   vote / vote_major / cycle = env 専用（Solver ctor で別メンバーに読み込み）
 //
 // 固定（p=1.0）は初解が遅れる代わりに最終品質が良く、コイン（p=0.5）はその逆。
 // リスタートが 55 秒で 900〜1000 回走るため、決定的だと同じ prefix を選び直して
 // 袋小路から出られないことがある（12 シードで決定的な設定だけが同じシードで落ちた）。
-// p はそのトレードオフのつまみ。
-double bisect_low_prob() {
-    static const double p = [] {
-        const char* e = std::getenv("SABORI_BISECT_DIR");
-        if (!e) return -1.0;
-        std::string v(e);
-        if (v == "low") return 1.0;
-        if (v.rfind("low:", 0) == 0) {
-            double q = std::atof(v.c_str() + 4);
-            if (q < 0.0) q = 0.0;
-            if (q > 1.0) q = 1.0;
-            return q;
-        }
-        return -1.0;
-    }();
-    return p;
-}
-
-// high 固定のみ 2 を返す（low 系は bisect_low_prob が扱う）
-int bisect_dir_mode() {
-    static const int m = [] {
-        const char* e = std::getenv("SABORI_BISECT_DIR");
-        return (e && std::string(e) == "high") ? 2 : 0;
-    }();
-    return m;
-}
-}  // namespace
+// p はそのトレードオフのつまみ。旧実装は関数ローカル static（プロセスグローバル）
+// だったが、per-worker arm 化（WorkerConfig.bisect_low_prob）のためメンバー化した。
 
 
 // 明示スタック探索のフレーム管理（run_search / 値列挙 / 分岐 / frame 生成）。solver.cpp から分離。
@@ -165,11 +139,12 @@ bool Solver::fallback_bisect_dir(size_t var_idx) {
         }
     }
 
-    const double lp = bisect_low_prob();
+    const double lp = bisect_low_prob_;
+    if (lp >= 2.0) return true;  // "high": 常に上側を先
     if (lp >= 0.0) {
         return !((static_cast<double>(rng_() & 0xFFFFFF) / 16777216.0) < lp);
     }
-    return (bisect_dir_mode() == 2) ? true : ((rng_() & 1) != 0);
+    return (rng_() & 1) != 0;
 }
 
 void Solver::refresh_activity_stats() {

@@ -298,6 +298,9 @@ std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_opt
     if (const char* e = std::getenv("SABORI_SEED")) {
         base.seed = static_cast<uint32_t>(std::strtoul(e, nullptr, 10));
     }
+    // probe 系アーム（PROBE_ROOT / PROMOTE_IMPACT / BOTTOMUP）の env 指定を base に
+    // 反映（デバッグ上書き。既定は WorkerConfig の初期値 = 全て無効）。
+    sabori_csp::apply_probe_env_overrides(base);
     auto cfgs = sabori_csp::make_portfolio_configs(n, is_optimize, base);
 
     // 【診断/実験】外部チューナー（Optuna等）用フック: SABORI_TUNE_CASE=K を設定すると、
@@ -317,6 +320,10 @@ std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_opt
             if (const char* e = std::getenv("SABORI_TUNE_PROBE_ENABLED")) c.probe_enabled = std::atoi(e) != 0;
             if (const char* e = std::getenv("SABORI_TUNE_TEMPORAL_ENABLED")) c.temporal_enabled = std::atoi(e) != 0;
             if (const char* e = std::getenv("SABORI_TUNE_FIXED_MIXP")) c.fixed_mixp = static_cast<size_t>(std::atoi(e));
+            if (const char* e = std::getenv("SABORI_TUNE_ROOT_PROBE")) c.root_probe_limit = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_PROMOTE_IMPACT")) c.promote_impact_k = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_BOTTOMUP")) c.bottomup_fail_limit = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_BISECT_LOW_PROB")) c.bisect_low_prob = std::atof(e);
             cfgs[i] = c;
         }
     }
