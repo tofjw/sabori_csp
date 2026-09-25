@@ -18,6 +18,8 @@ namespace sabori_csp {
  */
 class TableConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(TableConstraint)
+
     /**
      * @brief コンストラクタ
      * @param vars 制約に関与する変数リスト
@@ -89,25 +91,25 @@ private:
     size_t num_tuples_;
     size_t num_words_;
 
-    std::vector<Domain::value_type> flat_tuples_;  ///< is_satisfied 用コピー
+    SharedConstVec<Domain::value_type> flat_tuples_;  ///< is_satisfied 用（タプル定義。構築後不変・clone 間共有）
 
     /// supports ストレージモード: false=dense bitset, true=sorted tuple-index list
     bool use_sparse_ = false;
     /// dense モード: フラットビットセット supports_data_[get_support_offset(var, val) + w]
     /// sparse モード: 全 (var,val) のタプル index を flat に並べたもの
     ///                各 (var,val) のリストは [start, start+length) のスライス
-    std::vector<uint64_t> supports_data_;     ///< dense モード時のみ使用
-    std::vector<uint32_t> sparse_supports_;   ///< sparse モード時のみ使用 (sorted tuple indices)
-    std::vector<uint32_t> sparse_lengths_;    ///< sparse モード時の各 (var,val) のリスト長
+    SharedConstVec<uint64_t> supports_data_;     ///< dense モード時のみ使用（構築後不変・clone 間共有）
+    SharedConstVec<uint32_t> sparse_supports_;   ///< sparse モード時のみ使用 (sorted tuple indices, 構築後不変・clone 間共有)
+    SharedConstVec<uint32_t> sparse_lengths_;    ///< sparse モード時の各 (var,val) のリスト長（構築後不変・clone 間共有）
     /// 各変数の値→supports_data_内オフセット（フラット配列）
     struct VarSupportInfo {
         Domain::value_type min_val;
         size_t range_size;
         size_t flat_offset;  ///< supports_offsets_flat_ 内のオフセット
     };
-    std::vector<VarSupportInfo> var_support_info_;
+    SharedConstVec<VarSupportInfo> var_support_info_;  ///< 構築後不変・clone 間共有
     static constexpr size_t NO_SUPPORT = SIZE_MAX;
-    std::vector<size_t> supports_offsets_flat_;  ///< NO_SUPPORT = サポートなし
+    SharedConstVec<size_t> supports_offsets_flat_;  ///< NO_SUPPORT = サポートなし（構築後不変・clone 間共有）
     /// 有効タプルのビットマスク
     std::vector<uint64_t> current_table_;
     /// current_table_ の最後の非ゼロ word インデックス (テーブルが空なら 0)
@@ -205,6 +207,8 @@ private:
  */
 class RegularConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(RegularConstraint)
+
     /**
      * @brief コンストラクタ
      * @param vars 入力変数列

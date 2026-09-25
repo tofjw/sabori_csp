@@ -21,6 +21,8 @@ namespace sabori_csp {
  */
 class IntElementConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntElementConstraint)
+
     /**
      * @brief コンストラクタ
      * @param index_var インデックス変数
@@ -81,7 +83,7 @@ protected:
 
 
 private:
-    std::vector<Domain::value_type> array_;
+    SharedConstVec<Domain::value_type> array_;  ///< 配列リテラル（構築後不変・clone 間共有）
     size_t n_;
     bool zero_based_;
     size_t index_id_;
@@ -132,6 +134,8 @@ private:
  */
 class IntElementMonotonicConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntElementMonotonicConstraint)
+
     enum class Monotonicity { NON_DECREASING, NON_INCREASING };
 
     IntElementMonotonicConstraint(VariablePtr index_var,
@@ -170,7 +174,7 @@ protected:
 
 
 private:
-    std::vector<Domain::value_type> array_;  // 元配列そのまま (O(n))
+    SharedConstVec<Domain::value_type> array_;  // 元配列そのまま (O(n), 構築後不変・clone 間共有)
     size_t n_;
     bool zero_based_;
     Monotonicity mono_;
@@ -194,6 +198,8 @@ private:
  */
 class ArrayIntMaximumConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayIntMaximumConstraint)
+
     /**
      * @brief コンストラクタ
      * @param m 最大値を表す変数
@@ -238,6 +244,8 @@ private:
  */
 class ArrayIntMinimumConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayIntMinimumConstraint)
+
     ArrayIntMinimumConstraint(VariablePtr m, std::vector<VariablePtr> vars);
 
     std::string name() const override;
@@ -283,6 +291,8 @@ private:
  */
 class ArrayVarIntElementConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayVarIntElementConstraint)
+
     /**
      * @brief コンストラクタ
      * @param index インデックス変数

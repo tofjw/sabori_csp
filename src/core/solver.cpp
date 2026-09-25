@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <limits>
 #include <numeric>
+#include <fstream>
+#include <unordered_map>
+#include <string>
 #include <iomanip>
 #include <iostream>
 #include <cstdlib>
@@ -76,6 +79,10 @@ Solver::Solver()
     if (const char* env = std::getenv("SABORI_NOGOOD")) {
         nogood_learning_ = (std::atoi(env) != 0);
     }
+    // 計測用/多様化用: SABORI_CONFLICT=1 で conflict 学習（矛盾制約スコープの NoGood 化）を有効化（既定無効）。
+    if (const char* env = std::getenv("SABORI_CONFLICT")) {
+        conflict_learning_ = (std::atoi(env) != 0);
+    }
     // 計測用: SABORI_ONEHOT=0 で one-hot チャネル集約 presolve を無効化（既定有効）。
     if (const char* env = std::getenv("SABORI_ONEHOT")) {
         onehot_enabled_ = (std::atoi(env) != 0);
@@ -117,6 +124,16 @@ Solver::Solver()
     // 計測用: SABORI_PROBE=0 で improvement probe（最適化の軽量サブ探索）を無効化。
     if (const char* env = std::getenv("SABORI_PROBE")) {
         probe_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用/多様化用: SABORI_RESTART=0 でリスタートを無効化（既定有効）。
+    // ポートフォリオの構成評価を単一スレッドで決定論的に行うために使う。
+    if (const char* env = std::getenv("SABORI_RESTART")) {
+        restart_enabled_ = (std::atoi(env) != 0);
+    }
+    // 計測用/多様化用: SABORI_RESTART_SCALE で inner/outer の初期 conflict 予算を
+    // スケールする（>1 でリスタート頻度を下げる。完全オフより安全な多様化）。
+    if (const char* env = std::getenv("SABORI_RESTART_SCALE")) {
+        restart_ctrl_.set_initial_scale(std::atof(env));
     }
     // 計測用: SABORI_RESTART_POLICY で outer 調整の決定則を差し替える。
     //   adaptive        — ライブ信号で tighten/widen（未設定時と違い tighten が実際に発火する）
@@ -181,14 +198,20 @@ Literal Literal::negate() const {
     return *this;
 }
 
-bool Solver::init_search(Model& model) {
+// presolve 前の探索状態の確保（activity / var_selector 順序 / nogood / stats 等）。
+// presolve には依存しない部分。マルチスレッドのワーカー初期化でも共有する。
+void Solver::init_search_state(Model& model, bool run_build_order) {
     model.build_constraint_watch_list();
 
     const auto& variables = model.variables();
     activity_.assign(variables.size(), 0.0);
     temporal_activity_.assign(variables.size(), 0);
-    var_selector_.build_order(model, rng_);
+    if (run_build_order) {
+        var_selector_.build_order(model, rng_);
+    }
     decision_trail_.clear();
+    conflict_expl_.clear();
+    conflict_expl_ok_ = false;
     nogood_mgr_.clear(variables.size());
     best_num_instantiated_ = 0;
     best_assignment_.assign(variables.size(), kNoValue);
@@ -201,13 +224,11 @@ bool Solver::init_search(Model& model) {
     model.resize_var_ng_bloom(variables.size());
     ng_usage_bloom_ = Bloom512{};
     restart_ctrl_.reset();
+}
 
-    if (verbose_) log_presolve_start(model);
-    if (!presolve(model)) {
-        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
-        return false;
-    }
-
+// presolve 後の初期化（direction votes / gradient / 制約固有 activity / community /
+// var_selector tracking）。presolve 済み・prepare_propagation 済みのモデルに対して呼ぶ。
+void Solver::init_search_post_presolve(Model& model) {
     build_direction_votes(model);
 
     // 勾配に関わる変数インデックスを収集（勾配候補の高速列挙用）
@@ -269,12 +290,46 @@ bool Solver::init_search(Model& model) {
                   << "\n";
     }
     unassigned_trail_.clear();
+}
+
+// 探索初期化: state → presolve → build_order → post。
+// build_order（初期変数順）は presolve 後に構築するのが既定。並列 worker は
+// presolve 済み master の clone 上で順序を作る（prepared 経路）ため、single-thread も
+// これに揃えることで両者が同一の変数順になり、-j1 と -j2 worker0 の挙動一致・
+// 「worker0 = 単一スレッドより悪くならない軸」の前提が実際に成立する。
+// presolve は rng を消費しないので、build_order は fresh seed で最初の rng 消費となり、
+// 同一 seed なら single-thread と並列 worker0 が完全一致する。
+// 根拠: bench_buildorder_ab.py（3 seed 集計で post-presolve が net 有利、問題依存）。
+// ablation: SABORI_BUILDORDER_PREPRESOLVE=1 で旧挙動（presolve 前構築）に戻す。
+bool Solver::init_search(Model& model) {
+    static const bool pre_presolve_order =
+        std::getenv("SABORI_BUILDORDER_PREPRESOLVE") != nullptr;
+
+    init_search_state(model, /*run_build_order=*/pre_presolve_order);
+
+    if (verbose_) log_presolve_start(model);
+    if (!presolve(model)) {
+        if (verbose_) std::cerr << "% [verbose] presolve failed\n";
+        return false;
+    }
+
+    if (!pre_presolve_order) {
+        var_selector_.build_order(model, rng_);
+    }
+    init_search_post_presolve(model);
     return true;
 }
 
-std::optional<Solution> Solver::solve(Model& model) {
-    if (!init_search(model)) return std::nullopt;
+// presolve をスキップした探索初期化。すでに presolve / prepare_propagation 済みの
+// clone モデル（master からの複製）に対してワーカースレッドが呼ぶ。
+bool Solver::init_search_no_presolve(Model& model) {
+    init_search_state(model);
+    init_search_post_presolve(model);
+    return true;
+}
 
+// 初期化後の探索本体（solve / solve_prepared 共通）。
+std::optional<Solution> Solver::run_solve(Model& model) {
     if (restart_enabled_) {
         return search_with_restart(model, nullptr, false);
     }
@@ -289,28 +344,20 @@ std::optional<Solution> Solver::solve(Model& model) {
     return result;
 }
 
-std::optional<Solution> Solver::solve_optimize(
+// 初期化後の最適化探索本体（solve_optimize / solve_optimize_prepared 共通）。
+std::optional<Solution> Solver::run_solve_optimize(
         Model& model, size_t obj_var_idx, bool minimize,
         SolutionCallback on_improve) {
     optimizing_ = true;
     obj_var_idx_ = obj_var_idx;
     minimize_ = minimize;
-    best_solution_ = std::nullopt;
-    best_objective_ = std::nullopt;
-
-    if (!init_search(model)) {
-        optimizing_ = false;
-        return std::nullopt;
-    }
-
     auto result = search_with_restart_optimize(model, on_improve);
     optimizing_ = false;
     return result;
 }
 
-size_t Solver::solve_all(Model& model, SolutionCallback callback) {
-    if (!init_search(model)) return 0;
-
+// 初期化後の全解探索本体（solve_all / solve_all_prepared 共通）。
+size_t Solver::run_solve_all(Model& model, SolutionCallback callback) {
     size_t count = 0;
 
     if (restart_enabled_) {
@@ -328,6 +375,51 @@ size_t Solver::solve_all(Model& model, SolutionCallback callback) {
     }
 
     return count;
+}
+
+std::optional<Solution> Solver::solve(Model& model) {
+    if (!init_search(model)) return std::nullopt;
+    return run_solve(model);
+}
+
+std::optional<Solution> Solver::solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+    if (!init_search(model)) return std::nullopt;
+    return run_solve_optimize(model, obj_var_idx, minimize, on_improve);
+}
+
+size_t Solver::solve_all(Model& model, SolutionCallback callback) {
+    if (!init_search(model)) return 0;
+    return run_solve_all(model, callback);
+}
+
+// ===== presolve 済みモデル（master の clone）向けの prepared 版 =====
+// ワーカースレッドが使う。init_search_no_presolve で初期化してから探索する。
+
+bool Solver::prepare(Model& master) {
+    return init_search(master);
+}
+
+std::optional<Solution> Solver::solve_prepared(Model& model) {
+    init_search_no_presolve(model);
+    return run_solve(model);
+}
+
+std::optional<Solution> Solver::solve_optimize_prepared(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve) {
+    best_solution_ = std::nullopt;
+    best_objective_ = std::nullopt;
+    init_search_no_presolve(model);
+    return run_solve_optimize(model, obj_var_idx, minimize, on_improve);
+}
+
+size_t Solver::solve_all_prepared(Model& model, SolutionCallback callback) {
+    init_search_no_presolve(model);
+    return run_solve_all(model, callback);
 }
 
 void Solver::log_presolve_start(const Model& model) const {
@@ -461,6 +553,73 @@ bool Solver::verify_solution(const Model& model) const {
         }
     }
     return true;
+}
+
+void Solver::capture_conflict_explanation(const Model& model, size_t constraint_idx) {
+    conflict_expl_.clear();
+    conflict_expl_ok_ = false;
+    const auto& vids = model.constraints()[constraint_idx]->var_ids_ref();
+    // スコープが小さすぎる（単一変数）制約は decision リテラル相当で情報がないため除外。
+    if (vids.size() < 2) return;
+    conflict_expl_.reserve(vids.size());
+    for (size_t v : vids) {
+        // 未確定変数が1つでもあれば bail（instantiation-only）= 健全な既定。
+        //
+        // 【bound-literal（box）説明は不健全。ground(Eq) 限定が正しい】
+        // 旧 SABORI_BOUND_EXPL ハーネスで実証済み（2018 elitserien handball1 を
+        // obj=3 と誤証明、真の最適=2）。矛盾時、propagator は実 Domain（穴あり）で
+        // 正しく矛盾を検出するが、capture が読む SoA(var_min/max/size) は stale で
+        // 「連続・穴なし」と誤報しうる（SoA↔Domain 同期ラグの幻の穴）。SoA ベースの
+        // 穴ガードでは防げず、健全な bounds 説明には矛盾検出時点の一貫した実ドメイン像
+        // （= LCG 相当）が要る。詳細: docs-dev/work-log/2026-07 系 + memory
+        // bound-nogood-unsound-confirmed。ハーネス自体は削除済み（再導入しないこと）。
+        if (!model.is_instantiated(v)) {
+            conflict_expl_.clear();
+            return;
+        }
+        conflict_expl_.push_back({v, model.value(v), Literal::Type::Eq});
+    }
+    conflict_expl_ok_ = true;
+
+    // 【計装】SABORI_NG_AUDIT=<file>: 参照解(name value 行)を読み、この説明の全リテラルが
+    // 参照解で成立するか判定。成立＝valid 解を排除する不健全 NG の実物 → 出力。
+    audit_nogood_against_reference(model, constraint_idx);
+}
+
+void Solver::audit_nogood_against_reference(const Model& model, size_t constraint_idx) const {
+    static const char* audit_path = std::getenv("SABORI_NG_AUDIT");
+    if (!audit_path) return;
+    // 参照解を一度だけロード（name -> value）。
+    static std::unordered_map<std::string, Domain::value_type> ref = [&] {
+        std::unordered_map<std::string, Domain::value_type> m;
+        std::ifstream in(audit_path);
+        std::string name; long long val;
+        while (in >> name >> val) m[name] = static_cast<Domain::value_type>(val);
+        std::cerr << "% [ng-audit] loaded " << m.size() << " reference vars\n";
+        return m;
+    }();
+    const auto& vars = model.variables();
+    bool all_present = true, all_hold = true;
+    for (const Literal& L : conflict_expl_) {
+        auto it = ref.find(vars[L.var_idx]->name());
+        if (it == ref.end()) { all_present = false; break; }
+        Domain::value_type rv = it->second;
+        bool hold = (L.type == Literal::Type::Eq)  ? (rv == L.value)
+                  : (L.type == Literal::Type::Leq) ? (rv <= L.value)
+                                                   : (rv >= L.value);
+        if (!hold) { all_hold = false; break; }
+    }
+    if (all_present && all_hold) {
+        std::cerr << "% [ng-audit] UNSOUND NG excludes reference solution! constraint="
+                  << model.constraints()[constraint_idx]->name() << " lits:";
+        for (const Literal& L : conflict_expl_) {
+            const char* t = (L.type == Literal::Type::Eq) ? "==" :
+                            (L.type == Literal::Type::Leq) ? "<=" : ">=";
+            std::cerr << " " << vars[L.var_idx]->name() << t << L.value
+                      << "(ref=" << ref[vars[L.var_idx]->name()] << ")";
+        }
+        std::cerr << "\n";
+    }
 }
 
 void Solver::decay_activities() {

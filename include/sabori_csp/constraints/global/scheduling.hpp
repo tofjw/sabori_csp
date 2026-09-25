@@ -19,6 +19,8 @@ namespace sabori_csp {
  */
 class DisjunctiveConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(DisjunctiveConstraint)
+
     DisjunctiveConstraint(std::vector<VariablePtr> starts,
                           std::vector<VariablePtr> durations,
                           bool strict);
@@ -119,6 +121,8 @@ private:
  */
 class DiffnConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(DiffnConstraint)
+
     DiffnConstraint(std::vector<VariablePtr> x, std::vector<VariablePtr> y,
                     std::vector<VariablePtr> dx, std::vector<VariablePtr> dy,
                     bool strict = true);
@@ -322,6 +326,16 @@ public:
                          std::vector<VariablePtr> durations,
                          std::vector<VariablePtr> requirements,
                          VariablePtr capacity);
+
+    /**
+     * @brief コピーコンストラクタ（clone 用）
+     *
+     * engines_ が unique_ptr を持つため暗黙コピー不可。エンジンは
+     * コンストラクタと同じ構成で作り直す（スクラッチ状態は各伝播で再構築される）。
+     */
+    CumulativeConstraint(const CumulativeConstraint& other);
+
+    std::shared_ptr<Constraint> clone() const override;
 
     std::string name() const override;
 

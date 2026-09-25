@@ -46,6 +46,48 @@ inline std::vector<size_t> extract_var_ids(const std::vector<VariablePtr>& vars)
  * 追加機能:
  * - 残り1変数での早期伝播 (on_last_uninstantiated)
  */
+/**
+ * @brief clone 間で共有する不変ペイロード用の読み取り専用ベクタ
+ *
+ * マルチスレッド・ポートフォリオで presolve 済みモデルをワーカーごとに
+ * Constraint::clone() する際、構築後に変化しないデータ（変数IDリスト・
+ * テーブル制約のタプル定義・線形制約の係数列など）までディープコピーすると
+ * -jN でメモリが N 倍になる。このラッパーはコピー時に shared_ptr を共有する
+ * ため、SABORI_CSP_CLONE_IMPL（コピーコンストラクタ経由）の clone で
+ * 具象クラス側の変更なしにペイロード共有が成立する。
+ *
+ * 共有安全の前提: 格納後は不変であること。探索中に書き換わるデータ
+ * （extensional の current_table_、trail、サポートカウンタ等）には使わないこと。
+ * 読み取り API は const vector と互換（operator[] / size / begin / end / data）。
+ * std::vector からの代入は新しい共有バッファへの差し替え（既存の共有先には
+ * 影響しない）。
+ */
+template <typename T>
+class SharedConstVec {
+public:
+    SharedConstVec() : vec_(std::make_shared<const std::vector<T>>()) {}
+    SharedConstVec(std::vector<T> v)
+        : vec_(std::make_shared<const std::vector<T>>(std::move(v))) {}
+    SharedConstVec& operator=(std::vector<T> v) {
+        vec_ = std::make_shared<const std::vector<T>>(std::move(v));
+        return *this;
+    }
+    /// const vector としての読み取り（既存コードとの互換用）
+    operator const std::vector<T>&() const { return *vec_; }
+    const std::vector<T>& ref() const { return *vec_; }
+    const T& operator[](size_t i) const { return (*vec_)[i]; }
+    size_t size() const { return vec_->size(); }
+    bool empty() const { return vec_->empty(); }
+    typename std::vector<T>::const_iterator begin() const { return vec_->begin(); }
+    typename std::vector<T>::const_iterator end() const { return vec_->end(); }
+    const T& front() const { return vec_->front(); }
+    const T& back() const { return vec_->back(); }
+    const T* data() const { return vec_->data(); }
+
+private:
+    std::shared_ptr<const std::vector<T>> vec_;
+};
+
 class Constraint {
 public:
     virtual ~Constraint() = default;
@@ -337,12 +379,32 @@ public:
                                        std::vector<uint32_t>& high) const;
 
     /**
+     * @brief 制約のポリモーフィックなディープコピーを生成する
+     *
+     * マルチスレッド・ポートフォリオ探索で presolve 済みモデルを
+     * スレッドごとに clone する際に使用する。
+     *
+     * 各具象サブクラスは SABORI_CSP_CLONE_IMPL マクロで
+     * `std::make_shared<Derived>(*this)` を返すよう実装する。
+     * コピーコンストラクタは探索状態（trail・カウンタ等）を値で複製し、
+     * SharedConstVec の不変ペイロード（var_ids_ 等）は共有する。
+     * static な next_id_ には触れない（clone 後も id は安定）。
+     *
+     * 純粋仮想なので、未実装の具象サブクラスはコンパイルエラーになり
+     * 取りこぼしを防げる。
+     */
+    virtual std::shared_ptr<Constraint> clone() const = 0;
+
+    /**
      * @brief 単一変数の activity を加算し、rescale 閾値をチェック
      */
     static void bump_variable_activity(double* activity, size_t vid,
                                       double inc, bool& need_rescale,
                                       std::mt19937& rng) {
-        static std::uniform_real_distribution<double> jitter(0.9, 1.0);
+        // thread_local: マルチスレッド・ポートフォリオで各ワーカーが独立に
+        // 自分の rng_ から引くため。static だと operator() の内部状態が
+        // スレッド間で共有されデータ競合になる。
+        thread_local std::uniform_real_distribution<double> jitter(0.9, 1.0);
         activity[vid] += inc * jitter(rng);
         if (activity[vid] > 10000.0) {
             need_rescale = true;
@@ -369,8 +431,8 @@ protected:
      */
     void set_var_ids(std::vector<size_t> var_ids);
 
-    // 変数のModel内ID
-    std::vector<size_t> var_ids_;
+    // 変数のModel内ID（構築後不変。clone 間で共有される — SharedConstVec 参照）
+    SharedConstVec<size_t> var_ids_;
 
     /**
      * @brief 変数のModel内IDを取得
@@ -397,6 +459,26 @@ private:
 };
 
 using ConstraintPtr = std::shared_ptr<Constraint>;
+
+/**
+ * @brief 具象制約クラスに clone() を実装するヘルパマクロ
+ *
+ * コピーコンストラクタ経由でディープコピーを生成する。
+ * 値型メンバ（trail・探索状態等）は複製され、SharedConstVec メンバ
+ * （var_ids_ や各制約の不変ペイロード）は共有される。
+ * static next_id_ には触れないため id は安定する。
+ *
+ * 使用例（クラス public セクション内）:
+ *   SABORI_CSP_CLONE_IMPL(IntTimesConstraint)
+ *
+ * 注意: コピー不可メンバ（std::unique_ptr 等）を持つクラスでは
+ * 暗黙コピーコンストラクタが削除されるため、このマクロは使えず
+ * clone() を手書きする必要がある（例: CumulativeConstraint）。
+ */
+#define SABORI_CSP_CLONE_IMPL(Derived)                                  \
+    std::shared_ptr<::sabori_csp::Constraint> clone() const override {  \
+        return std::make_shared<Derived>(*this);                       \
+    }
 
 } // namespace sabori_csp
 

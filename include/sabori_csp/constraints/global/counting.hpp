@@ -22,6 +22,8 @@ namespace sabori_csp {
  */
 class CountEqConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(CountEqConstraint)
+
     /**
      * @brief コンストラクタ
      * @param x_vars 配列変数
@@ -109,6 +111,8 @@ private:
  */
 class CountEqVarTargetConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(CountEqVarTargetConstraint)
+
     /**
      * @brief コンストラクタ
      * @param x_vars 配列変数
@@ -212,6 +216,8 @@ private:
  */
 class BinPackingLoadConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(BinPackingLoadConstraint)
+
     /**
      * @brief コンストラクタ
      * @param loads        各ビンの積載量変数（B 個）
@@ -283,6 +289,8 @@ private:
  */
 class GlobalCardinalityConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(GlobalCardinalityConstraint)
+
     /**
      * @brief コンストラクタ
      * @param xs     対象変数列（M 個）
@@ -346,6 +354,8 @@ private:
  */
 class NValueConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(NValueConstraint)
+
     /**
      * @brief コンストラクタ
      * @param n_var 異なる値の数を表す変数

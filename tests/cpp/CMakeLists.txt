@@ -24,6 +24,7 @@ add_executable(test_sabori_csp
   test_subcircuit_brute.cpp
   test_find_all_consistency.cpp
   test_one_hot_channel.cpp
+  test_parallel_clone.cpp
   test_divmod_channel.cpp
 )
 

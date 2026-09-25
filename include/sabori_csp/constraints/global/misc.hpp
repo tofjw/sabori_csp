@@ -32,6 +32,8 @@ namespace sabori_csp {
  */
 class IntOneHotChannelConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntOneHotChannelConstraint)
+
     IntOneHotChannelConstraint(VariablePtr x,
                                std::vector<Domain::value_type> values,
                                std::vector<VariablePtr> bools);
@@ -124,6 +126,8 @@ private:
  */
 class IncreasingConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IncreasingConstraint)
+
     IncreasingConstraint(std::vector<VariablePtr> vars, bool strict);
 
     std::string name() const override;
@@ -178,6 +182,8 @@ private:
  */
 class ValuePrecedeConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ValuePrecedeConstraint)
+
     /**
      * @brief コンストラクタ
      * @param s  先行しなければならない値（定数）
@@ -248,6 +254,8 @@ private:
  */
 class LexLessEqConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(LexLessEqConstraint)
+
     /**
      * @brief コンストラクタ
      * @param xs     左辺の変数列

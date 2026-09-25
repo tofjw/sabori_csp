@@ -33,6 +33,8 @@ namespace sabori_csp {
  */
 class AllDifferentGACConstraint : public AllDifferentConstraint {
 public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentGACConstraint)
+
     explicit AllDifferentGACConstraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;

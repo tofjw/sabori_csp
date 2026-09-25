@@ -118,8 +118,19 @@ solver = CpSolver()
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `solver.solve(model)` | `SolveStatus` | Find one solution (or optimal if objective is set) |
+| `solver.solve(model, *, num_workers=1, time_limit=None, handle_sigint=False)` | `SolveStatus` | Find one solution (or optimal if objective is set). `num_workers > 1` runs a parallel portfolio; `time_limit` (seconds) bounds wall-clock time; `handle_sigint` makes Ctrl-C stop gracefully |
 | `solver.solve_all(model, callback)` | `int` | Find all solutions; callback receives `dict[str, int]`, returns `True` to continue |
+
+`solve()` keyword arguments:
+
+- `num_workers` (`int`, default `1`) — portfolio worker threads. Worker 0 always
+  uses the default config, so a portfolio is never slower than single-threaded.
+- `time_limit` (`float | None`, default `None`) — wall-clock seconds; a watchdog
+  stops the search on expiry and returns the best solution found so far.
+- `handle_sigint` (`bool`, default `False`) — install a temporary `SIGINT`
+  handler so Ctrl-C calls `stop()` and returns the best solution found so far.
+  The prior handler is restored afterward (a second Ctrl-C behaves normally).
+  Main-thread only; ignored with a warning otherwise.
 
 ### Solution access
 
@@ -139,8 +150,16 @@ Raises `RuntimeError` if called before a successful `solve()`.
 | `set_activity_selection(enabled)` | `True` | VSIDS-like variable selection |
 | `set_activity_first(enabled)` | `False` | Prioritize activity over domain size |
 | `set_bisection_threshold(n)` | `8` | Binary split for domains > n; 0 = disable |
+| `set_seed(seed)` | solver default | RNG seed (base seed for the portfolio). See caveat below |
 | `set_verbose(enabled)` | `False` | Print search progress |
 | `set_community_analysis(enabled)` | `False` | Constraint graph community detection |
+
+> **Reproducibility:** `set_seed` seeds the solver's RNG (and, on the parallel
+> path, becomes the base seed from which each worker derives a distinct seed).
+> Single-threaded (`num_workers=1`) solves are **reproducible run-to-run with a
+> fixed seed**. The parallel portfolio (`num_workers>1`) is inherently
+> nondeterministic because which worker finishes first depends on OS thread
+> scheduling — use a fixed seed with `num_workers=1` when you need identical runs.
 
 ### Control
 
@@ -164,9 +183,10 @@ See [Core API Reference](../core/reference.md#solverstats) for the full list of 
 ```python
 from sabori_csp import SolveStatus
 
-SolveStatus.FEASIBLE    # 1 — solution found (satisfaction problem)
+SolveStatus.FEASIBLE    # 1 — solution found (satisfaction, or optimization stopped before proving optimality)
 SolveStatus.OPTIMAL     # 2 — optimal solution found (optimization problem)
 SolveStatus.INFEASIBLE  # 3 — no solution exists
+SolveStatus.TIMEOUT     # 4 — stopped by time_limit with no solution found
 ```
 
 `SolveStatus` is an `IntEnum`, so it can be compared with integers and used in boolean contexts.
