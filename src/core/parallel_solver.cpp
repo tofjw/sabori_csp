@@ -64,7 +64,10 @@ namespace {
 // arithmetic-target 等で promote が base の軌道を悪化させる実 regression あり。
 // → 既定ラダーは従来のまま。promote は opt-in(SABORI_PROMOTE_DEF_BOOL /
 //    WorkerConfig.promote_def_bool)のみ温存。[[reif-promote-central-band]] と同じ判断。
-void apply_diversification_axis(WorkerConfig& c, size_t k, bool is_optimize,
+// 注: 現在はどこからも呼ばれない（スレッド間は make_portfolio_configs 内の実験中
+// switch、スロット間は apply_slot_diversification_axis に分離）。2026-07-03 計測の
+// 7ケース表の原本として手順7（ラダー再チューニング）まで参照用に残す。
+[[maybe_unused]] void apply_diversification_axis(WorkerConfig& c, size_t k, bool is_optimize,
                                 const WorkerConfig& base) {
     if (is_optimize) {
         switch (k) {
@@ -86,6 +89,26 @@ void apply_diversification_axis(WorkerConfig& c, size_t k, bool is_optimize,
             case 5: c.gradient_enabled = false; break;
             case 6: break;                              // 純シード
         }
+    }
+}
+
+// スロット間（ラウンドロビン・マルチスタート）用の多様化軸。
+// 役割分担（multistart-portfolio-design.md §2(a)）:
+//   スレッド間 = CPU を独占する構造的戦略（conflict/nogood/mrv/probe/gradient）
+//   スロット間 = リスタート単位で CPU を明け渡すため、切り替えコストが低く
+//                初期分散の大きい軸（シード・分岐方向・restart_scale）に限定する。
+//                長い連続計算を要する戦略（証明系・学習系）はスロットに置かない。
+// 値は未計測の暫定配置（bisect_low_prob は §3 で「ラダー軸の第一候補」と名指し）。
+// 手順7の軸×シードグリッドで再チューニングすること。
+void apply_slot_diversification_axis(WorkerConfig& c, size_t k) {
+    switch (k) {
+        case 0: c.bisect_low_prob = 1.0; break;   // 常に下側（"low"）
+        case 1: c.restart_scale = 2.0; break;
+        case 2: break;                             // 純シード
+        case 3: c.bisect_low_prob = 2.0; break;   // 常に上側（"high"）
+        case 4: c.restart_scale = 8.0; break;
+        case 5: break;                             // 純シード
+        case 6: break;                             // 純シード
     }
 }
 
@@ -111,8 +134,9 @@ WorkerConfig ParallelSolver::make_instance_config(size_t thread_idx, size_t slot
         // 0x86545D77u: スレッド間シード導出（2654435761u）と衝突しないよう別定数を使う。
         c.seed = static_cast<uint32_t>(c.seed + slot_idx * 0x86545D77u);
         // シードだけでなく構成軸もスロット間でずらす（シングルスレッドでも構成の異なる
-        // Solver が並ぶようにする）。スレッド間ラダーと同じ多様化軸を再利用する。
-        apply_diversification_axis(c, (slot_idx - 1) % 7, is_optimize_, thread_base);
+        // Solver が並ぶようにする）。軸表はスレッド間ラダーと分離（§2(a) の役割分担）:
+        // スロットは時分割なので初期分散系（分岐方向・restart_scale）のみ。
+        apply_slot_diversification_axis(c, (slot_idx - 1) % 7);
     }
     return c;
 }
