@@ -37,3 +37,19 @@ target_link_libraries(test_sabori_csp
 include(CTest)
 include(Catch)
 catch_discover_tests(test_sabori_csp)
+
+# fzn コーパスを in-process で解く clone 健全性ゲート（パーサを使うので別バイナリ）
+add_executable(test_fzn_clone
+  test_fzn_clone.cpp
+)
+
+target_link_libraries(test_fzn_clone
+  sabori_fzn
+  Catch2::Catch2WithMain
+)
+
+target_compile_definitions(test_fzn_clone PRIVATE
+  SABORI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+catch_discover_tests(test_fzn_clone PROPERTIES LABELS "clone")
