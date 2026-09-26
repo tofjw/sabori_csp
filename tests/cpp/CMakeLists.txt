@@ -38,18 +38,21 @@ include(CTest)
 include(Catch)
 catch_discover_tests(test_sabori_csp)
 
-# fzn コーパスを in-process で解く clone 健全性ゲート（パーサを使うので別バイナリ）
-add_executable(test_fzn_clone
+# golden コーパスの fzn を in-process で解くゲート（パーサを使うので別バイナリ）
+#   [clone]   clone 後の解・統計が原本と一致（test_fzn_clone.cpp）
+#   [resolve] 各解を固定して解き直すと SAT（test_fzn_resolve.cpp）
+add_executable(test_fzn_corpus
   test_fzn_clone.cpp
+  test_fzn_resolve.cpp
 )
 
-target_link_libraries(test_fzn_clone
+target_link_libraries(test_fzn_corpus
   sabori_fzn
   Catch2::Catch2WithMain
 )
 
-target_compile_definitions(test_fzn_clone PRIVATE
+target_compile_definitions(test_fzn_corpus PRIVATE
   SABORI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
-catch_discover_tests(test_fzn_clone PROPERTIES LABELS "clone")
+catch_discover_tests(test_fzn_corpus PROPERTIES LABELS "fzn_corpus")
