@@ -124,11 +124,13 @@ bool Domain::remove_below(value_type threshold) {
     if (threshold > max_) return false;   // 全除去→空
 
     if (bounds_only_) {
-        // removed_values_ の中で threshold 以上のもののみ残す
-        // threshold 未満のものはもう不要（min_ が threshold に上がるため）
+        // removed_values_ の中で新範囲 [threshold, max_] 内のもののみ残す
+        // threshold 未満のものはもう不要（min_ が threshold に上がるため）。
+        // max_ 超のもの（除去済みの旧 max 等）も数えると n_ が過小になり、
+        // 非空なのに size 0 となって偽 UNSAT を招く
         size_t kept = 0;
         for (size_t i = 0; i < removed_values_.size(); ++i) {
-            if (removed_values_[i] >= threshold) {
+            if (removed_values_[i] >= threshold && removed_values_[i] <= max_) {
                 removed_values_[kept++] = removed_values_[i];
             } else {
                 removed_set_.erase(removed_values_[i]);
@@ -165,10 +167,11 @@ bool Domain::remove_above(value_type threshold) {
     if (threshold < min_) return false;   // 全除去→空
 
     if (bounds_only_) {
-        // removed_values_ の中で threshold 以下のもののみ残す
+        // removed_values_ の中で新範囲 [min_, threshold] 内のもののみ残す
+        // （min_ 未満の除去済み値を数えると n_ が過小になる。remove_below と対称）
         size_t kept = 0;
         for (size_t i = 0; i < removed_values_.size(); ++i) {
-            if (removed_values_[i] <= threshold) {
+            if (removed_values_[i] <= threshold && removed_values_[i] >= min_) {
                 removed_values_[kept++] = removed_values_[i];
             } else {
                 removed_set_.erase(removed_values_[i]);

@@ -129,6 +129,44 @@ TEST_CASE("Domain Sparse Set internals", "[domain]") {
     }
 }
 
+TEST_CASE("Domain bounds-only remove_below/remove_above", "[domain]") {
+    // range > BOUNDS_ONLY_THRESHOLD で bounds-only モードになる
+    Domain d(0, 10000);
+    REQUIRE(d.is_bounds_only());
+
+    SECTION("removed value above new max is not counted by remove_below") {
+        REQUIRE(d.remove(10));
+        REQUIRE(d.remove_above(10));  // max 10 -> 9 (10 は除去済み)
+        REQUIRE(d.max().value() == 9);
+        REQUIRE(d.size() == 10);
+
+        REQUIRE(d.remove_below(9));
+        REQUIRE(d.size() == 1);
+        REQUIRE(d.min().value() == 9);
+        REQUIRE(d.max().value() == 9);
+    }
+
+    SECTION("removed value below new min is not counted by remove_above") {
+        REQUIRE(d.remove(0));  // min 0 -> 1
+        REQUIRE(d.min().value() == 1);
+
+        REQUIRE(d.remove_above(1));
+        REQUIRE(d.size() == 1);
+        REQUIRE(d.min().value() == 1);
+        REQUIRE(d.max().value() == 1);
+    }
+
+    SECTION("removed values inside the new range are still counted") {
+        REQUIRE(d.remove(5));
+        REQUIRE(d.remove(15));
+        REQUIRE(d.remove_below(3));
+        REQUIRE(d.remove_above(20));
+        REQUIRE(d.size() == 16);  // 3..20 の 18 値から 5, 15 を除く
+        REQUIRE(!d.contains(5));
+        REQUIRE(!d.contains(15));
+    }
+}
+
 // ============================================================================
 // Model Trail tests
 // ============================================================================

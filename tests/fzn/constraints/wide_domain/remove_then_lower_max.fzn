@@ -1,0 +1,10 @@
+% bounds-only domain: remove the min value, then lower max.
+% Regression: Domain::remove_above counted removed values below the new min
+% (x: 0 removed so min -> 1, then max -> 1 gave size 0 -> false UNSAT).
+var 0..10000: x :: output_var;
+var 0..1: y :: output_var;
+
+constraint int_ne(x, 0);
+constraint int_eq(x, y);
+
+solve satisfy;
