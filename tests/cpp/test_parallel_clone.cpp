@@ -265,6 +265,32 @@ TEST_CASE("ParallelSolver: 最適化は最適値と最適性証明を返す（-j
     CHECK(r.solution->at("obj") == 70);
 }
 
+// fzn の -t は alarm → stop() で届くが、大きい問題では presolve 中に鳴る。build_workers が
+// stop_flag_ を下ろしていたため、その stop が消えて -t を大きく超えて走り続けた（-t 1 で 100 秒超）。
+TEST_CASE("ParallelSolver: solve 前の stop は失われず、reset_stop で解除できる", "[parallel][manager]") {
+    size_t obj_idx = 0;
+    auto m = build_optimize_model(obj_idx);
+    ParallelSolver ps(4, diversified_configs(4));
+
+    ps.stop();
+    auto r = ps.solve_optimize(*m, obj_idx, /*minimize=*/false);
+    CHECK(r.status == SearchResult::UNKNOWN);
+    CHECK_FALSE(r.solution.has_value());
+    CHECK_FALSE(r.proved_optimal);
+
+    auto sq = build_magic_square();
+    auto r_sat = ps.solve(*sq);
+    CHECK(r_sat.status == SearchResult::UNKNOWN);  // stop は sticky
+    CHECK_FALSE(r_sat.solution.has_value());
+
+    ps.reset_stop();
+    auto r2 = ps.solve_optimize(*m, obj_idx, /*minimize=*/false);
+    REQUIRE(r2.status == SearchResult::SAT);
+    REQUIRE(r2.objective.has_value());
+    CHECK(*r2.objective == 70);
+    CHECK(r2.proved_optimal);
+}
+
 TEST_CASE("ParallelSolver: 最適化 -j8 を反復しても健全（矛盾なし・最適超えなし）", "[parallel][manager][soundness]") {
     for (int rep = 0; rep < 8; ++rep) {
         size_t obj_idx = 0;

@@ -106,11 +106,12 @@ void ParallelSolver::build_workers(const Model& master) {
     // 再入（同一インスタンスでの複数回 solve）に備え、前回の state を全消去する。
     // workers_ready_ を false に落としてから配列を作り直すことで、構築中に stop() が
     // 走っても古い solvers_ を走査しないようにする。
+    // stop_flag_ はここで下ろさない（Solver::stopped_ と同じく sticky、reset_stop() でのみ解除）。
+    // 下ろすと presolve（prep.prepare）中に届いた stop が消え、-t を大きく超えて走り続ける。
     workers_ready_.store(false);
     models_.clear();
     solvers_.clear();
     rings_.clear();
-    stop_flag_.store(false);
     have_incumbent_.store(false);
     unsat_proven_.store(false);
     optimal_proven_.store(false);
@@ -148,6 +149,10 @@ void ParallelSolver::build_workers(const Model& master) {
             if (s) s->stop();
         }
     }
+}
+
+void ParallelSolver::reset_stop() {
+    stop_flag_.store(false);
 }
 
 void ParallelSolver::stop() {
@@ -267,6 +272,7 @@ ParallelSolver::Result ParallelSolver::solve(Model& master, SolutionFoundCallbac
         r.status = SearchResult::UNSAT;  // presolve で矛盾 = UNSAT
         return r;
     }
+    if (stop_flag_.load()) return r;  // presolve 中に stop 済み: ワーカーの clone を作らず UNKNOWN
 
     build_workers(master);
 
@@ -322,6 +328,8 @@ ParallelSolver::Result ParallelSolver::solve_optimize(
     // best_obj_ をセンチネルで初期化（hook は have_incumbent_ で gate するので値は未使用だが念のため）。
     best_obj_.store(minimize ? std::numeric_limits<int64_t>::max()
                              : std::numeric_limits<int64_t>::min());
+
+    if (stop_flag_.load()) return r;  // presolve 中に stop 済み: ワーカーの clone を作らず UNKNOWN
 
     build_workers(master);
 

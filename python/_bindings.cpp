@@ -225,6 +225,7 @@ PYBIND11_MODULE(_sabori_csp, m) {
              py::arg("model"), py::arg("obj_var_idx"), py::arg("minimize"),
              py::call_guard<py::gil_scoped_release>())
         .def("stop", &ParallelSolver::stop)
+        .def("reset_stop", &ParallelSolver::reset_stop)
         .def("set_verbose", &ParallelSolver::set_verbose,
              py::arg("enabled"), py::arg("worker_idx") = 0);
 

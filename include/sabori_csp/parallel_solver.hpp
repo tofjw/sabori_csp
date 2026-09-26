@@ -167,8 +167,15 @@ public:
     /**
      * @brief 全ワーカーを停止する（タイムアウト/シグナルハンドラから呼べる）
      * @note ワーカー構築完了後は固定サイズの solvers_ に atomic stop を配るだけ。
+     * @note stop は sticky。solve 開始前や presolve 中に呼ばれても失われず、
+     *       以後の solve / solve_optimize は即座に UNKNOWN で戻る。reset_stop() で解除する。
      */
     void stop();
+
+    /**
+     * @brief stop() の効果を解除する（同一インスタンスで再度 solve する前に呼ぶ）
+     */
+    void reset_stop();
 
     /**
      * @brief verbose 出力を指定ワーカーに限定して有効化する
