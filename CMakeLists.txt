@@ -42,6 +42,30 @@ if(NOT SABORI_MARCH STREQUAL "OFF")
   endif()
 endif()
 
+# サニタイザ（検証用ビルド。提出バイナリには使わない）
+#
+#   -DSABORI_SANITIZE=thread     並列探索（-j / SABORI_MULTISTART_N）のデータ競合検出
+#   -DSABORI_SANITIZE=address    メモリ破壊・use-after-free（undefined と併用可: address,undefined）
+#
+# thread のときは tests/tsan/tsan_sweep.py を ctest（ラベル tsan）に登録する。
+# この環境（WSL2, vm.mmap_rnd_bits=32）の GCC 11 の TSan は ASLR 有効だと
+# "FATAL: ThreadSanitizer: unexpected memory mapping" で即死するため、
+# ビルドしたテスト実行ファイルは setarch -R（ASLR 無効）越しに起動する。
+# TSan は 1 プロセスで十数 GB 食うことがあるので、同時実行は 1〜2 本に抑えること。
+set(SABORI_SANITIZE "OFF" CACHE STRING "Sanitizer build: OFF | thread | address | undefined | address,undefined")
+if(NOT SABORI_SANITIZE STREQUAL "OFF")
+  if(SABORI_SANITIZE MATCHES "thread" AND SABORI_SANITIZE MATCHES "address")
+    message(FATAL_ERROR "SABORI_SANITIZE: thread と address は併用できません")
+  endif()
+  add_compile_options(-fsanitize=${SABORI_SANITIZE} -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=${SABORI_SANITIZE})
+  message(STATUS "Sanitizer: -fsanitize=${SABORI_SANITIZE}")
+  if(SABORI_SANITIZE STREQUAL "thread")
+    find_program(SETARCH_EXECUTABLE setarch REQUIRED)
+    set(CMAKE_CROSSCOMPILING_EMULATOR "${SETARCH_EXECUTABLE};${CMAKE_SYSTEM_PROCESSOR};-R")
+  endif()
+endif()
+
 # Find Bison and Flex (only needed for FlatZinc solver)
 option(BUILD_FZN "Build FlatZinc solver (requires Bison/Flex)" ON)
 if(BUILD_FZN)

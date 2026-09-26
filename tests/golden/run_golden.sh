@@ -16,6 +16,8 @@
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BIN="${FZN_SABORI:-$ROOT/build/src/fzn/fzn_sabori}"
+# サニタイザビルド用の前置コマンド (例: "setarch x86_64 -R")。空白区切りで展開する
+read -r -a LAUNCHER <<< "${FZN_SABORI_LAUNCHER:-}"
 SRC="$ROOT/tests/fzn/constraints"
 EXP="$ROOT/tests/golden/expected"
 CORPUS="$ROOT/tests/golden/corpus.txt"
@@ -39,7 +41,7 @@ audit_corpus() {
             echo "AUDIT FAIL: corpus.txt にも excluded.txt にも無い fzn (死テスト化の疑い):"
         fi
         orphans=$((orphans+1))
-        local probe; probe="$(timeout "$TIMEOUT" "$BIN" -j 1 -a "$rel" 2>&1 | head -1)"
+        local probe; probe="$(timeout "$TIMEOUT" ${LAUNCHER[@]+"${LAUNCHER[@]}"} "$BIN" -j 1 -a "$rel" 2>&1 | head -1)"
         echo "  $rel  ||  ${probe:0:70}"
     done
     if [ "$orphans" -gt 0 ]; then
@@ -58,7 +60,7 @@ run_one() {  # $1=fzn  -> 解出力 + 統計 (決定論的部分のみ)
     tmp="$(mktemp)"
     # -j 1: golden は決定論的な単一スレッド検証ツール。並列(-j>1)は本質的に
     # 非決定的なので、デフォルトスレッド数に関わらず単一スレッドに固定する。
-    out="$(timeout "$TIMEOUT" "$BIN" -j 1 -a -s "$f" 2>"$tmp")"
+    out="$(timeout "$TIMEOUT" ${LAUNCHER[@]+"${LAUNCHER[@]}"} "$BIN" -j 1 -a -s "$f" 2>"$tmp")"
     err="$(grep -E '^% (Stats:|NG length)' "$tmp")"
     rm -f "$tmp"
     printf '%s\n--- stats ---\n%s\n' "$out" "$err"
@@ -73,7 +75,7 @@ build_corpus() {
     local f rel probe dropped=0 unack=0
     for f in $(find "$SRC" -name '*.fzn' | sort); do
         rel="${f#$ROOT/}"
-        probe="$(timeout "$TIMEOUT" "$BIN" -j 1 -a "$f" 2>&1 | head -1)"
+        probe="$(timeout "$TIMEOUT" ${LAUNCHER[@]+"${LAUNCHER[@]}"} "$BIN" -j 1 -a "$f" 2>&1 | head -1)"
         case "$probe" in
             Error:*)                             # 未サポート/書式エラーは byte 照合から除外…
                 dropped=$((dropped+1))           # …が黙殺せず必ず報告する
