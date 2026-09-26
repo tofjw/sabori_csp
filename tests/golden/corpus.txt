@@ -266,5 +266,7 @@ tests/fzn/constraints/value_precede/simple.fzn
 tests/fzn/constraints/value_precede/unsat.fzn
 tests/fzn/constraints/wide_domain/minimize.fzn
 tests/fzn/constraints/wide_domain/remove_multiple.fzn
+tests/fzn/constraints/wide_domain/remove_then_lower_max.fzn
+tests/fzn/constraints/wide_domain/remove_then_raise_min.fzn
 tests/fzn/constraints/wide_domain/remove_value.fzn
 tests/fzn/constraints/wide_domain/simple.fzn

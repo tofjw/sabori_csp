@@ -1,0 +1,11 @@
+% bounds-only domain: remove an interior value, shrink max past it, then raise min.
+% Regression: Domain::remove_below counted removed values above the new max
+% (x: 10 removed, max 10 -> 9, then min -> 9 gave size 0 -> false UNSAT).
+var 0..10000: x :: output_var;
+var 0..10000: y :: output_var;
+
+constraint int_ne(x, 10);
+constraint int_lin_eq([1, 1], [x, y], 10);
+constraint int_eq(x, 9);
+
+solve satisfy;
