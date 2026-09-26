@@ -746,6 +746,8 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
         while (restart_ctrl_.inner_within_outer() && !stopped_) {
             int conflict_limit = restart_ctrl_.conflict_limit();
             std::optional<Solution> result;
+            size_t prune_before_restart = stats_.nogood_prune_count;
+            size_t depth_before_restart = stats_.max_depth;
 
             // fixed 系ポリシー: per-node 予算ではなくグローバル fail 数でカット
             int search_cl = conflict_limit;
@@ -806,6 +808,15 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
             }
 
             restart_ctrl_.advance_inner();
+
+            // ラウンドロビン・マルチスタート: リスタートのたびに次インスタンスへ CPU を譲る。
+            // signal は RestartController::end_cycle と同じ「枝刈りが進み、かつ深さが
+            // 伸びたか」をこのリスタート単位で計算したもの（バンディット報酬に使う）。
+            if (restart_yield_hook_) {
+                bool productive = (stats_.nogood_prune_count - prune_before_restart) > 0 &&
+                                   (stats_.max_depth > depth_before_restart);
+                restart_yield_hook_(productive, stats_.max_depth - depth_before_restart);
+            }
         }
 
         // ===== cycle 終了: outer を調整 =====
@@ -825,6 +836,34 @@ std::optional<Solution> Solver::search_with_restart(Model& model,
 
     finish_search_on_timeout();
     return std::nullopt;
+}
+
+Solver::ExternalBoundAction Solver::apply_external_bound(Model& model) {
+    auto gb = external_bound_hook_();
+    if (!gb) return ExternalBoundAction::None;
+
+    // incumbent より厳密に良い値のみ許す（minimize: obj <= gb-1, maximize: obj >= gb+1）。
+    // enqueue_set_max/min は単調（緩めない）ので、自分のローカル境界と矛盾しても安全。
+    if (minimize_) {
+        model.enqueue_set_max(obj_var_idx_, *gb - 1);
+    } else {
+        model.enqueue_set_min(obj_var_idx_, *gb + 1);
+    }
+
+    auto pr = process_queue(model);
+    if (pr == PropagationResult::Stopped) {
+        return ExternalBoundAction::Stopped;
+    }
+    if (pr == PropagationResult::Conflict) {
+        // 大域 incumbent より良い解は存在しない → incumbent が最適。
+        model.clear_pending_updates();
+        sync_nogood_stats();
+        if (verbose_) {
+            std::cerr << "% [verbose] optimal (external bound proved no improvement)\n";
+        }
+        return ExternalBoundAction::Optimal;
+    }
+    return ExternalBoundAction::None;
 }
 
 std::optional<Solution> Solver::search_with_restart_optimize(
@@ -855,6 +894,17 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
         while (restart_ctrl_.inner_within_outer() && !stopped_) {
             int conflict_limit = restart_ctrl_.conflict_limit();
+            size_t prune_before_restart = stats_.nogood_prune_count + stats_.nogood_domain_count;
+            size_t depth_before_restart = stats_.max_depth;
+
+            // マルチスレッド bound 共有: 大域 incumbent で目的変数を締める。
+            // モデルは root 状態なので、ここで締めた境界は root レベルで永続する。
+            if (external_bound_hook_) {
+                ExternalBoundAction ba = apply_external_bound(model);
+                if (ba == ExternalBoundAction::Optimal) return best_solution_;
+                if (ba == ExternalBoundAction::Stopped) break;
+            }
+
             std::optional<Solution> found_solution;
 
             // fixed 系ポリシー: per-node 予算ではなくグローバル fail 数でカット
@@ -885,6 +935,17 @@ std::optional<Solution> Solver::search_with_restart_optimize(
 
                     if (verbose_) {
                         std::cerr << "% [verbose] new best objective: " << obj_val << "\n";
+                    }
+
+                    // 【計装】SABORI_DUMP_SOL: 改善解の内部割当を全ダンプ（NG 監査の参照解取得用）。
+                    if (std::getenv("SABORI_DUMP_SOL")) {
+                        const auto& dvars = model.variables();
+                        for (size_t di = 0; di < dvars.size(); ++di) {
+                            if (model.is_instantiated(di)) {
+                                std::cerr << "SOLVAR obj=" << obj_val << " "
+                                          << dvars[di]->name() << " " << model.value(di) << "\n";
+                            }
+                        }
                     }
 
                     // 途中解を報告
@@ -1055,6 +1116,14 @@ std::optional<Solution> Solver::search_with_restart_optimize(
             }
 
             restart_ctrl_.advance_inner();
+
+            // ラウンドロビン・マルチスタート: リスタートのたびに次インスタンスへ CPU を譲る。
+            if (restart_yield_hook_) {
+                bool productive =
+                    (stats_.nogood_prune_count + stats_.nogood_domain_count - prune_before_restart) > 0 &&
+                    (stats_.max_depth > depth_before_restart);
+                restart_yield_hook_(productive, stats_.max_depth - depth_before_restart);
+            }
         }
 
         // ===== cycle 終了: outer を調整（改善時中断でなければ） =====

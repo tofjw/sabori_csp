@@ -24,7 +24,7 @@ public:
     const std::vector<int64_t>& coeffs() const { return coeffs_; }
 
 protected:
-    std::vector<int64_t> coeffs_;  // 集約後の係数列（派生共通）
+    SharedConstVec<int64_t> coeffs_;  // 集約後の係数列（構築後不変。clone 間で共有）
 
     /**
      * @brief 線形項を集約する（同一変数の係数を合算し、係数0の項を除外）
@@ -64,6 +64,8 @@ protected:
  */
 class IntLinEqConstraint : public LinearConstraintBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinEqConstraint)
+
     /**
      * @brief コンストラクタ
      * @param coeffs 係数リスト
@@ -203,6 +205,8 @@ private:
  */
 class IntLinLeConstraint : public LinearConstraintBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeConstraint)
+
     IntLinLeConstraint(std::vector<int64_t> coeffs,
                        std::vector<VariablePtr> vars,
                        int64_t bound);
@@ -303,6 +307,8 @@ private:
  */
 class IntLinNeConstraint : public LinearConstraintBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinNeConstraint)
+
     /**
      * @brief コンストラクタ
      * @param coeffs 係数リスト
@@ -463,6 +469,8 @@ private:
  */
 class IntLinEqReifConstraint : public IntLinEqNeReifBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinEqReifConstraint)
+
     IntLinEqReifConstraint(std::vector<int64_t> coeffs,
                            std::vector<VariablePtr> vars,
                            int64_t target,
@@ -479,6 +487,8 @@ public:
  */
 class IntLinNeReifConstraint : public IntLinEqNeReifBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinNeReifConstraint)
+
     IntLinNeReifConstraint(std::vector<int64_t> coeffs,
                            std::vector<VariablePtr> vars,
                            int64_t target,
@@ -500,6 +510,8 @@ public:
  */
 class IntLinLeReifConstraint : public LinearConstraintBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeReifConstraint)
+
     /**
      * @brief コンストラクタ
      * @param coeffs 係数リスト
@@ -601,6 +613,8 @@ private:
  */
 class IntLinLeImpConstraint : public LinearConstraintBase {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLinLeImpConstraint)
+
     /**
      * @brief コンストラクタ
      * @param coeffs 係数リスト

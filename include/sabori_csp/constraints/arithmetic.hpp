@@ -14,6 +14,8 @@ namespace sabori_csp {
  */
 class IntTimesConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntTimesConstraint)
+
     IntTimesConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
     std::string name() const override;
@@ -64,6 +66,8 @@ private:
  */
 class IntAbsConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntAbsConstraint)
+
     IntAbsConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
@@ -94,6 +98,8 @@ private:
  */
 class IntDivConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntDivConstraint)
+
     IntDivConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
     std::string name() const override;
@@ -139,6 +145,8 @@ private:
  */
 class IntModConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntModConstraint)
+
     IntModConstraint(VariablePtr x, VariablePtr y, VariablePtr z);
 
     std::string name() const override;
@@ -189,6 +197,8 @@ private:
  */
 class IntDivModChannelConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntDivModChannelConstraint)
+
     IntDivModChannelConstraint(VariablePtr x, Domain::value_type divisor,
                                VariablePtr q, VariablePtr r);
 

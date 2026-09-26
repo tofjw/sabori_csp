@@ -20,6 +20,8 @@ namespace sabori_csp {
  */
 class ArrayBoolAndConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolAndConstraint)
+
     /**
      * @brief コンストラクタ
      * @param vars bool変数の配列
@@ -85,6 +87,8 @@ private:
  */
 class ArrayBoolOrConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolOrConstraint)
+
     ArrayBoolOrConstraint(std::vector<VariablePtr> vars, VariablePtr r);
 
     std::string name() const override;
@@ -131,6 +135,8 @@ private:
  */
 class BoolClauseConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(BoolClauseConstraint)
+
     /**
      * @brief コンストラクタ
      * @param pos 正リテラル（これらのいずれかが 1 なら充足）
@@ -223,6 +229,8 @@ private:
  */
 class BoolNotConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(BoolNotConstraint)
+
     BoolNotConstraint(VariablePtr a, VariablePtr b);
 
     std::string name() const override;
@@ -247,6 +255,8 @@ private:
  */
 class ArrayBoolXorConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ArrayBoolXorConstraint)
+
     ArrayBoolXorConstraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;
@@ -275,6 +285,8 @@ private:
  */
 class BoolXorConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(BoolXorConstraint)
+
     BoolXorConstraint(VariablePtr a, VariablePtr b, VariablePtr c);
 
     std::string name() const override;
@@ -308,6 +320,8 @@ private:
  */
 class ClauseWitnessConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(ClauseWitnessConstraint)
+
     ClauseWitnessConstraint(const std::vector<VariablePtr>& pos,
                             const std::vector<VariablePtr>& neg,
                             VariablePtr s);

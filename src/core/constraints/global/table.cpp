@@ -49,7 +49,12 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
     num_words_ = (num_tuples_ + 63) / 64;
 
     // var_support_info_ の構築: 各変数の min/max を求める
-    var_support_info_.resize(arity_);
+    // 不変ペイロード（clone 間共有の SharedConstVec）はローカルに構築してから
+    // 末尾で一括格納する（格納後は読み取り専用）。
+    std::vector<VarSupportInfo> vsi(arity_);
+    std::vector<size_t> offs;
+    std::vector<uint32_t> slen, ssup;
+    std::vector<uint64_t> sdata;
     for (size_t v = 0; v < arity_; ++v) {
         auto val0 = flat_tuples_[v];
         Domain::value_type vmin = val0, vmax = val0;
@@ -58,28 +63,28 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
             if (val < vmin) vmin = val;
             if (val > vmax) vmax = val;
         }
-        var_support_info_[v].min_val = vmin;
-        var_support_info_[v].range_size = static_cast<size_t>(vmax - vmin + 1);
+        vsi[v].min_val = vmin;
+        vsi[v].range_size = static_cast<size_t>(vmax - vmin + 1);
     }
 
     // supports_offsets_flat_ の構築
     size_t total_flat = 0;
     for (size_t v = 0; v < arity_; ++v) {
-        var_support_info_[v].flat_offset = total_flat;
-        total_flat += var_support_info_[v].range_size;
+        vsi[v].flat_offset = total_flat;
+        total_flat += vsi[v].range_size;
     }
-    supports_offsets_flat_.assign(total_flat, NO_SUPPORT);
+    offs.assign(total_flat, NO_SUPPORT);
 
     // 1パス目: 各変数×値の組み合わせを列挙して distinct 値数 (= total_supports) を求める
     size_t total_supports = 0;
     for (size_t t = 0; t < num_tuples_; ++t) {
         for (size_t v = 0; v < arity_; ++v) {
             auto val = flat_tuples_[t * arity_ + v];
-            auto& info = var_support_info_[v];
+            auto& info = vsi[v];
             auto idx = static_cast<size_t>(val - info.min_val);
-            if (supports_offsets_flat_[info.flat_offset + idx] == NO_SUPPORT) {
+            if (offs[info.flat_offset + idx] == NO_SUPPORT) {
                 // 一旦 1 を入れて「存在する」と印を付ける (後でモード別にオフセットに上書き)
-                supports_offsets_flat_[info.flat_offset + idx] = 1;
+                offs[info.flat_offset + idx] = 1;
                 ++total_supports;
             }
         }
@@ -90,40 +95,40 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
 
     if (use_sparse_) {
         // sparse モード: supports_offsets_flat_ にリスト開始 index、sparse_lengths_ に長さを格納
-        sparse_lengths_.assign(total_flat, 0);
+        slen.assign(total_flat, 0);
         // 1.5パス目: 各 (var,val) ごとに出現回数をカウント (length に蓄積)
         for (size_t t = 0; t < num_tuples_; ++t) {
             for (size_t v = 0; v < arity_; ++v) {
                 auto val = flat_tuples_[t * arity_ + v];
-                const auto& info = var_support_info_[v];
+                const auto& info = vsi[v];
                 auto idx = static_cast<size_t>(val - info.min_val);
-                ++sparse_lengths_[info.flat_offset + idx];
+                ++slen[info.flat_offset + idx];
             }
         }
         // 累積でオフセット決定 (NO_SUPPORT 印の位置だけ書き換え)
         size_t cumulative = 0;
         for (size_t v = 0; v < arity_; ++v) {
-            const auto& info = var_support_info_[v];
+            const auto& info = vsi[v];
             for (size_t i = 0; i < info.range_size; ++i) {
                 size_t flat_idx = info.flat_offset + i;
-                if (supports_offsets_flat_[flat_idx] != NO_SUPPORT) {
-                    supports_offsets_flat_[flat_idx] = cumulative;
-                    cumulative += sparse_lengths_[flat_idx];
+                if (offs[flat_idx] != NO_SUPPORT) {
+                    offs[flat_idx] = cumulative;
+                    cumulative += slen[flat_idx];
                 }
             }
         }
         // 2パス目: タプル index を書き込む。書き込み位置 = start + (write_pos - start)
         // sparse_lengths_ は最終長を保持しているので、別途 write カーソルを使う
         std::vector<uint32_t> write_cursor(total_flat, 0);
-        sparse_supports_.assign(arity_ * num_tuples_, 0);
+        ssup.assign(arity_ * num_tuples_, 0);
         for (size_t t = 0; t < num_tuples_; ++t) {
             for (size_t v = 0; v < arity_; ++v) {
                 auto val = flat_tuples_[t * arity_ + v];
-                const auto& info = var_support_info_[v];
+                const auto& info = vsi[v];
                 auto idx = static_cast<size_t>(val - info.min_val);
                 size_t flat_idx = info.flat_offset + idx;
-                size_t pos = supports_offsets_flat_[flat_idx] + write_cursor[flat_idx]++;
-                sparse_supports_[pos] = static_cast<uint32_t>(t);
+                size_t pos = offs[flat_idx] + write_cursor[flat_idx]++;
+                ssup[pos] = static_cast<uint32_t>(t);
             }
         }
         // sparse モードでは scratch_mask_ を確保 (num_words_ 個の word)
@@ -132,16 +137,16 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
         // dense モード: supports_offsets_flat_ にビットセットへのオフセット (word 単位)
         size_t total_entries = 0;
         for (size_t v = 0; v < arity_; ++v) {
-            const auto& info = var_support_info_[v];
+            const auto& info = vsi[v];
             for (size_t i = 0; i < info.range_size; ++i) {
                 size_t flat_idx = info.flat_offset + i;
-                if (supports_offsets_flat_[flat_idx] != NO_SUPPORT) {
-                    supports_offsets_flat_[flat_idx] = total_entries;
+                if (offs[flat_idx] != NO_SUPPORT) {
+                    offs[flat_idx] = total_entries;
                     total_entries += num_words_;
                 }
             }
         }
-        supports_data_.assign(total_entries, 0ULL);
+        sdata.assign(total_entries, 0ULL);
 
         // 2パス目: ビットをセット
         for (size_t t = 0; t < num_tuples_; ++t) {
@@ -149,11 +154,19 @@ TableConstraint::TableConstraint(std::vector<VariablePtr> vars,
             uint64_t bit = 1ULL << (t % 64);
             for (size_t v = 0; v < arity_; ++v) {
                 auto val = flat_tuples_[t * arity_ + v];
-                size_t offset = get_support_offset(v, val);
-                supports_data_[offset + word_idx] |= bit;
+                const auto& info = vsi[v];
+                size_t offset = offs[info.flat_offset + static_cast<size_t>(val - info.min_val)];
+                sdata[offset + word_idx] |= bit;
             }
         }
     }
+
+    // 不変ペイロードを確定（以降は読み取り専用。clone 間で共有される）
+    var_support_info_ = std::move(vsi);
+    supports_offsets_flat_ = std::move(offs);
+    sparse_lengths_ = std::move(slen);
+    sparse_supports_ = std::move(ssup);
+    supports_data_ = std::move(sdata);
 
     // current_table_ を全1で初期化（末尾ワードの余剰ビットはクリア）
     current_table_.assign(num_words_, ~0ULL);

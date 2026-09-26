@@ -5,9 +5,10 @@ BISON_TARGET(FznParser parser.yy ${CMAKE_CURRENT_BINARY_DIR}/parser.cpp
 FLEX_TARGET(FznLexer lexer.ll ${CMAKE_CURRENT_BINARY_DIR}/lexer.cpp)
 ADD_FLEX_BISON_DEPENDENCY(FznLexer FznParser)
 
-# fzn_sabori executable
-add_executable(fzn_sabori
-  main.cpp
+# FlatZinc パーサ + fzn::Model → Model 変換（main.cpp 以外の全部）。
+# fzn_sabori と、fzn コーパスを in-process で解くテスト（tests/cpp/test_fzn_clone.cpp）
+# が共有する。install 対象ではないので BUILD_SHARED_LIBS に関わらず STATIC 固定。
+add_library(sabori_fzn STATIC
   model.cpp
   fzn_build_context.cpp
   constraint_registry.cpp
@@ -16,14 +17,23 @@ add_executable(fzn_sabori
   ${FLEX_FznLexer_OUTPUTS}
 )
 
-target_include_directories(fzn_sabori PRIVATE
+target_include_directories(sabori_fzn PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_SOURCE_DIR}/include
 )
 
-target_link_libraries(fzn_sabori PRIVATE
+target_link_libraries(sabori_fzn PUBLIC
   sabori_csp_core
+)
+
+# fzn_sabori executable
+add_executable(fzn_sabori
+  main.cpp
+)
+
+target_link_libraries(fzn_sabori PRIVATE
+  sabori_fzn
 )
 
 # MiniZinc solver configuration

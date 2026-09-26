@@ -140,6 +140,59 @@ solver.set_bisection_threshold(8)    # binary split threshold (default: 8)
 solver.set_verbose(True)             # print search progress
 ```
 
+## Parallel solving and time limits
+
+`solve()` accepts two keyword arguments for running a multi-threaded portfolio
+and/or bounding the wall-clock time:
+
+```python
+solver = CpSolver()
+
+# Run an 8-worker diversified portfolio (different seeds + search strategies).
+# The first worker uses the default configuration, so it is never slower than
+# single-threaded solving.
+status = solver.solve(m, num_workers=8)
+
+# Add a 30-second wall-clock budget. A watchdog stops the search on expiry and
+# returns the best solution found so far.
+status = solver.solve(m, num_workers=8, time_limit=30.0)
+```
+
+- `num_workers` (default `1`): number of portfolio worker threads. `1` keeps the
+  original single-threaded behavior.
+- `time_limit` (default `None`): seconds before the search is stopped. Works with
+  any `num_workers` (including `1`).
+- `handle_sigint` (default `False`): make **Ctrl-C** stop the search gracefully
+  and return the best solution found so far.
+
+```python
+# Press Ctrl-C to interrupt; solve() returns with the best solution so far.
+status = solver.solve(m, num_workers=8, handle_sigint=True)
+```
+
+Without `handle_sigint`, a Ctrl-C during `solve()` is *deferred* (the search runs
+with the GIL released, so `KeyboardInterrupt` only fires after solve returns).
+With it, a temporary `SIGINT` handler calls `stop()` and the previous handler is
+restored afterward — a *second* Ctrl-C behaves normally. Only effective on the
+main thread (ignored with a warning otherwise).
+
+Return values:
+
+| Status | Meaning |
+|--------|---------|
+| `SolveStatus.OPTIMAL` | Optimization proved optimal |
+| `SolveStatus.FEASIBLE` | Solution found (satisfaction, or optimization stopped before proving optimality) |
+| `SolveStatus.INFEASIBLE` | Proved no solution exists |
+| `SolveStatus.TIMEOUT` | Stopped by the time limit with no solution found |
+
+`solver.value()`, `solver.solution()`, and `solver.stop()` work the same way on
+the parallel path. Note that `set_activity_selection` / `set_activity_first` /
+`set_community_analysis` only affect the single-threaded path; per-worker
+diversification in the portfolio is handled automatically.
+
+For full control over the worker configurations, use the low-level
+`core.ParallelSolver` / `core.WorkerConfig` / `core.make_portfolio_configs`.
+
 ## Complete example: N-Queens
 
 ```python

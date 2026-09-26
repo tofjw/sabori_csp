@@ -24,6 +24,7 @@ add_executable(test_sabori_csp
   test_subcircuit_brute.cpp
   test_find_all_consistency.cpp
   test_one_hot_channel.cpp
+  test_parallel_clone.cpp
   test_divmod_channel.cpp
 )
 
@@ -36,3 +37,22 @@ target_link_libraries(test_sabori_csp
 include(CTest)
 include(Catch)
 catch_discover_tests(test_sabori_csp)
+
+# golden コーパスの fzn を in-process で解くゲート（パーサを使うので別バイナリ）
+#   [clone]   clone 後の解・統計が原本と一致（test_fzn_clone.cpp）
+#   [resolve] 各解を固定して解き直すと SAT（test_fzn_resolve.cpp）
+add_executable(test_fzn_corpus
+  test_fzn_clone.cpp
+  test_fzn_resolve.cpp
+)
+
+target_link_libraries(test_fzn_corpus
+  sabori_fzn
+  Catch2::Catch2WithMain
+)
+
+target_compile_definitions(test_fzn_corpus PRIVATE
+  SABORI_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+catch_discover_tests(test_fzn_corpus PROPERTIES LABELS "fzn_corpus")

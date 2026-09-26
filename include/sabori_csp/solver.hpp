@@ -19,6 +19,8 @@
 #include <random>
 #include <atomic>
 #include <limits>
+#include <optional>
+#include <cstdint>
 
 namespace sabori_csp {
 
@@ -41,6 +43,57 @@ enum class SearchResult {
     UNSAT,    // 解が存在しない
     UNKNOWN   // 不明（リスタートなど）
 };
+
+/**
+ * @brief ワーカースレッドごとの探索構成（マルチスレッド・ポートフォリオ用）
+ *
+ * ポートフォリオの効果はワーカー間の探索の違いから生まれる。各ワーカーに
+ * 異なる RNG シードと探索時 ablation 構成を割り当てて多様化する。
+ *
+ * 注意: presolve 専用の ablation（one-hot 集約など）は master で 1 度だけ
+ * 実行されるため、ここには含めない（多様化は探索時の軸に限定）。
+ */
+struct WorkerConfig {
+    uint32_t seed = 12345678;          ///< RNG シード
+    bool restart_enabled = true;        ///< リスタート有無（SAT のみに効く）
+    double restart_scale = 1.0;         ///< 初期 conflict 予算のスケール（>1 でリスタート頻度を下げる。最適化にも効く）
+    bool nogood_learning = true;        ///< NoGood 学習有無
+    bool conflict_learning = false;     ///< 矛盾制約スコープの conflict 学習（problem依存の諸刃。多様化軸候補）
+    bool activity_first_pin = false;    ///< true で activity 優先に固定（mode 適応を無効化）
+    std::optional<size_t> fixed_mixp;   ///< 指定時 mix_p をこのグリッド値に固定
+    bool gradient_enabled = true;       ///< 擬似勾配ヒント有無
+    bool probe_enabled = true;          ///< improvement probe 有無（最適化）
+    bool temporal_enabled = true;       ///< temporal_activity（Last Conflict）有無
+    size_t bisection_threshold = 8;     ///< 二分割の閾値
+    int probe_fail_limit = 5;           ///< improvement probe の fail 上限
+    bool promote_def_bool = false;      ///< defined bool を decision tier に昇格（最適化ラダー用 arm）
+
+    // --- probe 系アーム（env → WorkerConfig 移設分。既定値 = 従来の env 未設定時の挙動） ---
+    int root_probe_limit = 0;           ///< root probing の fail 予算（0=無効。旧 SABORI_PROBE_ROOT, =1 は 2000 の糖衣）
+    int promote_impact_k = 0;           ///< impact 上位 K の defined 変数を decision 層へ昇格（0=無効。旧 SABORI_PROMOTE_IMPACT。>0 で root probing を暗黙有効化）
+    int promote_impact_period = 8;      ///< 昇格再実行のリスタート周期（0=開始時のみ。旧 SABORI_PROMOTE_IMPACT_PERIOD）
+    int bottomup_fail_limit = 0;        ///< bottom-up optimistic probe の fail 予算（0=無効。旧 SABORI_BOTTOMUP, =1 は 2000 の糖衣）
+    bool bottomup_isolate = false;      ///< bottom-up probe の activity 汚染隔離（旧 SABORI_BOTTOMUP_ISOLATE）
+    int bottomup_cutoff_denom = 8;      ///< 相転移カットオフ分母（0=無効。旧 SABORI_BOTTOMUP_CUTOFF）
+
+    // --- 分岐方向アーム（旧 SABORI_BISECT_DIR の low/high/p 部分。スロット軸の第一候補） ---
+    // -1.0 = 既定（コイン投げ）/ 1.0 = 常に下側（"low"）/ 0..1 = 確率 p で下側 /
+    // 2.0 = 常に上側（"high" の符号化）。vote/cycle 系は env 専用のまま
+    //（先験としては全滅済み — memory: bisect-direction-prior-closed。arm 化がこの続き）。
+    double bisect_low_prob = -1.0;
+};
+
+/**
+ * @brief SABORI_* 環境変数の probe 系アーム指定を WorkerConfig に上書き適用する
+ *
+ * 「パース一箇所・本籍 WorkerConfig・env はデバッグ上書き」の一箇所。
+ * fzn CLI の build_worker_configs が base 構成に適用し、全ワーカーが継承する
+ * （ラダー/TUNE による per-worker 上書きはこの後段）。単一スレッド経路は
+ * Solver コンストラクタの直接 env 読みが従来どおり効く（挙動不変）。
+ * 糖衣（=1 → 既定予算）も従来の env 解釈と同一。
+ */
+void apply_probe_env_overrides(WorkerConfig& cfg);
+
 
 /**
  * @brief 伝播結果
@@ -182,6 +235,37 @@ public:
         Model& model, size_t obj_var_idx, bool minimize,
         SolutionCallback on_improve = nullptr);
 
+    // ===== マルチスレッド・ポートフォリオ用 prepared API =====
+
+    /**
+     * @brief master モデルに presolve を適用する（探索はしない）
+     *
+     * init_search（build_constraint_watch_list → presolve →
+     * prepare_propagation → post）を実行し、master モデルを presolve 済み・
+     * prepare 済みの状態にする。この後 Model::clone() でワーカーへ複製する。
+     * この Solver インスタンスの探索状態は使い捨て。
+     * @return presolve 成功なら true、矛盾検出なら false（即 UNSAT）
+     */
+    bool prepare(Model& master);
+
+    /**
+     * @brief presolve 済みモデル（master の clone）で最初の解を探索
+     * @note 呼ぶ前に apply_worker_config でシード・構成を設定すること
+     */
+    std::optional<Solution> solve_prepared(Model& model);
+
+    /**
+     * @brief presolve 済みモデルで最適化探索
+     */
+    std::optional<Solution> solve_optimize_prepared(
+        Model& model, size_t obj_var_idx, bool minimize,
+        SolutionCallback on_improve = nullptr);
+
+    /**
+     * @brief presolve 済みモデルで全解探索
+     */
+    size_t solve_all_prepared(Model& model, SolutionCallback callback);
+
     /**
      * @brief 統計情報を取得
      */
@@ -191,6 +275,15 @@ public:
      * @brief NoGood 学習を有効/無効にする
      */
     void set_nogood_learning(bool enabled) { nogood_learning_ = enabled; }
+
+    /**
+     * @brief Conflict 学習（矛盾を起こした制約スコープの NoGood 化）を有効/無効にする
+     *
+     * 矛盾検出時、違反制約のスコープ変数が全て確定済みなら、その割当を NoGood として
+     * 学習する。個々の NoGood は定義上 unsat なので健全（偽 UNSAT を生まない）。
+     * 既存の decision-path 学習（nogood_learning_）とは独立に動作する。
+     */
+    void set_conflict_learning(bool enabled) { conflict_learning_ = enabled; }
 
     /**
      * @brief div/mod チャネル集約 presolve を有効/無効にする
@@ -280,6 +373,20 @@ public:
     bool is_stopped() const { return stopped_; }
 
     /**
+     * @brief 大域 incumbent（他スレッドの最良目的値）を返すフックを設定する
+     *
+     * マルチスレッド・ポートフォリオの最適化で、各ワーカーが共有の best objective を
+     * 参照して目的変数を締めるために使う。フックは「最良目的値（解が存在する値）」を
+     * 返すか、まだ無ければ std::nullopt を返す。スレッドセーフであること（atomic 読み）。
+     *
+     * 締め方は「incumbent より厳密に良い値」のみを許す方向で、enqueue_set_max/min が
+     * 単調にしか作用しない（緩めない）ため健全。
+     */
+    void set_external_bound_hook(std::function<std::optional<Domain::value_type>()> hook) {
+        external_bound_hook_ = std::move(hook);
+    }
+
+    /**
      * @brief 制約タイプ別統計を取得
      */
     const std::unordered_map<std::string, ConstraintStats>& constraint_stats() const { return constraint_stats_; }
@@ -313,13 +420,104 @@ public:
      * @param limit fail上限（0=probe無効）
      */
     void set_probe_fail_limit(int limit) { probe_fail_limit_ = limit; }
+
+    /**
+     * @brief RNG シードを設定（ポートフォリオの多様化用）
+     * @note init_search* の前に呼ぶこと（var_selector の順序構築が rng_ を使う）
+     */
+    void set_seed(uint32_t seed) { rng_.seed(seed); }
+
+    /** @brief 擬似勾配ヒントの有無を設定（ablation/多様化用） */
+    void set_gradient_enabled(bool enabled) { gradient_enabled_ = enabled; }
+
+    /** @brief temporal_activity（Last Conflict）の有無を設定（ablation/多様化用） */
+    void set_temporal_enabled(bool enabled) { temporal_enabled_ = enabled; }
+
+    /** @brief improvement probe の有無を設定（ablation/多様化用） */
+    void set_probe_enabled(bool enabled) { probe_enabled_ = enabled; }
+
+    /** @brief mix_p を指定グリッド値に固定（mode 適応を無効化） */
+    void set_fixed_mixp(size_t idx) { mode_policy_.pin(idx); }
+
+    /**
+     * @brief ワーカー構成を一括適用（マルチスレッド・ポートフォリオ用）
+     *
+     * RNG シードと探索時 ablation を設定する。init_search_no_presolve の前に呼ぶ。
+     */
+    void apply_worker_config(const WorkerConfig& cfg) {
+        set_seed(cfg.seed);
+        set_restart_enabled(cfg.restart_enabled);
+        restart_ctrl_.set_initial_scale(cfg.restart_scale);
+        set_nogood_learning(cfg.nogood_learning);
+        set_conflict_learning(cfg.conflict_learning);
+        if (cfg.fixed_mixp) {
+            set_fixed_mixp(*cfg.fixed_mixp);
+        } else if (cfg.activity_first_pin) {
+            set_activity_first(true);
+        }
+        set_gradient_enabled(cfg.gradient_enabled);
+        set_temporal_enabled(cfg.temporal_enabled);
+        set_probe_enabled(cfg.probe_enabled);
+        set_bisection_threshold(cfg.bisection_threshold);
+        set_probe_fail_limit(cfg.probe_fail_limit);
+        var_selector_.set_promote_def_bool(cfg.promote_def_bool);
+        // probe 系アーム。PROMOTE_IMPACT は probing の副産物（両分岐 trail 長）を
+        // impact 尺度に使うため root probing を暗黙有効化する（env 時代と同じ含意）。
+        int rpl = cfg.root_probe_limit;
+        if (cfg.promote_impact_k > 0 && rpl <= 0) rpl = 2000;
+        set_root_probe_limit(rpl);
+        set_promote_impact(cfg.promote_impact_k, cfg.promote_impact_period);
+        set_bottomup_fail_limit(cfg.bottomup_fail_limit);
+        set_bottomup_options(cfg.bottomup_isolate, cfg.bottomup_cutoff_denom);
+        set_bisect_low_prob(cfg.bisect_low_prob);
+    }
+
+    /**
+     * @brief ラウンドロビン・マルチスタート用: リスタート直後に呼ばれるフック
+     *
+     * 使い捨てマルチスタート（複数の Solver インスタンスが NG/activity を
+     * 独立に保ったまま、CPU 時間を交代で使う）のターン制御に使う。未設定なら
+     * 何も起きない（既定の単独探索は完全に無変更）。
+     *
+     * @param hook (productive, depth_gained) を受け取る。productive は
+     *        RestartController::end_cycle と同じ信号（このリスタートで
+     *        NoGood 枝刈りが進み、かつ深さが伸びたか）。depth_gained は
+     *        このリスタートで伸びた探索深さ（バンディット報酬に使う）。
+     */
+    void set_restart_yield_hook(std::function<void(bool productive, size_t depth_gained)> hook) {
+        restart_yield_hook_ = std::move(hook);
+    }
     void set_bottomup_fail_limit(int limit) { bottomup_fail_limit_ = limit; }
+
+    /** @brief root probing の fail 予算を設定（0=無効。ポートフォリオ arm 用） */
+    void set_root_probe_limit(int limit) { root_probe_limit_ = limit; }
+
+    /** @brief impact 昇格の K と再実行周期を設定（K=0 で無効。ポートフォリオ arm 用） */
+    void set_promote_impact(int k, int period) {
+        promote_impact_k_ = k;
+        promote_impact_period_ = period;
+    }
+
+    /** @brief bottom-up probe の隔離・カットオフを設定（ポートフォリオ arm 用） */
+    void set_bottomup_options(bool isolate, int cutoff_denom) {
+        bottomup_isolate_ = isolate;
+        bottomup_cutoff_denom_ = cutoff_denom;
+    }
+
+    /** @brief 分岐方向を設定（-1=コイン投げ / 0..1=確率 p で下側 / 2=常に上側。arm 用） */
+    void set_bisect_low_prob(double p) { bisect_low_prob_ = p; }
 
 private:
     void log_presolve_start(const Model& model) const;
 
     std::atomic<bool> stopped_{false};
     bool verbose_ = false;
+
+    // マルチスレッド・ポートフォリオ: 大域 incumbent を返すフック（未設定なら nullptr）。
+    std::function<std::optional<Domain::value_type>()> external_bound_hook_;
+
+    // ラウンドロビン・マルチスタート: リスタート直後に呼ばれるターン制御フック（未設定なら nullptr）。
+    std::function<void(bool productive, size_t depth_gained)> restart_yield_hook_;
     // ===== 探索 =====
 
     /**
@@ -418,6 +616,23 @@ private:
     ProbeAction run_improvement_probe(Model& model, SolutionCallback& callback, int root_point);
 
     /**
+     * @brief apply_external_bound の戻り値
+     *
+     * None: フック未設定 or 締めても矛盾なし → 通常探索を続行。
+     * Stopped: process_queue が timeout で中断 → inner ループを break。
+     * Optimal: 大域 incumbent で目的変数が空になった → best_solution_ を返して終了。
+     */
+    enum class ExternalBoundAction { None, Stopped, Optimal };
+
+    /**
+     * @brief 大域 incumbent（external_bound_hook_）で目的変数を締める（optimize 専用）
+     *
+     * 内側 restart ループの先頭（モデルが root 状態）で呼ぶ。incumbent より厳密に
+     * 良い値だけを許すよう enqueue_set_max/min（単調・緩めない）して process_queue する。
+     */
+    ExternalBoundAction apply_external_bound(Model& model);
+
+    /**
      * @brief bottom-up optimistic probe（G1 ペナルティ和対策、SABORI_BOTTOMUP で opt-in）
      *
      * リスタート時に lb 側から obj ≤ lb+δ を投機的に試す。ペナルティ和型では
@@ -494,6 +709,35 @@ private:
      * @return presolve 成功なら true、矛盾検出なら false
      */
     bool init_search(Model& model);
+
+    // 初期化後の探索本体（solve* と *_prepared が共有する）。
+    std::optional<Solution> run_solve(Model& model);
+    std::optional<Solution> run_solve_optimize(
+        Model& model, size_t obj_var_idx, bool minimize, SolutionCallback on_improve);
+    size_t run_solve_all(Model& model, SolutionCallback callback);
+
+    /**
+     * @brief presolve をスキップした探索初期化
+     *
+     * すでに presolve / prepare_propagation 済みのモデル（master モデルの
+     * clone）に対してワーカースレッドが呼ぶ。state → post_presolve を実行する。
+     * @return 常に true（presolve しないので失敗しない）
+     */
+    bool init_search_no_presolve(Model& model);
+
+    /**
+     * @brief 探索状態の確保（presolve 前）。activity / var_selector 順序 /
+     * nogood / stats などを初期化する。presolve には依存しない。
+     * @param run_build_order false の場合 var_selector_.build_order() を呼ばない
+     *        （既定の post-presolve 構築時は presolve 後に呼び直すため）。
+     */
+    void init_search_state(Model& model, bool run_build_order = true);
+
+    /**
+     * @brief presolve 後の初期化。direction votes / gradient / 制約固有 activity /
+     * community / var_selector tracking を構築する。presolve 済みのモデルに対して呼ぶ。
+     */
+    void init_search_post_presolve(Model& model);
 
     /**
      * @brief presolve（探索前の初期伝播）
@@ -579,18 +823,33 @@ private:
                 cs.fail_depth_sum += current_decision_;
                 is.fail_count++;
                 is.fail_depth_sum += current_decision_;
+                if (conflict_learning_) capture_conflict_explanation(model, constraint_idx);
                 bump_activity(model, constraint_idx, bump_var_idx);
                 return false;
             }
             if (model.pending_updates_size() > before) { cs.reduction_count++; is.reduction_count++; }
         } else {
             if (!call()) {
+                if (conflict_learning_) capture_conflict_explanation(model, constraint_idx);
                 bump_activity(model, constraint_idx, bump_var_idx);
                 return false;
             }
         }
         return true;
     }
+
+    /**
+     * @brief 矛盾を起こした制約から conflict 説明（NoGood リテラル列）を収集
+     *
+     * 制約スコープの変数が全て確定済みなら conflict_expl_ に各変数の
+     * Eq リテラルを格納し conflict_expl_ok_ = true。1つでも未確定なら
+     * （= 部分割当での bounds 矛盾など、健全な説明を安価に作れない）bail し
+     * conflict_expl_ok_ = false。conflict_learning_ 有効時のみ呼ばれる。
+     */
+    void capture_conflict_explanation(const Model& model, size_t constraint_idx);
+
+    /// 【計装】SABORI_NG_AUDIT: 直近の説明が参照解を排除する不健全 NG か判定・出力。
+    void audit_nogood_against_reference(const Model& model, size_t constraint_idx) const;
 
     /**
      * @brief Activity を減衰（リスタート時に呼ぶ）
@@ -662,6 +921,7 @@ private:
 
     // 設定
     bool nogood_learning_ = true;
+    bool conflict_learning_ = false;  ///< 矛盾制約スコープの conflict 学習（-C, instantiation-only で健全）
     int bump_mode_ = 2;  ///< 計測用 ablation: 制約側 activity 配分 (0=なし/1=基底/2=構造特化, 既定2)
     bool bloom_tiebreak_ = true;  ///< 計測用 ablation: NoGood-Bloom 重なりタイブレーク（SABORI_BLOOM=0 で無効, 既定有効）
     bool gradient_enabled_ = true;  ///< 計測用 ablation: 擬似勾配ヒント（SABORI_GRADIENT=0 で無効, 既定有効）
@@ -713,6 +973,8 @@ private:
     int bottomup_unknown_streak_ = 0;        // 連続 UNKNOWN 数（バックオフ指数）
     int bottomup_skip_ = 0;                  // 残りスキップ回数（指数バックオフ）
     int bottomup_cutoff_denom_ = 8;          // 相転移カットオフ: step_fails > 予算/denom で停止 (0=無効, SABORI_BOTTOMUP_CUTOFF)
+    // 分岐方向（旧 SABORI_BISECT_DIR の low/high/p。-1=コイン / 0..1=確率p で下側 / 2=上側固定）
+    double bisect_low_prob_ = -1.0;
     int root_probe_limit_ = 0;               // root probing の probe 予算 (0=無効, SABORI_PROBE_ROOT)
     int promote_impact_k_ = 0;               // impact 上位 K の defined 変数を昇格 (0=無効, SABORI_PROMOTE_IMPACT)
     int promote_impact_period_ = 8;          // 昇格再実行のリスタート周期 (0=開始時のみ, SABORI_PROMOTE_IMPACT_PERIOD)
@@ -734,6 +996,10 @@ private:
     double activity_inc_ = 1.0;
     std::vector<int> temporal_activity_;  ///< 全値失敗した変数の直近失敗回数
     std::vector<Literal> decision_trail_;
+
+    // Conflict 学習用（conflict_learning_ 有効時のみ使用）
+    std::vector<Literal> conflict_expl_;  ///< 直近の矛盾制約スコープの説明リテラル
+    bool conflict_expl_ok_ = false;       ///< 上記が健全な説明として有効か
 
     // NoGood 管理
     NoGoodManager nogood_mgr_;

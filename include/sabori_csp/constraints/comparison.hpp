@@ -14,6 +14,8 @@ namespace sabori_csp {
  */
 class IntEqConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntEqConstraint)
+
     IntEqConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
@@ -42,6 +44,8 @@ private:
  */
 class IntEqReifConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntEqReifConstraint)
+
     IntEqReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
@@ -90,6 +94,8 @@ private:
  */
 class IntEqImpConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntEqImpConstraint)
+
     IntEqImpConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
@@ -127,6 +133,8 @@ private:
  */
 class IntNeConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntNeConstraint)
+
     IntNeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
@@ -147,6 +155,8 @@ private:
  */
 class IntNeReifConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntNeReifConstraint)
+
     IntNeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
@@ -179,6 +189,8 @@ private:
  */
 class IntLtConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLtConstraint)
+
     IntLtConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
@@ -212,6 +224,8 @@ private:
  */
 class IntLeConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLeConstraint)
+
     IntLeConstraint(VariablePtr x, VariablePtr y);
 
     std::string name() const override;
@@ -245,6 +259,8 @@ private:
  */
 class IntLeReifConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntLeReifConstraint)
+
     IntLeReifConstraint(VariablePtr x, VariablePtr y, VariablePtr b);
 
     std::string name() const override;
@@ -275,6 +291,8 @@ private:
  */
 class IntMaxConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntMaxConstraint)
+
     IntMaxConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;
@@ -305,6 +323,8 @@ private:
  */
 class IntMinConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(IntMinConstraint)
+
     IntMinConstraint(VariablePtr x, VariablePtr y, VariablePtr m);
 
     std::string name() const override;

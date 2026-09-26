@@ -1,5 +1,6 @@
 #include "sabori_csp/fzn/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include "sabori_csp/parallel_solver.hpp"
 #include "sabori_csp/model_simplifier.hpp"
 #include "sabori_csp/constraints/global.hpp"
 #include "fzn_parser.hpp"
@@ -13,35 +14,47 @@
 #include <algorithm>
 #include <iomanip>
 #include <numeric>
+#include <vector>
 
 std::atomic<bool> g_timeout_flag{false};
 sabori_csp::Solver* g_current_solver = nullptr;
+sabori_csp::ParallelSolver* g_parallel_solver = nullptr;
 int g_timeout_sec = 0;
 
 void timeout_handler(int) {
     g_timeout_flag = true;
-    if (g_current_solver) {
+    // マルチスレッド時は ParallelSolver 経由で全ワーカーを停止。
+    // ハンドラ内は atomic store のみ（async-signal-safe）。
+    if (g_parallel_solver) {
+        g_parallel_solver->stop();
+    } else if (g_current_solver) {
         g_current_solver->stop();
     }
 }
 
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] <file.fzn>\n";
+    std::cerr << "Usage: " << program << " [-a] [-s] [-v] [-c] [-t SEC] [-b N] [-p N] [-j N] <file.fzn>\n";
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
+    std::cerr << "  -j N    Number of portfolio threads (default: 1). N>1 runs parallel search.\n";
+    std::cerr << "          (also settable via SABORI_THREADS env; -j overrides env)\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
-    std::cerr << "  -v      Verbose mode (print presolve/restart progress)\n";
+    std::cerr << "  -v      Verbose mode (print presolve/restart progress; worker 0 when -j>1)\n";
+    std::cerr << "  -V N    Verbose mode for worker N (implies -v; default 0)\n";
     std::cerr << "  -c      Community analysis [diagnostic only — does not speed up search]\n";
     std::cerr << "  -t SEC  Timeout in seconds\n";
     std::cerr << "  -b N    Bisection threshold (default: 8, 0=disable)\n";
     std::cerr << "  -p N    Probe fail limit for improvement probe (default: 10, 0=disable)\n";
     std::cerr << "  -G      Use GAC (Régin's algorithm) for all_different\n";
     std::cerr << "  -N      Disable nogood learning\n";
+    std::cerr << "  -C      Enable conflict learning (violated-constraint scope nogoods)\n";
     std::cerr << "  -E      Disable variable elimination\n";
 }
 
 bool g_print_stats = false;
 bool g_verbose = false;
+int g_verbose_worker = 0;  ///< 並列時に verbose を出すワーカー番号（既定 0）
 bool g_no_nogood = false;
+bool g_conflict_learning = false;
 bool g_no_elimination = false;
 // 診断専用フラグ。ベンチマーク結果上、探索性能は改善しないため
 // デフォルト off。`-c` で明示的に有効化したときだけ VIG/コミュニティ/
@@ -249,8 +262,120 @@ sabori_csp::ModelSimplifier simplify_model(
  */
 int g_bisection_threshold = 8;
 int g_probe_fail_limit = 5;
+int g_num_threads = 1;
+
+// マルチスレッド時の簡易統計（勝者ワーカーの SolverStats のみ。制約別詳細は省略）。
+void print_stats_brief(const sabori_csp::SolverStats& s) {
+    if (!g_print_stats) return;
+    std::cerr << "% Stats: fails=" << s.fail_count
+              << " restarts=" << s.restart_count
+              << " max_depth=" << s.max_depth
+              << " avg_depth=" << (s.depth_count > 0 ? s.depth_sum / s.depth_count : 0)
+              << " nogoods=" << s.nogoods_size
+              << " unit_nogoods=" << s.unit_nogoods_size
+              << " ng_prune=" << s.nogood_prune_count
+              << " bisect=" << s.bisect_count
+              << " enumerate=" << s.enumerate_count
+              << "\n";
+}
+
+// ポートフォリオの多様化テーブルを構築する。
+// worker0 = デフォルト構成（seed 12345678, adaptive mix_p, 全機能ON）で
+//           「単一スレッドより悪くならない」軸を確保。
+// worker1.. = シードをずらしつつ、多様化軸を「VBS 限界インパクトの大きい順」に適用する。
+//             -j を 2,3,4... と増やすほど、影響の小さい軸が後から足される。
+// 多様化ロジックは core（make_portfolio_configs）に集約。ここでは CLI の
+// グローバル設定を base に詰めて委譲する。
+std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_optimize) {
+    sabori_csp::WorkerConfig base;
+    base.bisection_threshold = static_cast<size_t>(g_bisection_threshold);
+    base.probe_fail_limit = g_probe_fail_limit;
+    if (g_no_nogood) base.nogood_learning = false;
+    base.conflict_learning = g_conflict_learning;  // -C を全ワーカーで尊重（既定 off）
+    // 計測用: SABORI_SEED でポートフォリオ全体の起点シードをずらす（単一 Solver の
+    // 挙動を変える solver.cpp 側の SABORI_SEED と同じ変数名・同じ意味）。
+    // 未設定なら従来どおり WorkerConfig の既定シード（デフォルト動作は不変）。
+    if (const char* e = std::getenv("SABORI_SEED")) {
+        base.seed = static_cast<uint32_t>(std::strtoul(e, nullptr, 10));
+    }
+    // probe 系アーム（PROBE_ROOT / PROMOTE_IMPACT / BOTTOMUP）の env 指定を base に
+    // 反映（デバッグ上書き。既定は WorkerConfig の初期値 = 全て無効）。
+    sabori_csp::apply_probe_env_overrides(base);
+    auto cfgs = sabori_csp::make_portfolio_configs(n, is_optimize, base);
+
+    // 【診断/実験】外部チューナー（Optuna等）用フック: SABORI_TUNE_CASE=K を設定すると、
+    // ラダー slot k==K に当たるワーカーだけ base + 明示的な SABORI_TUNE_* 値で作り直す
+    // （make_portfolio_configs のラダー switch 内容は無視する）。未指定の TUNE_* 項目は
+    // base の値のまま。SABORI_TUNE_CASE 未設定なら従来どおり無変更。
+    if (const char* case_env = std::getenv("SABORI_TUNE_CASE")) {
+        long target_k = std::strtol(case_env, nullptr, 10);
+        for (size_t i = 1; i < cfgs.size(); ++i) {
+            if (static_cast<long>((i - 1) % 7) != target_k) continue;
+            sabori_csp::WorkerConfig c = base;
+            c.seed = static_cast<uint32_t>(base.seed + i * 2654435761u);
+            if (const char* e = std::getenv("SABORI_TUNE_RESTART_SCALE")) c.restart_scale = std::atof(e);
+            if (const char* e = std::getenv("SABORI_TUNE_CONFLICT_LEARNING")) c.conflict_learning = std::atoi(e) != 0;
+            if (const char* e = std::getenv("SABORI_TUNE_NOGOOD_LEARNING")) c.nogood_learning = std::atoi(e) != 0;
+            if (const char* e = std::getenv("SABORI_TUNE_GRADIENT_ENABLED")) c.gradient_enabled = std::atoi(e) != 0;
+            if (const char* e = std::getenv("SABORI_TUNE_PROBE_ENABLED")) c.probe_enabled = std::atoi(e) != 0;
+            if (const char* e = std::getenv("SABORI_TUNE_TEMPORAL_ENABLED")) c.temporal_enabled = std::atoi(e) != 0;
+            if (const char* e = std::getenv("SABORI_TUNE_FIXED_MIXP")) c.fixed_mixp = static_cast<size_t>(std::atoi(e));
+            if (const char* e = std::getenv("SABORI_TUNE_ROOT_PROBE")) c.root_probe_limit = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_PROMOTE_IMPACT")) c.promote_impact_k = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_BOTTOMUP")) c.bottomup_fail_limit = std::atoi(e);
+            if (const char* e = std::getenv("SABORI_TUNE_BISECT_LOW_PROB")) c.bisect_low_prob = std::atof(e);
+            cfgs[i] = c;
+        }
+    }
+    return cfgs;
+}
+
+// 【診断/実験】使い捨てマルチスタート（ラウンドロビン: スレッド内で独立した NG/activity を
+// 持つ複数の Solver インスタンスが、リスタートのたびに CPU 使用を交代する）のパラメータ。
+// SABORI_MULTISTART_N: スレッドあたりの本数（既定1=従来どおり、スレッドごとに1インスタンス）。
+size_t multistart_instances() {
+    static const size_t n = [] {
+        if (const char* e = std::getenv("SABORI_MULTISTART_N")) {
+            long v = std::atol(e);
+            if (v > 0) return static_cast<size_t>(v);
+        }
+        return static_cast<size_t>(1);
+    }();
+    return n;
+}
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
+    // マルチスレッド・ポートフォリオ（-j N, N>1）。使い捨てマルチスタート
+    // （SABORI_MULTISTART_N>1）を単一スレッドでも計測できるよう、その場合も
+    // ParallelSolver 経路を使う。find_all は portfolio で重複列挙になるため
+    // 単一スレッド経路にフォールバックする。
+    if ((g_num_threads > 1 || multistart_instances() > 1) && !find_all) {
+        auto model = fzn_model.to_model(g_verbose, g_use_gac);
+        if (!g_no_elimination) {
+            if (simplify_model(*model, fzn_model).is_infeasible()) {
+                std::cout << "=====UNSATISFIABLE=====\n";
+                return;
+            }
+        }
+        sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
+                                      build_worker_configs(g_num_threads, /*is_optimize=*/false),
+                                      multistart_instances());
+        ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        g_parallel_solver = &ps;
+        if (g_timeout_sec > 0) alarm(g_timeout_sec);
+        auto r = ps.solve(*model);
+        g_parallel_solver = nullptr;
+        print_stats_brief(r.winner_stats);
+        if (r.status == sabori_csp::SearchResult::SAT && r.solution) {
+            print_solution(*r.solution, fzn_model);
+        } else if (r.status == sabori_csp::SearchResult::UNSAT) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+        } else {
+            std::cout << "=====UNKNOWN=====\n";
+        }
+        return;
+    }
+
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) {
         // 代入消去で線形制約が確定 UNSAT に簡約された場合は、探索前に UNSATISFIABLE。
@@ -263,6 +388,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     solver.set_verbose(g_verbose);
     solver.set_bisection_threshold(g_bisection_threshold);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_conflict_learning) solver.set_conflict_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -304,6 +430,55 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
 void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minimize) {
     const auto& objective_var_name = fzn_model.solve_decl().objective_var;
 
+    // マルチスレッド・ポートフォリオ（-j N, N>1）+ bound 共有。使い捨てマルチスタート
+    // （SABORI_MULTISTART_N>1）を単一スレッドでも計測できるよう、その場合も
+    // ParallelSolver 経路を使う。
+    if (g_num_threads > 1 || multistart_instances() > 1) {
+        auto model = fzn_model.to_model(g_verbose, g_use_gac);
+        if (!g_no_elimination) {
+            if (simplify_model(*model, fzn_model).is_infeasible()) {
+                std::cout << "=====UNSATISFIABLE=====\n";
+                return;
+            }
+        }
+        size_t obj_var_idx = model->find_variable_index(objective_var_name);
+        if (obj_var_idx == SIZE_MAX) {
+            std::cerr << "Error: objective variable '" << objective_var_name << "' not found\n";
+            std::cout << "=====UNKNOWN=====\n";
+            return;
+        }
+        sabori_csp::ParallelSolver ps(static_cast<size_t>(g_num_threads),
+                                      build_worker_configs(g_num_threads, /*is_optimize=*/true),
+                                      multistart_instances());
+        ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        g_parallel_solver = &ps;
+        if (g_timeout_sec > 0) alarm(g_timeout_sec);
+
+        // 改善 incumbent は publish 時に（result_mtx 下で同期して）呼ばれる。
+        // -a なら都度出力（出力は result_mtx 下で直列化され単調）。
+        auto r = ps.solve_optimize(*model, obj_var_idx, minimize,
+            [&](const sabori_csp::Solution& sol, sabori_csp::Domain::value_type) {
+                if (find_all) print_solution(sol, fzn_model);
+            });
+        g_parallel_solver = nullptr;
+        print_stats_brief(r.winner_stats);
+        // ベンチ用: SABORI_PRINT_OBJ 設定時のみ目的値を stderr に出す
+        // （通常出力・golden には影響しない）。
+        if (std::getenv("SABORI_PRINT_OBJ") && r.objective) {
+            std::cerr << "% objective = " << *r.objective << "\n";
+        }
+
+        if (r.status == sabori_csp::SearchResult::SAT && r.solution) {
+            if (!find_all) print_solution(*r.solution, fzn_model);
+            std::cout << (r.proved_optimal ? "==========\n" : "=====TIMEOUT=====\n");
+        } else if (r.status == sabori_csp::SearchResult::UNSAT) {
+            std::cout << "=====UNSATISFIABLE=====\n";
+        } else {
+            std::cout << "=====UNKNOWN=====\n";
+        }
+        return;
+    }
+
     auto model = fzn_model.to_model(g_verbose, g_use_gac);
     if (!g_no_elimination) {
         if (simplify_model(*model, fzn_model).is_infeasible()) {
@@ -316,6 +491,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
     solver.set_bisection_threshold(g_bisection_threshold);
     solver.set_probe_fail_limit(g_probe_fail_limit);
     if (g_no_nogood) solver.set_nogood_learning(false);
+    if (g_conflict_learning) solver.set_conflict_learning(true);
     if (g_community_analysis) solver.set_community_analysis(true);
     g_current_solver = &solver;
     if (g_timeout_sec > 0) alarm(g_timeout_sec);
@@ -343,6 +519,11 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
         });
 
     print_stats(solver, model.get());
+    // ベンチ用: SABORI_PRINT_OBJ 設定時のみ目的値を stderr に出す（golden 不変）。
+    if (std::getenv("SABORI_PRINT_OBJ") && result) {
+        auto it = result->find(objective_var_name);
+        if (it != result->end()) std::cerr << "% objective = " << it->second << "\n";
+    }
 
     if (!found_any) {
         if (solver.is_stopped()) {
@@ -368,6 +549,13 @@ int main(int argc, char* argv[]) {
     int timeout_sec = 0;
     int bisection_threshold = g_bisection_threshold;
 
+    // スレッド数は SABORI_THREADS env でも指定できる（テスト用）。
+    // 優先順位: CLI -j > 環境変数 > default(1)。env を先に読み、-j があれば上書きする。
+    if (const char* e = std::getenv("SABORI_THREADS")) {
+        g_num_threads = std::atoi(e);
+        if (g_num_threads < 1) g_num_threads = 1;
+    }
+
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "-a") == 0) {
@@ -376,18 +564,27 @@ int main(int argc, char* argv[]) {
             g_print_stats = true;
         } else if (std::strcmp(argv[i], "-v") == 0) {
             g_verbose = true;
+        } else if (std::strcmp(argv[i], "-V") == 0 && i + 1 < argc) {
+            g_verbose = true;
+            g_verbose_worker = std::atoi(argv[++i]);
+            if (g_verbose_worker < 0) g_verbose_worker = 0;
         } else if (std::strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             timeout_sec = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
             bisection_threshold = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             g_probe_fail_limit = std::atoi(argv[++i]);
+        } else if (std::strcmp(argv[i], "-j") == 0 && i + 1 < argc) {
+            g_num_threads = std::atoi(argv[++i]);
+            if (g_num_threads < 1) g_num_threads = 1;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-G") == 0) {
             g_use_gac = true;
         } else if (std::strcmp(argv[i], "-N") == 0) {
             g_no_nogood = true;
+        } else if (std::strcmp(argv[i], "-C") == 0) {
+            g_conflict_learning = true;
         } else if (std::strcmp(argv[i], "-E") == 0) {
             g_no_elimination = true;
         } else if (std::strcmp(argv[i], "-h") == 0 ||

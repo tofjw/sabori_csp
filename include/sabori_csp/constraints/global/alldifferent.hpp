@@ -19,6 +19,8 @@ namespace sabori_csp {
  */
 class AllDifferentConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentConstraint)
+
     /**
      * @brief コンストラクタ
      * @param vars 制約に関与する変数リスト
@@ -158,6 +160,8 @@ private:
  */
 class AllDifferentExcept0Constraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(AllDifferentExcept0Constraint)
+
     explicit AllDifferentExcept0Constraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;

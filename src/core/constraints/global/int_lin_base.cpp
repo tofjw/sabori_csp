@@ -26,15 +26,19 @@ std::vector<VariablePtr> LinearConstraintBase::aggregate_terms(
         it->second += coeffs[i];
     }
 
-    // 一意な変数リストと係数リストを初出順で再構築（係数0の項を除外）
+    // 一意な変数リストと係数リストを初出順で再構築（係数0の項を除外）。
+    // coeffs_ は clone 間共有の SharedConstVec なのでローカルに構築してから格納する。
     std::vector<VariablePtr> unique_vars;
+    std::vector<int64_t> agg_coeffs;
     unique_vars.reserve(order.size());
+    agg_coeffs.reserve(order.size());
     for (const auto& var : order) {
         int64_t coeff = aggregated[var];
         if (coeff == 0) continue;
         unique_vars.push_back(var);
-        coeffs_.push_back(coeff);
+        agg_coeffs.push_back(coeff);
     }
+    coeffs_ = std::move(agg_coeffs);
     return unique_vars;
 }
 

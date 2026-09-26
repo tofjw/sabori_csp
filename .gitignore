@@ -54,6 +54,7 @@ benchmarks/minizinc_challenge/*.log
 benchmarks/minizinc_challenge/squashfs-root/
 # ハーネスが生成する FZN キャッシュ (1ディレクトリ数十MBになる)
 benchmarks/minizinc_challenge/.fzn_cache_*/
+benchmarks/minizinc_challenge/results_*/
 
 # 作業用スクラッチ / リポジトリ外のデータ置き場
 /tmp/

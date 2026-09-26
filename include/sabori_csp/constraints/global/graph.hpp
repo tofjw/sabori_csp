@@ -32,6 +32,8 @@ namespace sabori_csp {
  */
 class CircuitConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(CircuitConstraint)
+
     /**
      * @brief コンストラクタ
      * @param vars 制約に関与する変数リスト（インデックス 0 から n-1）
@@ -176,6 +178,8 @@ private:
  */
 class SubcircuitConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(SubcircuitConstraint)
+
     explicit SubcircuitConstraint(std::vector<VariablePtr> vars);
 
     std::string name() const override;
@@ -283,6 +287,8 @@ private:
  */
 class InverseConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(InverseConstraint)
+
     /**
      * @param f       配列 f
      * @param invf    配列 invf
@@ -350,6 +356,8 @@ private:
  */
 class TreeConstraint : public Constraint {
 public:
+    SABORI_CSP_CLONE_IMPL(TreeConstraint)
+
     /**
      * @param ns   ノード選択 bool 変数（size N）
      * @param es   辺選択 bool 変数（size E）
