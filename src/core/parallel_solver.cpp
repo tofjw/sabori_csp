@@ -54,8 +54,13 @@ namespace {
 //                長い連続計算を要する戦略（証明系・学習系）はスロットに置かない。
 // 注: 2026-09-26 のグリッドでは restart_scale / bisect_low がスレッド間アームとしても
 // 最上位だったため、スレッド間ラダーにも入れた（役割分担は計測で上書き）。
-// スロット表の値は未計測の暫定配置のまま。時分割下では restart_scale の意味が変わりうる
-// （リスタート単位で CPU を譲る機構と相互作用する）ので、SABORI_MULTISTART_N で実測してから決める。
+// スロット表は下の暫定配置を維持（2026-09-26, -j1 SABORI_MULTISTART_N=3 の実測で判断）:
+//   グリッド上位順の候補表（rs8 / bisect_low / rs4 / 純シード / rs2 …）は Δ こそ正
+//   （in-sample +0.192 / 別年ホールドアウト +0.098）だったが、解なしが 11→20 / 16→21 と悪化。
+//   code-generator(3年分)・elitserien を全シードで失った。rs8 は単独でも初解に弱く、
+//   時分割ではリスタート間隔が長いぶんターンを長く握って base スロットの CPU も食う。
+//   スロットの価値は尾の救済なので、初解を遅らせる大きな restart_scale はスロットに置かない。
+//   スレッド間はワーカー0 が CPU を独占するのでこの害は出ない（-j4/-j8 で解なし増なし）。
 void apply_slot_diversification_axis(WorkerConfig& c, size_t k) {
     switch (k) {
         case 0: c.bisect_low_prob = 1.0; break;   // 常に下側（"low"）

@@ -90,11 +90,13 @@ def main():
     ap.add_argument("--outer", type=int, default=None,
                     help="同時実行プロセス数 (既定: min(4, 24 // threads))")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--cache", default=str(FZN_CACHE),
+                    help="FZN キャッシュディレクトリ (既定: .fzn_cache_abperf。ホールドアウト検証用に差し替え)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
     outer = args.outer or max(1, min(4, 24 // args.threads))
-    fzns = sorted(FZN_CACHE.glob("*.fzn"))
+    fzns = sorted(Path(args.cache).glob("*.fzn"))
     ptypes = {f.stem: prob_type_of(f) for f in fzns}
     if args.type == "opt":
         fzns = [f for f in fzns if ptypes[f.stem] != "SAT"]
