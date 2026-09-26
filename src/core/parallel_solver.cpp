@@ -46,60 +46,16 @@ void apply_probe_env_overrides(WorkerConfig& cfg) {
 
 namespace {
 
-// 多様化ラダー: 「シード優先・軸は疎に」の交互配置。make_portfolio_configs（スレッド間）と
-// ParallelSolver::make_instance_config（ラウンドロビン・スロット間）の両方から使う共通軸。
-// 根拠 (bench_axis_seed_grid.py, 2026-07-03, 決定性修正後・軸×シード分離計測):
-//   - 全 ablation 軸は同シード差分で平均マイナス。旧ラダー(2026-06-30)の
-//     正の Δ はシード運の混入だった（軸ごとに別シードで計測していた）。
-//   - 最適化: 純シード変種が全軸構成に勝る第一選択(+0.026)。
-//     軸で限界ゲインは no_nogood(+0.009) のみ。conflict はシード特異的勝ち。
-//   - SAT: no_probe(+0.030) > sc8(+0.006) > 純シード。no_gradient が唯一平均正。
-//     mrv(-0.118)/no_temporal(-0.149)/off(-0.096) は SAT ラダーから排除。
-//   - 偶数スロットの純シードは「軸なし・導出シードのみ」（solbat14 の -j8
-//     解禁がシード単独で再現した知見を反映）。
-// defined-bool 昇格(promote)アームは実並列 -j4/-j8 A/B(bench_ladder_parallel.py, best-of
-// 反復)で既定ラダー配線を正当化できず不採用。単スレ greedy VBS では worker1 に大寄与
-// (Δ=+0.125)だったが、それは bound 共有カップリングを無視した過大評価で fillomino14 依存。
-// 実並列は -j4 で 12-8、-j8 で 11-13 と wash〜微負、大勝も thread/rep で反転、
-// arithmetic-target 等で promote が base の軌道を悪化させる実 regression あり。
-// → 既定ラダーは従来のまま。promote は opt-in(SABORI_PROMOTE_DEF_BOOL /
-//    WorkerConfig.promote_def_bool)のみ温存。[[reif-promote-central-band]] と同じ判断。
-// 注: 現在はどこからも呼ばれない（スレッド間は make_portfolio_configs 内の実験中
-// switch、スロット間は apply_slot_diversification_axis に分離）。2026-07-03 計測の
-// 7ケース表の原本として手順7（ラダー再チューニング）まで参照用に残す。
-[[maybe_unused]] void apply_diversification_axis(WorkerConfig& c, size_t k, bool is_optimize,
-                                const WorkerConfig& base) {
-    if (is_optimize) {
-        switch (k) {
-            case 0: break;                              // 純シード（第一選択）
-            case 1: c.conflict_learning = !base.conflict_learning; break;
-            case 2: break;                              // 純シード
-            case 3: break;                              // 純シード
-            case 4: c.nogood_learning = false; break;
-            case 5: c.fixed_mixp = 0; break;            // mrv（旧2位ヘッジ）
-            case 6: break;                              // 純シード
-        }
-    } else {  // SAT（promote は入れない: 中立〜有害）
-        switch (k) {
-            case 0: c.probe_enabled = false; break;
-            case 1: c.conflict_learning = !base.conflict_learning; break;
-            case 2: break;                              // 純シード
-            case 3: break;                              // 純シード
-            case 4: break;                              // 純シード
-            case 5: c.gradient_enabled = false; break;
-            case 6: break;                              // 純シード
-        }
-    }
-}
-
 // スロット間（ラウンドロビン・マルチスタート）用の多様化軸。
 // 役割分担（multistart-portfolio-design.md §2(a)）:
 //   スレッド間 = CPU を独占する構造的戦略（conflict/nogood/mrv/probe/gradient）
 //   スロット間 = リスタート単位で CPU を明け渡すため、切り替えコストが低く
 //                初期分散の大きい軸（シード・分岐方向・restart_scale）に限定する。
 //                長い連続計算を要する戦略（証明系・学習系）はスロットに置かない。
-// 値は未計測の暫定配置（bisect_low_prob は §3 で「ラダー軸の第一候補」と名指し）。
-// 手順7の軸×シードグリッドで再チューニングすること。
+// 注: 2026-09-26 のグリッドでは restart_scale / bisect_low がスレッド間アームとしても
+// 最上位だったため、スレッド間ラダーにも入れた（役割分担は計測で上書き）。
+// スロット表の値は未計測の暫定配置のまま。時分割下では restart_scale の意味が変わりうる
+// （リスタート単位で CPU を譲る機構と相互作用する）ので、SABORI_MULTISTART_N で実測してから決める。
 void apply_slot_diversification_axis(WorkerConfig& c, size_t k) {
     switch (k) {
         case 0: c.bisect_low_prob = 1.0; break;   // 常に下側（"low"）
@@ -407,65 +363,36 @@ std::vector<WorkerConfig> make_portfolio_configs(
         // ワーカー1以降のシードは base.seed 起点で導出する（base.seed 既定 12345678
         // なら従来と完全一致。set_seed でポートフォリオ全体が再現的にずれる）。
         c.seed = static_cast<uint32_t>(base.seed + i * 2654435761u);
-        // 多様化ラダー: 「シード優先・軸は疎に」の交互配置。
-        // 根拠 (bench_axis_seed_grid.py, 2026-07-03, 決定性修正後・軸×シード分離計測):
-        //   - 全 ablation 軸は同シード差分で平均マイナス。旧ラダー(2026-06-30)の
-        //     正の Δ はシード運の混入だった（軸ごとに別シードで計測していた）。
-        //   - 最適化: 純シード変種が全軸構成に勝る第一選択(+0.026)。
-        //     軸で限界ゲインは no_nogood(+0.009) のみ。conflict はシード特異的勝ち。
-        //   - SAT: no_probe(+0.030) > sc8(+0.006) > 純シード。no_gradient が唯一平均正。
-        //     mrv(-0.118)/no_temporal(-0.149)/off(-0.096) は SAT ラダーから排除。
-        //   - 偶数スロットの純シードは「軸なし・導出シードのみ」（solbat14 の -j8
-        //     解禁がシード単独で再現した知見を反映）。
-        // defined-bool 昇格(promote)アームは実並列 -j4/-j8 A/B(bench_ladder_parallel.py, best-of
-        // 反復)で既定ラダー配線を正当化できず不採用。単スレ greedy VBS では worker1 に大寄与
-        // (Δ=+0.125)だったが、それは bound 共有カップリングを無視した過大評価で fillomino14 依存。
-        // 実並列は -j4 で 12-8、-j8 で 11-13 と wash〜微負、大勝も thread/rep で反転、
-        // arithmetic-target 等で promote が base の軌道を悪化させる実 regression あり。
-        // → 既定ラダーは従来のまま。promote は opt-in(SABORI_PROMOTE_DEF_BOOL /
-        //    WorkerConfig.promote_def_bool)のみ温存。[[reif-promote-central-band]] と同じ判断。
+        // 多様化ラダー（k = (i-1) % 7 で循環）。
+        // 最適化の根拠 (bench_axis_seed_grid.py, 2026-09-26, 73問×3シード×30s, -j1):
+        //   perf 群マージ + build_order post-presolve 化で単スレッド軌道が変わり、
+        //   2026-07-03 の「全軸マイナス・純シード第一」は失効した。base@s0 に足す
+        //   アームとしての限界値（2本 VBS, 同じ base@別シードとの比較）は
+        //   rs8 +0.205 / rs4 +0.205 / probe_root +0.068 / bisect_low +0.062 /
+        //   conflict +0.027 / gradient_off -0.014 / mrv -0.171。
+        //   3本 VBS では「restart_scale アーム1本」が骨格で、2本目は probe_root /
+        //   conflict / bisect / rs4 がノイズ幅内で並ぶ → 構造の異なる順に並べる。
+        //   mrv（旧 case9）と gradient_off（旧 case0/1）は外した。
+        //   軸の組み合わせ（旧 case0 の gradient_off+rs4+conflict 等）は未計測なので単軸のみ。
+        // SAT: 上記コーパスは SAT 4問のみで判断材料にならないため、旧ラダーの実効部分
+        //   （全ワーカー probe_off + restart_scale 各種）を維持。到達しない case7〜13 を削除し、
+        //   旧 case6 の restart_scale=0（set_initial_scale で 1.0 に丸められる）は純シードと明記。
+        // defined-bool 昇格(promote)アームは実並列 -j4/-j8 A/B で既定配線を正当化できず
+        // 不採用。promote は opt-in(WorkerConfig.promote_def_bool)のみ温存
+        // [[reif-promote-central-band]]。
         size_t k = (i - 1) % 7;
-#if 0
         if (is_optimize) {
             switch (k) {
-                case 0: break;                              // 純シード（第一選択）
-                case 1: c.nogood_learning = false; break;
-                case 2: break;                              // 純シード
-                case 3: c.conflict_learning = !base.conflict_learning; break;
-                case 4: break;                              // 純シード
-                case 5: c.fixed_mixp = 0; break;            // mrv（旧2位ヘッジ）
+                case 0: c.restart_scale = 8.0; break;
+                case 1: c.root_probe_limit = 2000; break;   // probe_root（=1 糖衣と同じ予算）
+                case 2: c.conflict_learning = !base.conflict_learning; break;
+                case 3: c.restart_scale = 4.0; break;
+                case 4: c.bisect_low_prob = 1.0; break;     // 常に下側
+                case 5: break;                              // 純シード
                 case 6: break;                              // 純シード
             }
         } else {  // SAT（promote は入れない: 中立〜有害）
-            switch (k) {
-                case 0: c.probe_enabled = false; break;
-                case 1: break;                              // 純シード
-                case 2: c.restart_scale = 8.0; break;
-                case 3: break;                              // 純シード
-                case 4: c.gradient_enabled = false; break;
-                case 5: break;                              // 純シード
-                case 6: c.conflict_learning = !base.conflict_learning;
-                        c.restart_scale = 8.0; break;       // conf_sc8（ヘッジ）
-            }
-        }
-#endif
-#if 1
-        if (is_optimize) {
-            switch (k) {
-                case 0: c.gradient_enabled = false; c.restart_scale = 4.0; c.conflict_learning = !base.conflict_learning; break;
-                case 1: c.gradient_enabled = false; break;
-                case 3: break;                              // 純シード
-                case 4: break;                              // 純シード
-                case 5: break;                              // 純シード
-                case 6: break;                              // 純シード
-                case 7: break;                              // 純シード
-                case 8: c.nogood_learning = false; break;
-                case 9: c.fixed_mixp = 0; break;            // mrv（旧2位ヘッジ）
-                case 10: break;                              // 純シード
-                case 11: c.conflict_learning = !base.conflict_learning; break;
-            }
-        } else {  // SAT（promote は入れない: 中立〜有害）
-            c.probe_enabled = false; 
+            c.probe_enabled = false;
             switch (k) {
                 case 0: c.restart_scale = 4.0; c.conflict_learning = !base.conflict_learning; break;
                 case 1: c.restart_scale = 2.0; break;
@@ -473,17 +400,9 @@ std::vector<WorkerConfig> make_portfolio_configs(
                 case 3: c.restart_scale = 3.0; break;
                 case 4: c.restart_scale = 5.0; break;
                 case 5: c.restart_scale = 7.0; break;
-                case 6: c.restart_scale = .0; break;
-                case 7: c.conflict_learning = !base.conflict_learning; break;
-                case 8: break;                              // 純シード
-                case 9: break;                              // 純シード
-                case 10: break;                              // 純シード
-                case 11: break;                              // 純シード
-                case 12: c.gradient_enabled = false; break;
-                case 13: break;                              // 純シード
+                case 6: break;                              // 純シード
             }
         }
-#endif
         cfgs.push_back(c);
     }
     return cfgs;
