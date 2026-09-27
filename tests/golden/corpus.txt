@@ -67,6 +67,7 @@ tests/fzn/constraints/circuit/unsat_subcircuit.fzn
 tests/fzn/constraints/count_eq/all_solutions.fzn
 tests/fzn/constraints/count_eq/propagation.fzn
 tests/fzn/constraints/count_eq/simple.fzn
+tests/fzn/constraints/count_eq/var_target.fzn
 tests/fzn/constraints/cumulative/adjacent_multi.fzn
 tests/fzn/constraints/cumulative/adjacent_tasks.fzn
 tests/fzn/constraints/cumulative/mandatory_part.fzn
@@ -114,6 +115,7 @@ tests/fzn/constraints/int_abs/negative.fzn
 tests/fzn/constraints/int_abs/positive.fzn
 tests/fzn/constraints/int_div/all_solutions.fzn
 tests/fzn/constraints/int_div/backward_y.fzn
+tests/fzn/constraints/int_div/divmod_channel.fzn
 tests/fzn/constraints/int_div/forward_y_positive_only.fzn
 tests/fzn/constraints/int_div/mixed_sign.fzn
 tests/fzn/constraints/int_div/negative.fzn
@@ -145,6 +147,7 @@ tests/fzn/constraints/int_eq_reif/b_false.fzn
 tests/fzn/constraints/int_eq_reif/b_true.fzn
 tests/fzn/constraints/int_eq_reif/b_var.fzn
 tests/fzn/constraints/int_eq_reif/disjoint.fzn
+tests/fzn/constraints/int_eq_reif/one_hot_group.fzn
 tests/fzn/constraints/int_eq_reif/unsat.fzn
 tests/fzn/constraints/int_le/boundary_equal.fzn
 tests/fzn/constraints/int_le/tight.fzn

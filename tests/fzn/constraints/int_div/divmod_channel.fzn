@@ -1,0 +1,9 @@
+% 同じ (x, 定数除数) の int_div + int_mod: presolve で IntDivModChannelConstraint に集約される
+% （clone ゲートのカバレッジ用）。r = 3 から x への逆伝播も踏む。
+var 0..11: x :: output_var;
+var 0..5: q :: output_var;
+var 0..3: r :: output_var;
+constraint int_div(x, 4, q);
+constraint int_mod(x, 4, r);
+constraint int_le(2, r);
+solve satisfy;

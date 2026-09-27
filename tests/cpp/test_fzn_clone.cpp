@@ -4,6 +4,7 @@
 #include "sabori_csp/model_simplifier.hpp"
 #include "sabori_csp/solver.hpp"
 #include "sabori_csp/parallel_solver.hpp"
+#include <cstdlib>
 #include <cxxabi.h>
 #include <fstream>
 #include <iostream>
@@ -147,4 +148,40 @@ TEST_CASE("clone: golden コーパス全 fzn で原本と解・統計が一致",
     std::cout << "[fzn clone] " << corpus.size() << " fzn, "
               << classes.size() << " constraint classes cloned\n";
     for (const auto& c : classes) std::cout << "  " << c << "\n";
+}
+
+// IntDivModChannel は SABORI_DIVMOD>=2（置換モード）でのみ構築される。この env は
+// Solver 構築のたびに読まれるので、ここで立てれば原本・clone 双方に効く。
+// 対象は int_mod を含む corpus fzn（int_div とのペアがあるものが集約される）。
+TEST_CASE("clone: SABORI_DIVMOD 置換モードでも原本と解・統計が一致", "[parallel][clone][fzn]") {
+    struct EnvGuard {
+        ~EnvGuard() { unsetenv("SABORI_DIVMOD"); }
+    } guard;
+    REQUIRE(std::getenv("SABORI_DIVMOD") == nullptr);  // 外から与えられていたら復元できない
+
+    std::vector<std::string> targets;
+    for (const auto& rel : read_corpus()) {
+        std::ifstream in(std::string(SABORI_SOURCE_DIR) + "/" + rel);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (text.find("int_mod(") != std::string::npos) targets.push_back(rel);
+    }
+    REQUIRE_FALSE(targets.empty());
+
+    for (const char* mode : {"2", "3"}) {
+        CAPTURE(mode);
+        setenv("SABORI_DIVMOD", mode, 1);
+        std::set<std::string> classes;
+        for (const auto& rel : targets) {
+            CAPTURE(rel);
+            auto fm = fzn::parse_file(std::string(SABORI_SOURCE_DIR) + "/" + rel);
+            REQUIRE(fm);
+            auto a = run_original(*fm);
+            auto b = run_clone(*fm, classes);
+            CHECK(a.solutions == b.solutions);
+            if (b.searched) {
+                CHECK(same_stats(a.stats, b.stats));
+            }
+        }
+        CHECK(classes.count("sabori_csp::IntDivModChannelConstraint") == 1);
+    }
 }

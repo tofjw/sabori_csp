@@ -1,0 +1,11 @@
+b1 = true;
+b2 = false;
+b3 = false;
+x = 1;
+----------
+b1 = false;
+b2 = false;
+b3 = true;
+x = 3;
+----------
+==========
