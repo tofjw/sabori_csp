@@ -344,6 +344,20 @@ size_t multistart_instances() {
     return n;
 }
 
+// SABORI_MULTISTART_ADAPT=<初期 fail 予算>: スロットの適応的ファンアウト（0/未設定 = 無効）。
+// 各スレッドのリングを 1 スロットで始め、incumbent が無いまま予算を使い切るたびに倍にする。
+// SABORI_MULTISTART_N > 1 のときだけ意味を持つ。
+uint64_t multistart_fanout_budget() {
+    static const uint64_t b = [] {
+        if (const char* e = std::getenv("SABORI_MULTISTART_ADAPT")) {
+            long long v = std::atoll(e);
+            if (v > 0) return static_cast<uint64_t>(v);
+        }
+        return uint64_t{0};
+    }();
+    return b;
+}
+
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
     // マルチスレッド・ポートフォリオ（-j N, N>1）。使い捨てマルチスタート
     // （SABORI_MULTISTART_N>1）を単一スレッドでも計測できるよう、その場合も
@@ -361,6 +375,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
                                       build_worker_configs(g_num_threads, /*is_optimize=*/false),
                                       multistart_instances());
         ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        ps.set_adaptive_fanout(multistart_fanout_budget());
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
         auto r = ps.solve(*model);
@@ -451,6 +466,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
                                       build_worker_configs(g_num_threads, /*is_optimize=*/true),
                                       multistart_instances());
         ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        ps.set_adaptive_fanout(multistart_fanout_budget());
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
 

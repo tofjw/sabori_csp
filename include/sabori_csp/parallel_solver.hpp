@@ -7,6 +7,7 @@
 
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -35,11 +36,23 @@ namespace sabori_csp {
  *
  * stop 時は待機中のメンバーが永遠に起きられないと困るので、待機は stop_flag も
  * 監視し、notify_all() で全待機者を起こせるようにしてある。
+ *
+ * 適応的ファンアウト（fanout_fail_budget > 0）: 抽選対象を先頭 active_ 本に限る。
+ * 最初は 1 本だけ（= 分割税なし）で走り、incumbent が無いまま有効メンバーの fail 累計が
+ * 予算を超えるたびに active_ を倍（上限 n）、予算も倍にする。段階 k では 2^k 本が
+ * 計 budget·2^k fail を使うので、1 本あたりの予算はどの段階でもほぼ一定。
+ * 未有効のメンバーは番が回らないので探索を始めない（スレッドは待機のみ）。
  */
 class RoundRobinRing {
 public:
-    explicit RoundRobinRing(size_t n, uint32_t seed = 12345)
-        : n_(n == 0 ? 1 : n), reward_(n_, 1.0), rng_(seed) {}
+    /**
+     * @param n メンバー数
+     * @param seed 抽選 RNG のシード
+     * @param fanout_fail_budget 適応的ファンアウトの初期 fail 予算（0 = 無効、最初から n 本）
+     */
+    explicit RoundRobinRing(size_t n, uint32_t seed = 12345, uint64_t fanout_fail_budget = 0)
+        : n_(n == 0 ? 1 : n), reward_(n_, 1.0), rng_(seed),
+          active_(fanout_fail_budget > 0 ? 1 : n_), fanout_budget_(fanout_fail_budget) {}
 
     /// k番目のメンバーとして自分の番を待つ。stop_flag が立ったら false で即座に抜ける。
     bool wait_turn(size_t k, const std::atomic<bool>& stop_flag) {
@@ -55,25 +68,52 @@ public:
      * メンバーの報酬に EMA で反映してから、報酬比例で次の番を抽選する。
      * @param productive このターンで NoGood 枝刈りが進み、かつ深さが伸びたか
      * @param depth_gained このターンで伸びた探索深さ
+     * @param fails_used このターンで使った fail 数（適応的ファンアウトの予算消費）
+     * @param may_grow 拡大してよいか（大域 incumbent が無い間だけ true を渡す）
+     * @return このターンで有効メンバー数を増やしたら増やした後の本数、増やさなければ 0
      */
-    void yield_turn(bool productive, size_t depth_gained) {
+    size_t yield_turn(bool productive, size_t depth_gained,
+                      uint64_t fails_used = 0, bool may_grow = false) {
         std::lock_guard<std::mutex> lk(mtx_);
         double signal = productive ? 2.0 : 1.0 / static_cast<double>(1 + depth_gained);
         reward_[turn_] = kDecay * reward_[turn_] + (1.0 - kDecay) * signal;
         reward_[turn_] = std::max(reward_[turn_], kFloor);
 
+        size_t grown = 0;
+        if (active_ < n_) {
+            fanout_used_ += fails_used;
+            if (may_grow && fanout_used_ >= fanout_budget_) {
+                active_ = std::min(active_ * 2, n_);
+                fanout_budget_ *= 2;
+                fanout_used_ = 0;
+                grown = active_;
+            }
+        }
+
         double total = 0.0;
-        for (double r : reward_) total += r;
+        for (size_t i = 0; i < active_; ++i) total += reward_[i];
         std::uniform_real_distribution<double> dist(0.0, total);
         double pick = dist(rng_);
         double acc = 0.0;
-        size_t next = n_ - 1;
-        for (size_t i = 0; i < n_; ++i) {
+        size_t next = active_ - 1;
+        for (size_t i = 0; i < active_; ++i) {
             acc += reward_[i];
             if (pick < acc) { next = i; break; }
         }
-        turn_ = next;
-        cv_.notify_all();
+        // 番が変わらないとき（有効 1 本の間など）は誰も起こさない。notify_all は待機中の
+        // 全メンバーを起こして述語を再評価させるので、リスタートごとに呼ぶと無駄な
+        // 起床・再スリープが積もる（リスタートの多い問題でスループットが数 % 落ちた）。
+        if (next != turn_) {
+            turn_ = next;
+            cv_.notify_all();
+        }
+        return grown;
+    }
+
+    /// 現在の有効メンバー数（テスト・verbose 用）
+    size_t active() {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return active_;
     }
 
     /// 外部 stop 時に全待機者を起こす（stop_flag は呼び出し側で先に立てておくこと）。
@@ -90,6 +130,9 @@ private:
     size_t turn_ = 0;
     std::vector<double> reward_;
     std::mt19937 rng_;
+    size_t active_;            ///< 抽選対象のメンバー数（先頭 active_ 本）
+    uint64_t fanout_budget_;   ///< 次の拡大までの fail 予算（段階ごとに倍）
+    uint64_t fanout_used_ = 0; ///< 現段階で使った fail 数
     std::mutex mtx_;
     std::condition_variable cv_;
 };
@@ -149,14 +192,14 @@ public:
 
     /**
      * @brief SAT 探索（最初の解を見つけたワーカーが勝つ）
-     * @param master モデル（この呼び出し内で presolve され、mutate される）
+     * @param master モデル（この呼び出し内で presolve され、先頭ワーカーがそのまま探索に使う）
      * @param on_solution 解確定時に同期して呼ばれる（任意）
      */
     Result solve(Model& master, SolutionFoundCallback on_solution = nullptr);
 
     /**
      * @brief 最適化探索（bound 共有つきポートフォリオ）
-     * @param master モデル（presolve され mutate される）
+     * @param master モデル（presolve され、先頭ワーカーがそのまま探索に使う）
      * @param obj_var_idx 目的変数のインデックス
      * @param minimize true で最小化
      * @param on_improve 改善 incumbent ごとに同期して呼ばれる（任意）
@@ -190,9 +233,23 @@ public:
         verbose_worker_ = worker_idx;
     }
 
+    /**
+     * @brief スロットの適応的ファンアウトを設定する（instances_per_thread > 1 のときのみ有効）
+     *
+     * 各スレッドのリングを 1 本で始め、incumbent が無いまま fail 予算を使い切るたびに
+     * 有効スロット数を倍にする（RoundRobinRing 参照）。solve 前に呼ぶこと。
+     * @param initial_fail_budget 初期 fail 予算（0 = 無効、最初から全スロット）
+     */
+    void set_adaptive_fanout(uint64_t initial_fail_budget) {
+        fanout_fail_budget_ = initial_fail_budget;
+    }
+
 private:
     // ワーカー（models_/solvers_/rings_）を master から構築する。
-    void build_workers(const Model& master);
+    void build_workers(Model& master);
+
+    // ラウンドロビンのリスタート yield hook を張る（ターン受け渡し + ファンアウト予算の報告）
+    void install_ring_hook(size_t thread_idx, size_t slot_idx, RoundRobinRing* ring);
 
     // SAT ワーカーの本体（thread_idx 番目のリング内 slot_idx 番目のインスタンス）
     void worker_sat(size_t thread_idx, size_t slot_idx, const SolutionFoundCallback& on_solution);
@@ -217,6 +274,7 @@ private:
     size_t num_threads_;
     std::vector<WorkerConfig> configs_;
     size_t instances_per_thread_ = 1;  ///< スレッドあたりのラウンドロビン・マルチスタート本数
+    uint64_t fanout_fail_budget_ = 0;  ///< 適応的ファンアウトの初期 fail 予算（0 = 無効）
     bool is_optimize_ = false;  ///< solve()=false / solve_optimize()=true（多様化軸の切替に使う）
     bool verbose_ = false;            ///< verbose 出力を有効にするか
     size_t verbose_worker_ = 0;       ///< verbose を出すワーカー番号
@@ -225,7 +283,8 @@ private:
     // models_/solvers_ は (num_threads_ * instances_per_thread_) 個、flat_index() で参照する。
     // build_workers で一度だけ構築し、以降差し替えない（ラウンドロビンは使い捨てにしない）ので
     // stop() からの並行アクセスに追加の mutex は不要（原本の設計のまま）。
-    std::vector<std::unique_ptr<Model>>  models_;
+    std::vector<std::unique_ptr<Model>>  models_;      ///< 所有する clone（先頭は nullptr = master を使う）
+    std::vector<Model*>                  model_refs_;  ///< 各インスタンスが解くモデル（先頭は master）
     std::vector<std::unique_ptr<Solver>> solvers_;
     std::vector<std::unique_ptr<RoundRobinRing>> rings_;  ///< スレッドごとに1つ（サイズ instances_per_thread_）
     std::atomic<bool> workers_ready_{false};  ///< solvers_/models_ が安定（stop が配れる）
