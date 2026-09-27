@@ -1,0 +1,11 @@
+% 同じ x に対する片側定数の int_eq_reif 群: presolve で IntOneHotChannelConstraint に集約される
+% （clone ゲートのカバレッジ用）。bool 側の節から x への伝播も踏む。
+var 1..4: x :: output_var;
+var bool: b1 :: output_var;
+var bool: b2 :: output_var;
+var bool: b3 :: output_var;
+constraint int_eq_reif(x, 1, b1);
+constraint int_eq_reif(x, 2, b2);
+constraint int_eq_reif(x, 3, b3);
+constraint bool_clause([b1, b3], []);
+solve satisfy;

@@ -3,6 +3,7 @@
 #include "sabori_csp/constraints/global/alldifferent.hpp"
 #include "sabori_csp/constraints/global/linear.hpp"
 #include "sabori_csp/constraints/comparison.hpp"
+#include "sabori_csp/constraints/logical.hpp"
 #include "sabori_csp/variable.hpp"
 #include "sabori_csp/model.hpp"
 #include "sabori_csp/solver.hpp"
@@ -360,4 +361,81 @@ TEST_CASE("ParallelSolver: instances_per_thread=1（既定）は従来どおり�
     auto r = ps.solve(*m);
     REQUIRE(r.status == SearchResult::SAT);
     REQUIRE(r.solution.has_value());
+}
+
+// ============================================================================
+// fzn からは到達しない制約クラスの clone（test_fzn_corpus [clone] の補完）
+//   BoolNot:        fzn の bool_not は別経路で処理され、この制約は Python API 専用
+//   ClauseWitness:  SABORI_CLAUSE_WITNESS 指定時のみ構築（env はプロセス内 static で
+//                   読まれるので test_fzn_corpus からは切り替えられない）
+// 原本 solve_all と「prepare → clone → master を別シードで荒らして破棄 → clone を
+// solve_all_prepared」の全解列・統計が一致し、clone 後に対象クラスが実在することを見る。
+// ============================================================================
+
+namespace {
+
+template <typename Target, typename Build>
+void check_clone_all_solutions(Build build) {
+    std::vector<Solution> sols_a;
+    auto m_orig = build();
+    Solver a;
+    a.solve_all(*m_orig, [&](const Solution& s) { sols_a.push_back(s); return true; });
+    REQUIRE_FALSE(sols_a.empty());
+
+    auto m_master = build();
+    Solver prep;
+    REQUIRE(prep.prepare(*m_master));
+    auto m_clone = m_master->clone();
+    bool found = false;
+    for (const auto& c : m_clone->constraints()) {
+        if (c && dynamic_cast<const Target*>(c.get())) found = true;
+    }
+    REQUIRE(found);  // presolve で消えていたら clone を検査できていない
+    {
+        Solver other;
+        WorkerConfig cfg;
+        cfg.seed = 7;
+        other.apply_worker_config(cfg);
+        other.solve_all_prepared(*m_master, [](const Solution&) { return true; });
+        m_master.reset();
+    }
+
+    std::vector<Solution> sols_w;
+    Solver w;
+    w.apply_worker_config(WorkerConfig{});
+    w.solve_all_prepared(*m_clone, [&](const Solution& s) { sols_w.push_back(s); return true; });
+
+    CHECK(sols_a == sols_w);
+    CHECK(same_stats(a.stats(), w.stats()));
+}
+
+} // namespace
+
+TEST_CASE("clone: BoolNot を含むモデルの全解・統計が原本と一致", "[parallel][clone]") {
+    // not(a0,b0), not(a1,b1), not(a2,b2), clause([a0,a1,a2]) → 7 解
+    check_clone_all_solutions<BoolNotConstraint>([] {
+        auto m = std::make_unique<Model>();
+        std::vector<Variable*> a, b;
+        for (int i = 0; i < 3; ++i) {
+            a.push_back(m->create_variable("a" + std::to_string(i), 0, 1));
+            b.push_back(m->create_variable("b" + std::to_string(i), 0, 1));
+            m->add_constraint(std::make_shared<BoolNotConstraint>(a[i], b[i]));
+        }
+        m->add_constraint(std::make_shared<BoolClauseConstraint>(a, std::vector<Variable*>{}));
+        return m;
+    });
+}
+
+TEST_CASE("clone: ClauseWitness を含むモデルの全解・統計が原本と一致", "[parallel][clone]") {
+    // fzn の bool_clause + SABORI_CLAUSE_WITNESS と同じ組み立て（節本体 + witness s）
+    check_clone_all_solutions<ClauseWitnessConstraint>([] {
+        auto m = std::make_unique<Model>();
+        std::vector<Variable*> pos, neg;
+        for (int i = 0; i < 3; ++i) pos.push_back(m->create_variable("p" + std::to_string(i), 0, 1));
+        for (int i = 0; i < 2; ++i) neg.push_back(m->create_variable("n" + std::to_string(i), 0, 1));
+        auto s = m->create_variable("s", 0, 4);
+        m->add_constraint(std::make_shared<ClauseWitnessConstraint>(pos, neg, s));
+        m->add_constraint(std::make_shared<BoolClauseConstraint>(pos, neg));
+        return m;
+    });
 }
