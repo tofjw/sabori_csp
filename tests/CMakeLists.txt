@@ -104,4 +104,27 @@ if(BUILD_FZN)
         ENVIRONMENT "FZN_SABORI=$<TARGET_FILE:fzn_sabori>"
         TIMEOUT 120
     )
+    # TSan ビルドは ASLR 無効で起動しないと即死する（トップの SABORI_SANITIZE 参照）
+    if(SABORI_SANITIZE STREQUAL "thread")
+        set_property(TEST golden_master APPEND PROPERTY ENVIRONMENT
+            "FZN_SABORI_LAUNCHER=${SETARCH_EXECUTABLE} ${CMAKE_SYSTEM_PROCESSOR} -R")
+    endif()
+endif()
+
+# TSan スイープ: -DSABORI_SANITIZE=thread のビルドでのみ登録。golden コーパスを
+# 並列構成（-j4 / -j8 / -j4+MS2）で解き、データ競合レポート・異常終了を検出する。
+# 重い（TSan は 1 プロセス十数 GB になりうる）ので同時 2 本。ラベル tsan で単独実行:
+#   ctest --test-dir build-tsan -L tsan --output-on-failure
+if(BUILD_FZN AND SABORI_SANITIZE STREQUAL "thread")
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(
+        NAME tsan_sweep
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tsan/tsan_sweep.py
+                --bin $<TARGET_FILE:fzn_sabori> --jobs 2 --timeout 5
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(tsan_sweep PROPERTIES
+        LABELS "tsan"
+        TIMEOUT 14400
+    )
 endif()

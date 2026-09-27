@@ -104,6 +104,28 @@ ctest にも `golden_master`（ラベル `golden`）として登録済み:
 ctest --test-dir build -L golden
 ```
 
+### ThreadSanitizer（並列探索のデータ競合検出）
+
+`-j N` / `SABORI_MULTISTART_N` の並列経路を TSan ビルドで検証する。通常ビルドとは別ディレクトリに作る。
+
+```bash
+cmake -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSABORI_SANITIZE=thread \
+      -DPython3_EXECUTABLE=/usr/bin/python3
+cmake --build build-tsan -j8
+
+ctest --test-dir build-tsan -LE tsan -j4          # 既存テストを TSan 下で（単体・golden・clone/再解）
+ctest --test-dir build-tsan -L tsan --output-on-failure   # 並列スイープ（長い）
+```
+
+- `tsan_sweep`（ラベル `tsan`）は golden コーパス全 fzn を `-j 4` / `-j 8` / `-j 4`+`SABORI_MULTISTART_N=2`
+  で解き、TSan レポートまたは異常終了があれば失敗する。直接実行もできる:
+  `tests/tsan/tsan_sweep.py --bin build-tsan/src/fzn/fzn_sabori --configs j4 --limit 20`
+- この環境（WSL2）の GCC 11 の TSan は ASLR 有効だと `FATAL: ThreadSanitizer: unexpected memory mapping`
+  で即死する。ctest 登録テストは `setarch <arch> -R` 越しに起動するよう CMake が設定する
+  （`CMAKE_CROSSCOMPILING_EMULATOR` と golden の `FZN_SABORI_LAUNCHER`）。手で起動するときも `setarch $(uname -m) -R` を付ける
+- TSan は 1 プロセスで十数 GB 使うことがある（大きい問題の `-j4` で 15〜27GB）。同時実行は 1〜2 本まで
+- `-DSABORI_SANITIZE=address,undefined` で ASan/UBSan ビルドも作れる（スイープは TSan 専用）
+
 ## テスト構成
 
 ```
