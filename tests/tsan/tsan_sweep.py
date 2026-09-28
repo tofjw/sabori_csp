@@ -2,7 +2,7 @@
 """TSan ビルドの fzn_sabori で golden コーパスを並列探索させ、データ競合を検出する。
 
 `-DSABORI_SANITIZE=thread` でビルドしたバイナリ専用。各 fzn を並列構成
-（既定: ``-j 4`` / ``-j 8`` / ``-j 4`` + ``SABORI_MULTISTART_N=2``）で解き、
+（既定: ``-j 4`` / ``-j 8`` / ``-j 4`` + ``SABORI_MULTISTART_N=2`` / -j 無しの既定マルチスタート）で解き、
 
 - stderr に ThreadSanitizer のレポートが出た
 - 異常終了した（シグナル死、TSan の exitcode、タイムアウト以外の非 0）
@@ -47,6 +47,9 @@ CONFIGS: Dict[str, Tuple[List[str], Dict[str, str]]] = {
     "j4": (["-j", "4"], {}),
     "j8": (["-j", "8"], {}),
     "j4ms2": (["-j", "4"], {"SABORI_MULTISTART_N": "2"}),
+    # -j 無し = 既定の適応的ファンアウト付きマルチスタート（3 スロット）。
+    # 予算を 1 にして最初のリスタートで全スロットを有効にし、ターン受け渡しを踏ませる。
+    "default": ([], {"SABORI_MULTISTART_ADAPT": "1"}),
 }
 
 TSAN_EXITCODE = 66

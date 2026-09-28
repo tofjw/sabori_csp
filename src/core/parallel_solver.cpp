@@ -1,5 +1,6 @@
 #include "sabori_csp/parallel_solver.hpp"
 #include <cstdlib>
+#include <iostream>
 #include <string>
 #include <limits>
 
@@ -102,7 +103,7 @@ WorkerConfig ParallelSolver::make_instance_config(size_t thread_idx, size_t slot
     return c;
 }
 
-void ParallelSolver::build_workers(const Model& master) {
+void ParallelSolver::build_workers(Model& master) {
     // 再入（同一インスタンスでの複数回 solve）に備え、前回の state を全消去する。
     // workers_ready_ を false に落としてから配列を作り直すことで、構築中に stop() が
     // 走っても古い solvers_ を走査しないようにする。
@@ -110,6 +111,7 @@ void ParallelSolver::build_workers(const Model& master) {
     // 下ろすと presolve（prep.prepare）中に届いた stop が消え、-t を大きく超えて走り続ける。
     workers_ready_.store(false);
     models_.clear();
+    model_refs_.clear();
     solvers_.clear();
     rings_.clear();
     have_incumbent_.store(false);
@@ -125,6 +127,7 @@ void ParallelSolver::build_workers(const Model& master) {
     size_t total = num_threads_ * instances_per_thread_;
     // reserve でキャパシティを固定（push_back 後の再確保を防ぎ、stop() の走査を安全にする）。
     models_.reserve(total);
+    model_refs_.reserve(total);
     solvers_.reserve(total);
     rings_.reserve(num_threads_);
     // verbose 対象スレッド（範囲外なら最後のスレッドにクランプ）。
@@ -132,9 +135,20 @@ void ParallelSolver::build_workers(const Model& master) {
 
     for (size_t t = 0; t < num_threads_; ++t) {
         // リング内バンディットの抽選 RNG はスレッドの base seed から導出（決定論を保つ）。
-        rings_.push_back(std::make_unique<RoundRobinRing>(instances_per_thread_, configs_[t].seed));
+        rings_.push_back(std::make_unique<RoundRobinRing>(instances_per_thread_, configs_[t].seed,
+                                                          fanout_fail_budget_));
         for (size_t s = 0; s < instances_per_thread_; ++s) {
-            models_.push_back(master.clone());
+            // 先頭インスタンスは clone せず presolve 済みの master をそのまま使う。
+            // clone したモデルは元のモデルより探索スループットが 1〜7% 低い
+            // （gfd-schedule 0.93 → 0.99、メモリ配置の差とみられる）。clone は全て
+            // スレッド起動前に作り終えるので、以後 master を触るのはこのインスタンスだけ。
+            if (t == 0 && s == 0) {
+                models_.push_back(nullptr);
+                model_refs_.push_back(&master);
+            } else {
+                models_.push_back(master.clone());
+                model_refs_.push_back(models_.back().get());
+            }
             auto solver = std::make_unique<Solver>();
             solver->apply_worker_config(make_instance_config(t, s));
             // verbose は 1 インスタンス（対象スレッドの slot0）だけに限定。
@@ -168,6 +182,29 @@ void ParallelSolver::stop() {
     }
 }
 
+void ParallelSolver::install_ring_hook(size_t thread_idx, size_t slot_idx, RoundRobinRing* ring) {
+    size_t idx = flat_index(thread_idx, slot_idx);
+    Solver* solver = solvers_[idx].get();
+    bool verbose = verbose_ && thread_idx == verbose_worker_clamped_;
+    // fail 数はこのインスタンス自身の統計（hook は探索スレッド上で呼ばれるので読める）。
+    // 前回ターン終了時からの差分をこのターンの消費としてリングへ渡す。
+    solver->set_restart_yield_hook(
+        [ring, slot_idx, solver, verbose, this, last_fails = uint64_t{0}](
+                bool productive, size_t depth_gained) mutable {
+            uint64_t fails = solver->stats().fail_count;
+            uint64_t used = fails - last_fails;
+            size_t grown = ring->yield_turn(productive, depth_gained, used,
+                                            /*may_grow=*/!have_incumbent_.load());
+            if (grown > 0 && verbose) {
+                std::cerr << "% [verbose] multistart fan-out: active " << grown << "/"
+                          << instances_per_thread_ << " (slot " << slot_idx
+                          << " fails=" << fails << ")\n";
+            }
+            ring->wait_turn(slot_idx, stop_flag_);
+            last_fails = solver->stats().fail_count;
+        });
+}
+
 void ParallelSolver::worker_sat(size_t thread_idx, size_t slot_idx,
                                 const SolutionFoundCallback& on_solution) {
     size_t idx = flat_index(thread_idx, slot_idx);
@@ -175,13 +212,10 @@ void ParallelSolver::worker_sat(size_t thread_idx, size_t slot_idx,
 
     if (ring) {
         if (!ring->wait_turn(slot_idx, stop_flag_)) return;  // 開始前に stop 済み
-        solvers_[idx]->set_restart_yield_hook([ring, slot_idx, this](bool productive, size_t depth_gained) {
-            ring->yield_turn(productive, depth_gained);
-            ring->wait_turn(slot_idx, stop_flag_);
-        });
+        install_ring_hook(thread_idx, slot_idx, ring);
     }
 
-    auto sol = solvers_[idx]->solve_prepared(*models_[idx]);
+    auto sol = solvers_[idx]->solve_prepared(*model_refs_[idx]);
     if (sol) {
         // 最初に解いたインスタンスが勝つ。
         if (!have_incumbent_.exchange(true)) {
@@ -223,10 +257,7 @@ void ParallelSolver::worker_optimize(size_t thread_idx, size_t slot_idx, size_t 
 
     if (ring) {
         if (!ring->wait_turn(slot_idx, stop_flag_)) return;  // 開始前に stop 済み
-        solvers_[idx]->set_restart_yield_hook([ring, slot_idx, this](bool productive, size_t depth_gained) {
-            ring->yield_turn(productive, depth_gained);
-            ring->wait_turn(slot_idx, stop_flag_);
-        });
+        install_ring_hook(thread_idx, slot_idx, ring);
     }
 
     // hook: 大域 incumbent を返す（無ければ nullopt）。読み取りは atomic のみ。
@@ -250,9 +281,9 @@ void ParallelSolver::worker_optimize(size_t thread_idx, size_t slot_idx, size_t 
     // SABORI_BUILDORDER_PREPRESOLVE を尊重）。並列 × pre-presolve 軌道の健全性ストレステスト用。
     static const bool full = std::getenv("SABORI_WORKER_FULLSOLVE") != nullptr;
     if (full) {
-        solvers_[idx]->solve_optimize(*models_[idx], obj_idx, minimize, wrapped);
+        solvers_[idx]->solve_optimize(*model_refs_[idx], obj_idx, minimize, wrapped);
     } else {
-        solvers_[idx]->solve_optimize_prepared(*models_[idx], obj_idx, minimize, wrapped);
+        solvers_[idx]->solve_optimize_prepared(*model_refs_[idx], obj_idx, minimize, wrapped);
     }
 
     if (!solvers_[idx]->is_stopped()) {

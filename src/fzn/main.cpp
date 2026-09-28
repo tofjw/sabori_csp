@@ -37,6 +37,9 @@ void print_usage(const char* program) {
     std::cerr << "  -a      Find all solutions (or all improving solutions for optimization)\n";
     std::cerr << "  -j N    Number of portfolio threads (default: 1). N>1 runs parallel search.\n";
     std::cerr << "          (also settable via SABORI_THREADS env; -j overrides env)\n";
+    std::cerr << "          Without -j/SABORI_THREADS: single thread with adaptive multistart\n";
+    std::cerr << "          (3 slots, fan-out after 1000 fails without a solution).\n";
+    std::cerr << "          -j 1 = plain single-instance search.\n";
     std::cerr << "  -s      Print solver statistics to stderr\n";
     std::cerr << "  -v      Verbose mode (print presolve/restart progress; worker 0 when -j>1)\n";
     std::cerr << "  -V N    Verbose mode for worker N (implies -v; default 0)\n";
@@ -263,6 +266,20 @@ sabori_csp::ModelSimplifier simplify_model(
 int g_bisection_threshold = 8;
 int g_probe_fail_limit = 5;
 int g_num_threads = 1;
+bool g_threads_explicit = false;  ///< -j または SABORI_THREADS で明示されたか
+
+// -j も SABORI_THREADS も無いときの既定: 単一スレッドで適応的ファンアウト付き
+// マルチスタート（3 スロット、初期 fail 予算 1000）。2026-09-27 の A/B（-j1、固定 n=1 比、
+// 3 シード × 30 秒）で解なし 14→11（in-sample 73 問）/ 19→12（別年 68 問）、
+// 目的値・解の有無で決まった勝敗は 13-9 / 17-6。代償は簡単な問題の時間（起動時の clone 2 本、
+// Δ は時間差のみの負けで −0.04 / −0.03）。-j 1 を明示すれば従来の単一インスタンス経路
+// （golden・テストの基準経路）。詳細は docs-dev/multistart-portfolio-design.md §2(b)。
+constexpr size_t kDefaultMultistartN = 3;
+constexpr uint64_t kDefaultFanoutBudget = 1000;
+
+bool default_multistart_active() {
+    return !g_threads_explicit && std::getenv("SABORI_MULTISTART_N") == nullptr;
+}
 
 // マルチスレッド時の簡易統計（勝者ワーカーの SolverStats のみ。制約別詳細は省略）。
 void print_stats_brief(const sabori_csp::SolverStats& s) {
@@ -333,15 +350,31 @@ std::vector<sabori_csp::WorkerConfig> build_worker_configs(size_t n, bool is_opt
 // 【診断/実験】使い捨てマルチスタート（ラウンドロビン: スレッド内で独立した NG/activity を
 // 持つ複数の Solver インスタンスが、リスタートのたびに CPU 使用を交代する）のパラメータ。
 // SABORI_MULTISTART_N: スレッドあたりの本数（既定1=従来どおり、スレッドごとに1インスタンス）。
+// 引数解析の後に初めて呼ばれる前提（static の初期化時に g_threads_explicit を読む）。
 size_t multistart_instances() {
     static const size_t n = [] {
         if (const char* e = std::getenv("SABORI_MULTISTART_N")) {
             long v = std::atol(e);
             if (v > 0) return static_cast<size_t>(v);
         }
-        return static_cast<size_t>(1);
+        return default_multistart_active() ? kDefaultMultistartN : size_t{1};
     }();
     return n;
+}
+
+// SABORI_MULTISTART_ADAPT=<初期 fail 予算>: スロットの適応的ファンアウト（0 = 無効）。
+// 各スレッドのリングを 1 スロットで始め、incumbent が無いまま予算を使い切るたびに倍にする。
+// multistart_instances() > 1 のときだけ意味を持つ。未設定なら既定マルチスタート時のみ
+// kDefaultFanoutBudget、SABORI_MULTISTART_N を明示したときは無効（固定 n）。
+uint64_t multistart_fanout_budget() {
+    static const uint64_t b = [] {
+        if (const char* e = std::getenv("SABORI_MULTISTART_ADAPT")) {
+            long long v = std::atoll(e);
+            return v > 0 ? static_cast<uint64_t>(v) : uint64_t{0};
+        }
+        return default_multistart_active() ? kDefaultFanoutBudget : uint64_t{0};
+    }();
+    return b;
 }
 
 void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
@@ -361,6 +394,7 @@ void solve_satisfy(sabori_csp::fzn::Model& fzn_model, bool find_all) {
                                       build_worker_configs(g_num_threads, /*is_optimize=*/false),
                                       multistart_instances());
         ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        ps.set_adaptive_fanout(multistart_fanout_budget());
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
         auto r = ps.solve(*model);
@@ -451,6 +485,7 @@ void solve_optimize(sabori_csp::fzn::Model& fzn_model, bool find_all, bool minim
                                       build_worker_configs(g_num_threads, /*is_optimize=*/true),
                                       multistart_instances());
         ps.set_verbose(g_verbose, static_cast<size_t>(g_verbose_worker));
+        ps.set_adaptive_fanout(multistart_fanout_budget());
         g_parallel_solver = &ps;
         if (g_timeout_sec > 0) alarm(g_timeout_sec);
 
@@ -554,6 +589,7 @@ int main(int argc, char* argv[]) {
     if (const char* e = std::getenv("SABORI_THREADS")) {
         g_num_threads = std::atoi(e);
         if (g_num_threads < 1) g_num_threads = 1;
+        g_threads_explicit = true;
     }
 
     // Parse command line arguments
@@ -577,6 +613,7 @@ int main(int argc, char* argv[]) {
         } else if (std::strcmp(argv[i], "-j") == 0 && i + 1 < argc) {
             g_num_threads = std::atoi(argv[++i]);
             if (g_num_threads < 1) g_num_threads = 1;
+            g_threads_explicit = true;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             g_community_analysis = true;
         } else if (std::strcmp(argv[i], "-G") == 0) {

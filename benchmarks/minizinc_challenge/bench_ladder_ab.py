@@ -18,6 +18,9 @@
     python3 bench_ladder_ab.py --old /path/old/fzn_sabori --threads 4
     python3 bench_ladder_ab.py --old ... --threads 8 --seeds 3 --timeout 30 --out res.json
     python3 bench_ladder_ab.py --old ... --type opt     # 最適化問題のみ（既定）
+    # 同一バイナリで環境変数だけ変えるアーム比較（例: 適応的ファンアウト vs 固定 n=1）
+    python3 bench_ladder_ab.py --old build/src/fzn/fzn_sabori --threads 1 \
+        --new-env SABORI_MULTISTART_N=3,SABORI_MULTISTART_ADAPT=1000
 """
 import argparse
 import json
@@ -45,9 +48,18 @@ def prob_type_of(fzn):
     return "MIN" if "minimize" in last else "MAX" if "maximize" in last else "SAT"
 
 
+def parse_env(spec):
+    """"K=V,K=V" を dict に（空なら {}）。"""
+    out = {}
+    for item in filter(None, (spec or "").split(",")):
+        k, _, v = item.partition("=")
+        out[k.strip()] = v.strip()
+    return out
+
+
 def run_one(job):
-    key, side, binpath, fzn, seed, threads, timeout = job
-    env = dict(os.environ, SABORI_SEED=str(seed), SABORI_PRINT_OBJ="1")
+    key, side, binpath, fzn, seed, threads, timeout, side_env = job
+    env = dict(os.environ, SABORI_SEED=str(seed), SABORI_PRINT_OBJ="1", **side_env)
     cmd = [binpath, "-j", str(threads), "-t", str(timeout), str(fzn)]
     t0 = time.monotonic()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -92,8 +104,11 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--cache", default=str(FZN_CACHE),
                     help="FZN キャッシュディレクトリ (既定: .fzn_cache_abperf。ホールドアウト検証用に差し替え)")
+    ap.add_argument("--old-env", default="", help="old 側だけに渡す環境変数 (K=V,K=V)")
+    ap.add_argument("--new-env", default="", help="new 側だけに渡す環境変数 (K=V,K=V)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    side_envs = {"old": parse_env(args.old_env), "new": parse_env(args.new_env)}
 
     outer = args.outer or max(1, min(4, 24 // args.threads))
     fzns = sorted(Path(args.cache).glob("*.fzn"))
@@ -110,7 +125,7 @@ def main():
     for f in fzns:
         for s in seeds:
             for side, b in (("old", args.old), ("new", args.new)):
-                jobs.append((f.stem, side, b, f, s, args.threads, args.timeout))
+                jobs.append((f.stem, side, b, f, s, args.threads, args.timeout, side_envs[side]))
     print(f"problems={len(fzns)} seeds={len(seeds)} -j{args.threads} outer={outer} "
           f"timeout={args.timeout}s runs={len(jobs)} "
           f"(~{len(jobs) * args.timeout / outer / 60:.0f} min)", flush=True)
@@ -126,6 +141,7 @@ def main():
                 print(f"  {i}/{len(jobs)}", flush=True)
 
     w = l = t = 0
+    both_proved_ratio = []  # 両側とも証明したペアの wall 比 new/old（分割税の目安）
     per_prob = defaultdict(lambda: [0, 0])
     tail = {"old": defaultdict(int), "new": defaultdict(int)}
     for f in fzns:
@@ -138,6 +154,8 @@ def main():
                 tail[side]["nosol"] += not has_sol(r)
                 tail[side]["proved"] += r[0] in ("OPTIMAL", "UNSAT")
                 tail[side]["err"] += r[0] == "ERR"
+            if o[0] in ("OPTIMAL", "UNSAT") and n[0] in ("OPTIMAL", "UNSAT"):
+                both_proved_ratio.append(n[1] / max(o[1], 1e-3))
             win, _ = judge_winner(n[0], n[1], n[2], o[0], o[1], o[2], ptypes[key])
             if win == "Sabori":
                 w += 1
@@ -156,6 +174,10 @@ def main():
     print(f"  問題単位: 全シードnew勝ち {len(all_w)} / 全シードold勝ち {len(all_l)} / シードで反転 {len(flip)}")
     print(f"    new全勝: {' '.join(all_w)}")
     print(f"    old全勝: {' '.join(all_l)}")
+    if both_proved_ratio:
+        r = sorted(both_proved_ratio)
+        print(f"  両側証明ペアの時間比 new/old: 中央値 {r[len(r) // 2]:.3f}  "
+              f"平均 {sum(r) / len(r):.3f}  (n={len(r)})")
     for side in ("old", "new"):
         tl = tail[side]
         print(f"  {side}: 解なし {tl['nosol']}  証明(OPT/UNSAT) {tl['proved']}  ERR {tl['err']}")
@@ -163,6 +185,7 @@ def main():
     if args.out:
         Path(args.out).write_text(json.dumps({
             "meta": {"old": args.old, "new": args.new, "threads": args.threads,
+                     "old_env": side_envs["old"], "new_env": side_envs["new"],
                      "seeds": seeds, "timeout": args.timeout,
                      "problems": [f.stem for f in fzns]},
             "summary": {"wins": w, "losses": l, "ties": t, "pairs": pairs},

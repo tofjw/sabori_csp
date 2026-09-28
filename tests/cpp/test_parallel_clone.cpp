@@ -364,6 +364,76 @@ TEST_CASE("ParallelSolver: instances_per_thread=1（既定）は従来どおり�
 }
 
 // ============================================================================
+// スロットの適応的ファンアウト（RoundRobinRing の fanout_fail_budget）
+// ============================================================================
+
+TEST_CASE("RoundRobinRing: 適応的ファンアウトは 1 本で始まり予算消化で倍々に広がる", "[parallel][multistart][fanout]") {
+    RoundRobinRing ring(5, /*seed=*/1, /*fanout_fail_budget=*/100);
+    CHECK(ring.active() == 1);
+
+    // 有効 1 本の間は番が常に 0 に戻る
+    for (int i = 0; i < 10; ++i) {
+        CHECK(ring.yield_turn(false, 0, 5, /*may_grow=*/true) == 0);
+    }
+    CHECK(ring.active() == 1);  // 50 fail < 100
+
+    // incumbent あり（may_grow=false）の間は予算を使い切っても広げない
+    CHECK(ring.yield_turn(false, 0, 1000, /*may_grow=*/false) == 0);
+    CHECK(ring.active() == 1);
+
+    // 予算到達で 2 本へ（消費は累積済みなので次の may_grow=true で広がる）
+    CHECK(ring.yield_turn(false, 0, 0, /*may_grow=*/true) == 2);
+    CHECK(ring.active() == 2);
+
+    // 次段の予算は倍（200）
+    CHECK(ring.yield_turn(false, 0, 199, true) == 0);
+    CHECK(ring.yield_turn(false, 0, 1, true) == 4);
+    // 上限 n=5 でクランプ
+    CHECK(ring.yield_turn(false, 0, 400, true) == 5);
+    CHECK(ring.active() == 5);
+    CHECK(ring.yield_turn(false, 0, 1000000, true) == 0);  // 全本有効後は何もしない
+}
+
+TEST_CASE("RoundRobinRing: 予算 0 は従来どおり最初から全本有効", "[parallel][multistart][fanout]") {
+    RoundRobinRing ring(3, /*seed=*/1);
+    CHECK(ring.active() == 3);
+    CHECK(ring.yield_turn(false, 0, 1000000, true) == 0);
+}
+
+TEST_CASE("ParallelSolver: 適応的ファンアウトでも SAT/UNSAT/最適性は健全", "[parallel][manager][multistart][fanout]") {
+    // 予算 1 = 最初のリスタートで即拡大、巨大予算 = 1 本のまま終わる。両極で健全性を見る。
+    for (uint64_t budget : {uint64_t{1}, uint64_t{1} << 40}) {
+        CAPTURE(budget);
+        {
+            auto m = build_magic_square();
+            ParallelSolver ps(2, diversified_configs(2), /*instances_per_thread=*/4);
+            ps.set_adaptive_fanout(budget);
+            auto r = ps.solve(*m);
+            REQUIRE(r.status == SearchResult::SAT);
+            const auto& sol = *r.solution;
+            CHECK(sol.at("x0") + sol.at("x1") + sol.at("x2") == 15);
+            CHECK(sol.at("x0") + sol.at("x4") + sol.at("x8") == 15);
+        }
+        {
+            auto m = build_pigeonhole_unsat();
+            ParallelSolver ps(2, diversified_configs(2), /*instances_per_thread=*/4);
+            ps.set_adaptive_fanout(budget);
+            CHECK(ps.solve(*m).status == SearchResult::UNSAT);
+        }
+        for (int rep = 0; rep < 4; ++rep) {
+            size_t obj_idx = 0;
+            auto m = build_optimize_model(obj_idx);
+            ParallelSolver ps(1, diversified_configs(1), /*instances_per_thread=*/4);
+            ps.set_adaptive_fanout(budget);
+            auto r = ps.solve_optimize(*m, obj_idx, /*minimize=*/false);
+            REQUIRE(r.status == SearchResult::SAT);
+            CHECK(*r.objective == 70);
+            CHECK(r.proved_optimal);
+        }
+    }
+}
+
+// ============================================================================
 // fzn からは到達しない制約クラスの clone（test_fzn_corpus [clone] の補完）
 //   BoolNot:        fzn の bool_not は別経路で処理され、この制約は Python API 専用
 //   ClauseWitness:  SABORI_CLAUSE_WITNESS 指定時のみ構築（env はプロセス内 static で

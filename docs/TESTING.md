@@ -117,7 +117,7 @@ ctest --test-dir build-tsan -LE tsan -j4          # 既存テストを TSan 下�
 ctest --test-dir build-tsan -L tsan --output-on-failure   # 並列スイープ（長い）
 ```
 
-- `tsan_sweep`（ラベル `tsan`）は golden コーパス全 fzn を `-j 4` / `-j 8` / `-j 4`+`SABORI_MULTISTART_N=2`
+- `tsan_sweep`（ラベル `tsan`）は golden コーパス全 fzn を `-j 4` / `-j 8` / `-j 4`+`SABORI_MULTISTART_N=2` / `-j` 無し（既定マルチスタート）
   で解き、TSan レポートまたは異常終了があれば失敗する。直接実行もできる:
   `tests/tsan/tsan_sweep.py --bin build-tsan/src/fzn/fzn_sabori --configs j4 --limit 20`
 - この環境（WSL2）の GCC 11 の TSan は ASLR 有効だと `FATAL: ThreadSanitizer: unexpected memory mapping`
