@@ -93,7 +93,8 @@
   起動時の clone 2 本 + スレッド起動の固定費）と、n=1 なら締切間際に証明できる問題
   （sudoku_opt 25〜29 秒）を割って逃すもの
 - 予算 1000 が 10000 と固定 n=3 を支配。救済例: network_50_cstr（全シード解なし→解）、2019 code-generator、2021 seat-moving
-- 既定化は未判断（MULTISTART 自体が既定 n=1）。判断材料は上表
+- **2026-09-28 既定化**: `-j` も `SABORI_THREADS` も無いとき MULTISTART_N=3 + 予算 1000（fzn CLI、本番の minizinc 経由はこの経路）。
+  `-j 1` 明示は従来の単一インスタンス経路（golden・テストの基準経路）。`SABORI_MULTISTART_N=1` でも従来挙動
 
 ### (c) 評価指標を尾に寄せる
 
